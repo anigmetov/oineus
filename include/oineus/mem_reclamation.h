@@ -13,25 +13,25 @@
 #include <chrono>
 #include <stdlib.h>
 
-
-#include "matrix.h"
-
 namespace oineus {
     template<class T>
     struct MemoryReclaim {
+
         int n_threads_;
+
         const int thread_id_;
+
         std::vector<T*> to_retire_, retired_, to_delete_;
+
         bool even_epoch_ {false};
+
         std::atomic<int>& counter_;
 
         MemoryReclaim(int _n_threads, std::atomic<int>& _epoch_counter, int _thread_id)
                 :
                 n_threads_(_n_threads),
                 thread_id_(_thread_id),
-                counter_(_epoch_counter)
-        {
-        }
+                counter_(_epoch_counter) {}
 
         // dtor must be called only after all threads finish!
         ~MemoryReclaim()
@@ -68,10 +68,9 @@ namespace oineus {
                     delete p;
 
                 retired_.swap(to_delete_);
-
                 to_retire_.swap(retired_);
                 to_retire_.clear();
             }
         }
     };
-}
+} // namespace oineus
