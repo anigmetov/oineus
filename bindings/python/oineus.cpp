@@ -1,14 +1,17 @@
 #include <pybind11/pybind11.h>
 namespace py = pybind11;
 
+#include "oineus_persistence_bindings.h"
 #include "vectorizer.h"
+#include <oineus/includes.h>
 
-void init_vectorizer(py::module&, std::string);
-
-PYBIND11_MODULE(_smilis, m)
+PYBIND11_MODULE(_oineus, m)
 {
     m.doc() = "Oineus python bindings";
 
-    init_vectorizer<double>(m, "_float");
-    init_vectorizer<double>(m, "_double");
+    init_oineus<int, float>(m, "_float");
+    init_oineus<int, double>(m, "_double");
+
+//    init_vectorizer<float>(m, "_float");
+//    init_vectorizer<double>(m, "_double");
 }

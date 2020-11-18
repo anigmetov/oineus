@@ -7,7 +7,7 @@ set(OINEUS_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/../include/oineus/common_defs.h
                    ${CMAKE_CURRENT_SOURCE_DIR}/../include/oineus/mem_reclamation.h
                    ${CMAKE_CURRENT_SOURCE_DIR}/../include/oineus/simplex.h)
 
-add_executable(oineus_lower_star oineus_lower_star.cpp ${PP_HEADERS})
+add_executable(oineus_lower_star oineus_lower_star.cpp ${PP_HEADERS} ../include/oineus/params.h)
 
 target_compile_options(oineus_lower_star PRIVATE -Wall -pedantic -Wextra -pedantic-errors)
 

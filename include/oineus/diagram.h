@@ -46,12 +46,13 @@ namespace oineus {
     template<typename T>
     std::ostream& operator<<(std::ostream& out, const DgmPoint<T>& p)
     {
+        out << "(";
         if (DgmPoint<T>::is_minus_inf(p.birth))
-            out << "-inf ";
+            out << "-inf, ";
         else if (DgmPoint<T>::is_plus_inf(p.birth))
-            out << "inf ";
+            out << "inf, ";
         else
-            out << p.birth << " ";
+            out << p.birth << ", ";
 
         if (DgmPoint<T>::is_minus_inf(p.death))
             out << "-inf";
@@ -59,25 +60,29 @@ namespace oineus {
             out << "inf";
         else
             out << p.death;
+        out << ")";
 
         return out;
     }
 
 
-    template<typename Int_, typename Real_>
+    template<typename Real_>
     struct Diagram {
-
-        using Int = Int_;
         using Real = Real_;
 
         using Point = DgmPoint<Real>;
         using Dgm = std::vector<Point>;
 
-        std::map<Int, Dgm> diagram_in_dimension_;
+        std::map<dim_type, Dgm> diagram_in_dimension_;
 
-        void add_point(Int dim, Real b, Real d)
+        // will throw, if there is no diagram for dimension d
+        Dgm get_diagram_in_dimension(dim_type d) const
         {
-            assert(dim >= 0);
+            return diagram_in_dimension_.at(d);
+        }
+
+        void add_point(dim_type dim, Real b, Real d)
+        {
             diagram_in_dimension_[dim].emplace_back(b, d);
         }
 
@@ -120,7 +125,7 @@ namespace oineus {
 
 } // namespace oineus
 
-//    template<class Cont>
+//  template<class Cont>
 //    std::string container_to_string(const Cont& v)
 //    {
 //        std::stringstream ss;
@@ -137,10 +142,3 @@ namespace oineus {
 //        ss << "]";
 //        return ss.str();
 //    }
-
-
-//namespace std {
-//    ostream& operator<<(ostream& os, const pp::SparseColumn& col);
-//    ostream& operator<<(ostream& os, const pp::SparseMatrix& m);
-//}
-

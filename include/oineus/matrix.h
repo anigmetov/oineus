@@ -24,7 +24,7 @@ namespace oineus {
     template<typename Int_, typename Real_>
     class Filtration;
 
-    template<typename Int_, typename Real_>
+    template<typename Real_>
     class Diagram;
 
 
@@ -327,9 +327,9 @@ namespace oineus {
         }
 
         template<typename Real>
-        Diagram<Int, Real> diagram(const Filtration<Int, Real>& fil) const
+        Diagram<Real> diagram(const Filtration<Int, Real>& fil) const
         {
-            Diagram<Int, Real> result;
+            Diagram<Real> result;
 
             std::unordered_set<Int> rows_with_lowest_one;
 
@@ -345,7 +345,7 @@ namespace oineus {
                     if (rows_with_lowest_one.count(col_idx) == 0) {
                         // point at infinity
 
-                        Int dim = fil.dim_by_sorted_id(col_idx);
+                        dim_type dim = fil.dim_by_sorted_id(col_idx);
                         Real birth = fil.value_by_sorted_id(col_idx);
                         Real death = std::numeric_limits<Real>::infinity();
 
@@ -356,7 +356,7 @@ namespace oineus {
                     Int birth_idx = low(col);
                     Int death_idx = col_idx;
 
-                    auto dim = fil.dim_by_sorted_id(birth_idx);
+                    dim_type dim = fil.dim_by_sorted_id(birth_idx);
 
                     Real birth = fil.value_by_sorted_id(birth_idx);
                     Real death = fil.value_by_sorted_id(death_idx);

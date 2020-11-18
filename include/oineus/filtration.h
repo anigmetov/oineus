@@ -34,13 +34,13 @@ namespace oineus {
             set_ids();
             sort(_negate);
 
-            for(Int d = 0; d < static_cast<Int>(dim_to_simplices_.size()); ++d) {
+            for(dim_type d = 0; d < static_cast<dim_type>(dim_to_simplices_.size()); ++d) {
                 assert(std::all_of(dim_to_simplices_.at(d).begin(), dim_to_simplices_.at(d).end(),
                             [](const FiltrationSimplex& sigma) { return sigma.is_valid_filtration_simplex(); }));
             }
         }
 
-        Int size_in_dimension(Int d) const
+        Int size_in_dimension(dim_type d) const
         {
             if (d < 0)
                 throw std::runtime_error("Negative dimension");
@@ -62,14 +62,14 @@ namespace oineus {
             BoundaryMatrix result;
             result.data.reserve(size());
 
-            for(Int d = 0; d < static_cast<Int>(dim_to_simplices_.size()); ++d) {
+            for(dim_type d = 0; d < static_cast<dim_type>(dim_to_simplices_.size()); ++d) {
                 result.append(boundary_matrix_in_dimension(d));
             }
 
             return result;
         }
 
-        BoundaryMatrix boundary_matrix_in_dimension(Int d) const
+        BoundaryMatrix boundary_matrix_in_dimension(dim_type d) const
         {
             const auto& simplices = dim_to_simplices_[d];
 
@@ -95,7 +95,7 @@ namespace oineus {
         template<typename I, typename R, size_t D>
         friend class Grid;
 
-        Int dim_by_sorted_id(Int sorted_id) const
+        dim_type dim_by_sorted_id(Int sorted_id) const
         {
             return sorted_id_to_dimension_[sorted_id];
         }
@@ -113,7 +113,7 @@ namespace oineus {
         std::map<IntVector, Int> vertices_to_sorted_id_;
         std::vector<Int> id_to_sorted_id_;
 
-        std::vector<Int> sorted_id_to_dimension_;
+        std::vector<dim_type> sorted_id_to_dimension_;
         std::vector<Real> sorted_id_to_value_;
 
         void set_ids()
@@ -131,9 +131,7 @@ namespace oineus {
         {
             id_to_sorted_id_ = std::vector<Int>(size(), Int(-1));
             vertices_to_sorted_id_.clear();
-
-
-            sorted_id_to_dimension_ = std::vector<Int>(size(), Int(-1));
+            sorted_id_to_dimension_ = std::vector<dim_type>(size(), Int(-1));
             sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
 
             // ignore ties
