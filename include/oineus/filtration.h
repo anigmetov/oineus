@@ -34,7 +34,7 @@ namespace oineus {
             set_ids();
             sort(_negate);
 
-            for(Int d = 0; d < dim_to_simplices_.size(); ++d) {
+            for(Int d = 0; d < static_cast<Int>(dim_to_simplices_.size()); ++d) {
                 assert(std::all_of(dim_to_simplices_.at(d).begin(), dim_to_simplices_.at(d).end(),
                             [](const FiltrationSimplex& sigma) { return sigma.is_valid_filtration_simplex(); }));
             }
@@ -62,7 +62,7 @@ namespace oineus {
             BoundaryMatrix result;
             result.data.reserve(size());
 
-            for(Int d = 0; d < dim_to_simplices_.size(); ++d) {
+            for(Int d = 0; d < static_cast<Int>(dim_to_simplices_.size()); ++d) {
                 result.append(boundary_matrix_in_dimension(d));
             }
 
@@ -152,7 +152,7 @@ namespace oineus {
 
                 std::sort(simplices.begin(), simplices.end(), cmp);
 
-                for(Int s_id = 0; s_id < simplices.size(); ++s_id) {
+                for(Int s_id = 0; s_id < static_cast<Int>(simplices.size()); ++s_id) {
 
                     auto id = simplices[s_id].id_;
                     auto sorted_id = s_id_shift + s_id;

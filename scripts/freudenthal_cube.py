@@ -158,6 +158,7 @@ if __name__ == "__main__":
             for sigma in sigmas[:-1]:
                 print(f"                {sigma.to_str_braces()},")
             print(f"                {sigmas[-1].to_str_braces()} }};")
+            print(f"                         break;")
         print('            default: throw std::runtime_error("Bad dimensions");')
         print('        }')
     print('    }')

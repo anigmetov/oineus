@@ -1,15 +1,6 @@
 #include <iostream>
-#include <atomic>
 #include <vector>
 #include <string>
-#include <thread>
-#include <cassert>
-#include <algorithm>
-#include <numeric>
-#include <unordered_set>
-#include <chrono>
-
-#include <stdlib.h>
 
 #include <oineus/includes.h>
 
@@ -109,7 +100,7 @@ int main(int argc, char** argv)
 {
 
     test_ls_3();
-    return 0;
+//    return 0;
 #ifdef OINEUS_USE_SPDLOG
     spdlog::set_level(spdlog::level::info);
 #endif

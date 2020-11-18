@@ -3,6 +3,7 @@
 #include <limits>
 #include <vector>
 #include <ostream>
+#include <algorithm>
 
 namespace oineus {
 
@@ -72,7 +73,7 @@ namespace oineus {
     {
         out << "Simplex(id_=" << s.id_ << ", sorted_id_ = " << s.sorted_id_ << ", vertices_=(";
 
-        for(int i = 0; i < s.vertices_.size() - 1; ++i)
+        for(size_t i = 0; i < s.vertices_.size() - 1; ++i)
             out << s.vertices_[i] << ", ";
 
         out << s.vertices_[s.vertices_.size() - 1] << "), value_=" << s.value_ << ")";

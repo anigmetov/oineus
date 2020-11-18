@@ -17,7 +17,7 @@ namespace oineus {
         T birth;
         T death;
 
-        DgmPoint(T b, T d) : birth(d), death(d) {};
+        DgmPoint(T b, T d) : birth(b), death(d) {};
 
         bool operator<(const DgmPoint& other) const
         {

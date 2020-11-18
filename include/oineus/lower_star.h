@@ -22,25 +22,33 @@ std::vector<std::vector<std::vector<Int>>> fr_displacements(size_t dim)
             switch (dim) {
                 case 0 : return {
                     { { 0 } } };
+                    break;
                 case 1 : return {
                     { { 0 }, { 1 } } };
+                    break;
             }
+            break;
         case 2 :
             switch (dim) {
                 case 0 : return {
                     { { 0, 0 } } };
+                    break;
                 case 1 : return {
                     { { 0, 0 }, { 0, 1 } },
                     { { 0, 0 }, { 1, 1 } },
                     { { 0, 0 }, { 1, 0 } } };
+                    break;
                 case 2 : return {
                     { { 0, 0 }, { 1, 0 }, { 1, 1 } },
                     { { 0, 0 }, { 0, 1 }, { 1, 1 } } };
+                    break;
             }
+            break;
         case 3 :
             switch (dim) {
                 case 0 : return {
                     { { 0, 0, 0 } } };
+                    break;
                 case 1 : return {
                     { { 0, 0, 0 }, { 0, 1, 0 } },
                     { { 0, 0, 0 }, { 1, 1, 0 } },
@@ -49,6 +57,7 @@ std::vector<std::vector<std::vector<Int>>> fr_displacements(size_t dim)
                     { { 0, 0, 0 }, { 0, 0, 1 } },
                     { { 0, 0, 0 }, { 1, 0, 0 } },
                     { { 0, 0, 0 }, { 1, 0, 1 } } };
+                    break;
                 case 2 : return {
                     { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 1, 1 } },
                     { { 0, 0, 0 }, { 0, 0, 1 }, { 1, 0, 1 } },
@@ -62,6 +71,7 @@ std::vector<std::vector<std::vector<Int>>> fr_displacements(size_t dim)
                     { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 0 } },
                     { { 0, 0, 0 }, { 0, 1, 0 }, { 1, 1, 1 } },
                     { { 0, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 } } };
+                    break;
                 case 3 : return {
                     { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 1, 1 }, { 1, 1, 1 } },
                     { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 0, 1 }, { 1, 1, 1 } },
@@ -69,10 +79,12 @@ std::vector<std::vector<std::vector<Int>>> fr_displacements(size_t dim)
                     { { 0, 0, 0 }, { 0, 0, 1 }, { 1, 0, 1 }, { 1, 1, 1 } },
                     { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 } },
                     { { 0, 0, 0 }, { 0, 1, 0 }, { 0, 1, 1 }, { 1, 1, 1 } } };
+                    break;
             }
+            break;
     }
 
-    throw std::runtime_error("Unkown dimensions");
+    throw std::runtime_error("Unknown dimensions");
 }
 
 
@@ -93,7 +105,7 @@ public:
 
     Grid() = default;
 
-    Grid(const GridPoint& _dims, bool _wrap, Real* _data) : dims_(_dims), wrap_(_wrap), c_order_(true), data_(_data)
+    Grid(const GridPoint& _dims, bool _wrap, Real* _data) : dims_(_dims), c_order_(true), wrap_(_wrap), data_(_data)
     {
         if (dims_.size() != dim)
             throw std::runtime_error("Dims size must be equal D");
