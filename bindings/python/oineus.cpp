@@ -7,9 +7,8 @@ void init_vectorizer(py::module&, std::string);
 
 PYBIND11_MODULE(_smilis, m)
 {
-    m.doc() = "Smilis python bindings";
+    m.doc() = "Oineus python bindings";
 
     init_vectorizer<double>(m, "_float");
     init_vectorizer<double>(m, "_double");
 }
-
