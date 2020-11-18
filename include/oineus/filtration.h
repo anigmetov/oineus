@@ -76,16 +76,16 @@ namespace oineus {
             BoundaryMatrix result;
             result.data.reserve(simplices.size());
 
-            for(const auto& sigma : dim_to_simplices_.at(d)) {
-
+            for(const auto& sigma : simplices) {
                 typename BoundaryMatrix::IntSparseColumn col;
-                col.reserve(d + 1);
+                if (d != 0) {
+                    col.reserve(d + 1);
 
-                for(const auto& tau_vertices : sigma.boundary())
-                    col.push_back(vertices_to_sorted_id_.at(tau_vertices));
+                    for(const auto& tau_vertices : sigma.boundary())
+                        col.push_back(vertices_to_sorted_id_.at(tau_vertices));
 
-                std::sort(col.begin(), col.end());
-
+                    std::sort(col.begin(), col.end());
+                } // else: boundary of vertex is empty
                 result.data.push_back(col);
             }
 

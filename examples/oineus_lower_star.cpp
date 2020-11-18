@@ -72,29 +72,45 @@ void test_ls_3()
 
     auto ss = grid.freudenthal_simplices(2, negate);
 
-    std::cout << "2-skeleton:\n";
-    for(const auto& s : ss)
-        std::cout << s << "\n";
+    //std::cout << "2-skeleton:\n";
+    //for(const auto& s : ss)
+    //    std::cout << s << "\n";
 
-    std::cout << "-----------------------------------------------\n";
+    //std::cout << "-----------------------------------------------\n";
 
-    std::cout << "3-skeleton:\n";
+    //std::cout << "3-skeleton:\n";
 
     ss = grid.freudenthal_simplices(3, negate);
+    auto fil = grid.freudenthal_filtration(3, negate);
 
-    for(const auto& s : ss)
-        std::cout << s << "\n";
+    //for(const auto& s : ss)
+    //    std::cout << s << "\n";
+
+    auto m_D = fil.boundary_matrix_full();
+
+    std::cerr << "boundary ok" << std::endl;
 
 
+    Params params;
+    params.n_threads = 4;
+
+    m_D.reduce_parallel(params);
+
+    std::cerr << "reduce ok" << std::endl;
+
+    auto dgm = m_D.diagram(fil);
+
+    std::cerr << "diagram ok" << std::endl;
 }
+
 
 
 int main(int argc, char** argv)
 {
 
-    test_ls_2();
+    test_ls_3();
     return 0;
-#ifdef ARACHNE_USE_SPDLOG
+#ifdef OINEUS_USE_SPDLOG
     spdlog::set_level(spdlog::level::info);
 #endif
 
@@ -108,7 +124,6 @@ int main(int argc, char** argv)
 
     std::string fname_in, fname_dgm;
     unsigned int max_dim = 1;
-    int n_threads { 1 };
 
     bool help;
     bool bdry_matrix_only { false };
@@ -117,7 +132,7 @@ int main(int argc, char** argv)
     ops
             >> Option('d', "dim", max_dim, "top dimension")
             >> Option('c', "chunk-size", params.chunk_size, "chunk_size")
-            >> Option('t', "threads", n_threads, "number of threads")
+            >> Option('t', "threads", params.n_threads, "number of threads")
             >> Option('s', "sort", params.sort_dgms, "sort diagrams")
             >> Option(     "clear", params.clearing_opt, "clearing optimization")
             >> Option(     "acq-rel", params.acq_rel, "use acquire-release memory orders")
@@ -139,12 +154,12 @@ int main(int argc, char** argv)
 
     info("Matrix read");
 
-    fname_dgm = fname_in + "_t_" + std::to_string(n_threads) + "_c_" + std::to_string(params.chunk_size);
+    fname_dgm = fname_in + "_t_" + std::to_string(params.n_threads) + "_c_" + std::to_string(params.chunk_size);
 
-    r.reduce_parallel(n_threads, params);
+    r.reduce_parallel(params);
 
     if (params.print_time) {
-        std::cerr << fname_in << ";" <<  n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << params.elapsed << std::endl;
+        std::cerr << fname_in << ";" <<  params.n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << params.elapsed << std::endl;
     }
 
     auto dgm = r.diagram(fil);

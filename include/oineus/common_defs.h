@@ -61,6 +61,7 @@ namespace oineus {
     //}
 
     struct Params {
+        int n_threads {1};
         int chunk_size {128};
         bool write_dgms {false};
         bool sort_dgms {true};

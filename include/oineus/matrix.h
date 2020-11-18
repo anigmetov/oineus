@@ -238,7 +238,7 @@ namespace oineus {
                     std::make_move_iterator(other.data.end()));
         }
 
-        void reduce_parallel(int n_threads, Params& params)
+        void reduce_parallel(Params& params)
         {
 
             using namespace std::placeholders;
@@ -264,7 +264,7 @@ namespace oineus {
             }
             debug("Pivots initialized");
 
-            n_threads = std::min(n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+            int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
 
             std::vector<std::thread> ts;
             std::vector<std::unique_ptr<MemoryReclaimC>> mms;
