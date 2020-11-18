@@ -361,13 +361,29 @@ namespace oineus {
                     Real birth = fil.value_by_sorted_id(birth_idx);
                     Real death = fil.value_by_sorted_id(death_idx);
 
-                    result.add_point(dim, birth, death);
+                    if (birth != death)
+                        result.add_point(dim, birth, death);
                 }
             }
 
             return result;
         }
 
+        template<typename Int>
+        friend std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m);
     };
 
+    template<typename Int>
+    std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m)
+    {
+        out << "Matrix[\n";
+        for(size_t col_idx = 0; col_idx < m.data.size(); ++col_idx) {
+            out << "Column " << col_idx << ": ";
+            for(const auto& x : m.data[col_idx])
+                out << x << " ";
+            out << "\n";
+        }
+        out << "]\n";
+        return out;
+    }
 }

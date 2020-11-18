@@ -120,7 +120,7 @@ public:
 
             strides_[D-1] = 1;
 
-            for(int d = D - 2; d >= 0; --d)
+            for(int d = static_cast<int>(D) - 2; d >= 0; --d)
                 strides_[d] = dims_[d + 1] * strides_[ d + 1];
         } else
             throw std::runtime_error("Fortran order not implemented");

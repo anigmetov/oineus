@@ -19,9 +19,16 @@ namespace oineus {
 
         DgmPoint(T b, T d) : birth(b), death(d) {};
 
+        T persistence() const { return fabs(death - birth); }
+
+        bool operator==(const DgmPoint& other) const { return birth == other.birth and death == other.death; }
+
+        // compare by persistence first
         bool operator<(const DgmPoint& other) const
         {
-            return std::make_pair(birth, death) < std::make_pair(other.birth, other.death);
+            T pers = persistence();
+            T other_pers = other.persistence();
+            return std::tie(pers, birth, death) < std::tie(other_pers, other.birth, other.death);
         }
 
         // if we want indices, T will be integral and won't have infinity;
@@ -90,7 +97,7 @@ namespace oineus {
         {
             for(auto& dim_points : diagram_in_dimension_) {
                 auto& points = dim_points.second;
-                std::sort(points.begin(), points.end());
+                std::sort(points.begin(), points.end(), [](const Point& a, const Point& b) { return a > b; });
             }
         }
 
