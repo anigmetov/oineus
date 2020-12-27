@@ -2,12 +2,12 @@ set(OINEUS_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/../include/oineus/common_defs.h
                    ${CMAKE_CURRENT_SOURCE_DIR}/../include/oineus/diagram.h
                    ${CMAKE_CURRENT_SOURCE_DIR}/../include/oineus/filtration.h
                    ${CMAKE_CURRENT_SOURCE_DIR}/../include/oineus/lower_star.h
-                   ${CMAKE_CURRENT_SOURCE_DIR}/../include/oineus/includes.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include/oineus/oineus.h
                    ${CMAKE_CURRENT_SOURCE_DIR}/../include/oineus/matrix.h
                    ${CMAKE_CURRENT_SOURCE_DIR}/../include/oineus/mem_reclamation.h
                    ${CMAKE_CURRENT_SOURCE_DIR}/../include/oineus/simplex.h)
 
-add_executable(oineus_lower_star oineus_lower_star.cpp ${PP_HEADERS} ../include/oineus/params.h)
+add_executable(oineus_lower_star oineus_lower_star.cpp ${PP_HEADERS} ../include/oineus/params.h ../include/oineus/vectorizer.h)
 
 target_compile_options(oineus_lower_star PRIVATE -Wall -pedantic -Wextra -pedantic-errors)
 

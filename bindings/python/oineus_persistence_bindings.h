@@ -12,7 +12,7 @@
 
 namespace py = pybind11;
 
-#include <oineus/includes.h>
+#include <oineus/oineus.h>
 
 using dim_type = oineus::dim_type;
 
@@ -54,7 +54,7 @@ void init_oineus(py::module& m, std::string suffix)
     using RealDiagram = oineus::Diagram<Real>;
 
     std::string dgm_point_name = "DiagramPoint" + suffix;
-    std::string dgm_class_name = "Diagram" + suffix;
+    std::string dgm_class_name = "Diagrams" + suffix;
 
     py::class_<RealDgmPoint>(m, dgm_point_name.c_str())
             .def(py::init<Real, Real>())

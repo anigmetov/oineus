@@ -1,9 +1,9 @@
 #include <pybind11/pybind11.h>
+
 namespace py = pybind11;
 
 #include "oineus_persistence_bindings.h"
-#include "vectorizer.h"
-#include <oineus/includes.h>
+#include <oineus/oineus.h>
 
 PYBIND11_MODULE(_oineus, m)
 {

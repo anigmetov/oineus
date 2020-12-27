@@ -48,7 +48,7 @@ std::vector<Real> persfunc_unstable(py::array_t<Real> points, py::array_t<Real> 
     auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed = end - start;
     if (verbose)
-        std::cerr << "diagram points: " << n_dgm_points << ", smilis time = " << elapsed.count() << std::endl;
+        std::cerr << "diagram points: " << n_dgm_points << ", pers. image time = " << elapsed.count() << std::endl;
 
     return result;
 }
