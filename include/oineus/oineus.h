@@ -7,3 +7,4 @@
 #include "diagram.h"
 #include "lower_star.h"
 #include "matrix.h"
+#include "vectorizer.h"

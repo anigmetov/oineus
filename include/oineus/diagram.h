@@ -92,7 +92,7 @@ std::ostream& operator<<(std::ostream& out, const DgmPoint<T>& p)
 }
 
 template <typename Real_>
-struct Diagram {
+struct Diagrams {
     using Real = Real_;
 
     using Point = DgmPoint<Real>;

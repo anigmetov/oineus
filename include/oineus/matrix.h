@@ -25,7 +25,7 @@ namespace oineus {
     class Filtration;
 
     template<typename Real_>
-    class Diagram;
+    class Diagrams;
 
 
     // contains indices of non-zero entries
@@ -327,9 +327,9 @@ namespace oineus {
         }
 
         template<typename Real>
-        Diagram<Real> diagram(const Filtration<Int, Real>& fil) const
+        Diagrams<Real> diagram(const Filtration<Int, Real>& fil) const
         {
-            Diagram<Real> result;
+            Diagrams<Real> result;
 
             std::unordered_set<Int> rows_with_lowest_one;
 

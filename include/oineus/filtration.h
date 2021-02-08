@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <iterator>
 #include <ostream>
+#include <chrono>
 
 #include "simplex.h"
 #include "matrix.h"
@@ -118,17 +119,27 @@ namespace oineus {
 
         void set_ids()
         {
+            auto start = std::chrono::steady_clock::now();
+
             // all vertices have ids already, 0..#vertices-1
             // set ids only on higher-dimensional simplices
             Int id = dim_to_simplices_.at(0).size();
             for(size_t d = 1; d < dim_to_simplices_.size(); ++d)
                 for(auto& sigma : dim_to_simplices_[d])
                     sigma.id_ = id++;
+
+            auto end = std::chrono::steady_clock::now();
+            std::chrono::duration<double> elapsed = end - start;
+            std::cerr << "set_ids took " << elapsed.count() << std::endl;
+
+
         }
 
         // sort simplices and assign sorted_ids
         void sort(bool negate)
         {
+            auto start = std::chrono::steady_clock::now();
+
             id_to_sorted_id_ = std::vector<Int>(size(), Int(-1));
             vertices_to_sorted_id_.clear();
             sorted_id_to_dimension_ = std::vector<dim_type>(size(), Int(-1));
@@ -165,6 +176,10 @@ namespace oineus {
 
                 s_id_shift += simplices.size();
             }
+
+            auto end = std::chrono::steady_clock::now();
+            std::chrono::duration<double> elapsed = end - start;
+            std::cerr << "sort filtration took " << elapsed.count() << std::endl;
         }
 
         template<typename I, typename R>

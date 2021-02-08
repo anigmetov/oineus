@@ -117,7 +117,6 @@ public:
             throw std::runtime_error("Dims must be positive");
 
         if (c_order_) {
-
             strides_[D-1] = 1;
 
             for(int d = static_cast<int>(D) - 2; d >= 0; --d)
@@ -207,7 +206,7 @@ public:
         std::vector<SimplexVec> dim_to_simplices;
 
         for(size_t d = 0; d <= top_d; ++d)
-            dim_to_simplices.emplace_back(std::move(freudenthal_simplices(d, negate)));
+            dim_to_simplices.emplace_back(freudenthal_simplices(d, negate));
 
         return GridFiltration(std::move(dim_to_simplices), negate);
     }

@@ -3,11 +3,9 @@
 #include <string>
 
 #include <oineus/oineus.h>
-
-#include "opts/opts.h"
+#include <opts/opts.h>
 
 using namespace oineus;
-
 
 void test_ls_2()
 {
@@ -26,7 +24,7 @@ void test_ls_2()
     bool wrap = false;
     bool negate = false;
 
-    Grid<int, double, 2> grid { dims, wrap, data };
+    IntGrid grid { dims, wrap, data };
 
     auto ss = grid.freudenthal_simplices(2, negate);
 
@@ -59,7 +57,7 @@ void test_ls_3()
     bool wrap = true;
     bool negate = false;
 
-    Grid<int, double, 3> grid { dims, wrap, data };
+    IntGrid grid { dims, wrap, data };
 
     auto ss = grid.freudenthal_simplices(2, negate);
 
@@ -161,6 +159,10 @@ int main(int argc, char** argv)
     dgm.save_as_txt(fname_dgm);
 
     info("Diagrams saved");
+
+    Real sigma = 1.0;
+    Vectorizer<Real> vectorizer(sigma);
+    auto image = vectorizer.persistence_image_unstable(dgm.get_diagram_in_dimension(0));
 
     return 0;
 }

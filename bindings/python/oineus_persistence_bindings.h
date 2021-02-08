@@ -17,7 +17,7 @@ namespace py = pybind11;
 using dim_type = oineus::dim_type;
 
 template<class Int, class Real, size_t D>
-oineus::Diagram<Real>
+oineus::Diagrams<Real>
 compute_diagrams_ls_freudenthal(py::array_t<Real> data, bool negate, bool wrap, dim_type top_d, int n_threads)
 {
     using Grid = oineus::Grid<Int, Real, D>;
@@ -35,12 +35,29 @@ compute_diagrams_ls_freudenthal(py::array_t<Real> data, bool negate, bool wrap, 
         dims[d] = data.shape(d);
 
     Grid grid {dims, wrap, pdata};
-    auto fil = grid.freudenthal_filtration(top_d, negate);
-    auto bm = fil.boundary_matrix_full();
 
+    auto start = std::chrono::steady_clock::now();
+    auto fil = grid.freudenthal_filtration(top_d, negate);
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_fil = end - start;
+    std::cerr << "filtration created in " << elapsed_fil.count() << std::endl;
+
+    start = std::chrono::steady_clock::now();
+    auto bm = fil.boundary_matrix_full();
+    end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_bm = end - start;
+    std::cerr << "matrix created in " << elapsed_fil.count() << std::endl;
+
+    start = std::chrono::steady_clock::now();
     oineus::Params params;
+    params.sort_dgms = false;
+    params.clearing_opt = true;
+//    params.print_time = true;
     params.n_threads = n_threads;
     bm.reduce_parallel(params);
+    end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_red = end - start;
+    std::cerr << "matrix reduced in " << elapsed_red.count() << std::endl;
 
     return bm.diagram(fil);
 }
@@ -51,7 +68,7 @@ void init_oineus(py::module& m, std::string suffix)
     using namespace pybind11::literals;
 
     using RealDgmPoint = oineus::DgmPoint<Real>;
-    using RealDiagram = oineus::Diagram<Real>;
+    using RealDiagram = oineus::Diagrams<Real>;
 
     std::string dgm_point_name = "DiagramPoint" + suffix;
     std::string dgm_class_name = "Diagrams" + suffix;

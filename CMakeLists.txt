@@ -1,10 +1,11 @@
-project(oineus)
+cmake_minimum_required(VERSION 3.5)
 
-cmake_minimum_required(VERSION 3.4)
+project(oineus LANGUAGES CXX)
 
-option(use_spdlog "Use spdlog" off)
+option(use_spdlog "Use spdlog" OFF)
+option(use_jemalloc "Use jemalloc" OFF)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+#set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Default to Release
 
@@ -16,8 +17,18 @@ endif()
 set(CMAKE_CXX_STANDARD 14)
 
 find_package (Threads)
-set (libraries ${libraries}   ${CMAKE_THREAD_LIBS_INIT})
-set (libraries ${libraries}   jemalloc)
+set (libraries ${libraries} ${CMAKE_THREAD_LIBS_INIT})
+
+if (use_jemalloc)
+    set (libraries ${libraries} jemalloc)
+endif()
 
 add_subdirectory(examples)
 add_subdirectory(bindings/python)
+
+find_package(Catch2)
+if (Catch2_FOUND)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
