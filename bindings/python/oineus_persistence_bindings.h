@@ -16,8 +16,43 @@ namespace py = pybind11;
 
 using dim_type = oineus::dim_type;
 
+template<class Real>
+class PyOineusDiagrams {
+public:
+    PyOineusDiagrams() = default;
+
+    PyOineusDiagrams(const oineus::Diagrams<Real>& _diagrams)
+            :diagrams_(_diagrams) { }
+
+    py::array_t<Real> get_diagram_in_dimension(dim_type d)
+    {
+        auto dgm = diagrams_.get_diagram_in_dimension(d);
+
+        size_t arr_sz = dgm.size() * 2;
+        Real* ptr = new Real[arr_sz];
+        for(size_t i = 0; i < dgm.size(); ++i) {
+            ptr[2 * i] = dgm[i].birth;
+            ptr[2 * i + 1] = dgm[i].death;
+        }
+
+        py::capsule free_when_done(ptr, [](void* p) {
+            Real* pp = reinterpret_cast<Real*>(p);
+            delete[] pp;
+        });
+
+        py::array::ShapeContainer shape {static_cast<long int>(dgm.size()), 2L};
+        py::array::StridesContainer strides {static_cast<long int>(2 * sizeof(Real)),
+                                             static_cast<long int>(sizeof(Real))};
+
+        return py::array_t<Real>(shape, strides, ptr, free_when_done);
+    }
+
+private:
+    oineus::Diagrams<Real> diagrams_;
+};
+
 template<class Int, class Real, size_t D>
-oineus::Diagrams<Real>
+PyOineusDiagrams<Real>
 compute_diagrams_ls_freudenthal(py::array_t<Real> data, bool negate, bool wrap, dim_type top_d, int n_threads)
 {
     using Grid = oineus::Grid<Int, Real, D>;
@@ -25,7 +60,7 @@ compute_diagrams_ls_freudenthal(py::array_t<Real> data, bool negate, bool wrap, 
 
     py::buffer_info data_buf = data.request();
 
-   if (data.ndim() != D)
+    if (data.ndim() != D)
         throw std::runtime_error("Dimension mismatch");
 
     Real* pdata {static_cast<Real*>(data_buf.ptr)};
@@ -59,7 +94,7 @@ compute_diagrams_ls_freudenthal(py::array_t<Real> data, bool negate, bool wrap, 
     std::chrono::duration<double> elapsed_red = end - start;
     std::cerr << "matrix reduced in " << elapsed_red.count() << std::endl;
 
-    return bm.diagram(fil);
+    return PyOineusDiagrams<Real>(bm.diagram(fil));
 }
 
 template<class Int, class Real>
@@ -68,7 +103,7 @@ void init_oineus(py::module& m, std::string suffix)
     using namespace pybind11::literals;
 
     using RealDgmPoint = oineus::DgmPoint<Real>;
-    using RealDiagram = oineus::Diagrams<Real>;
+    using RealDiagram = PyOineusDiagrams<Real>;
 
     std::string dgm_point_name = "DiagramPoint" + suffix;
     std::string dgm_class_name = "Diagrams" + suffix;
@@ -94,10 +129,7 @@ void init_oineus(py::module& m, std::string suffix)
     py::class_<RealDiagram>(m, dgm_class_name.c_str())
             .def(py::init<>())
             .def("in_dimension", &RealDiagram::get_diagram_in_dimension)
-            .def("__getitem__", &RealDiagram::get_diagram_in_dimension)
-            .def("add_point", &RealDiagram::add_point)
-            .def("sort", &RealDiagram::sort)
-            .def("save_as_txt", &RealDiagram::save_as_txt);
+            .def("__getitem__", &RealDiagram::get_diagram_in_dimension);
 
     std::string func_name;
 
