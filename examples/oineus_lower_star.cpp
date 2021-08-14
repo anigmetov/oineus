@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <random>
 
 #include <oineus/oineus.h>
 #include <opts/opts.h>
@@ -42,15 +43,22 @@ void test_ls_3()
 
     using IntGridPoint = IntGrid::GridPoint;
 
-    int n_rows = 3;
-    int n_cols = 3;
-    int n_zs = 3;
+    int n_rows = 4;
+    int n_cols = 4;
+    int n_zs = 4;
+    int size = n_rows * n_cols * n_zs;
 
     IntGridPoint dims {n_rows, n_cols, n_zs};
 
+    int seed = 1;
+    std::mt19937 gen(seed);
+    std::uniform_real_distribution<double> dis(0.0, 1.0);
+
     std::vector<double> values;
-    for(int i =0; i < n_rows * n_cols * n_zs; ++i)
-        values.push_back(i);
+    values.reserve(size);
+    for(int i =0; i < size; ++i) {
+        values.push_back(dis(gen));
+    }
 
     double* data = values.data();
 
