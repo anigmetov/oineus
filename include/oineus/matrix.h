@@ -12,378 +12,434 @@
 #include <numeric>
 #include <unordered_set>
 #include <chrono>
-#include <stdlib.h>
+#include <cstdlib>
+#include <stdexcept>
 
 #include "common_defs.h"
 #include "mem_reclamation.h"
 
-
 namespace oineus {
 
+template<typename Int_, typename Real_>
+class Filtration;
 
-    template<typename Int_, typename Real_>
-    class Filtration;
-
-    template<typename Real_>
-    class Diagrams;
+template<typename Real_>
+class Diagrams;
 
 
-    // contains indices of non-zero entries
-    template<typename Int>
-    using SparseColumn = std::vector<Int>;
+// contains indices of non-zero entries
+template<typename Int>
+using SparseColumn = std::vector<Int>;
 
-    // return index of the lowest non-zero in column i of r, -1 if empty
-    template<typename IdxType>
-    IdxType low(const SparseColumn<IdxType>* c)
-    {
-        return c->empty() ? -1 : c->back();
+// return index of the lowest non-zero in column i of r, -1 if empty
+template<typename IdxType>
+IdxType low(const SparseColumn<IdxType>* c)
+{
+    return c->empty() ? -1 : c->back();
+}
+
+template<typename IdxType>
+bool is_zero(const SparseColumn<IdxType>* c)
+{
+    return c->empty();
+}
+
+template<typename IdxType>
+void add_column(const SparseColumn<IdxType>* col_a, const SparseColumn<IdxType>* col_b, SparseColumn<IdxType>* sum)
+{
+    auto a_iter = col_a->cbegin();
+    auto b_iter = col_b->cbegin();
+
+    sum->clear();
+
+    while(true) {
+        if (a_iter == col_a->cend() && b_iter == col_b->cend()) {
+            break;
+        } else if (a_iter == col_a->cend() && b_iter != col_b->cend()) {
+            sum->push_back(*b_iter++);
+        } else if (a_iter != col_a->cend() && b_iter == col_b->cend()) {
+            sum->push_back(*a_iter++);
+        } else if (*a_iter < *b_iter) {
+            sum->push_back(*a_iter++);
+        } else if (*b_iter < *a_iter) {
+            sum->push_back(*b_iter++);
+        } else {
+            assert(*a_iter == *b_iter);
+            ++a_iter;
+            ++b_iter;
+        }
     }
+}
 
-    template<typename IdxType>
-    bool is_zero(const SparseColumn<IdxType>* c)
+template<typename IdxType_>
+struct RVColumns {
+    using IdxType = IdxType_;
+    using Column = SparseColumn<IdxType>;
+
+    Column r_column;
+    Column v_column;
+
+    RVColumns() = default;
+    RVColumns(const RVColumns& other) = default;
+    RVColumns(RVColumns&& other) noexcept = default;
+    RVColumns(Column&& _r, Column&& _v)
+            :r_column(_r), v_column(_v) { }
+
+    Column& operator[](size_t i)
     {
-        return c->empty();
-    }
-
-    template<typename IdxType>
-    void add_column(const SparseColumn<IdxType>* col_a, const SparseColumn<IdxType>* col_b, SparseColumn<IdxType>* sum)
-    {
-        auto a_iter = col_a->cbegin();
-        auto b_iter = col_b->cbegin();
-
-        sum->clear();
-
-        while(true) {
-            if (a_iter == col_a->cend() && b_iter == col_b->cend()) {
-                break;
-            } else if (a_iter == col_a->cend() && b_iter != col_b->cend()) {
-                sum->push_back(*b_iter++);
-            } else if (a_iter != col_a->cend() && b_iter == col_b->cend()) {
-                sum->push_back(*a_iter++);
-            } else if (*a_iter < *b_iter) {
-                sum->push_back(*a_iter++);
-            } else if (*b_iter < *a_iter) {
-                sum->push_back(*b_iter++);
-            } else {
-                assert(*a_iter == *b_iter);
-                ++a_iter;
-                ++b_iter;
-            }
+        switch(i) {
+        case 0: return r_column;
+        case 1: return v_column;
+        default: throw std::out_of_range("RVColumns has only two columns");
         }
     }
 
-
-    // TODO: clean up declaration - move to matrix?
-    template<class APSparseMatrix, class AtomicIdxVector, class Int, class MemoryReclaimC>
-    void parallel_reduction(APSparseMatrix& r, AtomicIdxVector& pivots, std::atomic<Int>& next_free_chunk,
-            const Params params, int thread_idx, MemoryReclaimC* mm, ThreadStats& stats, bool go_down)
+    const Column& operator[](size_t i) const
     {
-        using IntSparseColumn = SparseColumn<Int>;
-        using PSparseColumn = IntSparseColumn*;
+        switch(i) {
+        case 0: return r_column;
+        case 1: return v_column;
+        default: throw std::out_of_range("RVColumns has only two columns");
+        }
+    }
 
-        std::memory_order acq = params.acq_rel ? std::memory_order_acquire : std::memory_order_seq_cst;
-        std::memory_order rel = params.acq_rel ? std::memory_order_release : std::memory_order_seq_cst;
-        std::memory_order relax = params.acq_rel ? std::memory_order_relaxed : std::memory_order_seq_cst;
+    [[nodiscard]] bool is_zero() const
+    {
+        return oineus::is_zero(&r_column);
+    }
 
-        debug("thread {} started, mm = {}", thread_idx, (void*) (mm));
-        std::unique_ptr<IntSparseColumn> reduced_column(new IntSparseColumn);
-        std::unique_ptr<IntSparseColumn> reduced_column_final(new IntSparseColumn);
+    IdxType low() const
+    {
+        return oineus::low(&r_column);
+    }
 
-        const int n_cols = r.size();
+    void swap(RVColumns& other) noexcept
+    {
+        r_column.swap(other.r_column);
+        v_column.swap(other.v_column);
+    }
+};
 
-        do {
-            int my_chunk;
+template<typename IdxType>
+void add_rv_column(const RVColumns<IdxType>* col_a, const RVColumns<IdxType>* col_b, RVColumns<IdxType>* sum)
+{
+    for(size_t col_idx = 0; col_idx < 2; ++col_idx)
+        add_column(&((*col_a)[col_idx]), &((*col_b)[col_idx]), &((*sum)[col_idx]));
+}
 
-            if (go_down) {
-                my_chunk = next_free_chunk--;
-            } else {
-                my_chunk = next_free_chunk++;
-            }
+// TODO: clean up declaration - move to matrix?
+template<class RVMatrices, class AtomicIdxVector, class Int, class MemoryReclaimC>
+void parallel_reduction(RVMatrices& rv, AtomicIdxVector& pivots, std::atomic<Int>& next_free_chunk,
+        const Params params, int thread_idx, MemoryReclaimC* mm, ThreadStats& stats, bool go_down)
+{
+    using RVColumnC = RVColumns<Int>;
+    using PRVColumn = RVColumnC*;
 
-            int chunk_begin = std::max(0, my_chunk * params.chunk_size);
-            int chunk_end = std::min(n_cols, (my_chunk + 1) * params.chunk_size);
+    std::memory_order acq = params.acq_rel ? std::memory_order_acquire : std::memory_order_seq_cst;
+    std::memory_order rel = params.acq_rel ? std::memory_order_release : std::memory_order_seq_cst;
+    std::memory_order relax = params.acq_rel ? std::memory_order_relaxed : std::memory_order_seq_cst;
 
-            if (chunk_begin >= n_cols || chunk_end <= 0) {
-                debug("Thread {} finished", thread_idx);
-                return;
-            }
+    debug("thread {} started, mm = {}", thread_idx, (void*) (mm));
+    std::unique_ptr<RVColumnC> reduced_r_v_column(new RVColumnC);
+    std::unique_ptr<RVColumnC> reduced_r_v_column_final(new RVColumnC);
 
-            debug("thread {}, processing chunk {}, from {} to {}, n_cols = {}", thread_idx, my_chunk, chunk_begin, chunk_end, n_cols);
+    const int n_cols = rv.size();
 
-            int current_column_idx = chunk_begin;
-            int next_column = current_column_idx + 1;
+    do {
+        int my_chunk;
 
-            while(current_column_idx < chunk_end) {
+        if (go_down) {
+            my_chunk = next_free_chunk--;
+        } else {
+            my_chunk = next_free_chunk++;
+        }
 
-                debug("thread {}, column = {}", thread_idx, current_column_idx);
+        int chunk_begin = std::max(0, my_chunk * params.chunk_size);
+        int chunk_end = std::min(n_cols, (my_chunk + 1) * params.chunk_size);
 
-                PSparseColumn current_column = r[current_column_idx].load(acq);
-                PSparseColumn current_column_orig = current_column;
+        if (chunk_begin >= n_cols || chunk_end <= 0) {
+            debug("Thread {} finished", thread_idx);
+            return;
+        }
 
-                bool update_column = false;
+        debug("thread {}, processing chunk {}, from {} to {}, n_cols = {}", thread_idx, my_chunk, chunk_begin, chunk_end, n_cols);
 
-                int pivot_idx;
+        int current_column_idx = chunk_begin;
+        int next_column = current_column_idx + 1;
 
-                if (params.clearing_opt) {
-                    if (!is_zero(current_column)) {
-                        int c_pivot_idx = pivots[current_column_idx].load(acq);
-                        if (c_pivot_idx >= 0) {
-                            // unset pivot from current_column_idx, if necessary
-                            int c_current_low = low(current_column);
-                            int c_current_column_idx = current_column_idx;
-                            pivots[c_current_low].compare_exchange_weak(c_current_column_idx, -1, rel, relax);
+        while(current_column_idx < chunk_end) {
 
-                            // zero current column
-                            current_column = new IntSparseColumn();
-                            r[current_column_idx].store(current_column, rel);
-                            mm->retire(current_column_orig);
-                            current_column_orig = current_column;
+            debug("thread {}, column = {}", thread_idx, current_column_idx);
 
-                            stats.n_cleared++;
-                        }
+            PRVColumn current_r_v_column = rv[current_column_idx].load(acq);
+            PRVColumn original_r_v_column = current_r_v_column;
+
+            bool update_column = false;
+
+            int pivot_idx;
+
+            if (params.clearing_opt) {
+                if (!current_r_v_column->is_zero()) {
+                    int c_pivot_idx = pivots[current_column_idx].load(acq);
+                    if (c_pivot_idx >= 0) {
+                        // unset pivot from current_column_idx, if necessary
+                        int c_current_low = current_r_v_column->low();
+                        int c_current_column_idx = current_column_idx;
+                        pivots[c_current_low].compare_exchange_weak(c_current_column_idx, -1, rel, relax);
+
+                        // zero current column
+                        current_r_v_column = new RVColumnC();
+                        rv[current_column_idx].store(current_r_v_column, rel);
+                        mm->retire(original_r_v_column);
+                        original_r_v_column = current_r_v_column;
+
+                        stats.n_cleared++;
                     }
                 }
+            }
 
-                while(!is_zero(current_column)) {
+            while(!current_r_v_column->is_zero()) {
 
-                    int current_low = low(current_column);
-                    PSparseColumn pivot_column = nullptr;
+                int current_low = current_r_v_column->low();
+                PRVColumn pivot_r_v_column = nullptr;
 
-                    debug("thread {}, column = {}, low = {}", thread_idx, current_column_idx, current_low);
+                debug("thread {}, column = {}, low = {}", thread_idx, current_column_idx, current_low);
+                std::cerr << "thread " << thread_idx << ", column = " << current_column_idx <<", low = " << current_low << std::endl;
 
-                    do {
-                        pivot_idx = pivots[current_low].load(acq);
-                        if (pivot_idx >= 0) {
-                            pivot_column = r[pivot_idx].load(acq);
-                        }
+                do {
+                    pivot_idx = pivots[current_low].load(acq);
+                    if (pivot_idx >= 0) {
+                        pivot_r_v_column = rv[pivot_idx].load(acq);
                     }
-                    while(pivot_idx >= 0 && low(pivot_column) != current_low);
-
-                    if (pivot_idx == -1) {
-                        if (pivots[current_low].compare_exchange_weak(pivot_idx, current_column_idx, rel, relax)) {
-                            break;
-                        }
-                    } else if (pivot_idx < current_column_idx) {
-                        // pivot to the left: kill lowest one in current column
-                        add_column(current_column, pivot_column, reduced_column.get());
-                        update_column = true;
-                        reduced_column_final->swap(*reduced_column);
-                        current_column = reduced_column_final.get();
-                    } else if (pivot_idx > current_column_idx) {
-
-                        stats.n_right_pivots++;
-
-                        // pivot to the right: switch to reducing r[pivot_idx]
-                        if (update_column) {
-                            // write copy of reduced column into matrix
-                            current_column = new IntSparseColumn(reduced_column_final->begin(),
-                                    reduced_column_final->end());
-                            r[current_column_idx].store(current_column, rel);
-                            mm->retire(current_column_orig);
-                            current_column_orig = current_column;
-                            update_column = false;
-                        }
-
-                        // set current column as new pivot, start reducing column r[pivot_idx]
-                        if (pivots[current_low].compare_exchange_weak(pivot_idx, current_column_idx, rel, relax)) {
-                            current_column_idx = pivot_idx;
-                            current_column = r[current_column_idx].load(acq);
-                            current_column_orig = current_column;
-
-                        }
-                    }
-                } // reduction loop
-
-                if (update_column) {
-                    // write copy of reduced column to matrix
-                    // TODO: why not use reduced_column_final directly?
-                    current_column = new IntSparseColumn(reduced_column_final->begin(), reduced_column_final->end());
-                    r[current_column_idx].store(current_column, rel);
-                    mm->retire(current_column_orig);
                 }
+                while(pivot_idx >= 0 && pivot_r_v_column->low() != current_low);
 
-                current_column_idx = next_column;
-                next_column = current_column_idx + 1;
+                if (pivot_idx == -1) {
+                    if (pivots[current_low].compare_exchange_weak(pivot_idx, current_column_idx, rel, relax)) {
+                        break;
+                    }
+                } else if (pivot_idx < current_column_idx) {
+                    // pivot to the left: kill lowest one in current column
+                    add_rv_column(current_r_v_column, pivot_r_v_column, reduced_r_v_column.get());
 
-            } //loop over columns
+                    update_column = true;
 
-            mm->quiescent();
-        }
-        while(true); // loop over chunks
+                    reduced_r_v_column_final->swap(*reduced_r_v_column);
+                    current_r_v_column = reduced_r_v_column_final.get();
+                } else if (pivot_idx > current_column_idx) {
+
+                    stats.n_right_pivots++;
+
+                    // pivot to the right: switch to reducing r[pivot_idx]
+                    if (update_column) {
+                        // create copy of reduced column and write in into matrix
+                        auto new_r_v_column = new RVColumnC(*reduced_r_v_column_final);
+                        rv[current_column_idx].store(new_r_v_column, rel);
+                        // original column can be deleted
+                        mm->retire(original_r_v_column);
+                        original_r_v_column = new_r_v_column;
+                        update_column = false;
+                    }
+
+                    // set current column as new pivot, start reducing column r[pivot_idx]
+                    if (pivots[current_low].compare_exchange_weak(pivot_idx, current_column_idx, rel, relax)) {
+                        current_column_idx = pivot_idx;
+                        current_r_v_column = rv[current_column_idx].load(acq);
+                        original_r_v_column = current_r_v_column;
+                    }
+                }
+            } // reduction loop
+
+            if (update_column) {
+                // write copy of reduced column to matrix
+                // TODO: why not use reduced_r_column_final directly?
+                current_r_v_column = new RVColumnC(*reduced_r_v_column_final);
+                rv[current_column_idx].store(current_r_v_column, rel);
+                mm->retire(original_r_v_column);
+            }
+
+            current_column_idx = next_column;
+            next_column = current_column_idx + 1;
+
+        } //loop over columns
+
+        mm->quiescent();
+    }
+    while(true); // loop over chunks
+}
+
+template<typename Int_>
+struct SparseMatrix {
+
+    using Int = Int_;
+    using IntSparseColumn = SparseColumn<Int>;
+
+    std::vector<IntSparseColumn> data;
+
+    [[nodiscard]] size_t size() const { return data.size(); }
+
+    using AtomicIdxVector = std::vector<std::atomic<Int>>;
+
+    void append(SparseMatrix&& other)
+    {
+        data.insert(data.end(),
+                std::make_move_iterator(other.data.begin()),
+                std::make_move_iterator(other.data.end()));
     }
 
+    void reduce_parallel(Params& params)
+    {
+        using namespace std::placeholders;
 
-    template<typename Int_>
-    struct SparseMatrix {
+        size_t n_cols = size();
 
-        using Int = Int_;
-        using IntSparseColumn = SparseColumn<Int>;
+        using RVColumnC = RVColumns<Int>;
+        using APRVColumn = std::atomic<RVColumnC*>;
+        using RVMatrix = std::vector<APRVColumn>;
+        using MemoryReclaimC = MemoryReclaim<RVColumnC>;
 
-        std::vector<IntSparseColumn> data;
-        std::vector<Int> column_dimensions_;
+        RVMatrix r_v_matrix(data.size());
 
-        size_t size() const { return data.size(); }
+        // move data to r_v_matrix
+        for(size_t i = 0; i < n_cols; ++i) {
+            IntSparseColumn v_column(n_cols, 0);
+            v_column[i] = 1;
+            r_v_matrix[i] = new RVColumnC(std::move(data[i]), std::move(v_column));
+        }
+        debug("Matrix moved");
 
-        // contains indices of non-zero entries
-        using PSparseColumn = IntSparseColumn*;
-        using APSparseColumn = std::atomic<IntSparseColumn*>;
-        using APSparseMatrix = std::vector<APSparseColumn>;
-        using MemoryReclaimC = MemoryReclaim<IntSparseColumn>;
-        using AtomicIdxVector = std::vector<std::atomic<Int>>;
+        std::atomic<Int> counter;
+        counter = 0;
 
-        void append(SparseMatrix&& other)
-        {
-            data.insert(data.end(),
-                    std::make_move_iterator(other.data.begin()),
-                    std::make_move_iterator(other.data.end()));
+        std::atomic<Int> next_free_chunk;
+
+        AtomicIdxVector pivots(n_cols);
+        for(auto& p : pivots) {
+            p = -1;
+        }
+        debug("Pivots initialized");
+
+        int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+
+        std::vector<std::thread> ts;
+        std::vector<std::unique_ptr<MemoryReclaimC>> mms;
+        std::vector<ThreadStats> stats;
+
+        mms.reserve(n_threads);
+        stats.reserve(n_threads);
+
+        bool go_down = false;
+
+        if (go_down) {
+            next_free_chunk = n_cols / params.chunk_size;
+        } else {
+            next_free_chunk = 0;
         }
 
-        void reduce_parallel(Params& params)
-        {
+        std::chrono::high_resolution_clock timer;
+        auto start_time = timer.now();
 
-            using namespace std::placeholders;
+        for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
 
-            // copy r
-            APSparseMatrix r_matrix(data.size());
-            for(size_t i = 0; i < data.size(); ++i) {
-                r_matrix[i] = new IntSparseColumn(data[i].cbegin(), data[i].cend());
-            }
+            mms.emplace_back(new MemoryReclaimC(n_threads, counter, thread_idx));
+            stats.emplace_back(thread_idx);
 
-            debug("Matrix copied");
-
-            std::atomic<Int> counter;
-
-            counter = 0;
-
-            std::atomic<Int> next_free_chunk;
-            Int n_cols = size();
-
-            AtomicIdxVector pivots(n_cols);
-            for(auto& p : pivots) {
-                p = -1;
-            }
-            debug("Pivots initialized");
-
-            int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
-
-            std::vector<std::thread> ts;
-            std::vector<std::unique_ptr<MemoryReclaimC>> mms;
-            std::vector<ThreadStats> stats;
-
-            mms.reserve(n_threads);
-            stats.reserve(n_threads);
-
-            bool go_down = false;
-
-            if (go_down) {
-                next_free_chunk = n_cols / params.chunk_size;
-            } else {
-                next_free_chunk = 0;
-            }
-
-            std::chrono::high_resolution_clock timer;
-            auto start_time = timer.now();
-
-            for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
-
-                mms.emplace_back(new MemoryReclaimC(n_threads, counter, thread_idx));
-                stats.emplace_back(thread_idx);
-
-                ts.emplace_back(parallel_reduction<APSparseMatrix, AtomicIdxVector, Int, MemoryReclaimC>,
-                        std::ref(r_matrix), std::ref(pivots), std::ref(next_free_chunk),
-                        params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]), go_down);
+            ts.emplace_back(parallel_reduction<RVMatrix, AtomicIdxVector, Int, MemoryReclaimC>,
+                    std::ref(r_v_matrix), std::ref(pivots), std::ref(next_free_chunk),
+                    params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]), go_down);
 
 #ifdef __linux__
-                cpu_set_t cpuset;
-                CPU_ZERO(&cpuset);
-                CPU_SET(thread_idx, &cpuset);
-                int rc = pthread_setaffinity_np(ts[thread_idx].native_handle(), sizeof(cpu_set_t), &cpuset);
-                if (rc != 0) { std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n"; }
+            cpu_set_t cpuset;
+            CPU_ZERO(&cpuset);
+            CPU_SET(thread_idx, &cpuset);
+            int rc = pthread_setaffinity_np(ts[thread_idx].native_handle(), sizeof(cpu_set_t), &cpuset);
+            if (rc != 0) { std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n"; }
 #endif
+        }
+
+        info("{} threads created", ts.size());
+
+        for(auto& t : ts) {
+            t.join();
+        }
+
+        std::chrono::duration<double> elapsed = timer.now() - start_time;
+
+        params.elapsed = elapsed.count();
+
+        if (params.print_time) {
+            for(auto& s : stats) {
+                info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
             }
 
-            info("{} threads created", ts.size());
+            info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, elapsed.count());
+        }
 
-            for(auto& t : ts) {
-                t.join();
-            }
+        // write reduced matrix back to r
+        for(size_t i = 0; i < data.size(); ++i) {
+            auto p = r_v_matrix[i].load(std::memory_order_relaxed);
+            data[i] = p->r_column;
+        }
+    }
 
-            std::chrono::duration<double> elapsed = timer.now() - start_time;
+    template<typename Real>
+    Diagrams<Real> diagram(const Filtration<Int, Real>& fil) const
+    {
+        Diagrams<Real> result;
 
-            params.elapsed = elapsed.count();
+        std::unordered_set<Int> rows_with_lowest_one;
 
-            if (params.print_time) {
-                for(auto& s : stats) {
-                    info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
+        for(size_t i = 0; i < data.size(); ++i) {
+            if (!is_zero(&data[i]))
+                rows_with_lowest_one.insert(low(&data[i]));
+        }
+
+        for(size_t col_idx = 0; col_idx < data.size(); ++col_idx) {
+            auto col = &data[col_idx];
+
+            if (is_zero(col)) {
+                if (rows_with_lowest_one.count(col_idx) == 0) {
+                    // point at infinity
+
+                    dim_type dim = fil.dim_by_sorted_id(col_idx);
+                    Real birth = fil.value_by_sorted_id(col_idx);
+                    Real death = std::numeric_limits<Real>::infinity();
+
+                    result.add_point(dim, birth, death);
                 }
+            } else {
+                // finite point
+                Int birth_idx = low(col);
+                Int death_idx = col_idx;
 
-                info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, elapsed.count());
-            }
+                dim_type dim = fil.dim_by_sorted_id(birth_idx);
 
-            // write reduced matrix back to r
-            for(size_t i = 0; i < data.size(); ++i) {
-                data[i] = *r_matrix[i];
+                Real birth = fil.value_by_sorted_id(birth_idx);
+                Real death = fil.value_by_sorted_id(death_idx);
+
+                if (birth != death)
+                    result.add_point(dim, birth, death);
             }
         }
 
-        template<typename Real>
-        Diagrams<Real> diagram(const Filtration<Int, Real>& fil) const
-        {
-            Diagrams<Real> result;
-
-            std::unordered_set<Int> rows_with_lowest_one;
-
-            for(size_t i = 0; i < data.size(); ++i) {
-                if (!is_zero(&data[i]))
-                    rows_with_lowest_one.insert(low(&data[i]));
-            }
-
-            for(size_t col_idx = 0; col_idx < data.size(); ++col_idx) {
-                auto col = &data[col_idx];
-
-                if (is_zero(col)) {
-                    if (rows_with_lowest_one.count(col_idx) == 0) {
-                        // point at infinity
-
-                        dim_type dim = fil.dim_by_sorted_id(col_idx);
-                        Real birth = fil.value_by_sorted_id(col_idx);
-                        Real death = std::numeric_limits<Real>::infinity();
-
-                        result.add_point(dim, birth, death);
-                    }
-                } else {
-                    // finite point
-                    Int birth_idx = low(col);
-                    Int death_idx = col_idx;
-
-                    dim_type dim = fil.dim_by_sorted_id(birth_idx);
-
-                    Real birth = fil.value_by_sorted_id(birth_idx);
-                    Real death = fil.value_by_sorted_id(death_idx);
-
-                    if (birth != death)
-                        result.add_point(dim, birth, death);
-                }
-            }
-
-            return result;
-        }
-
-        template<typename Int>
-        friend std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m);
-    };
+        return result;
+    }
 
     template<typename Int>
-    std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m)
-    {
-        out << "Matrix[\n";
-        for(size_t col_idx = 0; col_idx < m.data.size(); ++col_idx) {
-            out << "Column " << col_idx << ": ";
-            for(const auto& x : m.data[col_idx])
-                out << x << " ";
-            out << "\n";
-        }
-        out << "]\n";
-        return out;
+    friend std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m);
+};
+
+template<typename Int>
+std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m)
+{
+    out << "Matrix[\n";
+    for(size_t col_idx = 0; col_idx < m.data.size(); ++col_idx) {
+        out << "Column " << col_idx << ": ";
+        for(const auto& x : m.data[col_idx])
+            out << x << " ";
+        out << "\n";
     }
+    out << "]\n";
+    return out;
+}
 }
