@@ -5,8 +5,8 @@ if(MSVC)
     target_compile_options(oineus_lower_star PRIVATE /W4 /WX)
     target_compile_options(oineus_vectorizer PRIVATE /W4 /WX)
 else()
-    target_compile_options(oineus_lower_star PRIVATE -Wall -Wextra -pedantic -Werror)
-    target_compile_options(oineus_vectorizer PRIVATE -Wall -Wextra -pedantic -Werror)
+    target_compile_options(oineus_lower_star PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(oineus_vectorizer PRIVATE -Wall -Wextra -pedantic)
 endif()
 
 target_include_directories(oineus_lower_star PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include
