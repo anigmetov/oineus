@@ -5,6 +5,7 @@
 #include <vector>
 #include <sstream>
 #include <chrono>
+#include <functional>
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -36,8 +37,8 @@ public:
         }
 
         py::capsule free_when_done(ptr, [](void* p) {
-            Real* pp = reinterpret_cast<Real*>(p);
-            delete[] pp;
+          Real* pp = reinterpret_cast<Real*>(p);
+          delete[] pp;
         });
 
         py::array::ShapeContainer shape {static_cast<long int>(dgm.size()), 2L};
@@ -51,9 +52,12 @@ private:
     oineus::Diagrams<Real> diagrams_;
 };
 
+template<class Int, class Real>
+using DiagramV = std::pair<PyOineusDiagrams<Real>, typename oineus::SparseMatrix<Int>::MatrixData>;
+
 template<class Int, class Real, size_t D>
-PyOineusDiagrams<Real>
-compute_diagrams_ls_freudenthal(py::array_t<Real> data, bool negate, bool wrap, dim_type top_d, int n_threads)
+typename oineus::Grid<Int, Real, D>
+get_grid(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool wrap)
 {
     using Grid = oineus::Grid<Int, Real, D>;
     using GridPoint = typename Grid::GridPoint;
@@ -69,32 +73,61 @@ compute_diagrams_ls_freudenthal(py::array_t<Real> data, bool negate, bool wrap, 
     for(dim_type d = 0; d < D; ++d)
         dims[d] = data.shape(d);
 
-    Grid grid {dims, wrap, pdata};
+    return Grid(dims, wrap, pdata);
+}
 
-    auto start = std::chrono::steady_clock::now();
-    auto fil = grid.freudenthal_filtration(top_d, negate);
-    auto end = std::chrono::steady_clock::now();
-    std::chrono::duration<double> elapsed_fil = end - start;
-    std::cerr << "filtration created in " << elapsed_fil.count() << std::endl;
+template<class Int, class Real, size_t D>
+typename oineus::Filtration<Int, Real>
+get_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type top_d, int n_threads)
+{
+    auto grid = get_grid<Int, Real, D>(data, wrap);
+    auto res = grid.freudenthal_filtration(top_d, negate, n_threads);
+    return res;
+}
 
-    start = std::chrono::steady_clock::now();
+template<class Int, class Real, size_t D>
+typename oineus::SparseMatrix<Int>::MatrixData
+get_boundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type top_d, int n_threads)
+{
+    auto fil = get_filtration<Int, Real, D>(data, negate, wrap, top_d, n_threads);
     auto bm = fil.boundary_matrix_full();
-    end = std::chrono::steady_clock::now();
-    std::chrono::duration<double> elapsed_bm = end - start;
-    std::cerr << "matrix created in " << elapsed_fil.count() << std::endl;
+    return bm.data;
+}
 
-    start = std::chrono::steady_clock::now();
+template<class Int, class Real, size_t D>
+DiagramV<Int, Real>
+compute_diagrams_and_v_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type top_d, int n_threads)
+{
+    auto fil = get_filtration<Int, Real, D>(data, negate, wrap, top_d, n_threads);
+    auto d_matrix = fil.boundary_matrix_full();
+
     oineus::Params params;
+
     params.sort_dgms = false;
     params.clearing_opt = true;
-//    params.print_time = true;
     params.n_threads = n_threads;
-    bm.reduce_parallel(params);
-    end = std::chrono::steady_clock::now();
-    std::chrono::duration<double> elapsed_red = end - start;
-    std::cerr << "matrix reduced in " << elapsed_red.count() << std::endl;
 
-    return PyOineusDiagrams<Real>(bm.diagram(fil));
+    d_matrix.reduce_parallel(params);
+
+    return {PyOineusDiagrams<Real>(d_matrix.diagram(fil)), d_matrix.v_data};
+}
+
+template<class Int, class Real, size_t D>
+PyOineusDiagrams<Real>
+compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type top_d, int n_threads)
+{
+    auto fil = get_filtration<Int, Real, D>(data, negate, wrap, top_d, n_threads);
+    auto d_matrix = fil.boundary_matrix_full();
+
+    oineus::Params params;
+
+    params.sort_dgms = false;
+    params.clearing_opt = true;
+    params.n_threads = n_threads;
+
+    d_matrix.reduce_parallel(params);
+
+    return PyOineusDiagrams<Real>(d_matrix.diagram(fil));
 }
 
 template<class Int, class Real>
@@ -113,17 +146,17 @@ void init_oineus(py::module& m, std::string suffix)
             .def_readwrite("birth", &RealDgmPoint::birth)
             .def_readwrite("death", &RealDgmPoint::death)
             .def("__getitem__", [](const RealDgmPoint& p, int i) {
-                if (i == 0)
-                    return p.birth;
-                else if (i == 1)
-                    return p.death;
-                else
-                    throw std::out_of_range("");
+              if (i == 0)
+                  return p.birth;
+              else if (i == 1)
+                  return p.death;
+              else
+                  throw std::out_of_range("i must be 0 or 1");
             })
             .def("__repr__", [](const RealDgmPoint& p) {
-                std::stringstream ss;
-                ss << p;
-                return ss.str();
+              std::stringstream ss;
+              ss << p;
+              return ss.str();
             });
 
     py::class_<RealDiagram>(m, dgm_class_name.c_str())
@@ -133,6 +166,7 @@ void init_oineus(py::module& m, std::string suffix)
 
     std::string func_name;
 
+    // diagrams
     func_name = "compute_diagrams_ls" + suffix + "_1";
     m.def(func_name.c_str(), &compute_diagrams_ls_freudenthal<Int, Real, 1>);
 
@@ -141,6 +175,26 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "compute_diagrams_ls" + suffix + "_3";
     m.def(func_name.c_str(), &compute_diagrams_ls_freudenthal<Int, Real, 3>);
+
+    // diagrams and V matrix
+    func_name = "compute_diagrams_and_v_ls" + suffix + "_1";
+    m.def(func_name.c_str(), &compute_diagrams_and_v_ls_freudenthal<Int, Real, 1>);
+
+    func_name = "compute_diagrams_and_v_ls" + suffix + "_2";
+    m.def(func_name.c_str(), &compute_diagrams_and_v_ls_freudenthal<Int, Real, 2>);
+
+    func_name = "compute_diagrams_and_v_ls" + suffix + "_3";
+    m.def(func_name.c_str(), &compute_diagrams_and_v_ls_freudenthal<Int, Real, 3>);
+
+    // boundary matrix as vector of columns
+    func_name = "get_boundary_matrix" + suffix + "_1";
+    m.def(func_name.c_str(), &get_boundary_matrix<Int, Real, 1>);
+
+    func_name = "get_boundary_matrix" + suffix + "_2";
+    m.def(func_name.c_str(), &get_boundary_matrix<Int, Real, 2>);
+
+    func_name = "get_boundary_matrix" + suffix + "_3";
+    m.def(func_name.c_str(), &get_boundary_matrix<Int, Real, 3>);
 }
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

@@ -24,7 +24,7 @@ template<typename Int_, typename Real_>
 class Filtration;
 
 template<typename Real_>
-class Diagrams;
+struct Diagrams;
 
 
 // contains indices of non-zero entries
@@ -204,7 +204,6 @@ void parallel_reduction(RVMatrices& rv, AtomicIdxVector& pivots, std::atomic<Int
                 PRVColumn pivot_r_v_column = nullptr;
 
                 debug("thread {}, column = {}, low = {}", thread_idx, current_column_idx, current_low);
-                std::cerr << "thread " << thread_idx << ", column = " << current_column_idx <<", low = " << current_low << std::endl;
 
                 do {
                     pivot_idx = pivots[current_low].load(acq);
@@ -270,165 +269,183 @@ void parallel_reduction(RVMatrices& rv, AtomicIdxVector& pivots, std::atomic<Int
 
 template<typename Int_>
 struct SparseMatrix {
-
+    // types
     using Int = Int_;
     using IntSparseColumn = SparseColumn<Int>;
+    using MatrixData = std::vector<IntSparseColumn>;
+    using AtomicIdxVector = std::vector<std::atomic<Int>>;
 
-    std::vector<IntSparseColumn> data;
+    // data
+    MatrixData data;
+    MatrixData v_data;
+    bool is_reduced {false};
+
+    // methods
 
     [[nodiscard]] size_t size() const { return data.size(); }
 
-    using AtomicIdxVector = std::vector<std::atomic<Int>>;
+    void append(SparseMatrix&& other);
 
-    void append(SparseMatrix&& other)
-    {
-        data.insert(data.end(),
-                std::make_move_iterator(other.data.begin()),
-                std::make_move_iterator(other.data.end()));
-    }
-
-    void reduce_parallel(Params& params)
-    {
-        using namespace std::placeholders;
-
-        size_t n_cols = size();
-
-        using RVColumnC = RVColumns<Int>;
-        using APRVColumn = std::atomic<RVColumnC*>;
-        using RVMatrix = std::vector<APRVColumn>;
-        using MemoryReclaimC = MemoryReclaim<RVColumnC>;
-
-        RVMatrix r_v_matrix(data.size());
-
-        // move data to r_v_matrix
-        for(size_t i = 0; i < n_cols; ++i) {
-            IntSparseColumn v_column(n_cols, 0);
-            v_column[i] = 1;
-            r_v_matrix[i] = new RVColumnC(std::move(data[i]), std::move(v_column));
-        }
-        debug("Matrix moved");
-
-        std::atomic<Int> counter;
-        counter = 0;
-
-        std::atomic<Int> next_free_chunk;
-
-        AtomicIdxVector pivots(n_cols);
-        for(auto& p : pivots) {
-            p = -1;
-        }
-        debug("Pivots initialized");
-
-        int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
-
-        std::vector<std::thread> ts;
-        std::vector<std::unique_ptr<MemoryReclaimC>> mms;
-        std::vector<ThreadStats> stats;
-
-        mms.reserve(n_threads);
-        stats.reserve(n_threads);
-
-        bool go_down = false;
-
-        if (go_down) {
-            next_free_chunk = n_cols / params.chunk_size;
-        } else {
-            next_free_chunk = 0;
-        }
-
-        std::chrono::high_resolution_clock timer;
-        auto start_time = timer.now();
-
-        for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
-
-            mms.emplace_back(new MemoryReclaimC(n_threads, counter, thread_idx));
-            stats.emplace_back(thread_idx);
-
-            ts.emplace_back(parallel_reduction<RVMatrix, AtomicIdxVector, Int, MemoryReclaimC>,
-                    std::ref(r_v_matrix), std::ref(pivots), std::ref(next_free_chunk),
-                    params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]), go_down);
-
-#ifdef __linux__
-            cpu_set_t cpuset;
-            CPU_ZERO(&cpuset);
-            CPU_SET(thread_idx, &cpuset);
-            int rc = pthread_setaffinity_np(ts[thread_idx].native_handle(), sizeof(cpu_set_t), &cpuset);
-            if (rc != 0) { std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n"; }
-#endif
-        }
-
-        info("{} threads created", ts.size());
-
-        for(auto& t : ts) {
-            t.join();
-        }
-
-        std::chrono::duration<double> elapsed = timer.now() - start_time;
-
-        params.elapsed = elapsed.count();
-
-        if (params.print_time) {
-            for(auto& s : stats) {
-                info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
-            }
-
-            info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, elapsed.count());
-        }
-
-        // write reduced matrix back to r
-        for(size_t i = 0; i < data.size(); ++i) {
-            auto p = r_v_matrix[i].load(std::memory_order_relaxed);
-            data[i] = p->r_column;
-        }
-    }
+    void reduce_parallel(Params& params);
 
     template<typename Real>
-    Diagrams<Real> diagram(const Filtration<Int, Real>& fil) const
-    {
-        Diagrams<Real> result;
-
-        std::unordered_set<Int> rows_with_lowest_one;
-
-        for(size_t i = 0; i < data.size(); ++i) {
-            if (!is_zero(&data[i]))
-                rows_with_lowest_one.insert(low(&data[i]));
-        }
-
-        for(size_t col_idx = 0; col_idx < data.size(); ++col_idx) {
-            auto col = &data[col_idx];
-
-            if (is_zero(col)) {
-                if (rows_with_lowest_one.count(col_idx) == 0) {
-                    // point at infinity
-
-                    dim_type dim = fil.dim_by_sorted_id(col_idx);
-                    Real birth = fil.value_by_sorted_id(col_idx);
-                    Real death = std::numeric_limits<Real>::infinity();
-
-                    result.add_point(dim, birth, death);
-                }
-            } else {
-                // finite point
-                Int birth_idx = low(col);
-                Int death_idx = col_idx;
-
-                dim_type dim = fil.dim_by_sorted_id(birth_idx);
-
-                Real birth = fil.value_by_sorted_id(birth_idx);
-                Real death = fil.value_by_sorted_id(death_idx);
-
-                if (birth != death)
-                    result.add_point(dim, birth, death);
-            }
-        }
-
-        return result;
-    }
+    Diagrams<Real> diagram(const Filtration<Int, Real>& fil) const;
 
     template<typename Int>
     friend std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m);
 };
 
+template<class Int>
+void SparseMatrix<Int>::append(SparseMatrix&& other)
+{
+    data.insert(data.end(),
+            std::make_move_iterator(other.data.begin()),
+            std::make_move_iterator(other.data.end()));
+}
+
+template<class Int>
+void SparseMatrix<Int>::reduce_parallel(Params& params)
+{
+    using namespace std::placeholders;
+
+    size_t n_cols = size();
+
+    v_data = std::vector<IntSparseColumn>(n_cols);
+
+    using RVColumnC = RVColumns<Int>;
+    using APRVColumn = std::atomic<RVColumnC*>;
+    using RVMatrix = std::vector<APRVColumn>;
+    using MemoryReclaimC = MemoryReclaim<RVColumnC>;
+
+    RVMatrix r_v_matrix(n_cols);
+
+    // move data to r_v_matrix
+    for(size_t i = 0; i < n_cols; ++i) {
+        IntSparseColumn v_column = {static_cast<Int>(i)};
+        r_v_matrix[i] = new RVColumnC(std::move(data[i]), std::move(v_column));
+    }
+    debug("Matrix moved");
+
+    std::atomic<Int> counter;
+    counter = 0;
+
+    std::atomic<Int> next_free_chunk;
+
+    AtomicIdxVector pivots(n_cols);
+    for(auto& p : pivots) {
+        p.store(-1, std::memory_order_relaxed);
+    }
+    debug("Pivots initialized");
+
+    int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+
+    std::vector<std::thread> ts;
+    std::vector<std::unique_ptr<MemoryReclaimC>> mms;
+    std::vector<ThreadStats> stats;
+
+    mms.reserve(n_threads);
+    stats.reserve(n_threads);
+
+    bool go_down = false;
+
+    if (go_down) {
+        next_free_chunk = n_cols / params.chunk_size;
+    } else {
+        next_free_chunk = 0;
+    }
+
+    std::chrono::high_resolution_clock timer;
+    auto start_time = timer.now();
+
+    for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
+
+        mms.emplace_back(new MemoryReclaimC(n_threads, counter, thread_idx));
+        stats.emplace_back(thread_idx);
+
+        ts.emplace_back(parallel_reduction<RVMatrix, AtomicIdxVector, Int, MemoryReclaimC>,
+                std::ref(r_v_matrix), std::ref(pivots), std::ref(next_free_chunk),
+                params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]), go_down);
+
+#ifdef __linux__
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(thread_idx, &cpuset);
+        int rc = pthread_setaffinity_np(ts[thread_idx].native_handle(), sizeof(cpu_set_t), &cpuset);
+        if (rc != 0) { std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n"; }
+#endif
+    }
+
+    info("{} threads created", ts.size());
+
+    for(auto& t : ts) {
+        t.join();
+    }
+
+    std::chrono::duration<double> elapsed = timer.now() - start_time;
+
+    params.elapsed = elapsed.count();
+
+    if (params.print_time) {
+        for(auto& s : stats) { info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots); }
+        info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, elapsed.count());
+    }
+
+    // write reduced matrix back, collect V matrix, mark as reduced
+    for(size_t i = 0; i < n_cols; ++i) {
+        auto p = r_v_matrix[i].load(std::memory_order_relaxed);
+        data[i] = p->r_column;
+        v_data[i] = p->v_column;
+    }
+
+    is_reduced = true;
+}
+
+template<class Int>
+template<class Real>
+Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real>& fil) const
+{
+    if (not is_reduced)
+        throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
+
+    Diagrams<Real> result;
+
+    std::unordered_set<Int> rows_with_lowest_one;
+
+    for(size_t i = 0; i < data.size(); ++i) {
+        if (!is_zero(&data[i]))
+            rows_with_lowest_one.insert(low(&data[i]));
+    }
+
+    for(size_t col_idx = 0; col_idx < data.size(); ++col_idx) {
+        auto col = &data[col_idx];
+
+        if (is_zero(col)) {
+            if (rows_with_lowest_one.count(col_idx) == 0) {
+                // point at infinity
+
+                dim_type dim = fil.dim_by_sorted_id(col_idx);
+                Real birth = fil.value_by_sorted_id(col_idx);
+                Real death = std::numeric_limits<Real>::infinity();
+
+                result.add_point(dim, birth, death);
+            }
+        } else {
+            // finite point
+            Int birth_idx = low(col);
+            Int death_idx = col_idx;
+
+            dim_type dim = fil.dim_by_sorted_id(birth_idx);
+
+            Real birth = fil.value_by_sorted_id(birth_idx);
+            Real death = fil.value_by_sorted_id(death_idx);
+
+            if (birth != death)
+                result.add_point(dim, birth, death);
+        }
+    }
+
+    return result;
+}
 template<typename Int>
 std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m)
 {
