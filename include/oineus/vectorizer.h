@@ -45,7 +45,7 @@ std::vector<RPoint<Real>> transform_rotate_45(const typename Diagrams<Real>::Dgm
 {
     std::vector<RPoint<Real>> result;
     result.reserve(dgm.size());
-    constexpr Real sq2 = sqrt(2);
+    const Real sq2 = sqrt(2);
     for (const auto& dp : dgm) {
 
         if (dp.is_inf())
