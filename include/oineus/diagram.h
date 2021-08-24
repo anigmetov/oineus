@@ -100,6 +100,8 @@ struct Diagrams {
 
     std::map<dim_type, Dgm> diagram_in_dimension_;
 
+    [[nodiscard]] size_t n_dims() const noexcept { return diagram_in_dimension_.size(); }
+
     // will throw, if there is no diagram for dimension d
     Dgm get_diagram_in_dimension(dim_type d) const
     {
