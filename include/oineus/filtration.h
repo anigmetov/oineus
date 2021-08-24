@@ -28,12 +28,12 @@ namespace oineus {
 
         Filtration() = default;
 
-        Filtration(std::vector<FiltrationSimplexVector>&& _dim_to_simplices, bool _negate) :
+        Filtration(std::vector<FiltrationSimplexVector>&& _dim_to_simplices, bool _negate, int n_threads=1) :
             dim_to_simplices_(_dim_to_simplices),
             negate_(_negate)
         {
             set_ids();
-            sort(_negate);
+            sort(_negate, n_threads);
 
             for(dim_type d = 0; d < static_cast<dim_type>(dim_to_simplices_.size()); ++d) {
                 assert(std::all_of(dim_to_simplices_.at(d).begin(), dim_to_simplices_.at(d).end(),
@@ -136,7 +136,7 @@ namespace oineus {
         }
 
         // sort simplices and assign sorted_ids
-        void sort(bool negate)
+        void sort(bool negate, int n_threads=1)
         {
             auto start = std::chrono::steady_clock::now();
 
