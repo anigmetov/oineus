@@ -11,7 +11,6 @@
 #include <functional>
 #include <numeric>
 #include <unordered_set>
-#include <chrono>
 #include <cstdlib>
 #include <stdexcept>
 
@@ -45,24 +44,24 @@ bool is_zero(const SparseColumn<IdxType>* c)
 }
 
 template<typename IdxType>
-void add_column(const SparseColumn<IdxType>* col_a, const SparseColumn<IdxType>* col_b, SparseColumn<IdxType>* sum)
+void add_column(const SparseColumn<IdxType>& col_a, const SparseColumn<IdxType>& col_b, SparseColumn<IdxType>& sum)
 {
-    auto a_iter = col_a->cbegin();
-    auto b_iter = col_b->cbegin();
+    auto a_iter = col_a.cbegin();
+    auto b_iter = col_b.cbegin();
 
-    sum->clear();
+    sum.clear();
 
     while(true) {
-        if (a_iter == col_a->cend() && b_iter == col_b->cend()) {
+        if (a_iter == col_a.cend() && b_iter == col_b.cend()) {
             break;
-        } else if (a_iter == col_a->cend() && b_iter != col_b->cend()) {
-            sum->push_back(*b_iter++);
-        } else if (a_iter != col_a->cend() && b_iter == col_b->cend()) {
-            sum->push_back(*a_iter++);
+        } else if (a_iter == col_a.cend() && b_iter != col_b.cend()) {
+            sum.push_back(*b_iter++);
+        } else if (a_iter != col_a.cend() && b_iter == col_b.cend()) {
+            sum.push_back(*a_iter++);
         } else if (*a_iter < *b_iter) {
-            sum->push_back(*a_iter++);
+            sum.push_back(*a_iter++);
         } else if (*b_iter < *a_iter) {
-            sum->push_back(*b_iter++);
+            sum.push_back(*b_iter++);
         } else {
             assert(*a_iter == *b_iter);
             ++a_iter;
@@ -85,24 +84,6 @@ struct RVColumns {
     RVColumns(Column&& _r, Column&& _v)
             :r_column(_r), v_column(_v) { }
 
-    Column& operator[](size_t i)
-    {
-        switch(i) {
-        case 0: return r_column;
-        case 1: return v_column;
-        default: throw std::out_of_range("RVColumns has only two columns");
-        }
-    }
-
-    const Column& operator[](size_t i) const
-    {
-        switch(i) {
-        case 0: return r_column;
-        case 1: return v_column;
-        default: throw std::out_of_range("RVColumns has only two columns");
-        }
-    }
-
     [[nodiscard]] bool is_zero() const
     {
         return oineus::is_zero(&r_column);
@@ -123,8 +104,8 @@ struct RVColumns {
 template<typename IdxType>
 void add_rv_column(const RVColumns<IdxType>* col_a, const RVColumns<IdxType>* col_b, RVColumns<IdxType>* sum)
 {
-    for(size_t col_idx = 0; col_idx < 2; ++col_idx)
-        add_column(&((*col_a)[col_idx]), &((*col_b)[col_idx]), &((*sum)[col_idx]));
+    add_column(col_a->r_column, col_b->r_column, sum->r_column);
+    add_column(col_a->v_column, col_b->v_column, sum->v_column);
 }
 
 // TODO: clean up declaration - move to matrix?
@@ -210,8 +191,7 @@ void parallel_reduction(RVMatrices& rv, AtomicIdxVector& pivots, std::atomic<Int
                     if (pivot_idx >= 0) {
                         pivot_r_v_column = rv[pivot_idx].load(acq);
                     }
-                }
-                while(pivot_idx >= 0 && pivot_r_v_column->low() != current_low);
+                } while(pivot_idx >= 0 && pivot_r_v_column->low() != current_low);
 
                 if (pivot_idx == -1) {
                     if (pivots[current_low].compare_exchange_weak(pivot_idx, current_column_idx, rel, relax)) {
@@ -354,8 +334,7 @@ void SparseMatrix<Int>::reduce_parallel(Params& params)
         next_free_chunk = 0;
     }
 
-    std::chrono::high_resolution_clock timer;
-    auto start_time = timer.now();
+    Timer timer;
 
     for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
 
@@ -381,20 +360,18 @@ void SparseMatrix<Int>::reduce_parallel(Params& params)
         t.join();
     }
 
-    std::chrono::duration<double> elapsed = timer.now() - start_time;
-
-    params.elapsed = elapsed.count();
+    params.elapsed = timer.elapsed_reset();
 
     if (params.print_time) {
         for(auto& s : stats) { info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots); }
-        info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, elapsed.count());
+        info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
     }
 
     // write reduced matrix back, collect V matrix, mark as reduced
     for(size_t i = 0; i < n_cols; ++i) {
         auto p = r_v_matrix[i].load(std::memory_order_relaxed);
-        data[i] = p->r_column;
-        v_data[i] = p->v_column;
+        data[i] = std::move(p->r_column);
+        v_data[i] = std::move(p->v_column);
     }
 
     is_reduced = true;

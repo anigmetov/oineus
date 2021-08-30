@@ -125,6 +125,8 @@ public:
     using Real = Real_;
     using GridSimplex = Simplex<Int, Real>;
     using GridPoint = std::array<Int, D>;
+    using GridPointVec = std::vector<GridPoint>;
+    using GridPointVecVec = std::vector<GridPointVec>;
     using SimplexVec = std::vector<GridSimplex>;
     using IdxVector = typename GridSimplex::IdxVector;
 
@@ -156,7 +158,7 @@ public:
 
     Int size() const
     {
-        return std::accumulate(dims_.cbegin(), dims_.cend(), Int(1), std::multiplies<Int>());
+       return std::accumulate(dims_.cbegin(), dims_.cend(), Int(1), std::multiplies<Int>());
     }
 
     Int point_to_id(const GridPoint& v) const
@@ -199,10 +201,10 @@ public:
     }
 
 
-    static GridPoint add_points(const GridPoint& x, const std::vector<Int>& y)
+    template<class Cont>
+    static GridPoint add_points(const GridPoint& x, const Cont& y)
     {
-        if (y.size() != x.size())
-            throw std::runtime_error("Dimension mismatch");
+        assert(x.size() == y.size());
 
         GridPoint z = x;
         for(size_t i = 0; i < dim; ++i)
@@ -211,15 +213,34 @@ public:
         return z;
     }
 
+    GridPointVecVec get_fr_displacements(size_t d) const
+    {
+        GridPointVecVec result;
+
+        for(auto&& disps : fr_displacements<Int, D>(d)) {
+            result.emplace_back();
+            for(auto&& disp : disps) {
+                GridPoint p;
+                assert(disp.size() == p.size());
+                for(size_t k = 0; k < disp.size(); ++k)
+                    p[k] = disp[k];
+                result.back().push_back(p);
+            }
+        }
+
+        return result;
+    }
+
 
     SimplexVec freudenthal_simplices(size_t d, bool negate) const
     {
         SimplexVec result;
-        result.reserve( size() * fr_displacements<Int, D>(d).size() );
+        auto disps = get_fr_displacements(d);
+        result.reserve( size() * disps.size() );
 
         for(Int i = 0; i < size(); ++i) {
             GridPoint v = id_to_point(i);
-            for(const auto& s : freudenthal_simplices_from_vertex(v, d, negate)) {
+            for(const auto& s : freudenthal_simplices_from_vertex(v, d, negate, disps)) {
                 result.push_back(s);
             }
         }
@@ -264,30 +285,29 @@ public:
     }
 
 
-    SimplexVec freudenthal_simplices_from_vertex(const GridPoint& v, size_t d, bool negate) const
+    SimplexVec freudenthal_simplices_from_vertex(const GridPoint& v, size_t d, bool negate, const GridPointVecVec& disps) const
     {
         SimplexVec result;
 
-        for(auto deltas : fr_displacements<Int, D>(d)) {
-            if (deltas.size() != d + 1) {
-                throw std::runtime_error("size mismatch");
-            }
-            IdxVector v_ids(d + 1, 0);
+        IdxVector v_ids(d + 1, 0);
 
-            bool valid_simplex = true;
+        for(auto& deltas : disps) {
+            assert(deltas.size() == d + 1);
+
+            bool is_valid_simplex = true;
 
             for(size_t i = 0; i < d + 1; ++i) {
                 GridPoint u = add_points(v, deltas[i]);
                 if (wrap_)
                     v_ids[i] = point_to_id(wrap_point(u));
                 else if (not point_in_bounds(u)) {
-                    valid_simplex = false;
+                    is_valid_simplex = false;
                     break;
                 } else
                     v_ids[i] = point_to_id(u);
             }
 
-            if (valid_simplex)
+            if (is_valid_simplex)
                 result.emplace_back(v_ids, simplex_value(v_ids, negate));
         }
         return result;

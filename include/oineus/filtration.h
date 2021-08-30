@@ -5,8 +5,8 @@
 #include <unordered_map>
 #include <iterator>
 #include <ostream>
-#include <chrono>
 
+#include "timer.h"
 #include "simplex.h"
 #include "matrix.h"
 
@@ -24,16 +24,17 @@ namespace oineus {
         using FiltrationSimplex = Simplex<Int_, Real_>;
         using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
         using IntVector = std::vector<Int>;
+        using RealVector = std::vector<Real>;
         using BoundaryMatrix = SparseMatrix<Int>;
 
         Filtration() = default;
 
         Filtration(std::vector<FiltrationSimplexVector>&& _dim_to_simplices, bool _negate, int n_threads=1) :
-            dim_to_simplices_(_dim_to_simplices),
-            negate_(_negate)
+            negate_(_negate),
+            dim_to_simplices_(_dim_to_simplices)
         {
             set_ids();
-            sort(_negate, n_threads);
+            sort(n_threads);
 
             for(dim_type d = 0; d < static_cast<dim_type>(dim_to_simplices_.size()); ++d) {
                 assert(std::all_of(dim_to_simplices_.at(d).begin(), dim_to_simplices_.at(d).end(),
@@ -106,10 +107,15 @@ namespace oineus {
             return sorted_id_to_value_[sorted_id];
         }
 
-    private:
-        std::vector<FiltrationSimplexVector> dim_to_simplices_;
+        decltype(auto) simplices(dim_type d) const { return dim_to_simplices_.at(d); }
+        decltype(auto) vertices_to_sorted_id() const { return vertices_to_sorted_id_; }
+        decltype(auto) id_to_sorted_id() const { return id_to_sorted_id_; }
+        decltype(auto) sorted_id_to_dimension() const { return sorted_id_to_dimension_; }
+        decltype(auto) sorted_id_to_value() const { return sorted_id_to_value_; }
 
+    private:
         bool negate_;
+        std::vector<FiltrationSimplexVector> dim_to_simplices_;
 
         std::map<IntVector, Int> vertices_to_sorted_id_;
         std::vector<Int> id_to_sorted_id_;
@@ -119,7 +125,7 @@ namespace oineus {
 
         void set_ids()
         {
-            auto start = std::chrono::steady_clock::now();
+            Timer timer;
 
             // all vertices have ids already, 0..#vertices-1
             // set ids only on higher-dimensional simplices
@@ -128,17 +134,13 @@ namespace oineus {
                 for(auto& sigma : dim_to_simplices_[d])
                     sigma.id_ = id++;
 
-            auto end = std::chrono::steady_clock::now();
-            std::chrono::duration<double> elapsed = end - start;
-            std::cerr << "set_ids took " << elapsed.count() << std::endl;
-
-
+            std::cerr << "set_ids took " << timer.elapsed() << std::endl;
         }
 
         // sort simplices and assign sorted_ids
-        void sort(bool negate, int n_threads=1)
+        void sort(int n_threads=1)
         {
-            auto start = std::chrono::steady_clock::now();
+            Timer timer;
 
             id_to_sorted_id_ = std::vector<Int>(size(), Int(-1));
             vertices_to_sorted_id_.clear();
@@ -146,9 +148,9 @@ namespace oineus {
             sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
 
             // ignore ties
-            auto cmp = [negate](const FiltrationSimplex& sigma, const FiltrationSimplex& tau)
+            auto cmp = [this](const FiltrationSimplex& sigma, const FiltrationSimplex& tau)
                                 {
-                                    if (negate)
+                                    if (this->negate_)
                                         return sigma.value_ > tau.value_;
                                     else
                                         return sigma.value_ < tau.value_;
@@ -177,9 +179,7 @@ namespace oineus {
                 s_id_shift += simplices.size();
             }
 
-            auto end = std::chrono::steady_clock::now();
-            std::chrono::duration<double> elapsed = end - start;
-            std::cerr << "sort filtration took " << elapsed.count() << std::endl;
+            std::cerr << "sort filtration took " << timer.elapsed() << std::endl;
         }
 
         template<typename I, typename R>
