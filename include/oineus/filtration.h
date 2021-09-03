@@ -41,10 +41,19 @@ namespace oineus {
                         [](const FiltrationSimplex& sigma) { return sigma.is_valid_filtration_simplex(); }));
         }
 
-        Int size() const { return simplices_.size(); }
-        Int dim_first(dim_type d) const { return dim_first_.at(d); }
-        Int dim_last(dim_type d) const { return dim_last_.at(d); }
-        Int size_in_dimension(dim_type d) const { return dim_last(d) - dim_first(d) + 1; }
+        size_t size() const { return simplices_.size(); }
+        size_t dim_first(dim_type d) const { return dim_first_.at(d); }
+        size_t dim_last(dim_type d) const { return dim_last_.at(d); }
+        size_t size_in_dimension(dim_type d) const
+        {
+            if (d > max_dim())
+                return 0;
+            Int result = dim_last(d) - dim_first(d) + 1;
+            if (result < 0)
+                throw std::runtime_error("dim_last less than dim_first");
+            return static_cast<size_t>(result);
+        }
+
         dim_type max_dim() const { return dim_last_.size(); }
 
         BoundaryMatrix boundary_matrix_full() const
@@ -87,7 +96,7 @@ namespace oineus {
         dim_type dim_by_id(Int id) const
         {
             for(dim_type dim = 0; dim <= max_dim(); ++dim) {
-                if (dim_first(dim) <= id and dim_last(dim) >= id)
+                if (static_cast<Int>(dim_first(dim)) <= id and static_cast<Int>(dim_last(dim)) >= id)
                     return dim;
             }
             throw std::runtime_error("Error in dim_by_id");
@@ -130,8 +139,8 @@ namespace oineus {
 
         std::vector<Real> sorted_id_to_value_;
 
-        std::vector<Int> dim_first_;
-        std::vector<Int> dim_last_;
+        std::vector<size_t> dim_first_;
+        std::vector<size_t> dim_last_;
 
         void set_ids()
         {
@@ -141,19 +150,20 @@ namespace oineus {
 
                 auto& sigma = simplices_[id];
 
-                if (id < dim_last(0) and sigma.id_ != id)
+                if (id < dim_last(0) and sigma.id_ != static_cast<Int>(id))
                     throw std::runtime_error("Vertex id and order of vertices do not match");
                 else
-                    sigma.id_ = id;
+                    sigma.id_ = static_cast<Int>(id);
             }
         }
 
         void set_dim_info()
         {
-            dim_type curr_dim = 0;
+            Int curr_dim = 0;
             dim_first_.push_back(0);
-            for(Int i = 0; i < size(); ++i)
+            for(size_t i = 0; i < size(); ++i)
                 if (simplices_[i].dim() != curr_dim) {
+                    assert(i >= 1);
                     dim_last_.push_back(i-1);
                     curr_dim = simplices_[i].dim();
                 }
@@ -161,7 +171,7 @@ namespace oineus {
         }
 
         // sort simplices and assign sorted_ids
-        void sort(int n_threads=1)
+        void sort([[maybe_unused]] int n_threads=1)
         {
             Timer timer;
 
@@ -180,7 +190,7 @@ namespace oineus {
 
             std::sort(simplices_.begin(), simplices_.end(), cmp);
 
-            for(Int sorted_id = 0; sorted_id < size(); ++sorted_id) {
+            for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
                 auto& sigma = simplices_[sorted_id];
 
                 id_to_sorted_id_[sigma.id_] = sorted_id;
@@ -202,11 +212,13 @@ namespace oineus {
     std::ostream& operator<<(std::ostream& out, const Filtration<I, R, L>& fil)
     {
         out << "Filtration(size = " << fil.size() <<  "[" << "\n";
-        for(size_t d = 0; d < fil.dim_to_simplices_.size(); ++d) {
-            out << "Dimension: " << d << "\n";
-
-            for(const auto& sigma : fil.dim_to_simplices_[d])
-                out << sigma << "\n";
+        dim_type d = 0;
+        for(size_t idx = 0; idx < fil.size();  ++idx) {
+            if (idx == fil.dim_last(d))
+                d++;
+            if (idx == fil.dim_first(d))
+                out << "Dimension: " << d << "\n";
+            out << fil.simplices()[idx] << "\n";
         }
         out << "]";
         return out;
