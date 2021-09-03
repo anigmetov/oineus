@@ -84,6 +84,14 @@ struct RPoint {
     }
 };
 
+template<class T>
+inline void hash_combine(std::size_t& seed, const T& v)
+{
+    std::hash<T> hasher;
+    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+
 //template<typename Out>
 //void split_by_delim(const std::string& s, char delim, Out result)
 //{

@@ -13,7 +13,7 @@ using namespace std::rel_ops;
 
 namespace oineus {
 
-template <typename T>
+template<typename T>
 struct DgmPoint {
     T birth;
     T death;
@@ -25,13 +25,10 @@ struct DgmPoint {
 
     const T& operator[](int index) const
     {
-        switch (index) {
-        case 0 :
-            return birth;
-        case 1 :
-            return death;
-        default:
-            throw std::out_of_range("DgmPoint has only 2 coordinates.");
+        switch(index) {
+        case 0 :return birth;
+        case 1 :return death;
+        default:throw std::out_of_range("DgmPoint has only 2 coordinates.");
         }
     }
 
@@ -69,7 +66,7 @@ struct DgmPoint {
     }
 };
 
-template <typename T>
+template<typename T>
 std::ostream& operator<<(std::ostream& out, const DgmPoint<T>& p)
 {
     out << "(";
@@ -91,7 +88,7 @@ std::ostream& operator<<(std::ostream& out, const DgmPoint<T>& p)
     return out;
 }
 
-template <typename Real_>
+template<typename Real_>
 struct Diagrams {
     using Real = Real_;
 
@@ -115,7 +112,7 @@ struct Diagrams {
 
     void sort()
     {
-        for (auto& dim_points : diagram_in_dimension_) {
+        for(auto& dim_points: diagram_in_dimension_) {
             auto& points = dim_points.second;
             std::sort(points.begin(), points.end(), [](const Point& a, const Point& b) { return a > b; });
         }
@@ -123,7 +120,7 @@ struct Diagrams {
 
     void save_as_txt(std::string fname, std::string extension = "txt", int prec = 4) const
     {
-        for (const auto& dim_points : diagram_in_dimension_) {
+        for(const auto& dim_points: diagram_in_dimension_) {
 
             const auto& points = dim_points.second;
 
@@ -142,7 +139,7 @@ struct Diagrams {
 
             f.precision(prec);
 
-            for (const auto& p : points)
+            for(const auto& p: points)
                 f << p << "\n";
 
             f.close();
@@ -151,6 +148,21 @@ struct Diagrams {
 };
 
 } // namespace oineus
+
+
+namespace std {
+template<class T>
+struct hash<oineus::DgmPoint<T>> {
+    std::size_t operator()(const oineus::DgmPoint<T>& p) const
+    {
+        std::size_t seed = 0;
+        oineus::hash_combine(seed, p.birth);
+        oineus::hash_combine(seed, p.death);
+        return seed;
+    }
+};
+};
+
 
 //  template<class Cont>
 //    std::string container_to_string(const Cont& v)

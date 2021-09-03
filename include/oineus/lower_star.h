@@ -17,71 +17,80 @@ constexpr inline std::vector<std::vector<std::vector<Int>>> fr_displacements(siz
 {
     size_t cube_dim = D;
 
-    switch (cube_dim) {
+    switch(cube_dim) {
+    case 1 :
+        switch(dim) {
+        case 0 :
+            return {
+                    {{0}}};
+            break;
         case 1 :
-            switch (dim) {
-                case 0 : return {
-                    { { 0 } } };
-                    break;
-                case 1 : return {
-                    { { 0 }, { 1 } } };
-                    break;
-            }
+            return {
+                    {{0}, {1}}};
+            break;
+        }
+        break;
+    case 2 :
+        switch(dim) {
+        case 0 :
+            return {
+                    {{0, 0}}};
+            break;
+        case 1 :
+            return {
+                    {{0, 0}, {0, 1}},
+                    {{0, 0}, {1, 1}},
+                    {{0, 0}, {1, 0}}};
             break;
         case 2 :
-            switch (dim) {
-                case 0 : return {
-                    { { 0, 0 } } };
-                    break;
-                case 1 : return {
-                    { { 0, 0 }, { 0, 1 } },
-                    { { 0, 0 }, { 1, 1 } },
-                    { { 0, 0 }, { 1, 0 } } };
-                    break;
-                case 2 : return {
-                    { { 0, 0 }, { 1, 0 }, { 1, 1 } },
-                    { { 0, 0 }, { 0, 1 }, { 1, 1 } } };
-                    break;
-            }
+            return {
+                    {{0, 0}, {1, 0}, {1, 1}},
+                    {{0, 0}, {0, 1}, {1, 1}}};
+            break;
+        }
+        break;
+    case 3 :
+        switch(dim) {
+        case 0 :
+            return {
+                    {{0, 0, 0}}};
+            break;
+        case 1 :
+            return {
+                    {{0, 0, 0}, {0, 1, 0}},
+                    {{0, 0, 0}, {1, 1, 0}},
+                    {{0, 0, 0}, {0, 1, 1}},
+                    {{0, 0, 0}, {1, 1, 1}},
+                    {{0, 0, 0}, {0, 0, 1}},
+                    {{0, 0, 0}, {1, 0, 0}},
+                    {{0, 0, 0}, {1, 0, 1}}};
+            break;
+        case 2 :
+            return {
+                    {{0, 0, 0}, {0, 0, 1}, {0, 1, 1}},
+                    {{0, 0, 0}, {0, 0, 1}, {1, 0, 1}},
+                    {{0, 0, 0}, {1, 0, 0}, {1, 0, 1}},
+                    {{0, 0, 0}, {1, 0, 0}, {1, 1, 1}},
+                    {{0, 0, 0}, {0, 1, 0}, {1, 1, 0}},
+                    {{0, 0, 0}, {1, 0, 1}, {1, 1, 1}},
+                    {{0, 0, 0}, {0, 1, 1}, {1, 1, 1}},
+                    {{0, 0, 0}, {0, 1, 0}, {0, 1, 1}},
+                    {{0, 0, 0}, {0, 0, 1}, {1, 1, 1}},
+                    {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}},
+                    {{0, 0, 0}, {0, 1, 0}, {1, 1, 1}},
+                    {{0, 0, 0}, {1, 1, 0}, {1, 1, 1}}};
             break;
         case 3 :
-            switch (dim) {
-                case 0 : return {
-                    { { 0, 0, 0 } } };
-                    break;
-                case 1 : return {
-                    { { 0, 0, 0 }, { 0, 1, 0 } },
-                    { { 0, 0, 0 }, { 1, 1, 0 } },
-                    { { 0, 0, 0 }, { 0, 1, 1 } },
-                    { { 0, 0, 0 }, { 1, 1, 1 } },
-                    { { 0, 0, 0 }, { 0, 0, 1 } },
-                    { { 0, 0, 0 }, { 1, 0, 0 } },
-                    { { 0, 0, 0 }, { 1, 0, 1 } } };
-                    break;
-                case 2 : return {
-                    { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 1, 1 } },
-                    { { 0, 0, 0 }, { 0, 0, 1 }, { 1, 0, 1 } },
-                    { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 0, 1 } },
-                    { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 1 } },
-                    { { 0, 0, 0 }, { 0, 1, 0 }, { 1, 1, 0 } },
-                    { { 0, 0, 0 }, { 1, 0, 1 }, { 1, 1, 1 } },
-                    { { 0, 0, 0 }, { 0, 1, 1 }, { 1, 1, 1 } },
-                    { { 0, 0, 0 }, { 0, 1, 0 }, { 0, 1, 1 } },
-                    { { 0, 0, 0 }, { 0, 0, 1 }, { 1, 1, 1 } },
-                    { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 0 } },
-                    { { 0, 0, 0 }, { 0, 1, 0 }, { 1, 1, 1 } },
-                    { { 0, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 } } };
-                    break;
-                case 3 : return {
-                    { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 1, 1 }, { 1, 1, 1 } },
-                    { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 0, 1 }, { 1, 1, 1 } },
-                    { { 0, 0, 0 }, { 0, 1, 0 }, { 1, 1, 0 }, { 1, 1, 1 } },
-                    { { 0, 0, 0 }, { 0, 0, 1 }, { 1, 0, 1 }, { 1, 1, 1 } },
-                    { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 } },
-                    { { 0, 0, 0 }, { 0, 1, 0 }, { 0, 1, 1 }, { 1, 1, 1 } } };
-                    break;
-            }
+            return {
+                    {{0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {1, 1, 1}},
+                    {{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {1, 1, 1}},
+                    {{0, 0, 0}, {0, 1, 0}, {1, 1, 0}, {1, 1, 1}},
+                    {{0, 0, 0}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}},
+                    {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {1, 1, 1}},
+                    {{0, 0, 0}, {0, 1, 0}, {0, 1, 1}, {1, 1, 1}}};
             break;
+        }
+        break;
     }
 
     throw std::runtime_error("Unknown dimensions");
@@ -101,7 +110,6 @@ std::ostream& operator<<(std::ostream& os, const std::vector<T>& v)
     os << "]";
     return os;
 }
-
 
 template<typename Int, size_t D>
 std::ostream& operator<<(std::ostream& os, const std::array<Int, D>& p)
@@ -123,20 +131,27 @@ class Grid {
 public:
     using Int = Int_;
     using Real = Real_;
-    using GridSimplex = Simplex<Int, Real>;
+    using ValueLocation = Int; // critical value is at one vertex
+    using GridSimplex = Simplex<Int, Real, ValueLocation>;
     using GridPoint = std::array<Int, D>;
     using GridPointVec = std::vector<GridPoint>;
     using GridPointVecVec = std::vector<GridPointVec>;
     using SimplexVec = std::vector<GridSimplex>;
     using IdxVector = typename GridSimplex::IdxVector;
 
-    using GridFiltration = Filtration<Int, Real>;
+    using GridFiltration = Filtration<Int, Real, ValueLocation>;
 
-    static constexpr size_t dim { D };
+    static constexpr size_t dim {D};
+
+    struct ValueVertex {
+        Real value;
+        Int vertex;
+    };
 
     Grid() = default;
 
-    Grid(const GridPoint& _dims, bool _wrap, Real* _data) : dims_(_dims), c_order_(true), wrap_(_wrap), data_(_data)
+    Grid(const GridPoint& _dims, bool _wrap, Real* _data)
+            :dims_(_dims), c_order_(true), wrap_(_wrap), data_(_data)
     {
         if (dims_.size() != dim)
             throw std::runtime_error("Dims size must be equal D");
@@ -148,17 +163,17 @@ public:
             throw std::runtime_error("Dims must be positive");
 
         if (c_order_) {
-            strides_[D-1] = 1;
+            strides_[D - 1] = 1;
 
             for(int d = static_cast<int>(D) - 2; d >= 0; --d)
-                strides_[d] = dims_[d + 1] * strides_[ d + 1];
+                strides_[d] = dims_[d + 1] * strides_[d + 1];
         } else
             throw std::runtime_error("Fortran order not implemented");
     }
 
     Int size() const
     {
-       return std::accumulate(dims_.cbegin(), dims_.cend(), Int(1), std::multiplies<Int>());
+        return std::accumulate(dims_.cbegin(), dims_.cend(), Int(1), std::multiplies<Int>());
     }
 
     Int point_to_id(const GridPoint& v) const
@@ -200,7 +215,6 @@ public:
         return result;
     }
 
-
     template<class Cont>
     static GridPoint add_points(const GridPoint& x, const Cont& y)
     {
@@ -217,9 +231,9 @@ public:
     {
         GridPointVecVec result;
 
-        for(auto&& disps : fr_displacements<Int, D>(d)) {
+        for(auto&& disps: fr_displacements<Int, D>(d)) {
             result.emplace_back();
-            for(auto&& disp : disps) {
+            for(auto&& disp: disps) {
                 GridPoint p;
                 assert(disp.size() == p.size());
                 for(size_t k = 0; k < disp.size(); ++k)
@@ -231,16 +245,15 @@ public:
         return result;
     }
 
-
     SimplexVec freudenthal_simplices(size_t d, bool negate) const
     {
         SimplexVec result;
         auto disps = get_fr_displacements(d);
-        result.reserve( size() * disps.size() );
+        result.reserve(size() * disps.size());
 
         for(Int i = 0; i < size(); ++i) {
             GridPoint v = id_to_point(i);
-            for(const auto& s : freudenthal_simplices_from_vertex(v, d, negate, disps)) {
+            for(const auto& s: freudenthal_simplices_from_vertex(v, d, negate, disps)) {
                 result.push_back(s);
             }
         }
@@ -248,42 +261,43 @@ public:
         return result;
     }
 
-    GridFiltration freudenthal_filtration(size_t top_d, bool negate, int n_threads=1) const
+    GridFiltration freudenthal_filtration(size_t top_d, bool negate, int n_threads = 1) const
     {
         if (top_d > dim)
             throw std::runtime_error("bad dimension");
 
-        std::vector<SimplexVec> dim_to_simplices;
+        SimplexVec simplices;
 
-        for(size_t d = 0; d <= top_d; ++d)
-            dim_to_simplices.emplace_back(freudenthal_simplices(d, negate));
+        for(size_t d = 0; d <= top_d; ++d) {
+            auto fs = freudenthal_simplices(d, negate);
+            simplices.insert(simplices.end(), fs.begin(), fs.end());
+        }
 
-        return GridFiltration(std::move(dim_to_simplices), negate, n_threads);
+        return GridFiltration(std::move(simplices), negate, n_threads);
     }
-
 
     Real value_at_vertex(Int vertex) const
     {
-        assert(vertex >=0 and vertex < size());
+        assert(vertex >= 0 and vertex < size());
         return *(data_ + vertex);
     }
 
-
-    Real simplex_value(const IdxVector& vertices, bool negate) const
+    ValueVertex simplex_value_and_vertex(const IdxVector& vertices, bool negate) const
     {
-        Real result = negate ? std::numeric_limits<Real>::max() : std::numeric_limits<Real>::lowest();
+        ValueVertex result {negate ? std::numeric_limits<Real>::max() : std::numeric_limits<Real>::lowest(), Int(-1)};
 
-        for(Int v : vertices) {
-            Real value = value_at_vertex(v);
-            if (negate)
-                result = std::min(result, value);
-            else
-                result = std::max(result, value);
+        // break ties by vertex id, ignore negate for ties
+        auto cmp = [negate](ValueVertex x, ValueVertex y) {
+          return negate ? (x.value > y.value or (x.value == y.value and x.vertex < y.vertex)) : (x.value < y.value or (x.value == y.value and x.vertex < y.vertex));
+        };
+
+        for(Int v: vertices) {
+            ValueVertex cand {value_at_vertex(v), v};
+            result = std::max(result, cand, cmp);
         }
 
         return result;
     }
-
 
     SimplexVec freudenthal_simplices_from_vertex(const GridPoint& v, size_t d, bool negate, const GridPointVecVec& disps) const
     {
@@ -291,7 +305,7 @@ public:
 
         IdxVector v_ids(d + 1, 0);
 
-        for(auto& deltas : disps) {
+        for(auto& deltas: disps) {
             assert(deltas.size() == d + 1);
 
             bool is_valid_simplex = true;
@@ -307,8 +321,10 @@ public:
                     v_ids[i] = point_to_id(u);
             }
 
-            if (is_valid_simplex)
-                result.emplace_back(v_ids, simplex_value(v_ids, negate));
+            if (is_valid_simplex) {
+                ValueVertex vv = simplex_value_and_vertex(v_ids, negate);
+                result.emplace_back(v_ids, vv.value, vv.vertex);
+            }
         }
         return result;
     }

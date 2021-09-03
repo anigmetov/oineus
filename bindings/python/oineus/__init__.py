@@ -75,3 +75,10 @@ def compute_diagrams_and_rv_ls(data, negate, wrap, top_dim, n_threads):
     v = to_scipy_matrix(v)
     r = to_scipy_matrix(r)
     return dgms, r, v
+
+
+# def ls_target_values(data, epsilon, matching):
+#     type_part, _ = get_type_dim(data)
+#     func = getattr(_oineus, f"get_ls_target_values_{type_part}")
+#     tv
+#     pass

@@ -8,3 +8,4 @@
 #include "lower_star.h"
 #include "matrix.h"
 #include "vectorizer.h"
+#include "loss.h"

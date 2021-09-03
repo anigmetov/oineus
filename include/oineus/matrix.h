@@ -19,7 +19,7 @@
 
 namespace oineus {
 
-template<typename Int_, typename Real_>
+template<typename Int_, typename Real_, typename L_>
 class Filtration;
 
 template<typename Real_>
@@ -35,6 +35,18 @@ template<typename IdxType>
 IdxType low(const SparseColumn<IdxType>* c)
 {
     return c->empty() ? -1 : c->back();
+}
+
+template<typename IdxType>
+IdxType low(const SparseColumn<IdxType>& c)
+{
+    return c.empty() ? -1 : c.back();
+}
+
+template<typename IdxType>
+bool is_zero(const SparseColumn<IdxType>& c)
+{
+    return c.empty();
 }
 
 template<typename IdxType>
@@ -268,8 +280,12 @@ struct SparseMatrix {
 
     void reduce_parallel(Params& params);
 
-    template<typename Real>
-    Diagrams<Real> diagram(const Filtration<Int, Real>& fil) const;
+    template<typename Real, typename L>
+    Diagrams<Real> diagram(const Filtration<Int, Real, L>& fil) const;
+
+    template<typename Real, typename L>
+    Diagrams<Int> index_diagram_finite(const Filtration<Int, Real, L>& fil) const;
+
 
     template<typename Int>
     friend std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m);
@@ -378,8 +394,8 @@ void SparseMatrix<Int>::reduce_parallel(Params& params)
 }
 
 template<class Int>
-template<class Real>
-Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real>& fil) const
+template<class Real, class L>
+Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real, L>& fil) const
 {
     if (not is_reduced)
         throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
@@ -423,6 +439,26 @@ Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real>& fil) cons
 
     return result;
 }
+
+template<class Int>
+template<class Real, class L>
+Diagrams<Int> SparseMatrix<Int>::index_diagram_finite(const Filtration<Int, Real, L>& fil) const
+{
+    if (not is_reduced)
+        throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
+
+    Diagrams<Int> result;
+
+    for(size_t death_idx = 0; death_idx < data.size(); ++death_idx)
+        if (not is_zero(data[death_idx])) {
+            Int birth_idx = low(data[death_idx]);
+            dim_type dim = fil.dim_by_sorted_id(birth_idx);
+            result.add_point(dim, birth_idx, death_idx);
+        }
+
+    return result;
+}
+
 template<typename Int>
 std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m)
 {
