@@ -9,6 +9,7 @@ PYBIND11_MODULE(_oineus, m)
 {
     m.doc() = "Oineus python bindings";
 
+    init_oineus_common<int>(m);
     init_oineus<int, float>(m, "_float");
     init_oineus<int, double>(m, "_double");
 

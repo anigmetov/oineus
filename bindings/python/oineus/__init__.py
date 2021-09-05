@@ -5,7 +5,9 @@ import scipy.sparse
 
 from . import _oineus
 
-__all__ = ["compute_diagrams_ls", "compute_diagrams_and_v_ls", "get_boundary_matrix", "to_scipy_matrix", "is_reduced"]
+from ._oineus import *
+
+# __all__ = ["compute_diagrams_ls", "compute_diagrams_and_v_ls", "get_boundary_matrix", "to_scipy_matrix", "is_reduced", "get_freudenthal_filtration"]
 
 
 def to_scipy_matrix(sparse_cols, shape=None):
@@ -26,6 +28,14 @@ def is_reduced(a):
     return len(lowest_ones) == len(set(lowest_ones))
 
 
+def get_real_type(fil):
+    if "_double" in str(type(fil)):
+        return "double"
+    elif "_float" in str(type(fil)):
+        return "double"
+    else:
+        raise RuntimeError(f"Unknown type: {type(fil)}")
+
 
 def get_type_dim(data):
     if data.dtype == np.float32:
@@ -44,7 +54,7 @@ def get_type_dim(data):
 
 def get_freudenthal_filtration(data, negate, wrap, top_dim, n_threads):
     type_part, dim_part = get_type_dim(data)
-    func = getattr(_oineus, f"get_filtration_{type_part}_{dim_part}")
+    func = getattr(_oineus, f"get_fr_filtration_{type_part}_{dim_part}")
     return func(data, negate, wrap, top_dim, n_threads)
 
 
@@ -77,8 +87,13 @@ def compute_diagrams_and_rv_ls(data, negate, wrap, top_dim, n_threads):
     return dgms, r, v
 
 
-# def ls_target_values(data, epsilon, matching):
-#     type_part, _ = get_type_dim(data)
-#     func = getattr(_oineus, f"get_ls_target_values_{type_part}")
-#     tv
-#     pass
+def get_denoise_target(d, fil, rv, eps):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_denoise_target_{type_part}")
+    return func(d, fil, rv, eps)
+
+
+def get_ls_target_values(d, dtv, fil, rv):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_ls_target_values_{type_part}")
+    return func(d, dtv, fil, rv)

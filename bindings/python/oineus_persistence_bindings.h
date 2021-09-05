@@ -83,7 +83,8 @@ typename oineus::Filtration<Int, Real, Int>
 get_fr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type top_d, int n_threads)
 {
     auto grid = get_grid<Int, Real, D>(data, wrap);
-    return grid.freudenthal_filtration(top_d, negate, n_threads);
+    auto fil =  grid.freudenthal_filtration(top_d, negate, n_threads);
+    return fil;
 }
 
 template<class Int, class Real, size_t D>
@@ -149,53 +150,18 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
     return PyOineusDiagrams<Real>(d_matrix.diagram(fil));
 }
 
-template<class Int, class Real>
-void init_oineus(py::module& m, std::string suffix)
+template<class Int>
+void init_oineus_common(py::module& m)
 {
     using namespace pybind11::literals;
 
-    using DgmPoint = oineus::DgmPoint<Real>;
-    using Diagram = PyOineusDiagrams<Real>;
-
-    using LSFiltration = oineus::Filtration<Int, Real, Int>;
-    using LSSimplex = typename LSFiltration::FiltrationSimplex;
-
     using VREdge = typename oineus::VREdge<Int>;
-    using VRFiltration = oineus::Filtration<Int, Real, VREdge>;
-    using VRSimplex = typename VRFiltration::FiltrationSimplex;
 
     using BoundaryMatrix = oineus::SparseMatrix<Int>;
 
     using ReductionParams = oineus::Params;
 
     std::string vr_edge_name = "VREdge";
-
-    std::string dgm_point_name = "DiagramPoint" + suffix;
-    std::string dgm_class_name = "Diagrams" + suffix;
-
-    std::string ls_simplex_class_name = "LSSimplex" + suffix;
-    std::string ls_filtration_class_name = "LSFiltration" + suffix;
-
-    std::string vr_simplex_class_name = "VRSimplex" + suffix;
-    std::string vr_filtration_class_name = "VRFiltration" + suffix;
-
-    py::class_<DgmPoint>(m, dgm_point_name.c_str())
-            .def(py::init<Real, Real>())
-            .def_readwrite("birth", &DgmPoint::birth)
-            .def_readwrite("death", &DgmPoint::death)
-            .def("__getitem__", [](const DgmPoint& p, int i) {
-              if (i == 0)
-                  return p.birth;
-              else if (i == 1)
-                  return p.death;
-              else
-                  throw std::out_of_range("i must be 0 or 1");
-            })
-            .def("__repr__", [](const DgmPoint& p) {
-              std::stringstream ss;
-              ss << p;
-              return ss.str();
-            });
 
     py::class_<VREdge>(m, vr_edge_name.c_str())
             .def(py::init<Int>())
@@ -215,6 +181,88 @@ void init_oineus(py::module& m, std::string suffix)
               return ss.str();
             });
 
+    py::class_<ReductionParams>(m, "ReductionParams")
+            .def(py::init<>())
+            .def_readwrite("n_threads", &ReductionParams::n_threads)
+            .def_readwrite("chunk_size", &ReductionParams::chunk_size)
+            .def_readwrite("write_dgms", &ReductionParams::write_dgms)
+            .def_readwrite("sort_dgms", &ReductionParams::sort_dgms)
+            .def_readwrite("clearing_opt", &ReductionParams::clearing_opt)
+            .def_readwrite("acq_rel", &ReductionParams::acq_rel)
+            .def_readwrite("print_time", &ReductionParams::print_time)
+            .def_readwrite("elapsed", &ReductionParams::elapsed)
+            ;
+
+    py::class_<BoundaryMatrix>(m, "BoundaryMatrix")
+            .def(py::init<>())
+            .def_readwrite("data", &BoundaryMatrix::data)
+            .def_readwrite("v_data", &BoundaryMatrix::v_data)
+            .def("reduce", &BoundaryMatrix::reduce_parallel)
+            ;
+
+    using DgmPointInt = typename oineus::DgmPoint<Int>;
+    using DgmPointSizet = typename oineus::DgmPoint<size_t>;
+
+    py::class_<DgmPointInt>(m, "DgmPoint_int")
+            .def(py::init<Int, Int>())
+            .def_readwrite("birth", &DgmPointInt::birth)
+            .def_readwrite("death", &DgmPointInt::death)
+            .def("__getitem__", [](const DgmPointInt& p, int i) { return p[i]; })
+            .def("__hash__", [](const DgmPointInt& p) { return std::hash<DgmPointInt>()(p); })
+            .def("__repr__", [](const DgmPointInt& p) {
+              std::stringstream ss;
+              ss << p;
+              return ss.str();
+            });
+
+     py::class_<DgmPointSizet>(m, "DgmPoint_Sizet")
+            .def(py::init<size_t, size_t>())
+            .def_readwrite("birth", &DgmPointSizet::birth)
+            .def_readwrite("death", &DgmPointSizet::death)
+            .def("__getitem__", [](const DgmPointSizet& p, int i) { return p[i]; })
+            .def("__hash__", [](const DgmPointSizet& p) { return std::hash<DgmPointSizet>()(p); })
+            .def("__repr__", [](const DgmPointSizet& p) {
+              std::stringstream ss;
+              ss << p;
+              return ss.str();
+            });
+}
+
+template<class Int, class Real>
+void init_oineus(py::module& m, std::string suffix)
+{
+    using namespace pybind11::literals;
+
+    using DgmPoint = oineus::DgmPoint<Real>;
+    using Diagram = PyOineusDiagrams<Real>;
+
+    using LSFiltration = oineus::Filtration<Int, Real, Int>;
+    using LSSimplex = typename LSFiltration::FiltrationSimplex;
+
+    using VREdge = typename oineus::VREdge<Int>;
+    using VRFiltration = oineus::Filtration<Int, Real, VREdge>;
+    using VRSimplex = typename VRFiltration::FiltrationSimplex;
+
+    std::string dgm_point_name = "DiagramPoint" + suffix;
+    std::string dgm_class_name = "Diagrams" + suffix;
+
+    std::string ls_simplex_class_name = "LSSimplex" + suffix;
+    std::string ls_filtration_class_name = "LSFiltration" + suffix;
+
+    std::string vr_simplex_class_name = "VRSimplex" + suffix;
+    std::string vr_filtration_class_name = "VRFiltration" + suffix;
+
+    py::class_<DgmPoint>(m, dgm_point_name.c_str())
+            .def(py::init<Real, Real>())
+            .def_readwrite("birth", &DgmPoint::birth)
+            .def_readwrite("death", &DgmPoint::death)
+            .def("__getitem__", [](const DgmPoint& p, int i) { return p[i]; })
+            .def("__hash__", [](const DgmPoint& p) { return std::hash<DgmPoint>()(p); })
+            .def("__repr__", [](const DgmPoint& p) {
+              std::stringstream ss;
+              ss << p;
+              return ss.str();
+            });
 
     py::class_<Diagram>(m, dgm_class_name.c_str())
             .def(py::init<>())
@@ -248,25 +296,6 @@ void init_oineus(py::module& m, std::string suffix)
               ss << sigma;
               return ss.str();
             });
-
-    py::class_<ReductionParams>(m, "ReductionParams")
-            .def(py::init<>())
-            .def_readwrite("n_threads", &ReductionParams::n_threads)
-            .def_readwrite("chunk_size", &ReductionParams::chunk_size)
-            .def_readwrite("write_dgms", &ReductionParams::write_dgms)
-            .def_readwrite("sort_dgms", &ReductionParams::sort_dgms)
-            .def_readwrite("clearing_opt", &ReductionParams::clearing_opt)
-            .def_readwrite("acq_rel", &ReductionParams::acq_rel)
-            .def_readwrite("print_time", &ReductionParams::print_time)
-            .def_readwrite("elapsed", &ReductionParams::elapsed)
-            ;
-
-    py::class_<BoundaryMatrix>(m, "BoundaryMatrix")
-            .def(py::init<>())
-            .def_readwrite("data", &BoundaryMatrix::data)
-            .def_readwrite("v_data", &BoundaryMatrix::v_data)
-            .def("reduce", &BoundaryMatrix::reduce_parallel)
-            ;
 
     py::class_<LSFiltration>(m, ls_filtration_class_name.c_str())
             .def(py::init<>())
@@ -329,6 +358,13 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "get_boundary_matrix" + suffix + "_3";
     m.def(func_name.c_str(), &get_boundary_matrix<Int, Real, 3>);
+
+     // target values
+    func_name = "get_denoise_target" + suffix;
+    m.def(func_name.c_str(), &oineus::get_denoise_target<Int, Real, Int>);
+
+    func_name = "get_denoise_target" + suffix;
+    m.def(func_name.c_str(), &oineus::get_denoise_target<Int, Real, VREdge>);
 
     // target values
     func_name = "get_ls_target_values" + suffix;

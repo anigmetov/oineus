@@ -36,16 +36,25 @@ std::vector<Real> lin_interp(std::vector<Real> xs, Real x_1, Real x_2, Real y_1,
     return ys;
 }
 
-//template<class Int, class Real, class L>
-//typename DiagramToValues<Real> diagram_to_values(dim_type d, const oineus::Filtration<Int, Real, L>& fil, const oineus::SparseMatrix<Int>& rv_matrix, Real eps)
-//{
-//    auto index_diagram = rv_matrix.template index_diagram_finite<Real, L>(fil)[d];
-//    auto& simplices = fil.simplices(d);
-//
-//    for(auto p : index_diagram) {
-//        auto birth_simplex = simplices[fil.adjust_index(p.birth, d)];
-//    }
-//}
+template<class Int, class Real, class L>
+DiagramToValues<Real> get_denoise_target(dim_type d, const oineus::Filtration<Int, Real, L>& fil, const oineus::SparseMatrix<Int>& rv_matrix, Real eps)
+{
+    DiagramToValues<Real> result;
+    auto index_diagram = rv_matrix.template index_diagram_finite<Real, L>(fil)[d];
+
+    for(auto p : index_diagram) {
+        Real birth_value = fil.simplices()[p.birth].value();
+        Real death_value = fil.simplices()[p.death].value();
+        Real pers =abs(death_value - birth_value);
+        if (pers > Real(0) and pers <= eps) {
+            Real target_birth = birth_value;
+            Real target_death = birth_value;
+            result[p] = {target_birth, target_death};
+        }
+    }
+
+    return result;
+}
 
 template<class Int, class Real, class L>
 TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil, const oineus::SparseMatrix<Int>& rv_matrix)
@@ -73,8 +82,8 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
 
         Real min_birth = fil.min_value(d);
 
-        auto birth_column = rv_matrix.data[birth_idx];
-        auto death_column = rv_matrix.v_data[birth_idx];
+        auto birth_column = rv_matrix.data[death_idx];
+        auto death_column = rv_matrix.v_data[death_idx];
 
         // birth simplices are in R column
         std::vector<Real> current_r_values;
@@ -85,6 +94,7 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
             current_r_values.push_back(simplices[sigma_idx].value());
         }
 
+//        std::cerr<< "r values " << r_simplex_indices.size() << ", min_birth = " << min_birth << ", current_birth = "<< current_birth << ", target_birth = " << target_birth << std::endl;
         auto target_r_values = lin_interp<Real>(current_r_values, min_birth, current_birth, min_birth, target_birth);
 
         // death simplices are in V column
@@ -96,6 +106,7 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
             current_v_values.push_back(simplices[sigma_idx].value());
         }
 
+//        std::cerr<< "v values " << v_simplex_indices.size() << ", current_birth = "<< current_birth << ", current_death" << current_death << ", target_birth = " << target_birth << ", target_death = " << target_death << std::endl;
         auto target_v_values = lin_interp<Real>(current_v_values, current_birth, current_death, target_birth, target_death);
 
         assert(birth_column.size() == target_r_values.size() and target_r_values.size() == r_simplex_indices.size());

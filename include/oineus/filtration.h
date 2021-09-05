@@ -30,7 +30,7 @@ namespace oineus {
 
         Filtration() = default;
 
-        Filtration(FiltrationSimplexVector&& _simplices, bool _negate, int n_threads=1) :
+        Filtration(const FiltrationSimplexVector& _simplices, bool _negate, int n_threads=1) :
             negate_(_negate),
             simplices_(_simplices)
         {
@@ -150,7 +150,7 @@ namespace oineus {
 
                 auto& sigma = simplices_[id];
 
-                if (id < dim_last(0) and sigma.id_ != static_cast<Int>(id))
+                if (sigma.dim() == 0 and sigma.id_ != static_cast<Int>(id))
                     throw std::runtime_error("Vertex id and order of vertices do not match");
                 else
                     sigma.id_ = static_cast<Int>(id);
@@ -165,6 +165,7 @@ namespace oineus {
                 if (simplices_[i].dim() != curr_dim) {
                     assert(i >= 1);
                     dim_last_.push_back(i-1);
+                    dim_first_.push_back(i);
                     curr_dim = simplices_[i].dim();
                 }
             dim_last_.push_back(size() - 1);

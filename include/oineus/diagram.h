@@ -18,6 +18,9 @@ struct DgmPoint {
     T birth;
     T death;
 
+    DgmPoint() = default;
+    DgmPoint(const DgmPoint&) = default;
+
     DgmPoint(T b, T d)
             :birth(b), death(d) { };
 
@@ -104,6 +107,9 @@ struct Diagrams {
     {
         return diagram_in_dimension_.at(d);
     }
+
+    Dgm& operator[](size_t d) { return diagram_in_dimension_.at(d); }
+    const Dgm& operator[](size_t d) const { return diagram_in_dimension_.at(d); }
 
     void add_point(dim_type dim, Real b, Real d)
     {

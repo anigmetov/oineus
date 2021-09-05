@@ -273,7 +273,7 @@ public:
             simplices.insert(simplices.end(), fs.begin(), fs.end());
         }
 
-        return GridFiltration(std::move(simplices), negate, n_threads);
+        return GridFiltration(simplices, negate, n_threads);
     }
 
     Real value_at_vertex(Int vertex) const

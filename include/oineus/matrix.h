@@ -15,16 +15,13 @@
 #include <stdexcept>
 
 #include "common_defs.h"
+#include "diagram.h"
 #include "mem_reclamation.h"
 
 namespace oineus {
 
 template<typename Int_, typename Real_, typename L_>
 class Filtration;
-
-template<typename Real_>
-struct Diagrams;
-
 
 // contains indices of non-zero entries
 template<typename Int>
@@ -284,7 +281,7 @@ struct SparseMatrix {
     Diagrams<Real> diagram(const Filtration<Int, Real, L>& fil) const;
 
     template<typename Real, typename L>
-    Diagrams<Int> index_diagram_finite(const Filtration<Int, Real, L>& fil) const;
+    Diagrams<size_t> index_diagram_finite(const Filtration<Int, Real, L>& fil) const;
 
 
     template<typename Int>
@@ -442,16 +439,16 @@ Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real, L>& fil) c
 
 template<class Int>
 template<class Real, class L>
-Diagrams<Int> SparseMatrix<Int>::index_diagram_finite(const Filtration<Int, Real, L>& fil) const
+Diagrams<size_t> SparseMatrix<Int>::index_diagram_finite(const Filtration<Int, Real, L>& fil) const
 {
     if (not is_reduced)
         throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
 
-    Diagrams<Int> result;
+    Diagrams<size_t> result;
 
     for(size_t death_idx = 0; death_idx < data.size(); ++death_idx)
         if (not is_zero(data[death_idx])) {
-            Int birth_idx = low(data[death_idx]);
+            size_t birth_idx = static_cast<size_t>(low(data[death_idx]));
             dim_type dim = fil.dim_by_sorted_id(birth_idx);
             result.add_point(dim, birth_idx, death_idx);
         }
