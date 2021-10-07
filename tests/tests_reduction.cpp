@@ -13,19 +13,12 @@ get_grid(Real* pdata, typename oineus::Grid<Int, Real, D>::GridPoint dims, bool 
     return oineus::Grid<Int, Real, D>(dims, wrap, pdata);
 }
 
-template<class Int, class Real, size_t D>
-typename oineus::Filtration<Int, Real>
-get_filtration(const typename oineus::Grid<Int, Real, D>& grid, bool negate, bool wrap, dim_type top_d, int n_threads)
-{
-    auto res =  grid.freudenthal_filtration(top_d, negate, n_threads);
-    return res;
-}
 
 template<class Int, class Real, size_t D>
 typename oineus::SparseMatrix<Int>::MatrixData
 get_boundary_matrix(const typename oineus::Grid<Int, Real, D>& grid, bool negate, bool wrap, dim_type top_d, int n_threads)
 {
-    auto fil = get_filtration<Int, Real, D>(grid, negate, wrap, top_d, n_threads);
+    auto fil = grid.freudenthal_filtration(top_d, negate, n_threads);
     auto bm = fil.boundary_matrix_full();
     return bm.data;
 }
@@ -33,7 +26,7 @@ get_boundary_matrix(const typename oineus::Grid<Int, Real, D>& grid, bool negate
 template<class Int, class Real, size_t D>
 decltype(auto) compute_diagrams_and_v_ls_freudenthal(const typename oineus::Grid<Int, Real, D>& grid, bool negate, bool wrap, dim_type top_d, int n_threads)
 {
-    auto fil = get_filtration<Int, Real, D>(grid, negate, wrap, top_d, n_threads);
+    auto fil = grid.freudenthal_filtration(top_d + 1, negate, n_threads);
     auto d_matrix = fil.boundary_matrix_full();
 
     oineus::Params params;
@@ -101,5 +94,5 @@ TEST_CASE("Simple reduction")
     Grid grid = get_grid<Int, Real, 3>(xs.data(), dims, wrap);
     auto dv = compute_diagrams_and_v_ls_freudenthal<Int, Real, 3>(grid, negate, wrap, top_d, n_threads);
     auto dgms = dv.first;
-    REQUIRE( dgms.n_dims() == top_d );
+    REQUIRE( dgms.n_dims() == top_d + 1 );
 }

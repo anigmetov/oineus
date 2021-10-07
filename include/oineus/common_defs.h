@@ -41,6 +41,8 @@ inline void info([[maybe_unused]] const Args& ... args)
 
 #endif
 
+#include "icecream/icecream.hpp"
+
 namespace oineus {
 
 using dim_type = size_t;

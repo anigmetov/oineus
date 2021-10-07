@@ -10,16 +10,14 @@ using namespace std::rel_ops;
 
 namespace oineus {
 
-    template<typename Int>
     struct VREdge {
-        Int x;
-        Int y;
+        size_t x;
+        size_t y;
         bool operator==(const VREdge& other) const { return x == other.x and y == other.y; }
         bool operator<(const VREdge& other) const { return x < other.x or (x == other.x and y < other.y); };
     };
 
-    template<typename I>
-    std::ostream& operator<<(std::ostream& out, const VREdge<I>& e)
+    std::ostream& operator<<(std::ostream& out, const VREdge& e)
     {
         out << "edge(x=" << e.x << ", y=" << e.y << ")";
         return out;
@@ -102,9 +100,9 @@ namespace oineus {
 }
 
 namespace std {
-template<class T>
-struct hash<oineus::VREdge<T>> {
-    std::size_t operator()(const oineus::VREdge<T>& p) const
+template<>
+struct hash<oineus::VREdge> {
+    std::size_t operator()(const oineus::VREdge& p) const
     {
         std::size_t seed = 0;
         oineus::hash_combine(seed, p.x);

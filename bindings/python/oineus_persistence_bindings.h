@@ -78,6 +78,8 @@ get_grid(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool
     return Grid(dims, wrap, pdata);
 }
 
+
+
 template<class Int, class Real, size_t D>
 typename oineus::Filtration<Int, Real, Int>
 get_fr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type top_d, int n_threads)
@@ -86,6 +88,34 @@ get_fr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> d
     auto fil =  grid.freudenthal_filtration(top_d, negate, n_threads);
     return fil;
 }
+
+template<class Real, size_t D>
+decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::array::forcecast> data)
+{
+    using PointVector = std::vector<oineus::Point<Real, D>>;
+
+    if (data.ndim() != 2 or data.shape(1) != D)
+        throw std::runtime_error("Dimension mismatch");
+
+    py::buffer_info data_buf = data.request();
+
+    PointVector points(data.shape(0));
+
+    Real* pdata {static_cast<Real*>(data_buf.ptr)};
+
+    for(size_t i = 0; i < data.size(); ++i)
+        points[i / D][i % D] = pdata[i];
+
+    return points;
+}
+
+template<class Int, class Real, size_t D>
+typename oineus::Filtration<Int, Real, oineus::VREdge>
+get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> points, dim_type top_d, Real max_radius, int n_threads)
+{
+    return oineus::get_vr_filtration_bk<Int, Real, D>(numpy_to_point_vector<Real, D>(points), top_d, max_radius, n_threads);
+}
+
 
 template<class Int, class Real, size_t D>
 typename oineus::SparseMatrix<Int>::MatrixData
@@ -155,7 +185,7 @@ void init_oineus_common(py::module& m)
 {
     using namespace pybind11::literals;
 
-    using VREdge = typename oineus::VREdge<Int>;
+    using oineus::VREdge;
 
     using BoundaryMatrix = oineus::SparseMatrix<Int>;
 
@@ -239,7 +269,7 @@ void init_oineus(py::module& m, std::string suffix)
     using LSFiltration = oineus::Filtration<Int, Real, Int>;
     using LSSimplex = typename LSFiltration::FiltrationSimplex;
 
-    using VREdge = typename oineus::VREdge<Int>;
+    using oineus::VREdge;
     using VRFiltration = oineus::Filtration<Int, Real, VREdge>;
     using VRSimplex = typename VRFiltration::FiltrationSimplex;
 
@@ -339,7 +369,7 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "compute_diagrams_and_rv_ls" + suffix + "_3";
     m.def(func_name.c_str(), &compute_diagrams_and_rv_ls_freudenthal<Int, Real, 3>);
 
-    // boundary matrix as vector of columns
+    // Lower-star Freudenthal filtration
     func_name = "get_fr_filtration" + suffix + "_1";
     m.def(func_name.c_str(), &get_fr_filtration<Int, Real, 1>);
 
@@ -348,6 +378,16 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "get_fr_filtration" + suffix + "_3";
     m.def(func_name.c_str(), &get_fr_filtration<Int, Real, 3>);
+
+     // Vietoris--Rips filtration
+    func_name = "get_vr_filtration" + suffix + "_1";
+    m.def(func_name.c_str(), &get_vr_filtration<Int, Real, 1>);
+
+    func_name = "get_vr_filtration" + suffix + "_2";
+    m.def(func_name.c_str(), &get_vr_filtration<Int, Real, 2>);
+
+    func_name = "get_vr_filtration" + suffix + "_3";
+    m.def(func_name.c_str(), &get_vr_filtration<Int, Real, 3>);
 
     // boundary matrix as vector of columns
     func_name = "get_boundary_matrix" + suffix + "_1";

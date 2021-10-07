@@ -36,6 +36,7 @@ std::vector<Real> lin_interp(std::vector<Real> xs, Real x_1, Real x_2, Real y_1,
     return ys;
 }
 
+// points (b, d) with persistence | b - d| <= eps should go to (b, b)
 template<class Int, class Real, class L>
 DiagramToValues<Real> get_denoise_target(dim_type d, const oineus::Filtration<Int, Real, L>& fil, const oineus::SparseMatrix<Int>& rv_matrix, Real eps)
 {
@@ -56,6 +57,7 @@ DiagramToValues<Real> get_denoise_target(dim_type d, const oineus::Filtration<In
     return result;
 }
 
+// given target points (diagram_to_values), compute values on intermediate simplices from R, V columns
 template<class Int, class Real, class L>
 TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil, const oineus::SparseMatrix<Int>& rv_matrix)
 {
@@ -94,7 +96,6 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
             current_r_values.push_back(simplices[sigma_idx].value());
         }
 
-//        std::cerr<< "r values " << r_simplex_indices.size() << ", min_birth = " << min_birth << ", current_birth = "<< current_birth << ", target_birth = " << target_birth << std::endl;
         auto target_r_values = lin_interp<Real>(current_r_values, min_birth, current_birth, min_birth, target_birth);
 
         // death simplices are in V column
@@ -106,7 +107,6 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
             current_v_values.push_back(simplices[sigma_idx].value());
         }
 
-//        std::cerr<< "v values " << v_simplex_indices.size() << ", current_birth = "<< current_birth << ", current_death" << current_death << ", target_birth = " << target_birth << ", target_death = " << target_death << std::endl;
         auto target_v_values = lin_interp<Real>(current_v_values, current_birth, current_death, target_birth, target_death);
 
         assert(birth_column.size() == target_r_values.size() and target_r_values.size() == r_simplex_indices.size());
