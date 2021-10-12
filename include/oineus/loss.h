@@ -59,6 +59,26 @@ DiagramToValues<Real> get_denoise_target(dim_type d, const oineus::Filtration<In
 
 // given target points (diagram_to_values), compute values on intermediate simplices from R, V columns
 template<class Int, class Real, class L>
+TargetMatching<L, Real> get_target_values_diagram_loss(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil, const oineus::SparseMatrix<Int>& rv_matrix)
+{
+    TargetMatching<L, Real> result;
+    const auto& simplices = fil.simplices();
+
+    for(auto&& kv: diagram_to_values) {
+        auto dgm_point = kv.first;
+        auto target_point = kv.second;
+
+        auto birth_cvl = simplices[dgm_point.birth].critical_value_location_;
+        auto death_cvl = simplices[dgm_point.death].critical_value_location_;
+
+        result[birth_cvl] = target_point.birth;
+        result[death_cvl] = target_point.death;
+    }
+
+    return result;
+}
+// given target points (diagram_to_values), compute values on intermediate simplices from R, V columns
+template<class Int, class Real, class L>
 TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil, const oineus::SparseMatrix<Int>& rv_matrix)
 {
     TargetMatching<L, Real> result;

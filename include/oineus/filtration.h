@@ -200,7 +200,7 @@ namespace oineus {
                 sorted_id_to_value_[sorted_id] = sigma.value();
             }
 
-            std::cerr << "sort filtration took " << timer.elapsed() << std::endl;
+//            std::cerr << "sort filtration took " << timer.elapsed() << std::endl;
         }
 
 
