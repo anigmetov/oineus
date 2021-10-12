@@ -109,7 +109,11 @@ decltype(auto) get_vr_filtration_bk(const std::vector<Point<Real, D>>& points, d
     std::vector<VRSimplex> simplices;
     bool negate {false};
 
-    auto functor = [&](const VertexContainer& vs) { simplices.push_back(vr_simplex<Int, Real, D>(points, vs)); };
+    // vertices are added manually to preserve order (id == index)
+    for(size_t v = 0; v < points.size(); ++v)
+        simplices.emplace_back(vr_simplex<Int, Real>(points, {v}));
+
+    auto functor = [&](const VertexContainer& vs) { if (vs.size() > 1) simplices.push_back(vr_simplex<Int, Real, D>(points, vs)); };
 
     VertexContainer current;
     VertexContainer candidates(points.size());
