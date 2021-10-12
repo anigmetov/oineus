@@ -82,10 +82,10 @@ get_grid(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool
 
 template<class Int, class Real, size_t D>
 typename oineus::Filtration<Int, Real, Int>
-get_fr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type top_d, int n_threads)
+get_fr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
     auto grid = get_grid<Int, Real, D>(data, wrap);
-    auto fil =  grid.freudenthal_filtration(top_d, negate, n_threads);
+    auto fil =  grid.freudenthal_filtration(max_dim, negate, n_threads);
     return fil;
 }
 
@@ -111,26 +111,26 @@ decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::
 
 template<class Int, class Real, size_t D>
 typename oineus::Filtration<Int, Real, oineus::VREdge>
-get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> points, dim_type top_d, Real max_radius, int n_threads)
+get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> points, dim_type max_dim, Real max_radius, int n_threads)
 {
-    return oineus::get_vr_filtration_bk<Int, Real, D>(numpy_to_point_vector<Real, D>(points), top_d, max_radius, n_threads);
+    return oineus::get_vr_filtration_bk<Int, Real, D>(numpy_to_point_vector<Real, D>(points), max_dim, max_radius, n_threads);
 }
 
 
 template<class Int, class Real, size_t D>
 typename oineus::SparseMatrix<Int>::MatrixData
-get_boundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type top_d, int n_threads)
+get_boundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, top_d, n_threads);
+    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads);
     auto bm = fil.boundary_matrix_full();
     return bm.data;
 }
 
 template<class Int, class Real, size_t D>
 DiagramV<Int, Real>
-compute_diagrams_and_v_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type top_d, int n_threads)
+compute_diagrams_and_v_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, top_d, n_threads);
+    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, n_threads);
     auto d_matrix = fil.boundary_matrix_full();
 
     oineus::Params params;
@@ -146,9 +146,9 @@ compute_diagrams_and_v_ls_freudenthal(py::array_t<Real, py::array::c_style | py:
 
 template<class Int, class Real, size_t D>
 DiagramRV<Int, Real>
-compute_diagrams_and_rv_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type top_d, int n_threads)
+compute_diagrams_and_rv_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, top_d, n_threads);
+    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, n_threads);
     auto d_matrix = fil.boundary_matrix_full();
 
     oineus::Params params;
@@ -164,9 +164,10 @@ compute_diagrams_and_rv_ls_freudenthal(py::array_t<Real, py::array::c_style | py
 
 template<class Int, class Real, size_t D>
 PyOineusDiagrams<Real>
-compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type top_d, int n_threads)
+compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, top_d, n_threads);
+    // for diagram in dimension d, we need (d+1)-simplices
+    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, n_threads);
     auto d_matrix = fil.boundary_matrix_full();
 
     oineus::Params params;
@@ -412,6 +413,14 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "get_vr_target_values" + suffix;
     m.def(func_name.c_str(), &oineus::get_target_values<Int, Real, VREdge>);
+
+     // target values -- diagram loss
+    func_name = "get_ls_target_values_diagram_loss" + suffix;
+    m.def(func_name.c_str(), &oineus::get_target_values_diagram_loss<Int, Real, Int>);
+
+    func_name = "get_vr_target_values_diagram_loss" + suffix;
+    m.def(func_name.c_str(), &oineus::get_target_values_diagram_loss<Int, Real, VREdge>);
+
 }
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H
