@@ -52,36 +52,41 @@ def get_type_dim(data):
 
     return type_part, dim_part
 
-def get_freudenthal_filtration(data, negate, wrap, top_dim, n_threads):
+def get_freudenthal_filtration(data, negate, wrap, max_dim, n_threads):
     type_part, dim_part = get_type_dim(data)
     func = getattr(_oineus, f"get_fr_filtration_{type_part}_{dim_part}")
-    return func(data, negate, wrap, top_dim, n_threads)
+    return func(data, negate, wrap, max_dim, n_threads)
+
+def get_vr_filtration(points, max_dim, n_threads):
+    type_part, dim_part = get_type_dim(points)
+    func = getattr(_oineus, f"get_vr_filtration_{type_part}_{dim_part}")
+    return func(points, max_dim, n_threads)
 
 
-def get_boundary_matrix(data, negate, wrap, top_dim, n_threads):
+def get_boundary_matrix(data, negate, wrap, max_dim, n_threads):
     type_part, dim_part = get_type_dim(data)
     func = getattr(_oineus, f"get_boundary_matrix_{type_part}_{dim_part}")
-    bm = func(data, negate, wrap, top_dim, n_threads)
+    bm = func(data, negate, wrap, max_dim, n_threads)
     return to_scipy_matrix(bm)
 
 
-def compute_diagrams_ls(data, negate, wrap, top_dim, n_threads):
+def compute_diagrams_ls(data, negate, wrap, max_dim, n_threads):
     type_part, dim_part = get_type_dim(data)
     func = getattr(_oineus, f"compute_diagrams_ls_{type_part}_{dim_part}")
-    return func(data, negate, wrap, top_dim, n_threads)
+    return func(data, negate, wrap, max_dim, n_threads)
 
 
-def compute_diagrams_and_v_ls(data, negate, wrap, top_dim, n_threads):
+def compute_diagrams_and_v_ls(data, negate, wrap, max_dim, n_threads):
     type_part, dim_part = get_type_dim(data)
     func = getattr(_oineus, f"compute_diagrams_and_v_ls_{type_part}_{dim_part}")
-    dgms, v = func(data, negate, wrap, top_dim, n_threads)
+    dgms, v = func(data, negate, wrap, max_dim, n_threads)
     v = to_scipy_matrix(v)
     return dgms, v
 
-def compute_diagrams_and_rv_ls(data, negate, wrap, top_dim, n_threads):
+def compute_diagrams_and_rv_ls(data, negate, wrap, max_dim, n_threads):
     type_part, dim_part = get_type_dim(data)
     func = getattr(_oineus, f"compute_diagrams_and_rv_ls_{type_part}_{dim_part}")
-    dgms, r, v = func(data, negate, wrap, top_dim, n_threads)
+    dgms, r, v = func(data, negate, wrap, max_dim, n_threads)
     v = to_scipy_matrix(v)
     r = to_scipy_matrix(r)
     return dgms, r, v
@@ -96,4 +101,10 @@ def get_denoise_target(d, fil, rv, eps):
 def get_ls_target_values(d, dtv, fil, rv):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_ls_target_values_{type_part}")
+    return func(d, dtv, fil, rv)
+
+
+def get_ls_target_values_diagram_loss(d, dtv, fil, rv):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_ls_target_values_diagram_loss_{type_part}")
     return func(d, dtv, fil, rv)
