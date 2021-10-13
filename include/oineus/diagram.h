@@ -98,6 +98,17 @@ struct Diagrams {
     using Point = DgmPoint<Real>;
     using Dgm = std::vector<Point>;
 
+    dim_type max_dim_;
+
+    Diagrams(dim_type filtration_dim) : max_dim_(filtration_dim - 1)
+    {
+        if (filtration_dim == 0)
+            throw std::runtime_error("refuse to compute diagram from 0-dim filtration");
+
+        for(dim_type d = 0; d <= max_dim_; ++d)
+            diagram_in_dimension_[d];
+    }
+
     std::map<dim_type, Dgm> diagram_in_dimension_;
 
     [[nodiscard]] size_t n_dims() const noexcept { return diagram_in_dimension_.size(); }

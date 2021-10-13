@@ -296,7 +296,7 @@ void init_oineus(py::module& m, std::string suffix)
             });
 
     py::class_<Diagram>(m, dgm_class_name.c_str())
-            .def(py::init<>())
+            .def(py::init<dim_type>())
             .def("in_dimension", &Diagram::get_diagram_in_dimension)
             .def("__getitem__", &Diagram::get_diagram_in_dimension);
 

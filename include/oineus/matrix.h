@@ -397,7 +397,7 @@ Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real, L>& fil) c
     if (not is_reduced)
         throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
 
-    Diagrams<Real> result;
+    Diagrams<Real> result(fil.max_dim());
 
     std::unordered_set<Int> rows_with_lowest_one;
 
@@ -444,7 +444,7 @@ Diagrams<size_t> SparseMatrix<Int>::index_diagram_finite(const Filtration<Int, R
     if (not is_reduced)
         throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
 
-    Diagrams<size_t> result;
+    Diagrams<size_t> result(fil.max_dim());
 
     for(size_t death_idx = 0; death_idx < data.size(); ++death_idx)
         if (not is_zero(data[death_idx])) {
