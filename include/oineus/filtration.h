@@ -174,7 +174,6 @@ private:
                 curr_dim = simplices_[i].dim();
             }
         dim_last_.push_back(size() - 1);
-        std::cerr << "filtration dim = " << curr_dim << std::endl;
     }
 
     // sort simplices and assign sorted_ids
@@ -204,8 +203,6 @@ private:
             vertices_to_sorted_id_[sigma.vertices_] = sorted_id;
             sorted_id_to_value_[sorted_id] = sigma.value();
         }
-
-        std::cerr << "sort filtration took " << timer.elapsed() << std::endl;
     }
 
     template<typename I, typename R, typename L>

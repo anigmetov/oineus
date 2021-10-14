@@ -337,12 +337,14 @@ void init_oineus(py::module& m, std::string suffix)
 
     py::class_<LSFiltration>(m, ls_filtration_class_name.c_str())
             .def(py::init<>())
-//            .def("simplices", &LSFiltration::simplices)
+            .def("max_dim", &LSFiltration::max_dim)
+            .def("size_in_dimension", &LSFiltration::size_in_dimension)
             .def("boundary_matrix", &LSFiltration::boundary_matrix_full);
 
     py::class_<VRFiltration>(m, vr_filtration_class_name.c_str())
             .def(py::init<>())
-//            .def("simplices", &VRFiltration::simplices)
+            .def("max_dim", &VRFiltration::max_dim)
+            .def("size_in_dimension", &VRFiltration::size_in_dimension)
             .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
 
     std::string func_name;
