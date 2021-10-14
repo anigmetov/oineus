@@ -17,7 +17,7 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 
 find_package (Threads)
-set (libraries ${libraries} ${CMAKE_THREAD_LIBS_INIT})
+set (libraries ${libraries} ${CMAKE_THREAD_LIBS_INIT} tbb)
 
 if (use_jemalloc)
     set (libraries ${libraries} jemalloc)
