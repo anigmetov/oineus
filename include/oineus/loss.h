@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "diagram.h"
+#include "timer.h"
 #include "filtration.h"
 #include "matrix.h"
 
@@ -84,8 +85,6 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
     TargetMatching<L, Real> result;
 
     const auto& simplices = fil.simplices();
-
-    const bool negate = fil.negate();
 
     std::unordered_map<Int, Real> simplices_to_values;
 

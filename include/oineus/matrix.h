@@ -378,6 +378,7 @@ void SparseMatrix<Int>::reduce_parallel(Params& params)
     if (params.print_time) {
         for(auto& s : stats) { info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots); }
         info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
+//        std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << std::endl;
     }
 
     // write reduced matrix back, collect V matrix, mark as reduced

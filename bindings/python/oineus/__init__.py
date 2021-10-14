@@ -57,10 +57,10 @@ def get_freudenthal_filtration(data, negate, wrap, max_dim, n_threads):
     func = getattr(_oineus, f"get_fr_filtration_{type_part}_{dim_part}")
     return func(data, negate, wrap, max_dim, n_threads)
 
-def get_vr_filtration(points, max_dim, n_threads):
+def get_vr_filtration(points, max_dim, max_radius, n_threads):
     type_part, dim_part = get_type_dim(points)
     func = getattr(_oineus, f"get_vr_filtration_{type_part}_{dim_part}")
-    return func(points, max_dim, n_threads)
+    return func(points, max_dim, max_radius, n_threads)
 
 
 def get_boundary_matrix(data, negate, wrap, max_dim, n_threads):
@@ -107,4 +107,16 @@ def get_ls_target_values(d, dtv, fil, rv):
 def get_ls_target_values_diagram_loss(d, dtv, fil, rv):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_ls_target_values_diagram_loss_{type_part}")
+    return func(d, dtv, fil, rv)
+
+
+def get_vr_target_values(d, dtv, fil, rv):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_vr_target_values_{type_part}")
+    return func(d, dtv, fil, rv)
+
+
+def get_vr_target_values_diagram_loss(d, dtv, fil, rv):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_vr_target_values_diagram_loss_{type_part}")
     return func(d, dtv, fil, rv)

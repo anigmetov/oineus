@@ -24,6 +24,9 @@ public:
     PyOineusDiagrams(const oineus::Diagrams<Real>& _diagrams)
             :diagrams_(_diagrams) { }
 
+    PyOineusDiagrams(oineus::Diagrams<Real>&& _diagrams)
+            :diagrams_(_diagrams) { }
+
     py::array_t<Real> get_diagram_in_dimension(dim_type d)
     {
         auto dgm = diagrams_.get_diagram_in_dimension(d);
@@ -229,6 +232,10 @@ void init_oineus_common(py::module& m)
             .def_readwrite("data", &BoundaryMatrix::data)
             .def_readwrite("v_data", &BoundaryMatrix::v_data)
             .def("reduce", &BoundaryMatrix::reduce_parallel)
+            .def("diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, double, VREdge>& fil) { return PyOineusDiagrams<double>(self.diagram(fil)); })
+            .def("diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, float, VREdge>& fil) { return PyOineusDiagrams<float>(self.diagram(fil)); })
+            .def("diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, double, Int>& fil) { return PyOineusDiagrams<double>(self.diagram(fil)); })
+            .def("diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, float, Int>& fil) { return PyOineusDiagrams<float>(self.diagram(fil)); })
             ;
 
     using DgmPointInt = typename oineus::DgmPoint<Int>;
@@ -330,12 +337,12 @@ void init_oineus(py::module& m, std::string suffix)
 
     py::class_<LSFiltration>(m, ls_filtration_class_name.c_str())
             .def(py::init<>())
-            .def("simplices", &LSFiltration::simplices)
+//            .def("simplices", &LSFiltration::simplices)
             .def("boundary_matrix", &LSFiltration::boundary_matrix_full);
 
     py::class_<VRFiltration>(m, vr_filtration_class_name.c_str())
             .def(py::init<>())
-            .def("simplices", &VRFiltration::simplices)
+//            .def("simplices", &VRFiltration::simplices)
             .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
 
     std::string func_name;
