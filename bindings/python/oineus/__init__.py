@@ -107,7 +107,7 @@ def get_ls_target_values(d, dtv, fil, rv):
 def get_ls_target_values_diagram_loss(d, dtv, fil, rv):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_ls_target_values_diagram_loss_{type_part}")
-    return func(dtv, fil)
+    return func(d, dtv, fil)
 
 
 def get_vr_target_values(d, dtv, fil, rv):
@@ -119,4 +119,4 @@ def get_vr_target_values(d, dtv, fil, rv):
 def get_vr_target_values_diagram_loss(d, dtv, fil, rv):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_vr_target_values_diagram_loss_{type_part}")
-    return func(d, dtv, fil, rv)
+    return func(d, dtv, fil)

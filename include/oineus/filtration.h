@@ -57,14 +57,14 @@ public:
         return static_cast<size_t>(result);
     }
 
-    dim_type max_dim() const { return dim_last_.size(); }
+    dim_type max_dim() const { return dim_last_.size() - 1; }
 
     BoundaryMatrix boundary_matrix_full() const
     {
         BoundaryMatrix result;
         result.data.reserve(size());
 
-        for(dim_type d = 0; d < max_dim(); ++d) {
+        for(dim_type d = 0; d <= max_dim(); ++d) {
             result.append(boundary_matrix_in_dimension(d));
         }
 
@@ -168,7 +168,9 @@ private:
         dim_first_.push_back(0);
         for(size_t i = 0; i < size(); ++i)
             if (simplices_[i].dim() != curr_dim) {
-                assert(i >= 1);
+                if (simplices_[i].dim() != curr_dim + 1)
+                    throw std::runtime_error("Wrong dimension");
+                assert(i >= 1 and simplices_[i].dim() == curr_dim + 1);
                 dim_last_.push_back(i - 1);
                 dim_first_.push_back(i);
                 curr_dim = simplices_[i].dim();
