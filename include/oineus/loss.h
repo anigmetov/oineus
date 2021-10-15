@@ -60,7 +60,7 @@ DiagramToValues<Real> get_denoise_target(dim_type d, const oineus::Filtration<In
 
 // given target points (diagram_to_values), compute values on intermediate simplices from R, V columns
 template<class Int, class Real, class L>
-TargetMatching<L, Real> get_target_values_diagram_loss(const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil)
+TargetMatching<L, Real> get_target_values_diagram_loss(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil)
 {
     TargetMatching<L, Real> result;
     const auto& simplices = fil.simplices();
@@ -72,8 +72,14 @@ TargetMatching<L, Real> get_target_values_diagram_loss(const DiagramToValues<Rea
         auto birth_cvl = simplices[dgm_point.birth].critical_value_location_;
         auto death_cvl = simplices[dgm_point.death].critical_value_location_;
 
-        result[birth_cvl] = target_point.birth;
         result[death_cvl] = target_point.death;
+
+        // special case: Vietoris--Rips, dim 0 -- all vertices have critical value 0
+        // do not use R column at all
+        if (d == 0 and std::is_same<L, VREdge>::value)
+            continue;
+
+        result[birth_cvl] = target_point.birth;
     }
 
     return result;
@@ -117,7 +123,7 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
 
         auto target_r_values = lin_interp<Real>(current_r_values, min_birth, current_birth, min_birth, target_birth);
 
-        // death simplices are in V column
+       // death simplices are in V column
         std::vector<Real> current_v_values;
         std::vector<Int> v_simplex_indices;
 
@@ -130,6 +136,13 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
 
         assert(birth_column.size() == target_r_values.size() and target_r_values.size() == r_simplex_indices.size());
         assert(death_column.size() == target_v_values.size() and target_v_values.size() == v_simplex_indices.size());
+
+        if (d == 0 and std::is_same<L, VREdge>::value) {
+            // special case: Vietoris--Rips, dim 0 -- all vertices have critical value 0
+            // do not use R column at all
+            r_simplex_indices.clear();
+            target_r_values.clear();
+        }
 
         // put r_ and v_ indices and values together
 
