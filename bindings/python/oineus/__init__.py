@@ -116,6 +116,21 @@ def get_vr_target_values(d, dtv, fil, rv):
     return func(d, dtv, fil, rv)
 
 
+def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d, q):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_ls_wasserstein_matching_target_values_{type_part}")
+
+    if type(dgm) is np.ndarray:
+        DgmPt = getattr(_oineus, f"DiagramPoint_{type_part}")
+        dgm_1 = []
+        assert len(dgm.shape) == 2 and dgm.shape[1] == 2
+        for p in dgm:
+            dgm_1.append(DgmPt(p[0], p[1]))
+        dgm = dgm_1
+
+    return func(dgm, fil, rv, d, q)
+
+
 def get_vr_target_values_diagram_loss(d, dtv, fil, rv):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_vr_target_values_diagram_loss_{type_part}")

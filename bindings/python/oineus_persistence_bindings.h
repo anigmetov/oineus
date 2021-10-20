@@ -120,6 +120,23 @@ get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> p
 }
 
 
+template<class Int, class Real, class L>
+PyOineusDiagrams<Real>
+compute_diagrams_from_fil(const oineus::Filtration<Int, Real, L>& fil, int n_threads)
+{
+    auto d_matrix = fil.boundary_matrix_full();
+
+    oineus::Params params;
+
+    params.sort_dgms = false;
+    params.clearing_opt = true;
+    params.n_threads = n_threads;
+
+    d_matrix.reduce_parallel(params);
+
+    return PyOineusDiagrams<Real>(d_matrix.diagram(fil));
+}
+
 template<class Int, class Real, size_t D>
 typename oineus::SparseMatrix<Int>::MatrixData
 get_boundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
@@ -422,6 +439,9 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "get_vr_target_values" + suffix;
     m.def(func_name.c_str(), &oineus::get_target_values<Int, Real, VREdge>);
+
+    func_name = "get_ls_wasserstein_matching_target_values" + suffix;
+    m.def(func_name.c_str(), &oineus::get_target_from_matching<Int, Real, Int>);
 
      // target values -- diagram loss
     func_name = "get_ls_target_values_diagram_loss" + suffix;

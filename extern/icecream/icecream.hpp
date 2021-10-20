@@ -1413,7 +1413,7 @@ namespace icecream{ namespace detail
     #undef ICECREAM_MSG
     }
 
-    static auto parse_struct_dump(char const* format, ...) -> int
+    static inline auto parse_struct_dump(char const* format, ...) -> int
     {
         auto trim = [](std::string const& str) -> std::string
         {

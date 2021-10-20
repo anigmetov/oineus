@@ -10,13 +10,14 @@
 #include "timer.h"
 #include "filtration.h"
 #include "matrix.h"
+#include "hera/wasserstein.h"
 
 #pragma once
 
 namespace oineus {
 
 template<class Real>
-using DiagramToValues = std::unordered_map<oineus::DgmPoint<size_t>, oineus::DgmPoint<Real>>;
+using DiagramToValues = std::unordered_map<DgmPoint<size_t>, DgmPoint<Real>>;
 
 template<class ValueLocation, class Real>
 using TargetMatching = std::unordered_map<ValueLocation, Real>;
@@ -37,9 +38,81 @@ std::vector<Real> lin_interp(std::vector<Real> xs, Real x_1, Real x_2, Real y_1,
     return ys;
 }
 
+
+template<class Int, class Real, class L>
+DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& template_dgm,
+                                               const Filtration<Int, Real, L>& current_fil,
+                                               SparseMatrix<Int>& rv,
+                                               dim_type d,
+                                               Real wasserstein_q=1)
+{
+    if (not rv.is_reduced) {
+        std::cerr << "Warning: get_current_from_matching expects reduced matrix; reducing with default reduction parameters" << std::endl;
+        Params params;
+        rv.reduce_parallel(params);
+    }
+
+    for(hera::id_type i = 0; i < template_dgm.size(); ++i) {
+        template_dgm[i].id = i;
+
+        if (template_dgm[i].is_inf())
+            throw std::runtime_error("infinite point in template diagram");
+    }
+
+    using Diagram = typename Diagrams<Real>::Dgm;
+
+    DiagramToValues<Real> result;
+
+    hera::AuctionParams<Real> hera_params;
+    hera_params.return_matching = true;
+    hera_params.wasserstein_power = wasserstein_q;
+
+    auto current_index_dgm = rv.index_diagram_finite(current_fil).get_diagram_in_dimension(d);
+
+    Diagram current_dgm;
+    current_dgm.reserve(current_index_dgm.size());
+
+    for(hera::id_type current_dgm_id = 0; current_dgm_id < current_index_dgm.size(); ++current_dgm_id) {
+
+        auto birth_idx = current_index_dgm[current_dgm_id].birth;
+        auto death_idx = current_index_dgm[current_dgm_id].death;
+
+        auto birth_val = current_fil.value_by_sorted_id(birth_idx);
+        auto death_val = current_fil.value_by_sorted_id(death_idx);
+
+        current_dgm.emplace_back(birth_val, death_val, current_dgm_id);
+    }
+
+    // template_dgm: bidders, a
+    // current_dgm: items, b
+    hera::wasserstein_cost<Diagram>(template_dgm, current_dgm, hera_params);
+
+    for(auto curr_template : hera_params.matching_b_to_a_) {
+        auto current_id = curr_template.first;
+        auto template_id = curr_template.second;
+
+        if (current_id < 0)
+            continue;
+
+        if (template_id >= 0)
+            // matched to off-diagonal point of template diagram
+            result[current_index_dgm.at(current_id)] = template_dgm.at(template_id);
+        else {
+            // point must disappear, move to (birth, birth)
+            auto target_point = current_dgm.at(current_id);
+            target_point.death = target_point.birth;
+            result[current_index_dgm.at(current_id)] = target_point;
+        }
+    }
+
+    return result;
+}
+
+
+
 // points (b, d) with persistence | b - d| <= eps should go to (b, b)
 template<class Int, class Real, class L>
-DiagramToValues<Real> get_denoise_target(dim_type d, const oineus::Filtration<Int, Real, L>& fil, const oineus::SparseMatrix<Int>& rv_matrix, Real eps)
+DiagramToValues<Real> get_denoise_target(dim_type d, const Filtration<Int, Real, L>& fil, const SparseMatrix<Int>& rv_matrix, Real eps)
 {
     DiagramToValues<Real> result;
     auto index_diagram = rv_matrix.template index_diagram_finite<Real, L>(fil)[d];

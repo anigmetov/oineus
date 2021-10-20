@@ -18,13 +18,28 @@ struct DgmPoint {
     T birth;
     T death;
 
+    id_type id {0};
+
     DgmPoint() = default;
     DgmPoint(const DgmPoint&) = default;
 
     DgmPoint(T b, T d)
             :birth(b), death(d) { };
 
+    DgmPoint(T b, T d, id_type i)
+            :birth(b), death(d), id(i) { };
+
     T persistence() const { return std::abs(death - birth); }
+
+    T& operator[](int index)
+    {
+        switch(index) {
+        case 0 :return birth;
+        case 1 :return death;
+        default:throw std::out_of_range("DgmPoint has only 2 coordinates.");
+        }
+    }
+
 
     const T& operator[](int index) const
     {
@@ -49,7 +64,7 @@ struct DgmPoint {
     // then lowest and max will be used to represent points at infinity
     static bool is_minus_inf(T x)
     {
-        if (std::numeric_limits<T>::has_infinity)
+        if constexpr (std::numeric_limits<T>::has_infinity)
             return x == -std::numeric_limits<T>::infinity();
         else
             return x == std::numeric_limits<T>::lowest();
@@ -57,7 +72,7 @@ struct DgmPoint {
 
     static bool is_plus_inf(T x)
     {
-        if (std::numeric_limits<T>::has_infinity)
+        if constexpr (std::numeric_limits<T>::has_infinity)
             return x == std::numeric_limits<T>::infinity();
         else
             return x == std::numeric_limits<T>::max();
@@ -70,24 +85,20 @@ struct DgmPoint {
 };
 
 template<typename T>
+std::string to_string_possible_inf(const T& a)
+{
+    if (DgmPoint<T>::is_minus_inf(a))
+        return "-inf, ";
+    else if (DgmPoint<T>::is_plus_inf(a))
+        return "inf, ";
+    else
+        return std::to_string(a);
+}
+
+template<typename T>
 std::ostream& operator<<(std::ostream& out, const DgmPoint<T>& p)
 {
-    out << "(";
-    if (DgmPoint<T>::is_minus_inf(p.birth))
-        out << "-inf, ";
-    else if (DgmPoint<T>::is_plus_inf(p.birth))
-        out << "inf, ";
-    else
-        out << p.birth << ", ";
-
-    if (DgmPoint<T>::is_minus_inf(p.death))
-        out << "-inf";
-    else if (DgmPoint<T>::is_plus_inf(p.death))
-        out << "inf";
-    else
-        out << p.death;
-    out << ")";
-
+    out << "(" << to_string_possible_inf<T>(p.birth) << ", " << to_string_possible_inf<T>(p.death)  << ", id = " << p.id << ")";
     return out;
 }
 
@@ -175,6 +186,7 @@ struct hash<oineus::DgmPoint<T>> {
         std::size_t seed = 0;
         oineus::hash_combine(seed, p.birth);
         oineus::hash_combine(seed, p.death);
+        oineus::hash_combine(seed, p.id);
         return seed;
     }
 };

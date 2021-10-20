@@ -46,6 +46,7 @@ inline void info([[maybe_unused]] const Args& ... args)
 namespace oineus {
 
 using dim_type = size_t;
+using id_type = int;
 
 template<typename Real>
 struct RPoint {
