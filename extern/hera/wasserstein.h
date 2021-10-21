@@ -91,20 +91,36 @@ namespace ws
     }
 
     // to handle points with one coordinate = infinity
-    template<class RealType>
-    inline RealType get_one_dimensional_cost(std::vector<RealType>& set_A,
-            std::vector<RealType>& set_B,
-            const RealType wasserstein_power)
+    template<class T, class P>
+    inline decltype(auto) get_one_dimensional_cost(std::vector<T>& pts_A,
+            std::vector<T>& pts_B,
+            P& params)
     {
-        if (set_A.size() != set_B.size()) {
-            return std::numeric_limits<RealType>::infinity();
+        using Real = typename std::remove_reference<decltype(std::get<0>(pts_A[0]))>::type;
+
+        Real result { std::numeric_limits<Real>::infinity() };
+        if (pts_A.size() == pts_B.size()) {
+
+            std::sort(pts_A.begin(), pts_A.end());
+            std::sort(pts_B.begin(), pts_B.end());
+
+            result = 0.0;
+            Real q = params.wasserstein_power;
+
+            for(size_t i = 0; i < pts_A.size(); ++i) {
+                Real a = std::get<0>(pts_A[i]);
+                Real b = std::get<0>(pts_B[i]);
+
+                if (params.return_matching and params.match_inf_points) {
+                    id_type id_a = std::get<1>(pts_A[i]);
+                    id_type id_b = std::get<1>(pts_B[i]);
+                    params.add_to_matching(id_a, id_b);
+                }
+
+                result += std::pow(std::fabs(a - b), q);
+            }
         }
-        std::sort(set_A.begin(), set_A.end());
-        std::sort(set_B.begin(), set_B.end());
-        RealType result = 0.0;
-        for(size_t i = 0; i < set_A.size(); ++i) {
-            result += std::pow(std::fabs(set_A[i] - set_B[i]), wasserstein_power);
-        }
+
         return result;
     }
 
@@ -144,18 +160,14 @@ namespace ws
         params.final_relative_error = auction.get_relative_error();
 
         if (params.return_matching) {
-
-            auto& i_to_b = auction.get_items_to_bidders();
-
-            params.matching_a_to_b_.clear();
-            params.matching_b_to_a_.clear();
+            const auto& i_to_b = auction.get_items_to_bidders();
 
             for(size_t i = 0; i < static_cast<id_type>(i_to_b.size()); ++i) {
                 size_t b = i_to_b.at(i);
                 id_type item_id = auction.get_item_id(i);
                 id_type bidder_id = auction.get_bidder_id(b);
-                params.matching_a_to_b_[bidder_id] = item_id;
-                params.matching_b_to_a_[item_id] = bidder_id;
+
+                params.add_to_matching(bidder_id, item_id);
             }
         }
 
@@ -174,9 +186,13 @@ wasserstein_cost(const PairContainer& A,
                 const std::string& _log_filename_prefix = "")
 {
     using RealType  = typename Traits::RealType;
+    using OneDimPoint = std::tuple<RealType, id_type>;
 
     constexpr RealType plus_inf = std::numeric_limits<RealType>::infinity();
     constexpr RealType minus_inf = -std::numeric_limits<RealType>::infinity();
+
+    if (params.return_matching)
+        params.clear_matching();
 
     if (hera::ws::are_equal(A, B)) {
         return 0.0;
@@ -191,8 +207,8 @@ wasserstein_cost(const PairContainer& A,
 
     std::vector<DgmPoint> dgm_A, dgm_B;
     // coordinates of points at infinity
-    std::vector<RealType> x_plus_A, x_minus_A, y_plus_A, y_minus_A;
-    std::vector<RealType> x_plus_B, x_minus_B, y_plus_B, y_minus_B;
+    std::vector<OneDimPoint> x_plus_A, x_minus_A, y_plus_A, y_minus_A;
+    std::vector<OneDimPoint> x_plus_B, x_minus_B, y_plus_B, y_minus_B;
     // points with both coordinates infinite are treated as equal
     int n_minus_inf_plus_inf_A = 0;
     int n_plus_inf_minus_inf_A = 0;
@@ -216,13 +232,13 @@ wasserstein_cost(const PairContainer& A,
         } else if (x == minus_inf && y == plus_inf) {
             n_minus_inf_plus_inf_A++;
         } else if ( x == plus_inf) {
-            y_plus_A.push_back(y);
+            y_plus_A.emplace_back(y, id);
         } else if (x == minus_inf) {
-            y_minus_A.push_back(y);
+            y_minus_A.emplace_back(y, id);
         } else if (y == plus_inf) {
-            x_plus_A.push_back(x);
+            x_plus_A.emplace_back(x, id);
         } else if (y == minus_inf) {
-            x_minus_A.push_back(x);
+            x_minus_A.emplace_back(x, id);
         } else {
             dgm_A.emplace_back(x, y,  DgmPoint::NORMAL, id);
             dgm_B.emplace_back(x, y,  DgmPoint::DIAG, -id - 1);     // use negative id for diagonal projection
@@ -245,13 +261,13 @@ wasserstein_cost(const PairContainer& A,
         } else if (x == minus_inf && y == plus_inf) {
             n_minus_inf_plus_inf_B++;
         } else if (x == plus_inf) {
-            y_plus_B.push_back(y);
+            y_plus_B.emplace_back(y, id);
         } else if (x == minus_inf) {
-            y_minus_B.push_back(y);
+            y_minus_B.emplace_back(y, id);
         } else if (y == plus_inf) {
-            x_plus_B.push_back(x);
+            x_plus_B.emplace_back(x, id);
         } else if (y == minus_inf) {
-            x_minus_B.push_back(x);
+            x_minus_B.emplace_back(x, id);
         } else {
             dgm_A.emplace_back(x, y,  DgmPoint::DIAG, -id - 1);
             dgm_B.emplace_back(x, y,  DgmPoint::NORMAL, id);
@@ -264,10 +280,10 @@ wasserstein_cost(const PairContainer& A,
     if (n_plus_inf_minus_inf_A != n_plus_inf_minus_inf_B || n_minus_inf_plus_inf_A != n_minus_inf_plus_inf_B)
         infinity_cost = plus_inf;
     else {
-        infinity_cost += ws::get_one_dimensional_cost(x_plus_A, x_plus_B, params.wasserstein_power);
-        infinity_cost += ws::get_one_dimensional_cost(x_minus_A, x_minus_B, params.wasserstein_power);
-        infinity_cost += ws::get_one_dimensional_cost(y_plus_A, y_plus_B, params.wasserstein_power);
-        infinity_cost += ws::get_one_dimensional_cost(y_minus_A, y_minus_B, params.wasserstein_power);
+        infinity_cost += ws::get_one_dimensional_cost(x_plus_A, x_plus_B, params);
+        infinity_cost += ws::get_one_dimensional_cost(x_minus_A, x_minus_B, params);
+        infinity_cost += ws::get_one_dimensional_cost(y_plus_A, y_plus_B, params);
+        infinity_cost += ws::get_one_dimensional_cost(y_minus_A, y_minus_B, params);
     }
 
     if (a_empty)

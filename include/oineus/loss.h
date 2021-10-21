@@ -16,8 +16,14 @@
 
 namespace oineus {
 
+enum class DenoiseStrategy {
+    BirthBirth,
+    DeathDeath,
+    Midway
+};
+
 template<class Real>
-using DiagramToValues = std::unordered_map<DgmPoint<size_t>, DgmPoint<Real>>;
+using DiagramToValues = std::unordered_map<DgmPoint < size_t>, DgmPoint<Real>>;
 
 template<class ValueLocation, class Real>
 using TargetMatching = std::unordered_map<ValueLocation, Real>;
@@ -38,13 +44,13 @@ std::vector<Real> lin_interp(std::vector<Real> xs, Real x_1, Real x_2, Real y_1,
     return ys;
 }
 
-
 template<class Int, class Real, class L>
 DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& template_dgm,
-                                               const Filtration<Int, Real, L>& current_fil,
-                                               SparseMatrix<Int>& rv,
-                                               dim_type d,
-                                               Real wasserstein_q=1)
+        const Filtration<Int, Real, L>& current_fil,
+        SparseMatrix<Int>& rv,
+        dim_type d,
+        Real wasserstein_q,
+        bool match_inf_points)
 {
     if (not rv.is_reduced) {
         std::cerr << "Warning: get_current_from_matching expects reduced matrix; reducing with default reduction parameters" << std::endl;
@@ -65,6 +71,7 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
 
     hera::AuctionParams<Real> hera_params;
     hera_params.return_matching = true;
+    hera_params.match_inf_points = match_inf_points;
     hera_params.wasserstein_power = wasserstein_q;
 
     auto current_index_dgm = rv.index_diagram_finite(current_fil).get_diagram_in_dimension(d);
@@ -87,7 +94,7 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
     // current_dgm: items, b
     hera::wasserstein_cost<Diagram>(template_dgm, current_dgm, hera_params);
 
-    for(auto curr_template : hera_params.matching_b_to_a_) {
+    for(auto curr_template: hera_params.matching_b_to_a_) {
         auto current_id = curr_template.first;
         auto template_id = curr_template.second;
 
@@ -108,24 +115,37 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
     return result;
 }
 
+template<class Real>
+typename Diagrams<Real>::Point denoised_point(Real birth, Real death, DenoiseStrategy s)
+{
+    Real target_birth {birth};
+    Real target_death {death};
 
+    switch(s) {
+    case DenoiseStrategy::BirthBirth : target_death = birth;
+        break;
+    case DenoiseStrategy::DeathDeath: target_birth = death;
+        break;
+    case DenoiseStrategy::Midway : target_birth = target_death = (birth + death) / 2;
+        break;
+    }
+
+    return {target_birth, target_death};
+}
 
 // points (b, d) with persistence | b - d| <= eps should go to (b, b)
 template<class Int, class Real, class L>
-DiagramToValues<Real> get_denoise_target(dim_type d, const Filtration<Int, Real, L>& fil, const SparseMatrix<Int>& rv_matrix, Real eps)
+DiagramToValues<Real> get_denoise_target(dim_type d, const Filtration<Int, Real, L>& fil, const SparseMatrix<Int>& rv_matrix, Real eps, DenoiseStrategy strategy)
 {
     DiagramToValues<Real> result;
     auto index_diagram = rv_matrix.template index_diagram_finite<Real, L>(fil)[d];
 
-    for(auto p : index_diagram) {
-        Real birth_value = fil.simplices()[p.birth].value();
-        Real death_value = fil.simplices()[p.death].value();
-        Real pers =abs(death_value - birth_value);
-        if (pers > Real(0) and pers <= eps) {
-            Real target_birth = birth_value;
-            Real target_death = birth_value;
-            result[p] = {target_birth, target_death};
-        }
+    for(auto p: index_diagram) {
+        Real birth = fil.simplices()[p.birth].value();
+        Real death = fil.simplices()[p.death].value();
+        Real pers = abs(death - birth);
+        if (pers > Real(0) and pers <= eps)
+            result[p] = denoised_point(birth, death, strategy);
     }
 
     return result;
@@ -196,7 +216,7 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
 
         auto target_r_values = lin_interp<Real>(current_r_values, min_birth, current_birth, min_birth, target_birth);
 
-       // death simplices are in V column
+        // death simplices are in V column
         std::vector<Real> current_v_values;
         std::vector<Int> v_simplex_indices;
 

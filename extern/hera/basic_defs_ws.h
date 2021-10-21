@@ -25,11 +25,10 @@ derivative works thereof, in binary and source code form.
 
  */
 
-#ifndef BASIC_DEFS_WS_H
-#define BASIC_DEFS_WS_H
+#pragma once
 
 #include <vector>
-#include <math.h>
+#include <cmath>
 #include <cstddef>
 #include <unordered_map>
 #include <unordered_set>
@@ -80,8 +79,22 @@ struct AuctionParams
     Real final_relative_error;  // out parameter - after auction terminates, contains the real relative error
     bool tolerate_max_iter_exceeded { false }; // whether auction should throw an exception on max. iterations exceeded
     bool return_matching { false };  // if true, matching will be returned in matching_a_to_b_ and matching_b_to_a_
+    bool match_inf_points { true };  // if true, points at infinity will be matched to each other
     std::unordered_map<id_type, id_type> matching_a_to_b_;
     std::unordered_map<id_type, id_type> matching_b_to_a_;
+
+    void clear_matching()
+    {
+        matching_a_to_b_.clear();
+        matching_b_to_a_.clear();
+    }
+
+    void add_to_matching(id_type a, id_type b)
+    {
+        assert(matching_a_to_b_.count(a) == 0 and matching_b_to_a_.count(b) == 0);
+        matching_a_to_b_[a] = b;
+        matching_b_to_a_[b] = a;
+    }
 };
 
 namespace ws
@@ -124,10 +137,8 @@ namespace ws
         Point() : x(0.0), y(0.0) {}
     };
 
-#ifndef FOR_R_TDA
     template<class Real = double>
     std::ostream& operator<<(std::ostream& output, const Point<Real> p);
-#endif
 
     template <class T>
     inline void hash_combine(std::size_t & seed, const T & v)
@@ -199,10 +210,8 @@ namespace ws
     };
 
 
-#ifndef FOR_R_TDA
     template <class Real = double>
     inline std::ostream& operator<<(std::ostream& output, const DiagramPoint<Real> p);
-#endif
 
     template<class Real, class Pt>
     struct DistImpl
@@ -309,9 +318,4 @@ namespace ws
 } // ws
 } // hera
 
-
-
 #include "basic_defs_ws.hpp"
-
-
-#endif

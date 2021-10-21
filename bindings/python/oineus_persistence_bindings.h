@@ -208,6 +208,8 @@ void init_oineus_common(py::module& m)
 
     using oineus::VREdge;
 
+    using oineus::DenoiseStrategy;
+
     using BoundaryMatrix = oineus::SparseMatrix<Int>;
 
     using ReductionParams = oineus::Params;
@@ -242,6 +244,12 @@ void init_oineus_common(py::module& m)
             .def_readwrite("acq_rel", &ReductionParams::acq_rel)
             .def_readwrite("print_time", &ReductionParams::print_time)
             .def_readwrite("elapsed", &ReductionParams::elapsed)
+            ;
+
+    py::enum_<DenoiseStrategy>(m, "DenoiseStrategy", py::arithmetic())
+            .value("BirthBirth", DenoiseStrategy::BirthBirth, "(b, d) maps to (b, b)")
+            .value("DeathDeath", DenoiseStrategy::DeathDeath, "(b, d) maps to (d, d)")
+            .value("Midway", DenoiseStrategy::Midway, "((b, d) maps to ((b+d)/2, (b+d)/2)")
             ;
 
     py::class_<BoundaryMatrix>(m, "BoundaryMatrix")

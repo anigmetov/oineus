@@ -25,7 +25,6 @@ into other computer software, distribute, and sublicense such enhancements or
 derivative works thereof, in binary and source code form.
 
 */
-
 #pragma once
 
 #include <algorithm>
@@ -34,11 +33,8 @@ derivative works thereof, in binary and source code form.
 #include <algorithm>
 #include <istream>
 #include <cstdint>
-#include "basic_defs_ws.h"
 
-#ifndef FOR_R_TDA
 #include <iostream>
-#endif
 
 #include <sstream>
 
@@ -62,14 +58,12 @@ bool Point<Real>::operator!=(const Point<Real>& other) const
 }
 
 
-#ifndef FOR_R_TDA
 template <class Real>
 inline std::ostream& operator<<(std::ostream& output, const Point<Real> p)
 {
     output << "(" << p.x << ", " << p.y << ")";
     return output;
 }
-#endif
 
 template <class Real>
 inline Real sqr_dist(const Point<Real>& a, const Point<Real>& b)
@@ -98,7 +92,6 @@ inline Real DiagramPoint<Real>::persistence_lp(const Real p) const
 }
 
 
-#ifndef FOR_R_TDA
 template <class Real>
 inline std::ostream& operator<<(std::ostream& output, const DiagramPoint<Real> p)
 {
@@ -109,7 +102,6 @@ inline std::ostream& operator<<(std::ostream& output, const DiagramPoint<Real> p
     }
     return output;
 }
-#endif
 
 template <class Real>
 DiagramPoint<Real>::DiagramPoint(Real xx, Real yy, Type ttype, id_type _id) :

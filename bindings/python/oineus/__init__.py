@@ -92,10 +92,10 @@ def compute_diagrams_and_rv_ls(data, negate, wrap, max_dim, n_threads):
     return dgms, r, v
 
 
-def get_denoise_target(d, fil, rv, eps):
+def get_denoise_target(d, fil, rv, eps, strat):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_denoise_target_{type_part}")
-    return func(d, fil, rv, eps)
+    return func(d, fil, rv, eps, strat)
 
 
 def get_ls_target_values(d, dtv, fil, rv):
