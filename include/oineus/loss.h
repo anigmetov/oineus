@@ -44,7 +44,7 @@ std::vector<Real> lin_interp(std::vector<Real> xs, Real x_1, Real x_2, Real y_1,
     return ys;
 }
 
-template<class Int, class Real, class HP, class L>
+template<class Int, class Real, class L>
 void match_diagonal_points(const typename oineus::Filtration<Int, Real, L>& current_fil,
         const typename Diagrams<size_t>::Dgm& current_index_dgm,
         typename Diagrams<Real>::Dgm& template_dgm,

@@ -50,15 +50,6 @@ struct DgmPoint {
         }
     }
 
-    bool operator==(const DgmPoint& other) const { return birth == other.birth and death == other.death; }
-
-    // compare by persistence first
-    bool operator<(const DgmPoint& other) const
-    {
-        T pers = persistence();
-        T other_pers = other.persistence();
-        return std::tie(pers, birth, death) < std::tie(other_pers, other.birth, other.death);
-    }
 
     // if we want indices, T will be integral and won't have infinity;
     // then lowest and max will be used to represent points at infinity
@@ -86,6 +77,30 @@ struct DgmPoint {
         return is_plus_inf(birth) or is_plus_inf(death) or is_minus_inf(birth) or is_minus_inf(death);
     }
 };
+
+template<class R>
+bool operator==(const DgmPoint<R>& a, const DgmPoint<R>& b)
+{
+    return a.birth == b.birth and a.death == b.death;
+}
+
+// compare by persistence first
+template<class R>
+bool operator<(const DgmPoint<R>& a, const DgmPoint<R>& b)
+{
+    R pers = a.persistence();
+    R other_pers = b.persistence();
+    return std::tie(pers, a.birth, a.death) < std::tie(other_pers, b.birth, b.death);
+}
+
+// compare by persistence first
+template<class R>
+bool operator>(const DgmPoint<R>& a, const DgmPoint<R>& b)
+{
+    R pers = a.persistence();
+    R other_pers = b.persistence();
+    return std::tie(pers, a.birth, a.death) > std::tie(other_pers, b.birth, b.death);
+}
 
 template<typename T>
 std::string to_string_possible_inf(const T& a)
