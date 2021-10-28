@@ -261,6 +261,10 @@ void init_oineus_common(py::module& m)
             .def("diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, float, VREdge>& fil) { return PyOineusDiagrams<float>(self.diagram(fil)); })
             .def("diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, double, Int>& fil) { return PyOineusDiagrams<double>(self.diagram(fil)); })
             .def("diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, float, Int>& fil) { return PyOineusDiagrams<float>(self.diagram(fil)); })
+            .def("index_diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, double, VREdge>& fil) { return PyOineusDiagrams<size_t>(self.index_diagram(fil)); })
+            .def("index_diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, float, VREdge>& fil) { return PyOineusDiagrams<size_t>(self.index_diagram(fil)); })
+            .def("index_diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, double, Int>& fil) { return PyOineusDiagrams<size_t>(self.index_diagram(fil)); })
+            .def("index_diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, float, Int>& fil) { return PyOineusDiagrams<size_t>(self.index_diagram(fil)); })
             ;
 
     using DgmPointInt = typename oineus::DgmPoint<Int>;

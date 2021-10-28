@@ -62,20 +62,23 @@ struct DgmPoint {
 
     // if we want indices, T will be integral and won't have infinity;
     // then lowest and max will be used to represent points at infinity
-    static bool is_minus_inf(T x)
+    static bool is_minus_inf(T x) { return x == minus_inf(); }
+    static bool is_plus_inf(T x) { return x == plus_inf(); }
+
+    static constexpr T plus_inf()
     {
         if constexpr (std::numeric_limits<T>::has_infinity)
-            return x == -std::numeric_limits<T>::infinity();
+            return std::numeric_limits<T>::infinity();
         else
-            return x == std::numeric_limits<T>::lowest();
+            return std::numeric_limits<T>::max();
     }
 
-    static bool is_plus_inf(T x)
+    static constexpr T minus_inf()
     {
         if constexpr (std::numeric_limits<T>::has_infinity)
-            return x == std::numeric_limits<T>::infinity();
+            return -std::numeric_limits<T>::infinity();
         else
-            return x == std::numeric_limits<T>::max();
+            return std::numeric_limits<T>::lowest();
     }
 
     bool is_inf() const

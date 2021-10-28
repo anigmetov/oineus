@@ -200,7 +200,8 @@ void parallel_reduction(RVMatrices& rv, AtomicIdxVector& pivots, std::atomic<Int
                     if (pivot_idx >= 0) {
                         pivot_r_v_column = rv[pivot_idx].load(acq);
                     }
-                } while(pivot_idx >= 0 && pivot_r_v_column->low() != current_low);
+                }
+                while(pivot_idx >= 0 && pivot_r_v_column->low() != current_low);
 
                 if (pivot_idx == -1) {
                     if (pivots[current_low].compare_exchange_weak(pivot_idx, current_column_idx, rel, relax)) {
@@ -283,6 +284,8 @@ struct SparseMatrix {
     template<typename Real, typename L>
     Diagrams<size_t> index_diagram_finite(const Filtration<Int, Real, L>& fil) const;
 
+    template<typename Real, typename L>
+    Diagrams<size_t> index_diagram(const Filtration<Int, Real, L>& fil) const;
 
     template<typename Int>
     friend std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m);
@@ -325,7 +328,7 @@ void SparseMatrix<Int>::reduce_parallel(Params& params)
     std::atomic<Int> next_free_chunk;
 
     AtomicIdxVector pivots(n_cols);
-    for(auto& p : pivots) {
+    for(auto& p: pivots) {
         p.store(-1, std::memory_order_relaxed);
     }
     debug("Pivots initialized");
@@ -369,14 +372,14 @@ void SparseMatrix<Int>::reduce_parallel(Params& params)
 
     info("{} threads created", ts.size());
 
-    for(auto& t : ts) {
+    for(auto& t: ts) {
         t.join();
     }
 
     params.elapsed = timer.elapsed_reset();
 
     if (params.print_time) {
-        for(auto& s : stats) { info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots); }
+        for(auto& s: stats) { info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots); }
         info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
 //        std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << std::endl;
     }
@@ -440,6 +443,43 @@ Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real, L>& fil) c
 
 template<class Int>
 template<class Real, class L>
+Diagrams<size_t> SparseMatrix<Int>::index_diagram(const Filtration<Int, Real, L>& fil) const
+{
+    Diagrams<size_t> result(fil.max_dim());
+
+    constexpr size_t plus_inf = DgmPoint<size_t>::plus_inf();
+    constexpr size_t minus_inf = DgmPoint<size_t>::minus_inf();
+
+    std::unordered_set<size_t> rows_with_lowest_one;
+
+    for(size_t i = 0; i < data.size(); ++i) {
+        if (!is_zero(&data[i]))
+            rows_with_lowest_one.insert(low(&data[i]));
+    }
+
+    for(size_t col_idx = 0; col_idx < data.size(); ++col_idx) {
+        auto col = &data[col_idx];
+
+        if (is_zero(col)) {
+            if (rows_with_lowest_one.count(col_idx) == 0) {
+                // point at infinity
+                dim_type dim = fil.dim_by_sorted_id(col_idx);
+                result.add_point(dim, col_idx, plus_inf);
+            }
+        } else {
+            // finite point
+            size_t birth_idx = static_cast<size_t>(low(col));
+            size_t death_idx = col_idx;
+            dim_type dim = fil.dim_by_sorted_id(birth_idx);
+            result.add_point(dim, birth_idx, death_idx);
+        }
+    }
+
+    return result;
+}
+
+template<class Int>
+template<class Real, class L>
 Diagrams<size_t> SparseMatrix<Int>::index_diagram_finite(const Filtration<Int, Real, L>& fil) const
 {
     if (not is_reduced)
@@ -463,7 +503,7 @@ std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m)
     out << "Matrix[\n";
     for(size_t col_idx = 0; col_idx < m.data.size(); ++col_idx) {
         out << "Column " << col_idx << ": ";
-        for(const auto& x : m.data[col_idx])
+        for(const auto& x: m.data[col_idx])
             out << x << " ";
         out << "\n";
     }

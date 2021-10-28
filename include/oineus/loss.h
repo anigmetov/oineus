@@ -44,13 +44,81 @@ std::vector<Real> lin_interp(std::vector<Real> xs, Real x_1, Real x_2, Real y_1,
     return ys;
 }
 
+template<class Int, class Real, class HP, class L>
+void match_diagonal_points(const typename oineus::Filtration<Int, Real, L>& current_fil,
+        const typename Diagrams<size_t>::Dgm& current_index_dgm,
+        typename Diagrams<Real>::Dgm& template_dgm,
+        typename hera::AuctionParams<Real>& hera_params,
+        DiagramToValues<Real>& result)
+{
+    using Diagram = typename Diagrams<Real>::Dgm;
+    // diagonal point with id
+    using DiagP = std::tuple<Real, size_t>;
+    using VecDiagP = std::vector<DiagP>;
+    VecDiagP current_diagonal_points;
+
+    for(hera::id_type current_dgm_id = 0; current_dgm_id < current_index_dgm.size(); ++current_dgm_id) {
+        if (current_index_dgm[current_dgm_id].is_inf())
+            continue;
+
+        size_t birth_idx = current_index_dgm[current_dgm_id].birth;
+        size_t death_idx = current_index_dgm[current_dgm_id].death;
+
+        Real birth_val = current_fil.value_by_sorted_id(birth_idx);
+        Real death_val = current_fil.value_by_sorted_id(death_idx);
+
+        if (birth_val == death_val)
+            current_diagonal_points.emplace_back(birth_val, current_dgm_id);
+    }
+
+    // get unmatched template points
+    Diagram unmatched_template_points;
+    for(auto curr_template: hera_params.matching_b_to_a_) {
+        auto current_id = curr_template.first;
+        auto template_id = curr_template.second;
+
+        if (current_id < 0 and template_id >= 0)
+            unmatched_template_points.emplace_back(template_dgm[template_id]);
+    }
+
+    if (unmatched_template_points.size() < current_diagonal_points.size())
+        throw std::runtime_error("Not implemented");
+
+    if (unmatched_template_points.size() > current_diagonal_points.size()) {
+        // keep most persistent points, operator < for points sorts by persistence first
+        std::sort(unmatched_template_points.begin(), unmatched_template_points.end(), std::greater<DgmPoint<Real>>());
+        unmatched_template_points.resize(current_diagonal_points.size());
+    }
+
+    std::vector<std::tuple<Real, size_t>> diag_unmatched_template;
+
+    for(auto p: unmatched_template_points)
+        diag_unmatched_template.emplace_back((p.birth + p.death) / 2, p.id);
+
+    hera_params.clear_matching();
+
+    hera::ws::get_one_dimensional_cost(diag_unmatched_template, current_diagonal_points, hera_params);
+
+    for(auto curr_template: hera_params.matching_b_to_a_) {
+        auto current_id = curr_template.first;
+        auto template_id = curr_template.second;
+
+        if (current_id < 0 or template_id < 0)
+            throw std::runtime_error("negative ids in one-dimensional call");
+
+        result[current_index_dgm.at(current_id)] = template_dgm.at(template_id);
+    }
+
+}
+
 template<class Int, class Real, class L>
 DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& template_dgm,
         const Filtration<Int, Real, L>& current_fil,
         SparseMatrix<Int>& rv,
         dim_type d,
         Real wasserstein_q,
-        bool match_inf_points)
+        bool match_inf_points,
+        bool match_diag_points)
 {
     if (not rv.is_reduced) {
         std::cerr << "Warning: get_current_from_matching expects reduced matrix; reducing with default reduction parameters" << std::endl;
@@ -79,6 +147,8 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
     Diagram current_dgm;
     current_dgm.reserve(current_index_dgm.size());
 
+    Diagram current_diagonal_points;
+
     for(hera::id_type current_dgm_id = 0; current_dgm_id < current_index_dgm.size(); ++current_dgm_id) {
 
         auto birth_idx = current_index_dgm[current_dgm_id].birth;
@@ -87,7 +157,11 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
         auto birth_val = current_fil.value_by_sorted_id(birth_idx);
         auto death_val = current_fil.value_by_sorted_id(death_idx);
 
-        current_dgm.emplace_back(birth_val, death_val, current_dgm_id);
+        // do not include diagonal points, save them in a separate vector
+        if (birth_val != death_val)
+            current_dgm.emplace_back(birth_val, death_val, current_dgm_id);
+        else
+            current_diagonal_points.template emplace_back(birth_val, death_val, current_dgm_id);
     }
 
     // template_dgm: bidders, a
@@ -112,6 +186,9 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
         }
     }
 
+    if (match_diag_points)
+        match_diagonal_points(current_fil, current_index_dgm, template_dgm, hera_params, result);
+
     return result;
 }
 
@@ -131,6 +208,31 @@ typename Diagrams<Real>::Point denoised_point(Real birth, Real death, DenoiseStr
     }
 
     return {target_birth, target_death};
+}
+
+// return the n-th (finite) persistence value in dimension d
+// points at infinity are ignored
+template<class Int, class Real, class L>
+Real get_nth_persistence(dim_type d, const Filtration<Int, Real, L>& fil, const SparseMatrix<Int>& rv_matrix, int n)
+{
+    auto index_diagram = rv_matrix.template index_diagram_finite<Real, L>(fil)[d];
+    std::vector<Real> ps;
+    ps.reserve(index_diagram.size());
+
+    for(auto p: index_diagram) {
+        Real birth = fil.simplices()[p.birth].value();
+        Real death = fil.simplices()[p.death].value();
+        Real pers = abs(death - birth);
+        ps.push_back(pers);
+    }
+
+    Real result {0};
+    if (ps.size() >= n) {
+        std::nth_element(ps.begin(), ps.end(), n - 1);
+        result = ps[n - 1];
+    }
+
+    return result;
 }
 
 // points (b, d) with persistence | b - d| <= eps should go to (b, b)
