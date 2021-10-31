@@ -462,6 +462,12 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "get_vr_target_values_diagram_loss" + suffix;
     m.def(func_name.c_str(), &oineus::get_target_values_diagram_loss<Int, Real, VREdge>);
 
+    // to reproduce "Topology layer for ML" experiments
+    func_name = "get_bruelle_target" + suffix;
+    m.def(func_name.c_str(), &oineus::get_bruelle_target<Int, Real, VREdge>);
+
+    func_name = "get_nth_persistence" + suffix;
+    m.def(func_name.c_str(), &oineus::get_nth_persistence<Int, Real, VREdge>);
 }
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

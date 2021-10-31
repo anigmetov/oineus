@@ -135,3 +135,15 @@ def get_vr_target_values_diagram_loss(d, dtv, fil, rv):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_vr_target_values_diagram_loss_{type_part}")
     return func(d, dtv, fil)
+
+
+def get_bruelle_target(fil, rv, i_0, p, q, d, minimize):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_bruelle_target_{type_part}")
+    return func(fil, rv, i_0, p, q, d, minimize)
+
+
+def get_nth_persistence(fil, rv, d, n):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_nth_persistence_{type_part}")
+    return func(fil, rv, d, n)

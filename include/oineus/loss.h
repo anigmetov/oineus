@@ -23,6 +23,35 @@ enum class DenoiseStrategy {
 };
 
 template<class Real>
+typename Diagrams<Real>::Point denoise_point(Real birth, Real death, DenoiseStrategy s)
+{
+    Real target_birth {birth};
+    Real target_death {death};
+
+    switch(s) {
+    case DenoiseStrategy::BirthBirth : target_death = birth;
+        break;
+    case DenoiseStrategy::DeathDeath: target_birth = death;
+        break;
+    case DenoiseStrategy::Midway : target_birth = target_death = (birth + death) / 2;
+        break;
+    }
+
+    return {target_birth, target_death};
+}
+
+
+template<class Real>
+typename Diagrams<Real>::Point enhance_point(Real birth, Real death)
+{
+    Real d = ( birth + death) / 2;
+    if (death > birth)
+        return { birth - d, death + d };
+    else // for upper-star signs are reversed
+        return { birth + d, death - d };
+}
+
+template<class Real>
 using DiagramToValues = std::unordered_map<DgmPoint < size_t>, DgmPoint<Real>>;
 
 template<class ValueLocation, class Real>
@@ -108,8 +137,47 @@ void match_diagonal_points(const typename oineus::Filtration<Int, Real, L>& curr
 
         result[current_index_dgm.at(current_id)] = template_dgm.at(template_id);
     }
-
 }
+
+
+template<class Int, class Real, class L>
+DiagramToValues<Real> get_bruelle_target(const Filtration<Int, Real, L>& current_fil,
+                                     SparseMatrix<Int>& rv,
+                                     int i_0,
+                                     int p,
+                                     int q,
+                                     dim_type d,
+                                     bool minimize)
+{
+    if (q == 0 and p == 2)
+        return get_bruelle_target_2_0(current_fil, rv, i_0, d, minimize);
+    else
+        throw std::runtime_error("Not implemented");
+}
+
+template<class Int, class Real, class L>
+DiagramToValues<Real> get_bruelle_target_2_0(const Filtration<Int, Real, L>& current_fil,
+                                     SparseMatrix<Int>& rv,
+                                     int n_keep,
+                                     dim_type d,
+                                     bool minimize)
+{
+    DiagramToValues<Real> result;
+
+    Real epsilon = get_nth_persistence(current_fil, rv, d, n_keep);
+
+    auto index_dgm = rv.index_diagram_finite(current_fil).get_diagram_in_dimension(d);
+
+    for(auto p : index_dgm) {
+        Real birth_val = current_fil.value_by_sorted_id(p.birth);
+        Real death_val = current_fil.value_by_sorted_id(p.death);
+        if (abs(death_val - birth_val) <= epsilon) {
+            result[p] = minimize ? denoise_point(birth_val, death_val, DenoiseStrategy::Midway) : enhance_point(birth_val, death_val);
+        }
+    }
+    return result;
+}
+
 
 template<class Int, class Real, class L>
 DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& template_dgm,
@@ -147,8 +215,6 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
     Diagram current_dgm;
     current_dgm.reserve(current_index_dgm.size());
 
-    Diagram current_diagonal_points;
-
     for(hera::id_type current_dgm_id = 0; current_dgm_id < current_index_dgm.size(); ++current_dgm_id) {
 
         auto birth_idx = current_index_dgm[current_dgm_id].birth;
@@ -160,8 +226,6 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
         // do not include diagonal points, save them in a separate vector
         if (birth_val != death_val)
             current_dgm.emplace_back(birth_val, death_val, current_dgm_id);
-        else
-            current_diagonal_points.template emplace_back(birth_val, death_val, current_dgm_id);
     }
 
     // template_dgm: bidders, a
@@ -192,29 +256,15 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
     return result;
 }
 
-template<class Real>
-typename Diagrams<Real>::Point denoised_point(Real birth, Real death, DenoiseStrategy s)
-{
-    Real target_birth {birth};
-    Real target_death {death};
-
-    switch(s) {
-    case DenoiseStrategy::BirthBirth : target_death = birth;
-        break;
-    case DenoiseStrategy::DeathDeath: target_birth = death;
-        break;
-    case DenoiseStrategy::Midway : target_birth = target_death = (birth + death) / 2;
-        break;
-    }
-
-    return {target_birth, target_death};
-}
-
 // return the n-th (finite) persistence value in dimension d
 // points at infinity are ignored
 template<class Int, class Real, class L>
-Real get_nth_persistence(dim_type d, const Filtration<Int, Real, L>& fil, const SparseMatrix<Int>& rv_matrix, int n)
+Real get_nth_persistence(const Filtration<Int, Real, L>& fil, const SparseMatrix<Int>& rv_matrix, dim_type d, int n)
 {
+    if (n < 1) {
+        throw std::runtime_error("get_nth_persistence: n must be at least 1");
+    }
+
     auto index_diagram = rv_matrix.template index_diagram_finite<Real, L>(fil)[d];
     std::vector<Real> ps;
     ps.reserve(index_diagram.size());
@@ -228,7 +278,7 @@ Real get_nth_persistence(dim_type d, const Filtration<Int, Real, L>& fil, const 
 
     Real result {0};
     if (ps.size() >= n) {
-        std::nth_element(ps.begin(), ps.end(), n - 1);
+        std::nth_element(ps.begin(), ps.begin() + n - 1, ps.end(), std::greater<Real>());
         result = ps[n - 1];
     }
 
@@ -247,7 +297,7 @@ DiagramToValues<Real> get_denoise_target(dim_type d, const Filtration<Int, Real,
         Real death = fil.simplices()[p.death].value();
         Real pers = abs(death - birth);
         if (pers > Real(0) and pers <= eps)
-            result[p] = denoised_point(birth, death, strategy);
+            result[p] = denoise_point(birth, death, strategy);
     }
 
     return result;
