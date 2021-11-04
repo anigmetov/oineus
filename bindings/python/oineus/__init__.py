@@ -7,16 +7,17 @@ from . import _oineus
 
 from ._oineus import *
 
+
 # __all__ = ["compute_diagrams_ls", "compute_diagrams_and_v_ls", "get_boundary_matrix", "to_scipy_matrix", "is_reduced", "get_freudenthal_filtration"]
 
 
 def to_scipy_matrix(sparse_cols, shape=None):
     if shape is None:
         shape = (len(sparse_cols), len(sparse_cols))
-    row_ind = [ j for i in range(len(sparse_cols)) for j in sparse_cols[i]]
-    col_ind = [ i for i in range(len(sparse_cols)) for _ in sparse_cols[i]]
-    assert(len(row_ind) == len(col_ind))
-    data = [ 1 for _ in range(len(row_ind)) ]
+    row_ind = [j for i in range(len(sparse_cols)) for j in sparse_cols[i]]
+    col_ind = [i for i in range(len(sparse_cols)) for _ in sparse_cols[i]]
+    assert (len(row_ind) == len(col_ind))
+    data = [1 for _ in range(len(row_ind))]
     return scipy.sparse.csc_matrix((data, (row_ind, col_ind)), shape=shape)
 
 
@@ -52,10 +53,12 @@ def get_type_dim(data):
 
     return type_part, dim_part
 
+
 def get_freudenthal_filtration(data, negate, wrap, max_dim, n_threads):
     type_part, dim_part = get_type_dim(data)
     func = getattr(_oineus, f"get_fr_filtration_{type_part}_{dim_part}")
     return func(data, negate, wrap, max_dim, n_threads)
+
 
 def get_vr_filtration(points, max_dim, max_radius, n_threads):
     type_part, dim_part = get_type_dim(points)
@@ -82,6 +85,7 @@ def compute_diagrams_and_v_ls(data, negate, wrap, max_dim, n_threads):
     dgms, v = func(data, negate, wrap, max_dim, n_threads)
     v = to_scipy_matrix(v)
     return dgms, v
+
 
 def compute_diagrams_and_rv_ls(data, negate, wrap, max_dim, n_threads):
     type_part, dim_part = get_type_dim(data)
@@ -137,10 +141,10 @@ def get_vr_target_values_diagram_loss(d, dtv, fil, rv):
     return func(d, dtv, fil)
 
 
-def get_bruelle_target(fil, rv, i_0, p, q, d, minimize):
+def get_bruelle_target(fil, rv, p, q, i_0, d, minimize):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_bruelle_target_{type_part}")
-    return func(fil, rv, i_0, p, q, d, minimize)
+    return func(fil, rv, p, q, i_0, d, minimize)
 
 
 def get_nth_persistence(fil, rv, d, n):

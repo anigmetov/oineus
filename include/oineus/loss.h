@@ -1,6 +1,7 @@
 #ifndef OINEUS_LOSS_H
 #define OINEUS_LOSS_H
 
+#include <iostream>
 #include <vector>
 #include <cassert>
 #include <unordered_map>
@@ -86,7 +87,7 @@ void match_diagonal_points(const typename oineus::Filtration<Int, Real, L>& curr
     using VecDiagP = std::vector<DiagP>;
     VecDiagP current_diagonal_points;
 
-    for(hera::id_type current_dgm_id = 0; current_dgm_id < current_index_dgm.size(); ++current_dgm_id) {
+    for(hera::id_type current_dgm_id = 0; current_dgm_id < static_cast<hera::id_type>(current_index_dgm.size()); ++current_dgm_id) {
         if (current_index_dgm[current_dgm_id].is_inf())
             continue;
 
@@ -143,9 +144,9 @@ void match_diagonal_points(const typename oineus::Filtration<Int, Real, L>& curr
 template<class Int, class Real, class L>
 DiagramToValues<Real> get_bruelle_target(const Filtration<Int, Real, L>& current_fil,
                                      SparseMatrix<Int>& rv,
-                                     int i_0,
                                      int p,
                                      int q,
+                                     int i_0,
                                      dim_type d,
                                      bool minimize)
 {
@@ -164,6 +165,8 @@ DiagramToValues<Real> get_bruelle_target_2_0(const Filtration<Int, Real, L>& cur
 {
     DiagramToValues<Real> result;
 
+    std::cerr << "max dim: " << current_fil.max_dim() << ", d = " << d << std::endl;
+
     Real epsilon = get_nth_persistence(current_fil, rv, d, n_keep);
 
     auto index_dgm = rv.index_diagram_finite(current_fil).get_diagram_in_dimension(d);
@@ -171,7 +174,7 @@ DiagramToValues<Real> get_bruelle_target_2_0(const Filtration<Int, Real, L>& cur
     for(auto p : index_dgm) {
         Real birth_val = current_fil.value_by_sorted_id(p.birth);
         Real death_val = current_fil.value_by_sorted_id(p.death);
-        if (abs(death_val - birth_val) <= epsilon) {
+        if (abs(death_val - birth_val) <= epsilon and death_val != birth_val) {
             result[p] = minimize ? denoise_point(birth_val, death_val, DenoiseStrategy::Midway) : enhance_point(birth_val, death_val);
         }
     }
