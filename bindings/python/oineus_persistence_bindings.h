@@ -468,6 +468,14 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "get_nth_persistence" + suffix;
     m.def(func_name.c_str(), &oineus::get_nth_persistence<Int, Real, VREdge>);
+
+     // to equidistribute points
+    func_name = "get_barycenter_target" + suffix;
+    m.def(func_name.c_str(), &oineus::get_barycenter_target<Int, Real, VREdge>);
+
+    func_name = "get_barycenter_target" + suffix;
+    m.def(func_name.c_str(), &oineus::get_barycenter_target<Int, Real, Int>);
+
 }
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

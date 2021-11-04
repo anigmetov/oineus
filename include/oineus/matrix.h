@@ -282,10 +282,22 @@ struct SparseMatrix {
     Diagrams<Real> diagram(const Filtration<Int, Real, L>& fil) const;
 
     template<typename Real, typename L>
+    Diagrams<Real> finite_diagram(const Filtration<Int, Real, L>& fil) const;
+
+    template<typename Real, typename L>
+    typename Diagrams<Real>::Dgm finite_diagram(const Filtration<Int, Real, L>& fil, dim_type dim) const;
+
+    template<typename Real, typename L>
     Diagrams<size_t> index_diagram_finite(const Filtration<Int, Real, L>& fil) const;
 
     template<typename Real, typename L>
+    typename Diagrams<size_t>::Dgm index_diagram_finite(const Filtration<Int, Real, L>& fil, dim_type dim) const;
+
+    template<typename Real, typename L>
     Diagrams<size_t> index_diagram(const Filtration<Int, Real, L>& fil) const;
+
+    template<typename Real, typename L>
+    typename Diagrams<size_t>::Dgm index_diagram(const Filtration<Int, Real, L>& fil, dim_type dim) const;
 
     template<typename Int>
     friend std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m);
@@ -396,6 +408,71 @@ void SparseMatrix<Int>::reduce_parallel(Params& params)
 
 template<class Int>
 template<class Real, class L>
+typename Diagrams<Real>::Dgm SparseMatrix<Int>::finite_diagram(const Filtration<Int, Real, L>& fil, dim_type d) const
+{
+    if (not is_reduced)
+        throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
+
+    typename Diagrams<Real>::Dgm result;
+
+    for(size_t col_idx = 0; col_idx < data.size(); ++col_idx) {
+        auto col = &data[col_idx];
+
+        if (is_zero(col))
+            continue;
+
+        // finite point
+        Int birth_idx = low(col);
+        Int death_idx = col_idx;
+
+        dim_type dim = fil.dim_by_sorted_id(birth_idx);
+
+        if (dim != d)
+            continue;
+
+        Real birth = fil.value_by_sorted_id(birth_idx);
+        Real death = fil.value_by_sorted_id(death_idx);
+
+        if (birth != death)
+            result.emplace_back(birth, death);
+    }
+
+    return result;
+}
+
+template<class Int>
+template<class Real, class L>
+Diagrams<Real> SparseMatrix<Int>::finite_diagram(const Filtration<Int, Real, L>& fil) const
+{
+    if (not is_reduced)
+        throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
+
+    Diagrams<Real> result(fil.max_dim());
+
+    for(size_t col_idx = 0; col_idx < data.size(); ++col_idx) {
+        auto col = &data[col_idx];
+
+        if (is_zero(col))
+            continue;
+
+        // finite point
+        Int birth_idx = low(col);
+        Int death_idx = col_idx;
+
+        dim_type dim = fil.dim_by_sorted_id(birth_idx);
+
+        Real birth = fil.value_by_sorted_id(birth_idx);
+        Real death = fil.value_by_sorted_id(death_idx);
+
+        if (birth != death)
+            result.add_point(dim, birth, death);
+    }
+
+    return result;
+}
+
+template<class Int>
+template<class Real, class L>
 Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real, L>& fil) const
 {
     if (not is_reduced)
@@ -492,6 +569,26 @@ Diagrams<size_t> SparseMatrix<Int>::index_diagram_finite(const Filtration<Int, R
             size_t birth_idx = static_cast<size_t>(low(data[death_idx]));
             dim_type dim = fil.dim_by_sorted_id(birth_idx);
             result.add_point(dim, birth_idx, death_idx);
+        }
+
+    return result;
+}
+
+template<class Int>
+template<class Real, class L>
+typename Diagrams<size_t>::Dgm SparseMatrix<Int>::index_diagram_finite(const Filtration<Int, Real, L>& fil, dim_type d) const
+{
+    if (not is_reduced)
+        throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
+
+    typename Diagrams<size_t>::Dgm result;
+
+    for(size_t death_idx = 0; death_idx < data.size(); ++death_idx)
+        if (not is_zero(data[death_idx])) {
+            size_t birth_idx = static_cast<size_t>(low(data[death_idx]));
+            dim_type dim = fil.dim_by_sorted_id(birth_idx);
+            if (dim != d)
+                result.emplace_back(birth_idx, death_idx);
         }
 
     return result;

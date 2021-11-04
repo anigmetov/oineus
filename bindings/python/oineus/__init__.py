@@ -147,6 +147,12 @@ def get_bruelle_target(fil, rv, p, q, i_0, d, minimize):
     return func(fil, rv, p, q, i_0, d, minimize)
 
 
+def get_barycenter_target(fil, rv, d):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_barycenter_target_{type_part}")
+    return func(fil, rv, d)
+
+
 def get_nth_persistence(fil, rv, d, n):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_nth_persistence_{type_part}")
