@@ -36,7 +36,7 @@ decltype(auto) compute_diagrams_and_v_ls_freudenthal(const typename oineus::Grid
 
     d_matrix.reduce_parallel(params);
 
-    auto dgms = d_matrix.diagram(fil);
+    auto dgms = d_matrix.diagram(fil, true);
 
     return std::make_pair(dgms, d_matrix.v_data);
 }

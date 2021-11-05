@@ -127,7 +127,7 @@ int main(int argc, char** argv)
     if (params.print_time)
        std::cerr << fname_in << ";" << params.n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << params.elapsed << std::endl;
 
-     auto dgm = rv.diagram(fil);
+     auto dgm = rv.diagram(fil, false);
 
     if (params.sort_dgms)
         dgm.sort();

@@ -126,7 +126,7 @@ void test_ls_3()
 
     std::cerr << "reduce ok" << std::endl;
 
-    auto dgm = m_D.diagram(fil);
+    auto dgm = m_D.diagram(fil, true);
 
     std::cerr << "diagram ok" << std::endl;
 }
@@ -192,7 +192,7 @@ int main(int argc, char** argv)
     if (params.print_time)
         std::cerr << fname_in << ";" << params.n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << params.elapsed << std::endl;
 
-    auto dgm = r.diagram(fil);
+    auto dgm = r.diagram(fil, true);
 
     if (params.sort_dgms)
         dgm.sort();

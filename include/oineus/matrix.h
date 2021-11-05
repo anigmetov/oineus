@@ -268,6 +268,9 @@ struct SparseMatrix {
     // data
     MatrixData data;
     MatrixData v_data;
+    // transposed sparse matrix, filled after reduction
+    MatrixData data_t;
+    MatrixData v_data_t;
     bool is_reduced {false};
 
     // methods
@@ -279,25 +282,17 @@ struct SparseMatrix {
     void reduce_parallel(Params& params);
 
     template<typename Real, typename L>
-    Diagrams<Real> diagram(const Filtration<Int, Real, L>& fil) const;
+    Diagrams<Real> diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points) const;
+
+//    TODO: implement methods for one dimension
+//    template<typename Real, typename L>
+//    typename Diagrams<Real>::Dgm diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, dim_type dim) const;
 
     template<typename Real, typename L>
-    Diagrams<Real> finite_diagram(const Filtration<Int, Real, L>& fil) const;
+    Diagrams<size_t> index_diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, bool include_zero_persistence_points) const;
 
-    template<typename Real, typename L>
-    typename Diagrams<Real>::Dgm finite_diagram(const Filtration<Int, Real, L>& fil, dim_type dim) const;
-
-    template<typename Real, typename L>
-    Diagrams<size_t> index_diagram_finite(const Filtration<Int, Real, L>& fil) const;
-
-    template<typename Real, typename L>
-    typename Diagrams<size_t>::Dgm index_diagram_finite(const Filtration<Int, Real, L>& fil, dim_type dim) const;
-
-    template<typename Real, typename L>
-    Diagrams<size_t> index_diagram(const Filtration<Int, Real, L>& fil) const;
-
-    template<typename Real, typename L>
-    typename Diagrams<size_t>::Dgm index_diagram(const Filtration<Int, Real, L>& fil, dim_type dim) const;
+//    template<typename Real, typename L>
+//    typename Diagrams<size_t>::Dgm index_diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, bool include_zero_persistence_points, dim_type d) const;
 
     template<typename Int>
     friend std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m);
@@ -406,74 +401,11 @@ void SparseMatrix<Int>::reduce_parallel(Params& params)
     is_reduced = true;
 }
 
-template<class Int>
-template<class Real, class L>
-typename Diagrams<Real>::Dgm SparseMatrix<Int>::finite_diagram(const Filtration<Int, Real, L>& fil, dim_type d) const
-{
-    if (not is_reduced)
-        throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
 
-    typename Diagrams<Real>::Dgm result;
-
-    for(size_t col_idx = 0; col_idx < data.size(); ++col_idx) {
-        auto col = &data[col_idx];
-
-        if (is_zero(col))
-            continue;
-
-        // finite point
-        Int birth_idx = low(col);
-        Int death_idx = col_idx;
-
-        dim_type dim = fil.dim_by_sorted_id(birth_idx);
-
-        if (dim != d)
-            continue;
-
-        Real birth = fil.value_by_sorted_id(birth_idx);
-        Real death = fil.value_by_sorted_id(death_idx);
-
-        if (birth != death)
-            result.emplace_back(birth, death);
-    }
-
-    return result;
-}
 
 template<class Int>
 template<class Real, class L>
-Diagrams<Real> SparseMatrix<Int>::finite_diagram(const Filtration<Int, Real, L>& fil) const
-{
-    if (not is_reduced)
-        throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
-
-    Diagrams<Real> result(fil.max_dim());
-
-    for(size_t col_idx = 0; col_idx < data.size(); ++col_idx) {
-        auto col = &data[col_idx];
-
-        if (is_zero(col))
-            continue;
-
-        // finite point
-        Int birth_idx = low(col);
-        Int death_idx = col_idx;
-
-        dim_type dim = fil.dim_by_sorted_id(birth_idx);
-
-        Real birth = fil.value_by_sorted_id(birth_idx);
-        Real death = fil.value_by_sorted_id(death_idx);
-
-        if (birth != death)
-            result.add_point(dim, birth, death);
-    }
-
-    return result;
-}
-
-template<class Int>
-template<class Real, class L>
-Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real, L>& fil) const
+Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points) const
 {
     if (not is_reduced)
         throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
@@ -482,117 +414,79 @@ Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real, L>& fil) c
 
     std::unordered_set<Int> rows_with_lowest_one;
 
-    for(size_t i = 0; i < data.size(); ++i) {
-        if (!is_zero(&data[i]))
-            rows_with_lowest_one.insert(low(&data[i]));
-    }
+    if (include_inf_points)
+        for(size_t i = 0; i < data.size(); ++i)
+            if (!is_zero(&data[i]))
+                rows_with_lowest_one.insert(low(&data[i]));
 
     for(size_t col_idx = 0; col_idx < data.size(); ++col_idx) {
         auto col = &data[col_idx];
 
         if (is_zero(col)) {
-            if (rows_with_lowest_one.count(col_idx) == 0) {
-                // point at infinity
+            if (not include_inf_points or rows_with_lowest_one.count(col_idx) != 0)
+                // we don't want infinite points or col_idx is a negative simplex
+                continue;
 
-                dim_type dim = fil.dim_by_sorted_id(col_idx);
-                Real birth = fil.value_by_sorted_id(col_idx);
-                Real death = std::numeric_limits<Real>::infinity();
+            // point at infinity
+            dim_type dim = fil.dim_by_sorted_id(col_idx);
+            Real birth = fil.value_by_sorted_id(col_idx);
+            Real death = fil.infinity();
 
-                result.add_point(dim, birth, death);
-            }
+            result.add_point(dim, birth, death);
         } else {
             // finite point
-            Int birth_idx = low(col);
-            Int death_idx = col_idx;
-
+            Int birth_idx = low(col), death_idx = col_idx;
             dim_type dim = fil.dim_by_sorted_id(birth_idx);
-
-            Real birth = fil.value_by_sorted_id(birth_idx);
-            Real death = fil.value_by_sorted_id(death_idx);
+            Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
 
             if (birth != death)
                 result.add_point(dim, birth, death);
         }
     }
-
     return result;
 }
 
 template<class Int>
 template<class Real, class L>
-Diagrams<size_t> SparseMatrix<Int>::index_diagram(const Filtration<Int, Real, L>& fil) const
+Diagrams<size_t> SparseMatrix<Int>::index_diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, bool include_zero_persistence_points) const
 {
     Diagrams<size_t> result(fil.max_dim());
 
-    constexpr size_t plus_inf = DgmPoint<size_t>::plus_inf();
-    constexpr size_t minus_inf = DgmPoint<size_t>::minus_inf();
-
     std::unordered_set<size_t> rows_with_lowest_one;
 
-    for(size_t i = 0; i < data.size(); ++i) {
-        if (!is_zero(&data[i]))
-            rows_with_lowest_one.insert(low(&data[i]));
-    }
+    constexpr size_t plus_inf = std::numeric_limits<size_t>::max();
+
+    if (include_inf_points)
+        for(size_t i = 0; i < data.size(); ++i)
+            if (!is_zero(&data[i]))
+                rows_with_lowest_one.insert(low(&data[i]));
 
     for(size_t col_idx = 0; col_idx < data.size(); ++col_idx) {
         auto col = &data[col_idx];
 
         if (is_zero(col)) {
-            if (rows_with_lowest_one.count(col_idx) == 0) {
-                // point at infinity
-                dim_type dim = fil.dim_by_sorted_id(col_idx);
-                result.add_point(dim, col_idx, plus_inf);
-            }
+            if (!include_inf_points or rows_with_lowest_one.count(col_idx) != 0)
+                continue;
+
+            dim_type dim = fil.dim_by_sorted_id(col_idx);
+
+            result.add_point(dim, col_idx, plus_inf);
         } else {
             // finite point
             size_t birth_idx = static_cast<size_t>(low(col));
             size_t death_idx = col_idx;
+
             dim_type dim = fil.dim_by_sorted_id(birth_idx);
-            result.add_point(dim, birth_idx, death_idx);
+
+            if (include_zero_persistence_points or fil.value_by_sorted_id(birth_idx) != fil.value_by_sorted_id(death_idx))
+                result.add_point(dim, birth_idx, death_idx);
         }
     }
 
     return result;
 }
 
-template<class Int>
-template<class Real, class L>
-Diagrams<size_t> SparseMatrix<Int>::index_diagram_finite(const Filtration<Int, Real, L>& fil) const
-{
-    if (not is_reduced)
-        throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
 
-    Diagrams<size_t> result(fil.max_dim());
-
-    for(size_t death_idx = 0; death_idx < data.size(); ++death_idx)
-        if (not is_zero(data[death_idx])) {
-            size_t birth_idx = static_cast<size_t>(low(data[death_idx]));
-            dim_type dim = fil.dim_by_sorted_id(birth_idx);
-            result.add_point(dim, birth_idx, death_idx);
-        }
-
-    return result;
-}
-
-template<class Int>
-template<class Real, class L>
-typename Diagrams<size_t>::Dgm SparseMatrix<Int>::index_diagram_finite(const Filtration<Int, Real, L>& fil, dim_type d) const
-{
-    if (not is_reduced)
-        throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
-
-    typename Diagrams<size_t>::Dgm result;
-
-    for(size_t death_idx = 0; death_idx < data.size(); ++death_idx)
-        if (not is_zero(data[death_idx])) {
-            size_t birth_idx = static_cast<size_t>(low(data[death_idx]));
-            dim_type dim = fil.dim_by_sorted_id(birth_idx);
-            if (dim != d)
-                result.emplace_back(birth_idx, death_idx);
-        }
-
-    return result;
-}
 
 template<typename Int>
 std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m)

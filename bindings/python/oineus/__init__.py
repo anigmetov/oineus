@@ -73,24 +73,24 @@ def get_boundary_matrix(data, negate, wrap, max_dim, n_threads):
     return to_scipy_matrix(bm)
 
 
-def compute_diagrams_ls(data, negate, wrap, max_dim, n_threads):
+def compute_diagrams_ls(data, negate, wrap, max_dim, n_threads, include_inf_points):
     type_part, dim_part = get_type_dim(data)
     func = getattr(_oineus, f"compute_diagrams_ls_{type_part}_{dim_part}")
-    return func(data, negate, wrap, max_dim, n_threads)
+    return func(data, negate, wrap, max_dim, n_threads, include_inf_points)
 
 
-def compute_diagrams_and_v_ls(data, negate, wrap, max_dim, n_threads):
+def compute_diagrams_and_v_ls(data, negate, wrap, max_dim, n_threads, include_inf_points):
     type_part, dim_part = get_type_dim(data)
     func = getattr(_oineus, f"compute_diagrams_and_v_ls_{type_part}_{dim_part}")
-    dgms, v = func(data, negate, wrap, max_dim, n_threads)
+    dgms, v = func(data, negate, wrap, max_dim, n_threads, include_inf_points)
     v = to_scipy_matrix(v)
     return dgms, v
 
 
-def compute_diagrams_and_rv_ls(data, negate, wrap, max_dim, n_threads):
+def compute_diagrams_and_rv_ls(data, negate, wrap, max_dim, n_threads, include_inf_points):
     type_part, dim_part = get_type_dim(data)
     func = getattr(_oineus, f"compute_diagrams_and_rv_ls_{type_part}_{dim_part}")
-    dgms, r, v = func(data, negate, wrap, max_dim, n_threads)
+    dgms, r, v = func(data, negate, wrap, max_dim, n_threads, include_inf_points)
     v = to_scipy_matrix(v)
     r = to_scipy_matrix(r)
     return dgms, r, v

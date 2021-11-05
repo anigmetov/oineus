@@ -150,8 +150,8 @@ DiagramToValues<Real> get_barycenter_target(const Filtration<Int, Real, L>& fil,
     DiagramToValues<Real> result;
     constexpr bool is_vr = std::is_same_v<VREdge, L>;
 
-    auto index_dgm = rv.index_diagram_finite(fil, d);
-    auto dgm = rv.finite_diagram(fil, d);
+    auto index_dgm = rv.index_diagram(fil, false, false).get_diagram_in_dimension(d);
+    auto dgm = rv.diagram(fil, false).get_diagram_in_dimension(d);
 
     if (dgm.size()) {
         Real avg_birth = (is_vr ? 0 : std::accumulate(dgm.begin(), dgm.end(), static_cast<Real>(0), [&](auto x, auto p) { return x + p.birth; })) / dgm.size();
@@ -193,12 +193,12 @@ DiagramToValues<Real> get_bruelle_target_2_0(const Filtration<Int, Real, L>& cur
 
     Real epsilon = get_nth_persistence(current_fil, rv, d, n_keep);
 
-    auto index_dgm = rv.index_diagram_finite(current_fil, d);
+    auto index_dgm = rv.index_diagram(current_fil, false, false).get_diagram_in_dimension(d);
 
     for(auto p : index_dgm) {
         Real birth_val = current_fil.value_by_sorted_id(p.birth);
         Real death_val = current_fil.value_by_sorted_id(p.death);
-        if (abs(death_val - birth_val) <= epsilon and death_val != birth_val) {
+        if (abs(death_val - birth_val) <= epsilon) {
             result[p] = minimize ? denoise_point(birth_val, death_val, DenoiseStrategy::Midway) : enhance_point(birth_val, death_val, is_vr);
         }
     }
@@ -238,7 +238,7 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
     hera_params.match_inf_points = match_inf_points;
     hera_params.wasserstein_power = wasserstein_q;
 
-    auto current_index_dgm = rv.index_diagram_finite(current_fil, d);
+    auto current_index_dgm = rv.index_diagram(current_fil, false, false).get_diagram_in_dimension(d);
 
     Diagram current_dgm;
     current_dgm.reserve(current_index_dgm.size());
@@ -293,7 +293,7 @@ Real get_nth_persistence(const Filtration<Int, Real, L>& fil, const SparseMatrix
         throw std::runtime_error("get_nth_persistence: n must be at least 1");
     }
 
-    auto index_diagram = rv_matrix.template index_diagram_finite<Real, L>(fil)[d];
+    auto index_diagram = rv_matrix.template index_diagram<Real, L>(fil, false, false).get_diagram_in_dimension(d);
     std::vector<Real> ps;
     ps.reserve(index_diagram.size());
 
@@ -318,13 +318,13 @@ template<class Int, class Real, class L>
 DiagramToValues<Real> get_denoise_target(dim_type d, const Filtration<Int, Real, L>& fil, const SparseMatrix<Int>& rv_matrix, Real eps, DenoiseStrategy strategy)
 {
     DiagramToValues<Real> result;
-    auto index_diagram = rv_matrix.template index_diagram_finite<Real, L>(fil)[d];
+    auto index_diagram = rv_matrix.template index_diagram<Real, L>(fil, false, false)[d];
 
     for(auto p: index_diagram) {
-        Real birth = fil.simplices()[p.birth].value();
-        Real death = fil.simplices()[p.death].value();
+        Real birth = fil.value_by_sorted_id(p.birth);
+        Real death = fil.value_by_sorted_id(p.death);
         Real pers = abs(death - birth);
-        if (pers > Real(0) and pers <= eps)
+        if (pers <= eps)
             result[p] = denoise_point(birth, death, strategy);
     }
 

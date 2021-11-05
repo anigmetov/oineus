@@ -135,6 +135,12 @@ public:
 
     bool negate() const { return negate_; }
 
+    Real infinity() const
+    {
+        static_assert(std::numeric_limits<Real>::has_infinity, "Real does not have inf");
+        return negate() ? -std::numeric_limits<Real>::infinity() : std::numeric_limits<Real>::infinity();
+    }
+
 private:
     bool negate_;
     FiltrationSimplexVector simplices_;
