@@ -11,6 +11,10 @@
 #include "timer.h"
 #include "filtration.h"
 #include "matrix.h"
+
+// suppress pragma message from boost
+#define BOOST_BIND_GLOBAL_PLACEHOLDERS
+
 #include "hera/wasserstein.h"
 
 #pragma once
