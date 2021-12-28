@@ -55,10 +55,10 @@ private:
 };
 
 template<class Int, class Real>
-using DiagramV = std::pair<PyOineusDiagrams<Real>, typename oineus::SparseMatrix<Int>::MatrixData>;
+using DiagramV = std::pair<PyOineusDiagrams<Real>, typename oineus::VRUDecomposition<Int>::MatrixData>;
 
 template<class Int, class Real>
-using DiagramRV = std::tuple<PyOineusDiagrams<Real>, typename oineus::SparseMatrix<Int>::MatrixData, typename oineus::SparseMatrix<Int>::MatrixData>;
+using DiagramRV = std::tuple<PyOineusDiagrams<Real>, typename oineus::VRUDecomposition<Int>::MatrixData, typename oineus::VRUDecomposition<Int>::MatrixData>;
 
 template<class Int, class Real, size_t D>
 typename oineus::Grid<Int, Real, D>
@@ -138,7 +138,7 @@ compute_diagrams_from_fil(const oineus::Filtration<Int, Real, L>& fil, int n_thr
 }
 
 template<class Int, class Real, size_t D>
-typename oineus::SparseMatrix<Int>::MatrixData
+typename oineus::VRUDecomposition<Int>::MatrixData
 get_boundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
     auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads);
@@ -210,7 +210,7 @@ void init_oineus_common(py::module& m)
 
     using oineus::DenoiseStrategy;
 
-    using BoundaryMatrix = oineus::SparseMatrix<Int>;
+    using BoundaryMatrix = oineus::VRUDecomposition<Int>;
 
     using ReductionParams = oineus::Params;
 

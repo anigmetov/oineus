@@ -149,7 +149,7 @@ void match_diagonal_points(const typename oineus::Filtration<Int, Real, L>& curr
 }
 
 template<class Int, class Real, class L>
-DiagramToValues<Real> get_barycenter_target(const Filtration<Int, Real, L>& fil, SparseMatrix<Int>& rv, dim_type d)
+DiagramToValues<Real> get_barycenter_target(const Filtration<Int, Real, L>& fil, VRUDecomposition<Int>& rv, dim_type d)
 {
     DiagramToValues<Real> result;
     constexpr bool is_vr = std::is_same_v<VREdge, L>;
@@ -172,7 +172,7 @@ DiagramToValues<Real> get_barycenter_target(const Filtration<Int, Real, L>& fil,
 
 template<class Int, class Real, class L>
 DiagramToValues<Real> get_bruelle_target(const Filtration<Int, Real, L>& current_fil,
-                                     SparseMatrix<Int>& rv,
+                                     VRUDecomposition<Int>& rv,
                                      int p,
                                      int q,
                                      int i_0,
@@ -187,7 +187,7 @@ DiagramToValues<Real> get_bruelle_target(const Filtration<Int, Real, L>& current
 
 template<class Int, class Real, class L>
 DiagramToValues<Real> get_bruelle_target_2_0(const Filtration<Int, Real, L>& current_fil,
-                                     SparseMatrix<Int>& rv,
+                                     VRUDecomposition<Int>& rv,
                                      int n_keep,
                                      dim_type d,
                                      bool minimize)
@@ -214,7 +214,7 @@ DiagramToValues<Real> get_bruelle_target_2_0(const Filtration<Int, Real, L>& cur
 template<class Int, class Real, class L>
 DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& template_dgm,
         const Filtration<Int, Real, L>& current_fil,
-        SparseMatrix<Int>& rv,
+        VRUDecomposition<Int>& rv,
         dim_type d,
         Real wasserstein_q,
         bool match_inf_points,
@@ -291,7 +291,7 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
 // return the n-th (finite) persistence value in dimension d
 // points at infinity are ignored
 template<class Int, class Real, class L>
-Real get_nth_persistence(const Filtration<Int, Real, L>& fil, const SparseMatrix<Int>& rv_matrix, dim_type d, int n)
+Real get_nth_persistence(const Filtration<Int, Real, L>& fil, const VRUDecomposition<Int>& rv_matrix, dim_type d, int n)
 {
     if (n < 1) {
         throw std::runtime_error("get_nth_persistence: n must be at least 1");
@@ -319,7 +319,7 @@ Real get_nth_persistence(const Filtration<Int, Real, L>& fil, const SparseMatrix
 
 // points (b, d) with persistence | b - d| <= eps should go to (b, b)
 template<class Int, class Real, class L>
-DiagramToValues<Real> get_denoise_target(dim_type d, const Filtration<Int, Real, L>& fil, const SparseMatrix<Int>& rv_matrix, Real eps, DenoiseStrategy strategy)
+DiagramToValues<Real> get_denoise_target(dim_type d, const Filtration<Int, Real, L>& fil, const VRUDecomposition<Int>& rv_matrix, Real eps, DenoiseStrategy strategy)
 {
     DiagramToValues<Real> result;
     auto index_diagram = rv_matrix.template index_diagram<Real, L>(fil, false, false)[d];
@@ -363,7 +363,7 @@ TargetMatching<L, Real> get_target_values_diagram_loss(dim_type d, const Diagram
 }
 // given target points (diagram_to_values), compute values on intermediate simplices from R, V columns
 template<class Int, class Real, class L>
-TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil, const oineus::SparseMatrix<Int>& rv_matrix)
+TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& rv_matrix)
 {
     TargetMatching<L, Real> result;
 
@@ -449,6 +449,14 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
 
     return result;
 }
+
+template<class Int, class Real, class L>
+TargetMatching<L, Real> increase_death(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& rv_matrix)
+{
+
+}
+
+
 } // namespace oineus
 
 

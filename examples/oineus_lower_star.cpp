@@ -181,7 +181,7 @@ int main(int argc, char** argv)
     auto& grid = grid_func.first;
 
     auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
-    SparseMatrix<Int> r = fil.boundary_matrix_full();
+    VRUDecomposition<Int> r = fil.boundary_matrix_full();
 
     info("Matrix read");
 

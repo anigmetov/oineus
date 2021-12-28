@@ -28,7 +28,7 @@ public:
     using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
     using IntVector = std::vector<Int>;
     using RealVector = std::vector<Real>;
-    using BoundaryMatrix = SparseMatrix<Int>;
+    using BoundaryMatrix = VRUDecomposition<Int>;
 
     Filtration() = default;
 

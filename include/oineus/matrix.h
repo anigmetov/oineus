@@ -119,7 +119,7 @@ void add_rv_column(const RVColumns<IdxType>* col_a, const RVColumns<IdxType>* co
 
 // TODO: clean up declaration - move to matrix?
 template<class RVMatrices, class AtomicIdxVector, class Int, class MemoryReclaimC>
-void parallel_reduction(RVMatrices& rv, AtomicIdxVector& pivots, std::atomic<Int>& next_free_chunk,
+void parallel_reduction(RVMatrices& rv, std::vector<SparseColumn<Int>>& u_rows, AtomicIdxVector& pivots, std::atomic<Int>& next_free_chunk,
         const Params params, int thread_idx, MemoryReclaimC* mm, ThreadStats& stats, bool go_down)
 {
     using RVColumnC = RVColumns<Int>;
@@ -210,6 +210,7 @@ void parallel_reduction(RVMatrices& rv, AtomicIdxVector& pivots, std::atomic<Int
                 } else if (pivot_idx < current_column_idx) {
                     // pivot to the left: kill lowest one in current column
                     add_rv_column(current_r_v_column, pivot_r_v_column, reduced_r_v_column.get());
+                    add_column(u_rows[pivot_idx], u_rows[current_column_idx], u_rows[pivot_idx]);
 
                     update_column = true;
 
@@ -258,7 +259,7 @@ void parallel_reduction(RVMatrices& rv, AtomicIdxVector& pivots, std::atomic<Int
 }
 
 template<typename Int_>
-struct SparseMatrix {
+struct VRUDecomposition {
     // types
     using Int = Int_;
     using IntSparseColumn = SparseColumn<Int>;
@@ -268,16 +269,18 @@ struct SparseMatrix {
     // data
     MatrixData data;
     MatrixData v_data;
+    MatrixData u_data;
     // transposed sparse matrix, filled after reduction
     MatrixData data_t;
     MatrixData v_data_t;
+    MatrixData u_data_t;
     bool is_reduced {false};
 
     // methods
 
     [[nodiscard]] size_t size() const { return data.size(); }
 
-    void append(SparseMatrix&& other);
+    void append(VRUDecomposition&& other);
 
     void reduce_parallel(Params& params);
 
@@ -295,11 +298,11 @@ struct SparseMatrix {
 //    typename Diagrams<size_t>::Dgm index_diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, bool include_zero_persistence_points, dim_type d) const;
 
     template<typename Int>
-    friend std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m);
+    friend std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m);
 };
 
 template<class Int>
-void SparseMatrix<Int>::append(SparseMatrix&& other)
+void VRUDecomposition<Int>::append(VRUDecomposition&& other)
 {
     data.insert(data.end(),
             std::make_move_iterator(other.data.begin()),
@@ -307,13 +310,14 @@ void SparseMatrix<Int>::append(SparseMatrix&& other)
 }
 
 template<class Int>
-void SparseMatrix<Int>::reduce_parallel(Params& params)
+void VRUDecomposition<Int>::reduce_parallel(Params& params)
 {
     using namespace std::placeholders;
 
     size_t n_cols = size();
 
     v_data = std::vector<IntSparseColumn>(n_cols);
+    u_data_t = std::vector<IntSparseColumn>(n_cols);
 
     using RVColumnC = RVColumns<Int>;
     using APRVColumn = std::atomic<RVColumnC*>;
@@ -365,7 +369,7 @@ void SparseMatrix<Int>::reduce_parallel(Params& params)
         stats.emplace_back(thread_idx);
 
         ts.emplace_back(parallel_reduction<RVMatrix, AtomicIdxVector, Int, MemoryReclaimC>,
-                std::ref(r_v_matrix), std::ref(pivots), std::ref(next_free_chunk),
+                std::ref(r_v_matrix), std::ref(u_data_t), std::ref(pivots), std::ref(next_free_chunk),
                 params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]), go_down);
 
 #ifdef __linux__
@@ -405,7 +409,7 @@ void SparseMatrix<Int>::reduce_parallel(Params& params)
 
 template<class Int>
 template<class Real, class L>
-Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points) const
+Diagrams<Real> VRUDecomposition<Int>::diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points) const
 {
     if (not is_reduced)
         throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
@@ -448,7 +452,7 @@ Diagrams<Real> SparseMatrix<Int>::diagram(const Filtration<Int, Real, L>& fil, b
 
 template<class Int>
 template<class Real, class L>
-Diagrams<size_t> SparseMatrix<Int>::index_diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, bool include_zero_persistence_points) const
+Diagrams<size_t> VRUDecomposition<Int>::index_diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, bool include_zero_persistence_points) const
 {
     Diagrams<size_t> result(fil.max_dim());
 
@@ -489,7 +493,7 @@ Diagrams<size_t> SparseMatrix<Int>::index_diagram(const Filtration<Int, Real, L>
 
 
 template<typename Int>
-std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m)
+std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m)
 {
     out << "Matrix[\n";
     for(size_t col_idx = 0; col_idx < m.data.size(); ++col_idx) {

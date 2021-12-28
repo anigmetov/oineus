@@ -14,7 +14,7 @@ get_grid(Real* pdata, typename oineus::Grid<Int, Real, D>::GridPoint dims, bool 
 }
 
 template<class Int, class Real, size_t D>
-typename oineus::SparseMatrix<Int>::MatrixData
+typename oineus::VRUDecomposition<Int>::MatrixData
 get_boundary_matrix(const typename oineus::Grid<Int, Real, D>& grid, bool negate, bool wrap, dim_type top_d, int n_threads)
 {
     auto fil = grid.freudenthal_filtration(top_d, negate, n_threads);
