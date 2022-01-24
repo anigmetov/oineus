@@ -703,7 +703,7 @@ namespace icecream{ namespace detail
             #elif defined(__APPLE__)
                 buf << '"' << value << '"';
             #else
-                buf << '"' << cv.to_bytes(value.data()) << '"';
+                buf << '"' << cv.to_bytes(value.r_data()) << '"';
             #endif
 
                 return buf.str();

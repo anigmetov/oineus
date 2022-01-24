@@ -112,10 +112,7 @@ void test_ls_3()
     ss = grid.freudenthal_simplices(3, negate);
     auto fil = grid.freudenthal_filtration(3, negate);
 
-    //for(const auto& s : ss)
-    //    std::cout << s << "\n";
-
-    auto m_D = fil.boundary_matrix_full();
+    VRUDecomposition<int> m_D {fil, false};
 
     std::cerr << "boundary ok" << std::endl;
 
@@ -181,7 +178,7 @@ int main(int argc, char** argv)
     auto& grid = grid_func.first;
 
     auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
-    VRUDecomposition<Int> r = fil.boundary_matrix_full();
+    VRUDecomposition<Int> r { fil.boundary_matrix_full(), false };
 
     info("Matrix read");
 

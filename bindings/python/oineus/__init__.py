@@ -120,7 +120,19 @@ def get_vr_target_values(d, dtv, fil, rv):
     return func(d, dtv, fil, rv)
 
 
-def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d, q):
+def get_vr_target_values_x(d, dtv, fil, decmp, decmp_coh):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_vr_target_values_x_{type_part}")
+    return func(d, dtv, fil, decmp, decmp_coh)
+
+
+def get_ls_target_values_x(d, dtv, fil, decmp, decmp_coh):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_ls_target_values_x_{type_part}")
+    return func(d, dtv, fil, decmp, decmp_coh)
+
+
+def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d: int, q: float, mip: bool, mdp: bool):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_ls_wasserstein_matching_target_values_{type_part}")
 
@@ -132,7 +144,7 @@ def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d, q):
             dgm_1.append(DgmPt(p[0], p[1]))
         dgm = dgm_1
 
-    return func(dgm, fil, rv, d, q)
+    return func(dgm, fil, rv, d, q, mip, mdp)
 
 
 def get_vr_target_values_diagram_loss(d, dtv, fil, rv):

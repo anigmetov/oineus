@@ -45,19 +45,18 @@ typename Diagrams<Real>::Point denoise_point(Real birth, Real death, DenoiseStra
     return {target_birth, target_death};
 }
 
-
 template<class Real>
 typename Diagrams<Real>::Point enhance_point(Real birth, Real death, bool vr)
 {
-    Real d = ( birth + death) / 2;
+    Real d = (birth + death) / 2;
     if (death > birth) {
 //        return { 0, 2 };
         if (vr) d = std::min(d, static_cast<Real>(1));
         Real new_birth = vr ? 0 : birth - d;
         Real new_death = death + d;
-        return { birth - d, death + d };
+        return {birth - d, death + d};
     } else // for upper-star signs are reversed
-        return { birth + d, death - d };
+        return {birth + d, death - d};
 }
 
 template<class Real>
@@ -161,23 +160,22 @@ DiagramToValues<Real> get_barycenter_target(const Filtration<Int, Real, L>& fil,
         Real avg_birth = (is_vr ? 0 : std::accumulate(dgm.begin(), dgm.end(), static_cast<Real>(0), [&](auto x, auto p) { return x + p.birth; })) / dgm.size();
         Real avg_death = std::accumulate(dgm.begin(), dgm.end(), static_cast<Real>(0), [&](auto x, auto p) { return x + p.death; }) / dgm.size();
 
-        for(auto p : index_dgm)
+        for(auto p: index_dgm)
             if (fil.value_by_sorted_id(p.birth) != fil.value_by_sorted_id(p.death))
-                result[p] = { avg_birth, avg_death };
+                result[p] = {avg_birth, avg_death};
     }
 
     return result;
 }
 
-
 template<class Int, class Real, class L>
 DiagramToValues<Real> get_bruelle_target(const Filtration<Int, Real, L>& current_fil,
-                                     VRUDecomposition<Int>& rv,
-                                     int p,
-                                     int q,
-                                     int i_0,
-                                     dim_type d,
-                                     bool minimize)
+        VRUDecomposition<Int>& rv,
+        int p,
+        int q,
+        int i_0,
+        dim_type d,
+        bool minimize)
 {
     if (q == 0 and p == 2)
         return get_bruelle_target_2_0(current_fil, rv, i_0, d, minimize);
@@ -187,10 +185,10 @@ DiagramToValues<Real> get_bruelle_target(const Filtration<Int, Real, L>& current
 
 template<class Int, class Real, class L>
 DiagramToValues<Real> get_bruelle_target_2_0(const Filtration<Int, Real, L>& current_fil,
-                                     VRUDecomposition<Int>& rv,
-                                     int n_keep,
-                                     dim_type d,
-                                     bool minimize)
+        VRUDecomposition<Int>& rv,
+        int n_keep,
+        dim_type d,
+        bool minimize)
 {
     constexpr bool is_vr = std::is_same_v<L, VREdge>;
     DiagramToValues<Real> result;
@@ -199,7 +197,7 @@ DiagramToValues<Real> get_bruelle_target_2_0(const Filtration<Int, Real, L>& cur
 
     auto index_dgm = rv.index_diagram(current_fil, false, false).get_diagram_in_dimension(d);
 
-    for(auto p : index_dgm) {
+    for(auto p: index_dgm) {
         Real birth_val = current_fil.value_by_sorted_id(p.birth);
         Real death_val = current_fil.value_by_sorted_id(p.death);
         if (abs(death_val - birth_val) <= epsilon) {
@@ -209,7 +207,6 @@ DiagramToValues<Real> get_bruelle_target_2_0(const Filtration<Int, Real, L>& cur
 
     return result;
 }
-
 
 template<class Int, class Real, class L>
 DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& template_dgm,
@@ -361,6 +358,7 @@ TargetMatching<L, Real> get_target_values_diagram_loss(dim_type d, const Diagram
 
     return result;
 }
+
 // given target points (diagram_to_values), compute values on intermediate simplices from R, V columns
 template<class Int, class Real, class L>
 TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& rv_matrix)
@@ -386,7 +384,7 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
 
         Real min_birth = fil.min_value(d);
 
-        auto birth_column = rv_matrix.data[death_idx];
+        auto birth_column = rv_matrix.r_data[death_idx];
         auto death_column = rv_matrix.v_data[death_idx];
 
         // birth simplices are in R column
@@ -450,12 +448,259 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
     return result;
 }
 
-template<class Int, class Real, class L>
-TargetMatching<L, Real> increase_death(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& rv_matrix)
-{
 
+template<class Int, class Real, class L>
+std::vector<Int> increase_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& decmp, Real target_birth)
+{
+    if (not decmp.dualize())
+        throw std::runtime_error("expected cohomology");
+
+    if (not fil.cmp(fil.simplices()[positive_simplex_idx].value(), target_birth))
+        throw std::runtime_error("target_birth cannot preceed current value");
+
+    std::vector<Int> result;
+
+    auto& v_col = decmp.v_data.at(fil.index_in_matrix(positive_simplex_idx, decmp.dualize()));
+
+    for(auto index_in_matrix = v_col.rbegin(); index_in_matrix != v_col.rend(); ++index_in_matrix) {
+        auto fil_idx = fil.index_in_filtration(*index_in_matrix, decmp.dualize());
+        const auto& sigma = fil.simplices().at(fil_idx);
+
+        if (fil.cmp(target_birth, sigma.value()))
+            break;
+
+        result.push_back(fil_idx);
+    }
+
+    if (result.empty())
+        throw std::runtime_error("increase_birth_x: empty");
+
+    return result;
 }
 
+template<class Int, class Real, class L>
+std::vector<Int> decrease_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& decmp, Real target_birth)
+{
+    if (not decmp.dualize())
+        throw std::runtime_error("expected cohomology");
+
+    if (not fil.cmp(target_birth, fil.simplices()[positive_simplex_idx].value()))
+        throw std::runtime_error("target_birth cannot preceed current value");
+
+    std::vector<Int> result;
+
+//    std::cerr << "in decrease_birth_x: u_data_t.size = " << decmp.u_data_t.size() << ", positive_simplex_idx = " << positive_simplex_idx << ", index = " << fil.index_in_matrix(positive_simplex_idx, decmp.dualize()) << ", row.size = " << decmp.u_data_t.at(fil.index_in_matrix(positive_simplex_idx, decmp.dualize())).size() << std::endl;
+
+    for(auto index_in_matrix : decmp.u_data_t.at(fil.index_in_matrix(positive_simplex_idx, decmp.dualize()))) {
+        auto fil_idx = fil.index_in_filtration(index_in_matrix, decmp.dualize());
+        const auto& sigma = fil.simplices()[fil_idx];
+
+//        std::cerr << "fil_idx = " << fil_idx << ", index_in_matrix = " << index_in_matrix << std::endl;
+
+        if (fil.cmp(sigma.value(), target_birth)) {
+//            std::cerr << " breaking for value" << ", target_birth = " << target_birth << ", sigma.value() = " << sigma.value() << std::endl;
+            break;
+        }
+
+        result.push_back(fil_idx);
+    }
+
+    if (result.empty())
+        throw std::runtime_error("decrease_birth_x: empty");
+
+    return result;
+}
+
+template<class Int, class Real, class L>
+std::vector<Int> increase_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& decmp, Real target_death)
+{
+    std::vector<Int> result;
+
+    const auto& u_rows = decmp.u_data_t;
+    const auto& r_cols = decmp.r_data;
+    const auto& simplices = fil.simplices();
+
+    size_t n_cols = decmp.v_data.size();
+    Int sigma = low(r_cols[negative_simplex_idx]);
+
+    if (not(sigma >= 0 and sigma < r_cols.size()))
+        throw std::runtime_error("expected negative simplex");
+
+//    std::cerr << "in increase_death_x: u_data_t.size = " << decmp.u_data_t.size() << ", negative_simplex_idx = " << negative_simplex_idx << ", row.size = " << u_rows[negative_simplex_idx].size() << std::endl;
+
+    for(auto tau_idx: u_rows.at(negative_simplex_idx)) {
+        const auto& tau = simplices.at(tau_idx);
+        assert(tau.dim() == d);
+//        std::cerr << "tau_idx = " << tau_idx;
+        if (fil.cmp(target_death, tau.value())) {
+//            std::cerr << ", breaking for value" << std::endl;
+            break;
+        }
+
+        if (low(decmp.r_data[tau_idx]) <= sigma)
+            result.push_back(tau_idx);
+//        else
+//            std::cerr << ", not pushing: low = " << low(decmp.r_data[tau_idx]) << ", sigma = " << sigma << std::endl;
+    }
+
+    if (result.empty())
+        throw std::runtime_error("increase_death_x: empty");
+
+    return result;
+}
+
+template<class Int, class Real, class L>
+std::vector<Int> decrease_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& decmp, Real target_death)
+{
+    std::vector<Int> result;
+
+    auto& v_cols = decmp.v_data;
+    auto& r_cols = decmp.r_data;
+    const auto& simplices = fil.simplices();
+    size_t n_cols = decmp.v_data.size();
+    Int sigma = low(r_cols[negative_simplex_idx]);
+
+    if (not(sigma >= 0 and sigma < r_cols.size()))
+        throw std::runtime_error("expected negative simplex");
+
+    auto& v_col = v_cols[negative_simplex_idx];
+
+    for(auto tau_idx = v_col.rbegin(); tau_idx != v_col.rend(); ++tau_idx) {
+        const auto& tau = simplices.at(*tau_idx);
+        assert(tau.dim() == d);
+        if (fil.cmp(tau.value(), target_death))
+            break;
+
+        // explicit check for is_zero is not necessary for signed Int, low returns -1 for empty columns
+        if (low(decmp.r_data.at(*tau_idx)) <= sigma or is_zero(decmp.r_data[*tau_idx]))
+            result.push_back(*tau_idx);
+    }
+
+    if (result.empty())
+        throw std::runtime_error("decrease_death_x: empty result");
+
+    return result;
+}
+
+template<class Int, class Real, class L>
+std::vector<Int> change_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& decmp, Real target_death)
+{
+    Real current_death = fil.simplices()[negative_simplex_idx].value();
+    if (fil.cmp(target_death, current_death))
+        return decrease_death_x(d, negative_simplex_idx, fil, decmp, target_death);
+    else if (fil.cmp(current_death, target_death))
+        return increase_death_x(d, negative_simplex_idx, fil, decmp, target_death);
+    else
+        return {};
+}
+
+template<class Int, class Real, class L>
+std::vector<Int> change_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& decmp_coh, Real target_birth)
+{
+    if (not decmp_coh.dualize())
+        throw std::runtime_error("expected cohomology");
+
+    Real current_birth = fil.simplices()[positive_simplex_idx].value();
+    if (fil.cmp(target_birth, current_birth))
+        return decrease_birth_x(d, positive_simplex_idx, fil, decmp_coh, target_birth);
+    else if (fil.cmp(current_birth, target_birth))
+        return increase_birth_x(d, positive_simplex_idx, fil, decmp_coh, target_birth);
+    else
+        return {};
+}
+
+// given target points (diagram_to_values), compute values on intermediate simplices using X set definition
+template<class Int, class Real, class L>
+TargetMatching<L, Real> get_target_values_x(dim_type d,
+        const DiagramToValues<Real>& diagram_to_values,
+        const oineus::Filtration<Int, Real, L>& fil,
+        const oineus::VRUDecomposition<Int>& decmp_hom,
+        const oineus::VRUDecomposition<Int>& decmp_coh)
+{
+
+//    std::cerr << "enter get_target_values_x, diagram_to_values.size = " << diagram_to_values.size() << ", fil.size = " << fil.size() << std::endl;
+
+    if (decmp_hom.dualize())
+        throw std::runtime_error("this parameter must be homology");
+
+    if (not decmp_coh.dualize())
+        throw std::runtime_error("this parameter must be cohomology");
+
+    TargetMatching<L, Real> result;
+
+    const auto& simplices = fil.simplices();
+
+    std::unordered_map<Int, Real> simplices_to_values;
+
+    int n_conflicts = 0;
+    int n_single_point_conflicts = 0;
+    int n_points_with_conflict = 0;
+
+    for(auto&& kv: diagram_to_values) {
+        auto dgm_point = kv.first;
+        auto target_point = kv.second;
+
+        size_t birth_idx = dgm_point.birth;
+        size_t death_idx = dgm_point.death;
+
+        Real target_birth = target_point.birth;
+        Real target_death = target_point.death;
+
+        Real current_birth = simplices[birth_idx].value();
+        Real current_death = simplices[death_idx].value();
+
+        Real min_birth = fil.min_value(d);
+
+//        std::cerr << "birth_idx = " << birth_idx << ", target birth = " << target_birth << ", current birth = " << current_birth;
+//        std::cerr << ", death_idx = " << death_idx << ", target death = " << target_death << ", current death = " << current_death << std::endl;
+
+        auto death_x = change_death_x<Int>(d, death_idx, fil, decmp_hom, target_death);
+        if (death_x.size() > 1)
+            std::cerr << "death_x.size = " << death_x.size() << std::endl;
+
+        auto birth_x = change_birth_x<Int>(d, birth_idx, fil, decmp_coh, target_birth);
+        if (birth_x.size() > 1)
+            std::cerr << "birth_x.size = " << birth_x.size() << std::endl;
+
+        {
+            // check for intersection
+            std::vector<Int> birth_death;
+            std::set_intersection(birth_x.begin(), birth_x.end(), death_x.begin(), death_x.end(), std::back_inserter(birth_death));
+            n_points_with_conflict += (not birth_death.empty());
+            n_single_point_conflicts += birth_death.size();
+        }
+
+        for(auto b_idx: birth_x) {
+            const auto& sigma = simplices[b_idx];
+            auto cvl = sigma.critical_value_location_;
+
+            // another column wants this location to make larger step -> it wins, do not overwrite with our target value
+            if (result.count(cvl) and abs(target_birth - sigma.value()) <= abs(result[cvl] - sigma.value())) {
+                continue;
+                n_conflicts++;
+            }
+
+            result[cvl] = target_birth;
+        }
+
+        for(auto d_idx: death_x) {
+            const auto& sigma = simplices[d_idx];
+            auto cvl = sigma.critical_value_location_;
+
+            // another column wants this location to make larger step -> it wins, do not overwrite with our target value
+            if (result.count(cvl) and abs(target_death - sigma.value()) <= abs(result[cvl] - sigma.value())) {
+                continue;
+                n_conflicts++;
+            }
+            result[cvl] = target_death;
+        }
+    }
+
+    if (n_conflicts or n_points_with_conflict or n_single_point_conflicts)
+        std::cerr << "conflicts for one critical value location: " << n_conflicts << ", single dgm points with conflict: " << n_points_with_conflict << ", conflicts from single point: " << n_single_point_conflicts << std::endl;
+
+    return result;
+}
 
 } // namespace oineus
 

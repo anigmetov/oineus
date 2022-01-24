@@ -124,7 +124,7 @@ template<class Int, class Real, class L>
 PyOineusDiagrams<Real>
 compute_diagrams_from_fil(const oineus::Filtration<Int, Real, L>& fil, int n_threads)
 {
-    auto d_matrix = fil.boundary_matrix_full();
+    oineus::VRUDecomposition<Int> d_matrix { fil.boundary_matrix_full(), false };
 
     oineus::Params params;
 
@@ -142,8 +142,16 @@ typename oineus::VRUDecomposition<Int>::MatrixData
 get_boundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
     auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads);
+    return fil.boundary_matrix_full();
+}
+
+template<class Int, class Real, size_t D>
+typename oineus::VRUDecomposition<Int>::MatrixData
+get_coboundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
+{
+    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads);
     auto bm = fil.boundary_matrix_full();
-    return bm.data;
+    return oineus::antitranspose(bm);
 }
 
 template<class Int, class Real, size_t D>
@@ -151,7 +159,7 @@ DiagramV<Int, Real>
 compute_diagrams_and_v_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads, bool include_inf_points)
 {
     auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, n_threads);
-    auto d_matrix = fil.boundary_matrix_full();
+    oineus::VRUDecomposition<Int> d_matrix { fil.boundary_matrix_full(), false };
 
     oineus::Params params;
 
@@ -169,7 +177,8 @@ DiagramRV<Int, Real>
 compute_diagrams_and_rv_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads, bool include_inf_points)
 {
     auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, n_threads);
-    auto d_matrix = fil.boundary_matrix_full();
+    oineus::VRUDecomposition<Int> d_matrix { fil.boundary_matrix_full(), false };
+
 
     oineus::Params params;
 
@@ -179,7 +188,7 @@ compute_diagrams_and_rv_ls_freudenthal(py::array_t<Real, py::array::c_style | py
 
     d_matrix.reduce_parallel(params);
 
-    return {PyOineusDiagrams<Real>(d_matrix.diagram(fil, include_inf_points)), d_matrix.data, d_matrix.v_data};
+    return {PyOineusDiagrams<Real>(d_matrix.diagram(fil, include_inf_points)), d_matrix.r_data, d_matrix.v_data};
 }
 
 template<class Int, class Real, size_t D>
@@ -188,7 +197,7 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
 {
     // for diagram in dimension d, we need (d+1)-simplices
     auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, n_threads);
-    auto d_matrix = fil.boundary_matrix_full();
+    oineus::VRUDecomposition<Int> d_matrix { fil.boundary_matrix_full(), false };
 
     oineus::Params params;
 
@@ -210,7 +219,7 @@ void init_oineus_common(py::module& m)
 
     using oineus::DenoiseStrategy;
 
-    using BoundaryMatrix = oineus::VRUDecomposition<Int>;
+    using Decomposition = oineus::VRUDecomposition<Int>;
 
     using ReductionParams = oineus::Params;
 
@@ -252,19 +261,20 @@ void init_oineus_common(py::module& m)
             .value("Midway", DenoiseStrategy::Midway, "((b, d) maps to ((b+d)/2, (b+d)/2)")
             ;
 
-    py::class_<BoundaryMatrix>(m, "BoundaryMatrix")
-            .def(py::init<>())
-            .def_readwrite("data", &BoundaryMatrix::data)
-            .def_readwrite("v_data", &BoundaryMatrix::v_data)
-            .def("reduce", &BoundaryMatrix::reduce_parallel)
-            .def("diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, double, VREdge>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
-            .def("diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, float, VREdge>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
-            .def("diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, double, Int>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
-            .def("diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, float, Int>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
-            .def("index_diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, double, VREdge>& fil, bool include_inf_points, bool include_zero_persistence_points) { return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points)); })
-            .def("index_diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, float, VREdge>& fil, bool include_inf_points, bool include_zero_persistence_points) { return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points)); })
-            .def("index_diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, double, Int>& fil, bool include_inf_points, bool include_zero_persistence_points) { return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points)); })
-            .def("index_diagram", [](const BoundaryMatrix& self, const oineus::Filtration<Int, float, Int>& fil, bool include_inf_points, bool include_zero_persistence_points) { return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points)); })
+    py::class_<Decomposition>(m, "Decomposition")
+            .def(py::init<const oineus::Filtration<Int, double, Int>&, bool>())
+            .def(py::init<const oineus::Filtration<Int, double, VREdge>&, bool>())
+            .def_readwrite("data", &Decomposition::r_data)
+            .def_readwrite("v_data", &Decomposition::v_data)
+            .def("reduce", &Decomposition::reduce_parallel)
+            .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, VREdge>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
+            .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, VREdge>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
+            .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, Int>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
+            .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, Int>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
+            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, VREdge>& fil, bool include_inf_points, bool include_zero_persistence_points) { return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points)); })
+            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, VREdge>& fil, bool include_inf_points, bool include_zero_persistence_points) { return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points)); })
+            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, Int>& fil, bool include_inf_points, bool include_zero_persistence_points) { return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points)); })
+            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, Int>& fil, bool include_inf_points, bool include_zero_persistence_points) { return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points)); })
             ;
 
     using DgmPointInt = typename oineus::DgmPoint<Int>;
@@ -461,6 +471,13 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "get_vr_target_values_diagram_loss" + suffix;
     m.def(func_name.c_str(), &oineus::get_target_values_diagram_loss<Int, Real, VREdge>);
+
+    // target values --- X set
+    func_name = "get_ls_target_values_x" + suffix;
+    m.def(func_name.c_str(), &oineus::get_target_values_x<Int, Real, Int>);
+
+    func_name = "get_vr_target_values_x" + suffix;
+    m.def(func_name.c_str(), &oineus::get_target_values_x<Int, Real, VREdge>);
 
     // to reproduce "Topology layer for ML" experiments
     func_name = "get_bruelle_target" + suffix;

@@ -26,21 +26,41 @@ template<class Int, class Real, size_t D>
 decltype(auto) compute_diagrams_and_v_ls_freudenthal(const typename oineus::Grid<Int, Real, D>& grid, bool negate, bool wrap, dim_type top_d, int n_threads)
 {
     auto fil = grid.freudenthal_filtration(top_d + 1, negate, n_threads);
-    auto d_matrix = fil.boundary_matrix_full();
+    auto decmp = oineus::VRUDecomposition<Int>(fil.boundary_matrix_full(), false);
 
     oineus::Params params;
 
     params.sort_dgms = false;
-    params.clearing_opt = true;
+    params.clearing_opt = false;
     params.n_threads = n_threads;
 
-    d_matrix.reduce_parallel(params);
+    decmp.reduce_parallel(params);
 
-    auto dgms = d_matrix.diagram(fil, true);
+    auto dgms = decmp.diagram(fil, true);
 
-    return std::make_pair(dgms, d_matrix.v_data);
+    return std::make_pair(dgms, decmp);
 }
 
+TEST_CASE("Basic reduction")
+{
+    using Int = int;
+
+    std::vector<std::vector<Int>> d_cols;
+    d_cols.emplace_back(std::vector<Int>({0, 1}));
+    d_cols.emplace_back(std::vector<Int>({1}));
+
+    oineus::VRUDecomposition<Int> decmp(d_cols, false);
+
+    oineus::Params params;
+
+    params.sort_dgms = false;
+    params.clearing_opt = false;
+    params.n_threads = 1;
+
+    decmp.reduce_parallel(params);
+
+    REQUIRE(decmp.sanity_check());
+}
 
 TEST_CASE("Simple reduction")
 {
@@ -70,7 +90,9 @@ TEST_CASE("Simple reduction")
     Grid grid = get_grid<Int, Real, 3>(xs.data(), dims, wrap);
     auto dv = compute_diagrams_and_v_ls_freudenthal<Int, Real, 3>(grid, negate, wrap, top_d, n_threads);
     auto dgms = dv.first;
+    auto decmp = dv.second;
     REQUIRE(dgms.n_dims() == top_d + 1);
+    REQUIRE(decmp.sanity_check());
 }
 
 

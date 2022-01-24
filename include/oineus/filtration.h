@@ -27,8 +27,7 @@ public:
     using FiltrationSimplex = Simplex<Int, Real, ValueLocation>;
     using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
     using IntVector = std::vector<Int>;
-    using RealVector = std::vector<Real>;
-    using BoundaryMatrix = VRUDecomposition<Int>;
+    using BoundaryMatrix = typename VRUDecomposition<Int>::MatrixData;
 
     Filtration() = default;
 
@@ -62,10 +61,11 @@ public:
     BoundaryMatrix boundary_matrix_full() const
     {
         BoundaryMatrix result;
-        result.data.reserve(size());
+        result.reserve(size());
 
         for(dim_type d = 0; d <= max_dim(); ++d) {
-            result.append(boundary_matrix_in_dimension(d));
+            auto m = boundary_matrix_in_dimension(d);
+            result.insert(result.end(), std::make_move_iterator(m.begin()), std::make_move_iterator(m.end()));
         }
 
         return result;
@@ -73,15 +73,14 @@ public:
 
     BoundaryMatrix boundary_matrix_in_dimension(dim_type d) const
     {
-        BoundaryMatrix result;
+        BoundaryMatrix result(size_in_dimension(d));
         // fill D with empty vectors
-        result.data = typename BoundaryMatrix::MatrixData(size_in_dimension(d));
 
         // boundary of vertex is empty, need to do something in positive dimension only
         if (d > 0)
             for(size_t col_idx = 0; col_idx < size_in_dimension(d); ++col_idx) {
                 auto& sigma = simplices_[col_idx + dim_first(d)];
-                auto& col = result.data[col_idx];
+                auto& col = result[col_idx];
                 col.reserve(d + 1);
 
                 for(const auto& tau_vertices: sigma.boundary())
@@ -135,11 +134,18 @@ public:
 
     bool negate() const { return negate_; }
 
+    bool cmp(Real a, Real b) const { return negate() ? (a > b) : (a < b); }
+
     Real infinity() const
     {
         static_assert(std::numeric_limits<Real>::has_infinity, "Real does not have inf");
         return negate() ? -std::numeric_limits<Real>::infinity() : std::numeric_limits<Real>::infinity();
     }
+
+    // without cohomology, index in D == index in filtration. For cohomology, indexation is reversed
+    // these two functions convert
+    [[nodiscard]] size_t index_in_matrix(size_t simplex_idx, bool dualize) const { return dualize ? size() - simplex_idx - 1 : simplex_idx; }
+    [[nodiscard]] size_t index_in_filtration(size_t matrix_idx, bool dualize) const { return dualize ? size() - matrix_idx - 1 : matrix_idx; }
 
 private:
     bool negate_;
@@ -183,6 +189,7 @@ private:
             }
         dim_last_.push_back(size() - 1);
     }
+
 
     // sort simplices and assign sorted_ids
     void sort([[maybe_unused]] int n_threads = 1)

@@ -117,7 +117,7 @@ int main(int argc, char** argv)
     auto& grid = grid_func.first;
 
     auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
-    VRUDecomposition<Int> rv = fil.boundary_matrix_full();
+    VRUDecomposition<Int> rv { fil.boundary_matrix_full(), false };
 
     info("Matrix read");
 
