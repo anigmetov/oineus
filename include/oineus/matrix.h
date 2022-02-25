@@ -113,7 +113,44 @@ struct RVColumns {
         r_column.swap(other.r_column);
         v_column.swap(other.v_column);
     }
+
+    template<class I>
+    friend std::ostream& operator<<(std::ostream& out, const RVColumns<I>& rv);
 };
+
+template<class I>
+std::ostream& operator<<(std::ostream& out, const RVColumns<I>& rv)
+{
+    out << "R column: [";
+    for(auto x : rv.r_column)
+        out << x << ", ";
+
+    out << "], V column: [";
+    for(auto x : rv.v_column)
+        out << x << ", ";
+
+    out << "]";
+
+    return out;
+}
+
+
+template<class I>
+std::ostream& operator<<(std::ostream& out, const std::atomic<RVColumns<I>*>& rv)
+{
+    out << *rv;
+    return out;
+}
+
+template<class I>
+std::ostream& operator<<(std::ostream& out, const std::vector<std::atomic<RVColumns<I>*>>& rvs)
+{
+    out << "RV matrix:\n";
+    for(const auto& rv : rvs)
+        out << rv << "\n";
+    out << "\n";
+    return out;
+}
 
 template<typename IdxType>
 void add_rv_column(const RVColumns<IdxType>* col_a, const RVColumns<IdxType>* col_b, RVColumns<IdxType>* sum)
@@ -284,10 +321,11 @@ struct VRUDecomposition {
     // methods
 
     template<class R, class L>
-    VRUDecomposition(const Filtration<Int, R, L>& fil, bool _dualize) : dualize_(_dualize)
+    VRUDecomposition(const Filtration<Int, R, L>& fil, bool _dualize) :
+            d_data (!_dualize ? fil.boundary_matrix_full() : antitranspose(fil.boundary_matrix_full(), fil.size())),
+            r_data (!_dualize ? fil.boundary_matrix_full() : antitranspose(fil.boundary_matrix_full(), fil.size())),
+            dualize_(_dualize)
     {
-        r_data = dualize_ ? fil.boundary_matrix_full() : antitranspose(fil.boundary_matrix_full(), fil.size());
-        d_data = r_data;
     }
 
     VRUDecomposition(const MatrixData& _d, bool _dualize) :d_data(_d), r_data(_d), dualize_(_dualize) {}
@@ -424,6 +462,8 @@ void VRUDecomposition<Int>::reduce_parallel(Params& params)
 
     RVMatrix r_v_matrix(n_cols);
 
+//    IC("Before moving: ", d_data);
+
     // move data to r_v_matrix
     for(size_t i = 0; i < n_cols; ++i) {
         IntSparseColumn v_column = {static_cast<Int>(i)};
@@ -432,6 +472,8 @@ void VRUDecomposition<Int>::reduce_parallel(Params& params)
         r_v_matrix[i] = new RVColumnC(r_data[i], v_column);
     }
     debug("Matrix moved");
+
+//    IC(r_v_matrix, d_data);
 
     std::atomic<Int> counter;
     counter = 0;
@@ -501,6 +543,8 @@ void VRUDecomposition<Int>::reduce_parallel(Params& params)
         r_data[i] = std::move(p->r_column);
         v_data[i] = std::move(p->v_column);
     }
+
+//    IC("After R writen back: ", d_data);
 
     is_reduced = true;
 }
@@ -577,6 +621,7 @@ Diagrams<size_t> VRUDecomposition<Int>::index_diagram(const Filtration<Int, Real
             result.add_point(dim, col_idx, plus_inf);
         } else {
             // finite point
+//            fil.
             size_t birth_idx = static_cast<size_t>(low(col));
             size_t death_idx = col_idx;
 

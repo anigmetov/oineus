@@ -7,7 +7,42 @@
 #include <numeric>
 #include <functional>
 
+#include <icecream/icecream.hpp>
+
 #include <oineus/filtration.h>
+
+namespace std {
+template<typename T>
+std::ostream& operator<<(std::ostream& os, const std::vector<T>& v)
+{
+    os << "[";
+
+    for(size_t i = 0; i < v.size(); ++i) {
+        os << v[i];
+        if (i + 1 < v.size())
+            os << ", ";
+    }
+
+    os << "]";
+    return os;
+}
+
+
+template<typename Int, size_t D>
+std::ostream& operator<<(std::ostream& os, const std::array<Int, D>& p)
+{
+    os << "(";
+
+    for(size_t i = 0; i < D; ++i) {
+        os << p[i];
+        if (i + 1 < D)
+            os << ", ";
+    }
+
+    os << ")";
+    return os;
+}
+}
 
 namespace oineus {
 
@@ -96,35 +131,6 @@ constexpr inline std::vector<std::vector<std::vector<Int>>> fr_displacements(siz
     throw std::runtime_error("Unknown dimensions");
 }
 
-template<typename T>
-std::ostream& operator<<(std::ostream& os, const std::vector<T>& v)
-{
-    os << "[";
-
-    for(size_t i = 0; i < v.size(); ++i) {
-        os << v[i];
-        if (i + 1 < v.size())
-            os << ", ";
-    }
-
-    os << "]";
-    return os;
-}
-
-template<typename Int, size_t D>
-std::ostream& operator<<(std::ostream& os, const std::array<Int, D>& p)
-{
-    os << "(";
-
-    for(size_t i = 0; i < D; ++i) {
-        os << p[i];
-        if (i + 1 < D)
-            os << ", ";
-    }
-
-    os << ")";
-    return os;
-}
 
 template<typename Int_, typename Real_, size_t D>
 class Grid {
@@ -305,6 +311,8 @@ public:
 
         IdxVector v_ids(d + 1, 0);
 
+//        IC(v, d);
+
         for(auto& deltas: disps) {
             assert(deltas.size() == d + 1);
 
@@ -323,6 +331,7 @@ public:
 
             if (is_valid_simplex) {
                 ValueVertex vv = simplex_value_and_vertex(v_ids, negate);
+//                IC(v_ids, vv.value);
                 result.emplace_back(v_ids, vv.value, vv.vertex);
             }
         }

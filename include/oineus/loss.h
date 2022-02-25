@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <cmath>
 
+#include "icecream/icecream.hpp"
+
 #include "diagram.h"
 #include "timer.h"
 #include "filtration.h"
@@ -19,7 +21,24 @@
 
 #pragma once
 
+
+
 namespace oineus {
+
+template<class Cont>
+std::string container_to_string(const Cont& v)
+{
+    std::stringstream ss;
+    ss << "[";
+    for(auto x_iter = v.begin(); x_iter != v.end(); ) {
+        ss << *x_iter;
+        x_iter = std::next(x_iter);
+        if (x_iter != v.end())
+            ss << ", ";
+    }
+    ss << "]";
+    return ss.str();
+}
 
 enum class DenoiseStrategy {
     BirthBirth,
@@ -46,15 +65,13 @@ typename Diagrams<Real>::Point denoise_point(Real birth, Real death, DenoiseStra
 }
 
 template<class Real>
-typename Diagrams<Real>::Point enhance_point(Real birth, Real death, bool vr)
+typename Diagrams<Real>::Point enhance_point(Real birth, Real death, Real min_birth=-std::numeric_limits<Real>::infinity(), Real max_death=std::numeric_limits<Real>::infinity())
 {
-    Real d = (birth + death) / 2;
+    Real d = (death - birth) / 2;
     if (death > birth) {
-//        return { 0, 2 };
-        if (vr) d = std::min(d, static_cast<Real>(1));
-        Real new_birth = vr ? 0 : birth - d;
-        Real new_death = death + d;
-        return {birth - d, death + d};
+        Real new_birth = std::max(birth - d, min_birth);
+        Real new_death = std::min(death + d, max_death);
+        return {new_birth, new_death};
     } else // for upper-star signs are reversed
         return {birth + d, death - d};
 }
@@ -175,10 +192,12 @@ DiagramToValues<Real> get_bruelle_target(const Filtration<Int, Real, L>& current
         int q,
         int i_0,
         dim_type d,
-        bool minimize)
+        bool minimize,
+        Real min_birth = -std::numeric_limits<Real>::infinity(),
+        Real max_death = std::numeric_limits<Real>::infinity())
 {
     if (q == 0 and p == 2)
-        return get_bruelle_target_2_0(current_fil, rv, i_0, d, minimize);
+        return get_bruelle_target_2_0(current_fil, rv, i_0, d, minimize, min_birth, max_death);
     else
         throw std::runtime_error("Not implemented");
 }
@@ -188,24 +207,81 @@ DiagramToValues<Real> get_bruelle_target_2_0(const Filtration<Int, Real, L>& cur
         VRUDecomposition<Int>& rv,
         int n_keep,
         dim_type d,
-        bool minimize)
+        bool minimize,
+        Real min_birth,
+        Real max_death)
 {
     constexpr bool is_vr = std::is_same_v<L, VREdge>;
     DiagramToValues<Real> result;
 
     Real epsilon = get_nth_persistence(current_fil, rv, d, n_keep);
 
+    // false flags: no infinite points, no points with zero persistence
     auto index_dgm = rv.index_diagram(current_fil, false, false).get_diagram_in_dimension(d);
 
     for(auto p: index_dgm) {
         Real birth_val = current_fil.value_by_sorted_id(p.birth);
         Real death_val = current_fil.value_by_sorted_id(p.death);
         if (abs(death_val - birth_val) <= epsilon) {
-            result[p] = minimize ? denoise_point(birth_val, death_val, DenoiseStrategy::Midway) : enhance_point(birth_val, death_val, is_vr);
+            result[p] = minimize ? denoise_point(birth_val, death_val, DenoiseStrategy::Midway) : enhance_point(birth_val, death_val, min_birth, max_death);
         }
     }
 
     return result;
+}
+
+// if point is in quadrant defined by (t, t),
+// move it to horizontal or vertical quadrant border, whichever is closer
+template<class Int, class Real, class L>
+DiagramToValues<Real> get_well_group_target(dim_type  d,
+        const Filtration<Int, Real, L>& current_fil,
+        VRUDecomposition<Int>& rv,
+        Real t)
+{
+    DiagramToValues<Real> result;
+
+    constexpr bool is_vr = std::is_same_v<L, VREdge>;
+
+    auto index_dgm = rv.index_diagram(current_fil, false, false).get_diagram_in_dimension(d);
+
+    for(auto p: index_dgm) {
+        Real birth_val = current_fil.value_by_sorted_id(p.birth);
+        Real death_val = current_fil.value_by_sorted_id(p.death);
+
+        // check if in quadrant
+        if (current_fil.negate() and (birth_val <= t or death_val >= t))
+            continue;
+        if (not current_fil.negate() and (birth_val >= t or death_val <= t))
+            continue;
+
+        Real target_birth, target_death;
+
+        if (abs(birth_val - t) < abs(death_val - t)) {
+            target_birth = t;
+            target_death = death_val;
+        } else {
+            target_birth = birth_val;
+            target_death = t;
+        }
+
+        result[p] = { target_birth, target_death };
+    }
+
+    return result;
+}
+
+template<class Real>
+Real clamp(Real a, Real min, Real max)
+{
+    if (min > max)
+        throw std::runtime_error("bad clamp call");
+
+    if (a > max)
+        return max;
+    else if (a < min)
+        return min;
+    else
+        return a;
 }
 
 template<class Int, class Real, class L>
@@ -244,6 +320,21 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
     Diagram current_dgm;
     current_dgm.reserve(current_index_dgm.size());
 
+    Real min_val = std::numeric_limits<Real>::max();
+    Real max_val = std::numeric_limits<Real>::lowest();
+
+    for(auto&& p : template_dgm) {
+        min_val = std::min(min_val, p.birth);
+        min_val = std::min(min_val, p.death);
+        max_val = std::max(max_val, p.birth);
+        max_val = std::max(max_val, p.death);
+    }
+
+    if (min_val > max_val or min_val == std::numeric_limits<Real>::max() or min_val == std::numeric_limits<Real>::infinity()
+        or max_val == std::numeric_limits<Real>::lowest() or max_val == std::numeric_limits<Real>::infinity()) {
+        throw std::runtime_error("bad max/min value");
+    }
+
     for(hera::id_type current_dgm_id = 0; current_dgm_id < current_index_dgm.size(); ++current_dgm_id) {
 
         auto birth_idx = current_index_dgm[current_dgm_id].birth;
@@ -272,9 +363,20 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
             // matched to off-diagonal point of template diagram
             result[current_index_dgm.at(current_id)] = template_dgm.at(template_id);
         else {
-            // point must disappear, move to (birth, birth)
+            // point must disappear, move to (birth, birth), clamp, if necessary
             auto target_point = current_dgm.at(current_id);
             target_point.death = target_point.birth;
+            if (current_fil.negate()) {
+                if (target_point.death > max_val)
+                    target_point.birth = target_point.death = max_val;
+                else if (target_point.birth < min_val)
+                    target_point.birth = target_point.death = min_val;
+            } else {
+                if (target_point.birth > max_val)
+                    target_point.birth = target_point.death = max_val;
+                else if (target_point.death < min_val)
+                    target_point.birth = target_point.death = min_val;
+            }
             result[current_index_dgm.at(current_id)] = target_point;
         }
     }
@@ -554,30 +656,29 @@ std::vector<Int> decrease_death_x(dim_type d, size_t negative_simplex_idx, const
 {
     std::vector<Int> result;
 
-    auto& v_cols = decmp.v_data;
     auto& r_cols = decmp.r_data;
-    const auto& simplices = fil.simplices();
-    size_t n_cols = decmp.v_data.size();
     Int sigma = low(r_cols[negative_simplex_idx]);
 
-    if (not(sigma >= 0 and sigma < r_cols.size()))
-        throw std::runtime_error("expected negative simplex");
+    assert(sigma >= 0 and sigma < r_cols.size());
 
-    auto& v_col = v_cols[negative_simplex_idx];
+    auto& v_col = decmp.v_data[negative_simplex_idx];
 
-    for(auto tau_idx = v_col.rbegin(); tau_idx != v_col.rend(); ++tau_idx) {
-        const auto& tau = simplices.at(*tau_idx);
+    for(auto tau_idx_it = v_col.rbegin(); tau_idx_it != v_col.rend(); ++tau_idx_it) {
+        auto tau_idx = *tau_idx_it;
+        const auto& tau = fil.simplices()[tau_idx];
         assert(tau.dim() == d);
+
         if (fil.cmp(tau.value(), target_death))
             break;
 
         // explicit check for is_zero is not necessary for signed Int, low returns -1 for empty columns
-        if (low(decmp.r_data.at(*tau_idx)) <= sigma or is_zero(decmp.r_data[*tau_idx]))
-            result.push_back(*tau_idx);
+        if (low(decmp.r_data[tau_idx]) < sigma or is_zero(decmp.r_data[tau_idx]))
+            continue;
+
+        result.push_back(tau_idx);
     }
 
-    if (result.empty())
-        throw std::runtime_error("decrease_death_x: empty result");
+    assert(result.size());
 
     return result;
 }
@@ -590,7 +691,7 @@ std::vector<Int> change_death_x(dim_type d, size_t negative_simplex_idx, const o
         return decrease_death_x(d, negative_simplex_idx, fil, decmp, target_death);
     else if (fil.cmp(current_death, target_death))
         return increase_death_x(d, negative_simplex_idx, fil, decmp, target_death);
-    else
+    else // current_death = target_death, no change required
         return {};
 }
 
@@ -651,16 +752,21 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
 
         Real min_birth = fil.min_value(d);
 
-//        std::cerr << "birth_idx = " << birth_idx << ", target birth = " << target_birth << ", current birth = " << current_birth;
-//        std::cerr << ", death_idx = " << death_idx << ", target death = " << target_death << ", current death = " << current_death << std::endl;
+        std::cerr << "indices: (" << birth_idx << ", " << death_idx <<  "): MOVE (" << current_birth << ", " << current_death << ") -> (" << target_birth << ", " << target_death << ")" << std::endl;
 
         auto death_x = change_death_x<Int>(d, death_idx, fil, decmp_hom, target_death);
-        if (death_x.size() > 1)
+//        if (death_x.size() > 1)
             std::cerr << "death_x.size = " << death_x.size() << std::endl;
 
+//        for(auto x_d : death_x)
+//            std::cerr << fil.simplices()[x_d] << std::endl;
+
         auto birth_x = change_birth_x<Int>(d, birth_idx, fil, decmp_coh, target_birth);
-        if (birth_x.size() > 1)
+//        if (birth_x.size() > 1)
             std::cerr << "birth_x.size = " << birth_x.size() << std::endl;
+
+//        for(auto x_b : birth_x)
+//            std::cerr << fil.simplices()[x_b] << std::endl;
 
         {
             // check for intersection
@@ -674,11 +780,11 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
             const auto& sigma = simplices[b_idx];
             auto cvl = sigma.critical_value_location_;
 
+            n_conflicts += result.count(cvl);
+
             // another column wants this location to make larger step -> it wins, do not overwrite with our target value
-            if (result.count(cvl) and abs(target_birth - sigma.value()) <= abs(result[cvl] - sigma.value())) {
+            if (result.count(cvl) and abs(target_birth - sigma.value()) <= abs(result[cvl] - sigma.value()))
                 continue;
-                n_conflicts++;
-            }
 
             result[cvl] = target_birth;
         }
@@ -687,11 +793,12 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
             const auto& sigma = simplices[d_idx];
             auto cvl = sigma.critical_value_location_;
 
+            n_conflicts += result.count(cvl);
+
             // another column wants this location to make larger step -> it wins, do not overwrite with our target value
-            if (result.count(cvl) and abs(target_death - sigma.value()) <= abs(result[cvl] - sigma.value())) {
+            if (result.count(cvl) and abs(target_death - sigma.value()) <= abs(result[cvl] - sigma.value()))
                 continue;
-                n_conflicts++;
-            }
+
             result[cvl] = target_death;
         }
     }

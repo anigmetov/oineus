@@ -223,7 +223,11 @@ void init_oineus_common(py::module& m)
 
     using ReductionParams = oineus::Params;
 
+    using IndexDiagram = PyOineusDiagrams<size_t>;
+
     std::string vr_edge_name = "VREdge";
+
+    std::string index_dgm_class_name = "IndexDiagrams";
 
     py::class_<VREdge>(m, vr_edge_name.c_str())
             .def(py::init<Int>())
@@ -264,8 +268,10 @@ void init_oineus_common(py::module& m)
     py::class_<Decomposition>(m, "Decomposition")
             .def(py::init<const oineus::Filtration<Int, double, Int>&, bool>())
             .def(py::init<const oineus::Filtration<Int, double, VREdge>&, bool>())
-            .def_readwrite("data", &Decomposition::r_data)
+            .def_readwrite("r_data", &Decomposition::r_data)
             .def_readwrite("v_data", &Decomposition::v_data)
+            .def_readwrite("u_data_t", &Decomposition::u_data_t)
+            .def_readwrite("d_data", &Decomposition::d_data)
             .def("reduce", &Decomposition::reduce_parallel)
             .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, VREdge>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
             .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, VREdge>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
@@ -303,6 +309,11 @@ void init_oineus_common(py::module& m)
               ss << p;
               return ss.str();
             });
+
+    py::class_<IndexDiagram>(m, index_dgm_class_name.c_str())
+            .def(py::init<dim_type>())
+            .def("in_dimension", &IndexDiagram::get_diagram_in_dimension)
+            .def("__getitem__", &IndexDiagram::get_diagram_in_dimension);
 }
 
 template<class Int, class Real>
@@ -323,6 +334,7 @@ void init_oineus(py::module& m, std::string suffix)
     std::string dgm_point_name = "DiagramPoint" + suffix;
     std::string dgm_class_name = "Diagrams" + suffix;
 
+
     std::string ls_simplex_class_name = "LSSimplex" + suffix;
     std::string ls_filtration_class_name = "LSFiltration" + suffix;
 
@@ -341,10 +353,12 @@ void init_oineus(py::module& m, std::string suffix)
               return ss.str();
             });
 
+
     py::class_<Diagram>(m, dgm_class_name.c_str())
             .def(py::init<dim_type>())
             .def("in_dimension", &Diagram::get_diagram_in_dimension)
             .def("__getitem__", &Diagram::get_diagram_in_dimension);
+
 
     py::class_<LSSimplex>(m, ls_simplex_class_name.c_str())
             .def(py::init<>())
@@ -377,6 +391,7 @@ void init_oineus(py::module& m, std::string suffix)
     py::class_<LSFiltration>(m, ls_filtration_class_name.c_str())
             .def(py::init<>())
             .def("max_dim", &LSFiltration::max_dim)
+            .def("simplices", &LSFiltration::simplices_copy)
             .def("size_in_dimension", &LSFiltration::size_in_dimension)
             .def("boundary_matrix", &LSFiltration::boundary_matrix_full);
 
@@ -482,6 +497,13 @@ void init_oineus(py::module& m, std::string suffix)
     // to reproduce "Topology layer for ML" experiments
     func_name = "get_bruelle_target" + suffix;
     m.def(func_name.c_str(), &oineus::get_bruelle_target<Int, Real, VREdge>);
+
+    // to reproduce "Well group loss" experiments
+    func_name = "get_well_group_target" + suffix;
+    m.def(func_name.c_str(), &oineus::get_well_group_target<Int, Real, VREdge>);
+
+    func_name = "get_well_group_target" + suffix;
+    m.def(func_name.c_str(), &oineus::get_well_group_target<Int, Real, Int>);
 
     func_name = "get_nth_persistence" + suffix;
     m.def(func_name.c_str(), &oineus::get_nth_persistence<Int, Real, VREdge>);

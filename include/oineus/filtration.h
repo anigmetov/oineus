@@ -8,6 +8,8 @@
 #include <execution>
 #include <algorithm>
 
+#include <icecream/icecream.hpp>
+
 #include "timer.h"
 #include "simplex.h"
 #include "matrix.h"
@@ -83,8 +85,9 @@ public:
                 auto& col = result[col_idx];
                 col.reserve(d + 1);
 
-                for(const auto& tau_vertices: sigma.boundary())
+                for(const auto& tau_vertices: sigma.boundary()) {
                     col.push_back(vertices_to_sorted_id_.at(tau_vertices));
+                }
 
                 std::sort(col.begin(), col.end());
             }
@@ -127,6 +130,7 @@ public:
 
     const FiltrationSimplexVector&  simplices() const { return simplices_; }
     FiltrationSimplexVector&  simplices() { return simplices_; }
+    FiltrationSimplexVector   simplices_copy() const { return simplices_; }
 
 //        decltype(auto) vertices_to_sorted_id() const { return vertices_to_sorted_id_; }
 //        decltype(auto) id_to_sorted_id() const { return id_to_sorted_id_; }

@@ -102,6 +102,12 @@ def get_denoise_target(d, fil, rv, eps, strat):
     return func(d, fil, rv, eps, strat)
 
 
+def get_well_group_target(d, fil, rv, t):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_well_group_target_{type_part}")
+    return func(d, fil, rv, t)
+
+
 def get_ls_target_values(d, dtv, fil, rv):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_ls_target_values_{type_part}")
@@ -153,10 +159,10 @@ def get_vr_target_values_diagram_loss(d, dtv, fil, rv):
     return func(d, dtv, fil)
 
 
-def get_bruelle_target(fil, rv, p, q, i_0, d, minimize):
+def get_bruelle_target(fil, rv, p, q, i_0, d, minimize, min_birth, max_death):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_bruelle_target_{type_part}")
-    return func(fil, rv, p, q, i_0, d, minimize)
+    return func(fil, rv, p, q, i_0, d, minimize, min_birth, max_death)
 
 
 def get_barycenter_target(fil, rv, d):
