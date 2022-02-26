@@ -752,18 +752,18 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
 
         Real min_birth = fil.min_value(d);
 
-        std::cerr << "indices: (" << birth_idx << ", " << death_idx <<  "): MOVE (" << current_birth << ", " << current_death << ") -> (" << target_birth << ", " << target_death << ")" << std::endl;
+//        std::cerr << "indices: (" << birth_idx << ", " << death_idx <<  "): MOVE (" << current_birth << ", " << current_death << ") -> (" << target_birth << ", " << target_death << ")" << std::endl;
 
         auto death_x = change_death_x<Int>(d, death_idx, fil, decmp_hom, target_death);
 //        if (death_x.size() > 1)
-            std::cerr << "death_x.size = " << death_x.size() << std::endl;
+//            std::cerr << "death_x.size = " << death_x.size() << std::endl;
 
 //        for(auto x_d : death_x)
 //            std::cerr << fil.simplices()[x_d] << std::endl;
 
         auto birth_x = change_birth_x<Int>(d, birth_idx, fil, decmp_coh, target_birth);
 //        if (birth_x.size() > 1)
-            std::cerr << "birth_x.size = " << birth_x.size() << std::endl;
+//            std::cerr << "birth_x.size = " << birth_x.size() << std::endl;
 
 //        for(auto x_b : birth_x)
 //            std::cerr << fil.simplices()[x_b] << std::endl;
