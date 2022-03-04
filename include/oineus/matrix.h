@@ -342,15 +342,8 @@ struct VRUDecomposition {
     template<typename Real, typename L>
     Diagrams<Real> diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points) const;
 
-//    TODO: implement methods for one dimension
-//    template<typename Real, typename L>
-//    typename Diagrams<Real>::Dgm diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, dim_type dim) const;
-
     template<typename Real, typename L>
     Diagrams<size_t> index_diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, bool include_zero_persistence_points) const;
-
-//    template<typename Real, typename L>
-//    typename Diagrams<size_t>::Dgm index_diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, bool include_zero_persistence_points, dim_type d) const;
 
     template<typename Int>
     friend std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m);

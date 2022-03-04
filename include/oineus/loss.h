@@ -803,8 +803,8 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
         }
     }
 
-    if (n_conflicts or n_points_with_conflict or n_single_point_conflicts)
-        std::cerr << "conflicts for one critical value location: " << n_conflicts << ", single dgm points with conflict: " << n_points_with_conflict << ", conflicts from single point: " << n_single_point_conflicts << std::endl;
+//    if (n_conflicts or n_points_with_conflict or n_single_point_conflicts)
+//        std::cerr << "conflicts for one critical value location: " << n_conflicts << ", single dgm points with conflict: " << n_points_with_conflict << ", conflicts from single point: " << n_single_point_conflicts << std::endl;
 
     return result;
 }
