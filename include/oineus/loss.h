@@ -555,7 +555,7 @@ template<class Int, class Real, class L>
 std::vector<Int> increase_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& decmp, Real target_birth)
 {
     if (not decmp.dualize())
-        throw std::runtime_error("expected cohomology");
+        throw std::runtime_error("increase_birth_x: expected cohomology");
 
     if (not fil.cmp(fil.simplices()[positive_simplex_idx].value(), target_birth))
         throw std::runtime_error("target_birth cannot preceed current value");
@@ -616,6 +616,11 @@ std::vector<Int> decrease_birth_x(dim_type d, size_t positive_simplex_idx, const
 template<class Int, class Real, class L>
 std::vector<Int> increase_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& decmp, Real target_death)
 {
+    if (decmp.dualize())
+        throw std::runtime_error("increase_death_x: expected homology, got cohomology");
+
+//    IC("increase_death_x");
+
     std::vector<Int> result;
 
     const auto& u_rows = decmp.u_data_t;
@@ -654,6 +659,11 @@ std::vector<Int> increase_death_x(dim_type d, size_t negative_simplex_idx, const
 template<class Int, class Real, class L>
 std::vector<Int> decrease_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& decmp, Real target_death)
 {
+    if (decmp.dualize())
+        throw std::runtime_error("decrease_death_x: expected homology, got cohomology");
+
+//    IC("decrease_death_x");
+
     std::vector<Int> result;
 
     auto& r_cols = decmp.r_data;
@@ -698,9 +708,6 @@ std::vector<Int> change_death_x(dim_type d, size_t negative_simplex_idx, const o
 template<class Int, class Real, class L>
 std::vector<Int> change_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& decmp_coh, Real target_birth)
 {
-    if (not decmp_coh.dualize())
-        throw std::runtime_error("expected cohomology");
-
     Real current_birth = fil.simplices()[positive_simplex_idx].value();
     if (fil.cmp(target_birth, current_birth))
         return decrease_birth_x(d, positive_simplex_idx, fil, decmp_coh, target_birth);
@@ -724,8 +731,8 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
     if (decmp_hom.dualize())
         throw std::runtime_error("this parameter must be homology");
 
-    if (not decmp_coh.dualize())
-        throw std::runtime_error("this parameter must be cohomology");
+//    if (not decmp_coh.dualize())
+//        throw std::runtime_error("this parameter must be cohomology");
 
     TargetMatching<L, Real> result;
 
