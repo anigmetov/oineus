@@ -46,8 +46,13 @@ public:
     }
 
     size_t size() const { return simplices_.size(); }
+
     size_t dim_first(dim_type d) const { return dim_first_.at(d); }
     size_t dim_last(dim_type d) const { return dim_last_.at(d); }
+
+    auto dim_first() const { return dim_first_; }
+    auto dim_last() const { return dim_last_; }
+
     size_t size_in_dimension(dim_type d) const
     {
         if (d > max_dim())

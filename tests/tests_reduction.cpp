@@ -26,7 +26,7 @@ template<class Int, class Real, size_t D>
 decltype(auto) compute_diagrams_and_v_ls_freudenthal(const typename oineus::Grid<Int, Real, D>& grid, bool negate, bool wrap, dim_type top_d, int n_threads)
 {
     auto fil = grid.freudenthal_filtration(top_d + 1, negate, n_threads);
-    auto decmp = oineus::VRUDecomposition<Int>(fil.boundary_matrix_full(), false);
+    auto decmp = oineus::VRUDecomposition<Int>(fil, false);
 
     oineus::Params params;
 
@@ -34,7 +34,7 @@ decltype(auto) compute_diagrams_and_v_ls_freudenthal(const typename oineus::Grid
     params.clearing_opt = false;
     params.n_threads = n_threads;
 
-    decmp.reduce_parallel(params);
+    decmp.reduce(params);
 
     auto dgms = decmp.diagram(fil, true);
 
@@ -49,7 +49,7 @@ TEST_CASE("Basic reduction")
     d_cols.emplace_back(std::vector<Int>({0, 1}));
     d_cols.emplace_back(std::vector<Int>({1}));
 
-    oineus::VRUDecomposition<Int> decmp(d_cols, false);
+    oineus::VRUDecomposition<Int> decmp(d_cols);
 
     oineus::Params params;
 
@@ -57,7 +57,7 @@ TEST_CASE("Basic reduction")
     params.clearing_opt = false;
     params.n_threads = 1;
 
-    decmp.reduce_parallel(params);
+    decmp.reduce(params);
 
     REQUIRE(decmp.sanity_check());
 }

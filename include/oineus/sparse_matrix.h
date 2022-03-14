@@ -9,6 +9,8 @@
 #include <cassert>
 #include <algorithm>
 
+#include "icecream/icecream.hpp"
+
 
 namespace oineus {
 
@@ -183,6 +185,7 @@ SparseMatrix<Int> mat_multiply_2(const SparseMatrix<Int>& a, const SparseMatrix<
             continue;
 
         for(size_t col_idx = 0; col_idx < b.n_cols(); ++col_idx) {
+//            IC(col_idx, row_idx);
             if (b.is_col_zero(col_idx))
                 continue;
 
@@ -204,6 +207,7 @@ SparseMatrix<Int> mat_multiply_2(const SparseMatrix<Int>& a, const SparseMatrix<
                     ++a_iter;
                     ++b_iter;
                 }
+//                IC(col_idx, row_idx, c_ij);
             }
 
             if (c_ij % 2) {

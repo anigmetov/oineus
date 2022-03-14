@@ -296,7 +296,7 @@ DiagramToValues<Real> get_target_from_matching(typename Diagrams<Real>::Dgm& tem
     if (not rv.is_reduced) {
         std::cerr << "Warning: get_current_from_matching expects reduced matrix; reducing with default reduction parameters" << std::endl;
         Params params;
-        rv.reduce_parallel(params);
+        rv.reduce(params);
     }
 
     for(hera::id_type i = 0; i < template_dgm.size(); ++i) {

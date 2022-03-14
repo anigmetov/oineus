@@ -15,7 +15,9 @@
 #include <cstdlib>
 #include <stdexcept>
 
+#include "icecream/icecream.hpp"
 #include "common_defs.h"
+#include "timer.h"
 #include "diagram.h"
 #include "mem_reclamation.h"
 #include "sparse_matrix.h"
@@ -53,6 +55,13 @@ bool is_zero(const SparseColumn<IdxType>* c)
 
 template<typename IdxType>
 void add_column(const SparseColumn<IdxType>& col_a, const SparseColumn<IdxType>& col_b, SparseColumn<IdxType>& sum)
+{
+    sum.clear();
+    std::set_symmetric_difference(col_a.begin(), col_a.end(), col_b.begin(), col_b.end(), std::back_inserter(sum));
+}
+
+template<typename IdxType>
+void add_column_1(const SparseColumn<IdxType>& col_a, const SparseColumn<IdxType>& col_b, SparseColumn<IdxType>& sum)
 {
     // add_column cannot work as +=
     assert(col_a.data() != sum.data() and col_b.data() != sum.data());
@@ -159,7 +168,6 @@ void add_rv_column(const RVColumns<IdxType>* col_a, const RVColumns<IdxType>* co
     add_column(col_a->v_column, col_b->v_column, sum->v_column);
 }
 
-// TODO: clean up declaration - move to matrix?
 template<class RVMatrices, class AtomicIdxVector, class Int, class MemoryReclaimC>
 void parallel_reduction(RVMatrices& rv, std::vector<SparseColumn<Int>>& u_rows, AtomicIdxVector& pivots, std::atomic<Int>& next_free_chunk,
         const Params params, int thread_idx, MemoryReclaimC* mm, ThreadStats& stats, bool go_down)
@@ -318,26 +326,58 @@ struct VRUDecomposition {
     bool is_reduced {false};
     const bool dualize_ {false};
 
+    std::vector<size_t> dim_first;
+    std::vector<size_t> dim_last;
+
     // methods
 
     template<class R, class L>
     VRUDecomposition(const Filtration<Int, R, L>& fil, bool _dualize) :
             d_data (!_dualize ? fil.boundary_matrix_full() : antitranspose(fil.boundary_matrix_full(), fil.size())),
-            r_data (!_dualize ? fil.boundary_matrix_full() : antitranspose(fil.boundary_matrix_full(), fil.size())),
-            dualize_(_dualize)
+            r_data (d_data),
+            dualize_(_dualize),
+            dim_first(fil.dim_first()),
+            dim_last(fil.dim_last())
     {
+        if (dualize_) {
+            std::vector<size_t> new_dim_first, new_dim_last;
+            for(size_t i = 0; i < dim_first.size(); ++i) {
+                size_t cnt = dim_last[i] - dim_first[i];
+                if (i == 0) {
+                    new_dim_first.push_back(0);
+                    new_dim_last.push_back(cnt);
+                } else {
+                    new_dim_first.push_back(new_dim_last.back() + 1);
+                    new_dim_last.push_back(new_dim_first.back() + cnt);
+                }
+            }
+            dim_first = new_dim_first;
+            dim_last = new_dim_last;
+        }
     }
 
-    VRUDecomposition(const MatrixData& _d, bool _dualize) :d_data(_d), r_data(_d), dualize_(_dualize) {}
-    VRUDecomposition(MatrixData&& _d, bool _dualize) :d_data(_d), r_data(_d), dualize_(_dualize) {}
+    VRUDecomposition(const MatrixData& d) :
+            d_data (d),
+            r_data (d),
+            dualize_(false),
+            dim_first(std::vector<size_t>({0})),
+            dim_last(std::vector<size_t>({d.size()-1}))
+    {
+    }
 
     [[nodiscard]] size_t size() const { return r_data.size(); }
 
     bool dualize() const { return dualize_; }
 
-    void append(VRUDecomposition&& other);
+//    void append(VRUDecomposition&& other);
 
-    void reduce_parallel(Params& params);
+    void reduce(Params& params);
+
+    void reduce_serial(Params& params);
+
+    void reduce_parallel_r_only(Params& params);
+    void reduce_parallel_rv(Params& params);
+    void reduce_parallel_rvu(Params& params);
 
     template<typename Real, typename L>
     Diagrams<Real> diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points) const;
@@ -351,6 +391,18 @@ struct VRUDecomposition {
     bool sanity_check();
 };
 
+template<class Int>
+bool are_matrix_columns_sorted(const std::vector<std::vector<Int>>& matrix_cols)
+{
+    for(auto&& col : matrix_cols) {
+        if (not std::is_sorted(col.begin(), col.end())) {
+            for(auto e : col)
+                std::cerr << "NOT SORTED: " << e << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
 
 template<class Int>
 bool is_matrix_reduced(const std::vector<std::vector<Int>>& matrix_cols)
@@ -393,11 +445,34 @@ bool do_rows_and_columns_match(const std::vector<std::vector<Int>>& matrix_cols,
 template<class Int>
 bool VRUDecomposition<Int>::sanity_check()
 {
+    bool verbose = true;
     // R is reduced
     if (not is_matrix_reduced(r_data)) {
         std::cerr << "sanity_check: R not reduced!" << std::endl;
         return false;
     }
+    if (verbose) std::cerr << "R reduced" << std::endl;
+
+    // R is sorted
+    if (not are_matrix_columns_sorted(r_data)) {
+        std::cerr << "sanity_check: R not sorted!" << std::endl;
+        return false;
+    }
+    if (verbose) std::cerr << "R sorted" << std::endl;
+
+    // V is sorted
+    if (not are_matrix_columns_sorted(v_data)) {
+        std::cerr << "sanity_check: V not sorted!" << std::endl;
+        return false;
+    }
+    if (verbose) std::cerr << "V sorted" << std::endl;
+
+    // U is sorted
+    if (not are_matrix_columns_sorted(u_data_t)) {
+        std::cerr << "sanity_check: U not sorted!" << std::endl;
+        return false;
+    }
+    if (verbose) std::cerr << "U sorted" << std::endl;
 
     size_t n_simplices = r_data.size();
 
@@ -410,36 +485,233 @@ bool VRUDecomposition<Int>::sanity_check()
     SparseMatrix<Int> ii = eye<Int>(n_simplices);
 
     SparseMatrix<Int> dv = mat_multiply_2(dd, vv);
+    if (verbose) std::cerr << "DV computed" << std::endl;
+
     SparseMatrix<Int> uv = mat_multiply_2(uu, vv);
+    if (verbose) std::cerr << "UV computed" << std::endl;
 
     if (not vv.is_upper_triangular()) {
         std::cerr << "V not upper-triangular" << std::endl;
         return false;
     }
+    if (verbose) std::cerr << "V upper-triangular" << std::endl;
 
     if (not uu.is_upper_triangular()) {
         std::cerr << "U not upper-triangular" << std::endl;
         return false;
     }
+    if (verbose) std::cerr << "U upper-triangular" << std::endl;
 
    if (uv != ii) {
         std::cerr << "UV != I" << std::endl;
         return false;
     }
+    if (verbose) std::cerr << "UV = I" << std::endl;
 
     if (dv != rr) {
         std::cerr << "R != DV" << std::endl;
         return false;
     }
-
+    if (verbose) std::cerr << "R = DV" << std::endl;
 
     return true;
+}
+
+template<class Int>
+void VRUDecomposition<Int>::reduce(Params& params)
+{
+    if (params.n_threads == 1)
+        reduce_serial(params);
+    else
+        reduce_parallel_rvu(params);
+//    else if (params.compute_v and params.compute_u)
+//        reduce_parallel_rvu(params);
+//    else if (params.compute_v)
+//        reduce_parallel_rv(params);
+//    else
+//        reduce_parallel_r_only(params);
+
+}
+
+template<class Int>
+void VRUDecomposition<Int>::reduce_serial(Params& params)
+{
+    Timer timer, timer_total;
+    int n_cleared = 0;
+
+    Int n_cols = d_data.size();
+
+    if (params.compute_v) {
+        v_data = MatrixData(d_data.size());
+        for(size_t i = 0; i < d_data.size(); ++i) {
+            v_data[i].push_back(static_cast<Int>(i));
+        }
+    }
+    if (params.compute_u) {
+        u_data_t = MatrixData(d_data.size());
+        for(size_t i = 0; i < d_data.size(); ++i) {
+            u_data_t[i].push_back(static_cast<Int>(i));
+        }
+    }
+
+    std::vector<Int> pivots(d_data.size(), -1);
+    assert(pivots.size() == d_data.size() and pivots.size() > 0);
+
+    auto init_time = timer.elapsed_reset();
+
+    // always go from top dimension to 0, to make clearing possible
+    for(int dim = dim_first.size() - 1; dim >= 0; --dim) {
+        for(Int i = dim_first[dim]; i <= dim_last[dim]; ++i) {
+//            if (i == dim_first[dim]) { IC(dim, dim_first[dim], dim_last[dim], dualize_); }
+            if (params.clearing_opt and not is_zero(r_data[i])) {
+                // simplex i is pivot -> i is positive -> its column is 0
+                if (pivots[i] >= 0) {
+                    assert(pivots[low(r_data[i])] == -1);
+                    r_data[i].clear();
+                    n_cleared++;
+                    continue;
+                }
+            }
+
+            while(not is_zero(r_data[i])) {
+
+                Int& pivot = pivots[low(r_data[i])];
+
+                if (pivot == -1) {
+                    pivot = i;
+                    break;
+                } else {
+                    IntSparseColumn new_col;
+                    add_column(r_data[i], r_data[pivot], new_col);
+                    r_data[i] = std::move(new_col);
+
+                    if (params.compute_v) {
+                        add_column(v_data[i], v_data[pivot], new_col);
+                        v_data[i] = std::move(new_col);
+                    }
+
+                    if (params.compute_u)
+                        u_data_t[pivot].push_back(i);
+                }
+            } // reduction loop
+
+        }
+    } // loop over dimensions
+
+    auto reduction_time = timer.elapsed_reset();
+    params.elapsed = timer_total.elapsed_reset();
+
+    if (params.print_time) std::cerr << "reduce_serial, matrix_size = " << r_data.size() << ", clearing_opt = " << params.clearing_opt << ", n_cleared = " << n_cleared << ", total elapsed: " << params.elapsed << ", reduction_time = " << reduction_time << std::endl;
+
+    is_reduced = true;
+}
+
+
+template<class Int>
+void VRUDecomposition<Int>::reduce_parallel_r_only(Params& params)
+{
+    using namespace std::placeholders;
+
+    size_t n_cols = size();
+
+    using RVColumnC = RVColumns<Int>;
+    using APRVColumn = std::atomic<RVColumnC*>;
+    using RVMatrix = std::vector<APRVColumn>;
+    using MemoryReclaimC = MemoryReclaim<RVColumnC>;
+
+    RVMatrix r_v_matrix(n_cols);
+
+//    IC("Before moving: ", d_data);
+
+    // move data to r_v_matrix
+    for(size_t i = 0; i < n_cols; ++i) {
+        IntSparseColumn v_column = {static_cast<Int>(i)};
+        IntSparseColumn u_row = {static_cast<Int>(i)};
+        u_data_t.push_back(u_row);
+        r_v_matrix[i] = new RVColumnC(r_data[i], v_column);
+    }
+    debug("Matrix moved");
+
+//    IC(r_v_matrix, d_data);
+
+    std::atomic<Int> counter;
+    counter = 0;
+
+    std::atomic<Int> next_free_chunk;
+
+    AtomicIdxVector pivots(n_cols);
+    for(auto& p: pivots) {
+        p.store(-1, std::memory_order_relaxed);
+    }
+    debug("Pivots initialized");
+
+    int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+
+    std::vector<std::thread> ts;
+    std::vector<std::unique_ptr<MemoryReclaimC>> mms;
+    std::vector<ThreadStats> stats;
+
+    mms.reserve(n_threads);
+    stats.reserve(n_threads);
+
+    bool go_down = false;
+
+    if (go_down) {
+        next_free_chunk = n_cols / params.chunk_size;
+    } else {
+        next_free_chunk = 0;
+    }
+
+    Timer timer;
+
+    for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
+
+        mms.emplace_back(new MemoryReclaimC(n_threads, counter, thread_idx));
+        stats.emplace_back(thread_idx);
+
+        ts.emplace_back(parallel_reduction<RVMatrix, AtomicIdxVector, Int, MemoryReclaimC>,
+                std::ref(r_v_matrix), std::ref(u_data_t), std::ref(pivots), std::ref(next_free_chunk),
+                params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]), go_down);
+
+#ifdef __linux__
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(thread_idx, &cpuset);
+        int rc = pthread_setaffinity_np(ts[thread_idx].native_handle(), sizeof(cpu_set_t), &cpuset);
+        if (rc != 0) { std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n"; }
+#endif
+    }
+
+    info("{} threads created", ts.size());
+
+    for(auto& t: ts) {
+        t.join();
+    }
+
+    params.elapsed = timer.elapsed_reset();
+
+    if (params.print_time) {
+        for(auto& s: stats) { info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots); }
+        info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
+        std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << std::endl;
+    }
+
+    // write reduced matrix back, collect V matrix, mark as reduced
+    for(size_t i = 0; i < n_cols; ++i) {
+        auto p = r_v_matrix[i].load(std::memory_order_relaxed);
+        r_data[i] = std::move(p->r_column);
+        v_data[i] = std::move(p->v_column);
+    }
+
+//    IC("After R writen back: ", d_data);
+
+    is_reduced = true;
 }
 
 
 
 template<class Int>
-void VRUDecomposition<Int>::reduce_parallel(Params& params)
+void VRUDecomposition<Int>::reduce_parallel_rvu(Params& params)
 {
     using namespace std::placeholders;
 

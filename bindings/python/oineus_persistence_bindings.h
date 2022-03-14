@@ -12,6 +12,7 @@
 
 namespace py = pybind11;
 
+#include <oineus/timer.h>
 #include <oineus/oineus.h>
 
 using dim_type = oineus::dim_type;
@@ -124,7 +125,7 @@ template<class Int, class Real, class L>
 PyOineusDiagrams<Real>
 compute_diagrams_from_fil(const oineus::Filtration<Int, Real, L>& fil, int n_threads)
 {
-    oineus::VRUDecomposition<Int> d_matrix { fil.boundary_matrix_full(), false };
+    oineus::VRUDecomposition<Int> d_matrix { fil, false };
 
     oineus::Params params;
 
@@ -154,60 +155,27 @@ get_coboundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecas
     return oineus::antitranspose(bm);
 }
 
-template<class Int, class Real, size_t D>
-DiagramV<Int, Real>
-compute_diagrams_and_v_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads, bool include_inf_points)
-{
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, n_threads);
-    oineus::VRUDecomposition<Int> d_matrix { fil.boundary_matrix_full(), false };
-
-    oineus::Params params;
-
-    params.sort_dgms = false;
-    params.clearing_opt = false;
-    params.n_threads = n_threads;
-
-    d_matrix.reduce_parallel(params);
-
-    return {PyOineusDiagrams<Real>(d_matrix.diagram(fil, include_inf_points)), d_matrix.v_data};
-}
-
-template<class Int, class Real, size_t D>
-DiagramRV<Int, Real>
-compute_diagrams_and_rv_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads, bool include_inf_points)
-{
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, n_threads);
-    oineus::VRUDecomposition<Int> d_matrix { fil.boundary_matrix_full(), false };
-
-
-    oineus::Params params;
-
-    params.sort_dgms = false;
-    params.clearing_opt = true;
-    params.n_threads = n_threads;
-
-    d_matrix.reduce_parallel(params);
-
-    return {PyOineusDiagrams<Real>(d_matrix.diagram(fil, include_inf_points)), d_matrix.r_data, d_matrix.v_data};
-}
 
 template<class Int, class Real, size_t D>
 PyOineusDiagrams<Real>
-compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads, bool include_inf_points)
+compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, oineus::Params& params, bool include_inf_points)
 {
     // for diagram in dimension d, we need (d+1)-simplices
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, n_threads);
-    oineus::VRUDecomposition<Int> d_matrix { fil.boundary_matrix_full(), false };
+    Timer timer;
+    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, params.n_threads);
+    auto elapsed_fil = timer.elapsed_reset();
+    oineus::VRUDecomposition<Int> decmp { fil, false };
+    auto elapsed_decmp_ctor = timer.elapsed_reset();
 
-    oineus::Params params;
+    if (params.print_time)
+        std::cerr << "Filtration: " << elapsed_fil << ", decomposition ctor: " << elapsed_decmp_ctor << std::endl;
 
-    params.sort_dgms = false;
-    params.clearing_opt = true;
-    params.n_threads = n_threads;
+    decmp.reduce(params);
 
-    d_matrix.reduce_parallel(params);
+    if (params.do_sanity_check and not decmp.sanity_check())
+        throw std::runtime_error("sanity check failed");
 
-    return PyOineusDiagrams<Real>(d_matrix.diagram(fil, include_inf_points));
+    return PyOineusDiagrams<Real>(decmp.diagram(fil, include_inf_points));
 }
 
 template<class Int>
@@ -257,6 +225,9 @@ void init_oineus_common(py::module& m)
             .def_readwrite("acq_rel", &ReductionParams::acq_rel)
             .def_readwrite("print_time", &ReductionParams::print_time)
             .def_readwrite("elapsed", &ReductionParams::elapsed)
+            .def_readwrite("compute_v", &ReductionParams::compute_v)
+            .def_readwrite("compute_u", &ReductionParams::compute_u)
+            .def_readwrite("do_sanity_check", &ReductionParams::do_sanity_check)
             ;
 
     py::enum_<DenoiseStrategy>(m, "DenoiseStrategy", py::arithmetic())
@@ -272,7 +243,8 @@ void init_oineus_common(py::module& m)
             .def_readwrite("v_data", &Decomposition::v_data)
             .def_readwrite("u_data_t", &Decomposition::u_data_t)
             .def_readwrite("d_data", &Decomposition::d_data)
-            .def("reduce", &Decomposition::reduce_parallel, py::call_guard<py::gil_scoped_release>())
+            .def("reduce", &Decomposition::reduce, py::call_guard<py::gil_scoped_release>())
+            .def("sanity_check", &Decomposition::sanity_check, py::call_guard<py::gil_scoped_release>())
             .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, VREdge>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
             .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, VREdge>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
             .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, Int>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
@@ -412,26 +384,6 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "compute_diagrams_ls" + suffix + "_3";
     m.def(func_name.c_str(), &compute_diagrams_ls_freudenthal<Int, Real, 3>);
-
-    // diagrams and V matrix
-    func_name = "compute_diagrams_and_v_ls" + suffix + "_1";
-    m.def(func_name.c_str(), &compute_diagrams_and_v_ls_freudenthal<Int, Real, 1>);
-
-    func_name = "compute_diagrams_and_v_ls" + suffix + "_2";
-    m.def(func_name.c_str(), &compute_diagrams_and_v_ls_freudenthal<Int, Real, 2>);
-
-    func_name = "compute_diagrams_and_v_ls" + suffix + "_3";
-    m.def(func_name.c_str(), &compute_diagrams_and_v_ls_freudenthal<Int, Real, 3>);
-
-    // diagrams and R,V matrices
-    func_name = "compute_diagrams_and_rv_ls" + suffix + "_1";
-    m.def(func_name.c_str(), &compute_diagrams_and_rv_ls_freudenthal<Int, Real, 1>);
-
-    func_name = "compute_diagrams_and_rv_ls" + suffix + "_2";
-    m.def(func_name.c_str(), &compute_diagrams_and_rv_ls_freudenthal<Int, Real, 2>);
-
-    func_name = "compute_diagrams_and_rv_ls" + suffix + "_3";
-    m.def(func_name.c_str(), &compute_diagrams_and_rv_ls_freudenthal<Int, Real, 3>);
 
     // Lower-star Freudenthal filtration
     func_name = "get_fr_filtration" + suffix + "_1";

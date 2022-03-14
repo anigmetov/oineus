@@ -117,13 +117,13 @@ int main(int argc, char** argv)
     auto& grid = grid_func.first;
 
     auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
-    VRUDecomposition<Int> rv { fil.boundary_matrix_full(), false };
+    VRUDecomposition<Int> rv { fil, false };
 
     info("Matrix read");
 
     fname_dgm = fname_in + "_t_" + std::to_string(params.n_threads) + "_c_" + std::to_string(params.chunk_size);
 
-    rv.reduce_parallel(params);
+    rv.reduce(params);
     if (params.print_time)
        std::cerr << fname_in << ";" << params.n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << params.elapsed << std::endl;
 
