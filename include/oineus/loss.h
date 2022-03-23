@@ -79,8 +79,11 @@ typename Diagrams<Real>::Point enhance_point(Real birth, Real death, Real min_bi
 template<class Real>
 using DiagramToValues = std::unordered_map<DgmPoint < size_t>, DgmPoint<Real>>;
 
+//template<class ValueLocation, class Real>
+//using TargetMatching = std::unordered_map<ValueLocation, Real>;
+
 template<class ValueLocation, class Real>
-using TargetMatching = std::unordered_map<ValueLocation, Real>;
+using TargetMatching = std::vector<std::pair<ValueLocation, Real>>;
 
 // evaluate linear function f such that on f(x_1,2) = y_1,2 on xs
 template<class Real>
@@ -448,14 +451,16 @@ TargetMatching<L, Real> get_target_values_diagram_loss(dim_type d, const Diagram
         auto birth_cvl = simplices[dgm_point.birth].critical_value_location_;
         auto death_cvl = simplices[dgm_point.death].critical_value_location_;
 
-        result[death_cvl] = target_point.death;
+//        result[death_cvl] = target_point.death;
+        result.template emplace_back(death_cvl, target_point.death);
 
         // special case: Vietoris--Rips, dim 0 -- all vertices have critical value 0
         // do not use R column at all
         if (d == 0 and std::is_same<L, VREdge>::value)
             continue;
 
-        result[birth_cvl] = target_point.birth;
+//        result[birth_cvl] = target_point.birth;
+        result.template emplace_back(birth_cvl, target_point.birth);
     }
 
     return result;
@@ -463,9 +468,10 @@ TargetMatching<L, Real> get_target_values_diagram_loss(dim_type d, const Diagram
 
 // given target points (diagram_to_values), compute values on intermediate simplices from R, V columns
 template<class Int, class Real, class L>
-TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& rv_matrix)
+TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& rv_matrix, bool use_max)
 {
-    TargetMatching<L, Real> result;
+    TargetMatching<L, Real> result_fin;
+    std::unordered_map<L, Real> result;
 
     const auto& simplices = fil.simplices();
 
@@ -535,19 +541,26 @@ TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real
             const auto& sigma = simplices[simplex_indices[idx]];
             auto cvl = sigma.critical_value_location_;
 
-            if (result.count(cvl)) {
-                Real current_delta = abs(result[cvl] - sigma.value());
-                Real new_delta = abs(target_values[idx] - sigma.value());
-                // another column wants this simplex to make larger step -> it wins, do not overwrite with our target value
-                if (new_delta <= current_delta)
-                    continue;
+            if (use_max) {
+                if (result.count(cvl)) {
+                    Real current_delta = abs(result[cvl] - sigma.value());
+                    Real new_delta = abs(target_values[idx] - sigma.value());
+                    // another column wants this simplex to make larger step -> it wins, do not overwrite with our target value
+                    if (new_delta <= current_delta)
+                        continue;
+                }
+                result[cvl] = target_values[idx];
+            } else {
+                result_fin.template emplace_back(cvl, target_values[idx]);
             }
-
-            result[cvl] = target_values[idx];
         }
     }
 
-    return result;
+    if (use_max)
+        for(auto key_val : result)
+            result_fin.template emplace_back(key_val.first, key_val.second);
+
+    return result_fin;
 }
 
 
@@ -723,7 +736,8 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
         const DiagramToValues<Real>& diagram_to_values,
         const oineus::Filtration<Int, Real, L>& fil,
         const oineus::VRUDecomposition<Int>& decmp_hom,
-        const oineus::VRUDecomposition<Int>& decmp_coh)
+        const oineus::VRUDecomposition<Int>& decmp_coh,
+        bool use_max)
 {
 
 //    std::cerr << "enter get_target_values_x, diagram_to_values.size = " << diagram_to_values.size() << ", fil.size = " << fil.size() << std::endl;
@@ -734,15 +748,16 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
 //    if (not decmp_coh.dualize())
 //        throw std::runtime_error("this parameter must be cohomology");
 
-    TargetMatching<L, Real> result;
+    TargetMatching<L, Real> result_fin;
+    std::unordered_map<L, Real> result;
 
     const auto& simplices = fil.simplices();
 
     std::unordered_map<Int, Real> simplices_to_values;
 
-    int n_conflicts = 0;
-    int n_single_point_conflicts = 0;
-    int n_points_with_conflict = 0;
+//    int n_conflicts = 0;
+//    int n_single_point_conflicts = 0;
+//    int n_points_with_conflict = 0;
 
     for(auto&& kv: diagram_to_values) {
         auto dgm_point = kv.first;
@@ -775,45 +790,58 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
 //        for(auto x_b : birth_x)
 //            std::cerr << fil.simplices()[x_b] << std::endl;
 
-        {
-            // check for intersection
-            std::vector<Int> birth_death;
-            std::set_intersection(birth_x.begin(), birth_x.end(), death_x.begin(), death_x.end(), std::back_inserter(birth_death));
-            n_points_with_conflict += (not birth_death.empty());
-            n_single_point_conflicts += birth_death.size();
-        }
+//        {
+//            // check for intersection
+//            std::vector<Int> birth_death;
+//            std::set_intersection(birth_x.begin(), birth_x.end(), death_x.begin(), death_x.end(), std::back_inserter(birth_death));
+//            n_points_with_conflict += (not birth_death.empty());
+//            n_single_point_conflicts += birth_death.size();
+//        }
 
         for(auto b_idx: birth_x) {
             const auto& sigma = simplices[b_idx];
             auto cvl = sigma.critical_value_location_;
 
-            n_conflicts += result.count(cvl);
+//            n_conflicts += result.count(cvl);
 
             // another column wants this location to make larger step -> it wins, do not overwrite with our target value
-            if (result.count(cvl) and abs(target_birth - sigma.value()) <= abs(result[cvl] - sigma.value()))
-                continue;
+            if (use_max) {
+                if (result.count(cvl) and abs(target_birth - sigma.value()) <= abs(result[cvl] - sigma.value()))
+                    continue;
 
-            result[cvl] = target_birth;
+                result[cvl] = target_birth;
+            } else {
+                result_fin.template emplace_back(cvl, target_birth);
+            }
         }
 
         for(auto d_idx: death_x) {
             const auto& sigma = simplices[d_idx];
             auto cvl = sigma.critical_value_location_;
 
-            n_conflicts += result.count(cvl);
+//            n_conflicts += result.count(cvl);
 
-            // another column wants this location to make larger step -> it wins, do not overwrite with our target value
-            if (result.count(cvl) and abs(target_death - sigma.value()) <= abs(result[cvl] - sigma.value()))
-                continue;
+            if (use_max) {
+                // another column wants this location to make larger step -> it wins, do not overwrite with our target value
+                if (result.count(cvl) and abs(target_death - sigma.value()) <= abs(result[cvl] - sigma.value()))
+                    continue;
 
-            result[cvl] = target_death;
+                result[cvl] = target_death;
+            } else {
+                result_fin.template emplace_back(cvl, target_death);
+            }
         }
     }
 
 //    if (n_conflicts or n_points_with_conflict or n_single_point_conflicts)
 //        std::cerr << "conflicts for one critical value location: " << n_conflicts << ", single dgm points with conflict: " << n_points_with_conflict << ", conflicts from single point: " << n_single_point_conflicts << std::endl;
 
-    return result;
+    if (use_max) {
+        for(auto&& key_val : result)
+            result_fin.template emplace_back(key_val.first, key_val.second);
+    }
+
+    return result_fin;
 }
 
 } // namespace oineus

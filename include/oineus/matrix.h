@@ -340,6 +340,8 @@ struct VRUDecomposition {
             dim_last(fil.dim_last())
     {
         if (dualize_) {
+            std::reverse(dim_first.begin(), dim_first.end());
+            std::reverse(dim_last.begin(), dim_last.end());
             std::vector<size_t> new_dim_first, new_dim_last;
             for(size_t i = 0; i < dim_first.size(); ++i) {
                 size_t cnt = dim_last[i] - dim_first[i];
@@ -559,10 +561,15 @@ void VRUDecomposition<Int>::reduce_serial(Params& params)
 
     auto init_time = timer.elapsed_reset();
 
-    // always go from top dimension to 0, to make clearing possible
+    // homology: go from top dimension to 0, to make clearing possible
+    // cohomology:
+    IntSparseColumn new_col;
     for(int dim = dim_first.size() - 1; dim >= 0; --dim) {
         for(Int i = dim_first[dim]; i <= dim_last[dim]; ++i) {
-//            if (i == dim_first[dim]) { IC(dim, dim_first[dim], dim_last[dim], dualize_); }
+//            if (i == dim_first[dim]) { IC(dim, dim_first[dim], dim_last[dim], dualize_, r_data[i].size()); }
+
+//            IC(dim, i, r_data[i]);
+
             if (params.clearing_opt and not is_zero(r_data[i])) {
                 // simplex i is pivot -> i is positive -> its column is 0
                 if (pivots[i] >= 0) {
@@ -581,7 +588,6 @@ void VRUDecomposition<Int>::reduce_serial(Params& params)
                     pivot = i;
                     break;
                 } else {
-                    IntSparseColumn new_col;
                     add_column(r_data[i], r_data[pivot], new_col);
                     r_data[i] = std::move(new_col);
 
@@ -594,8 +600,7 @@ void VRUDecomposition<Int>::reduce_serial(Params& params)
                         u_data_t[pivot].push_back(i);
                 }
             } // reduction loop
-
-        }
+        } // loop over columns in fixed dimension
     } // loop over dimensions
 
     auto reduction_time = timer.elapsed_reset();
@@ -835,20 +840,22 @@ Diagrams<Real> VRUDecomposition<Int>::diagram(const Filtration<Int, Real, L>& fi
     for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
         auto col = &r_data[col_idx];
 
+        auto simplex_idx = fil.index_in_filtration(col_idx, dualize());
+
         if (is_zero(col)) {
             if (not include_inf_points or rows_with_lowest_one.count(col_idx) != 0)
                 // we don't want infinite points or col_idx is a negative simplex
                 continue;
 
             // point at infinity
-            dim_type dim = fil.dim_by_sorted_id(col_idx);
-            Real birth = fil.value_by_sorted_id(col_idx);
+            dim_type dim = fil.dim_by_sorted_id(simplex_idx);
+            Real birth = fil.value_by_sorted_id(simplex_idx);
             Real death = fil.infinity();
 
             result.add_point(dim, birth, death);
         } else {
             // finite point
-            Int birth_idx = low(col), death_idx = col_idx;
+            Int birth_idx = fil.index_in_filtration(low(col), dualize()), death_idx = simplex_idx;
             dim_type dim = fil.dim_by_sorted_id(birth_idx);
             Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
 

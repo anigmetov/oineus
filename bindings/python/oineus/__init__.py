@@ -109,16 +109,16 @@ def get_vr_target_values(d, dtv, fil, rv):
     return func(d, dtv, fil, rv)
 
 
-def get_vr_target_values_x(d, dtv, fil, decmp, decmp_coh):
+def get_vr_target_values_x(d, dtv, fil, decmp, decmp_coh, use_max=True):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_vr_target_values_x_{type_part}")
-    return func(d, dtv, fil, decmp, decmp_coh)
+    return func(d, dtv, fil, decmp, decmp_coh, use_max)
 
 
-def get_ls_target_values_x(d, dtv, fil, decmp, decmp_coh):
+def get_ls_target_values_x(d, dtv, fil, decmp, decmp_coh, use_max=True):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_ls_target_values_x_{type_part}")
-    return func(d, dtv, fil, decmp, decmp_coh)
+    return func(d, dtv, fil, decmp, decmp_coh, use_max)
 
 
 def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d: int, q: float, mip: bool, mdp: bool):
