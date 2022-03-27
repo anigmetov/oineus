@@ -748,8 +748,7 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
 //    if (not decmp_coh.dualize())
 //        throw std::runtime_error("this parameter must be cohomology");
 
-    TargetMatching<L, Real> result_fin;
-    std::unordered_map<L, Real> result;
+    std::unordered_map<L, std::vector<Real>> result;
 
     const auto& simplices = fil.simplices();
 
@@ -799,46 +798,34 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
 //        }
 
         for(auto b_idx: birth_x) {
-            const auto& sigma = simplices[b_idx];
-            auto cvl = sigma.critical_value_location_;
-
-//            n_conflicts += result.count(cvl);
-
-            // another column wants this location to make larger step -> it wins, do not overwrite with our target value
-            if (use_max) {
-                if (result.count(cvl) and abs(target_birth - sigma.value()) <= abs(result[cvl] - sigma.value()))
-                    continue;
-
-                result[cvl] = target_birth;
-            } else {
-                result_fin.template emplace_back(cvl, target_birth);
-            }
+            L cvl = simplices[birth_idx].critical_value_location_;
+            if (not use_max or result.count(cvl) == 0 or
+                (abs(simplices[birth_idx].value() - target_birth) > (simplices[birth_idx].value() - result[cvl].back())))
+                    result[cvl].push_back(target_birth);
         }
 
-        for(auto d_idx: death_x) {
-            const auto& sigma = simplices[d_idx];
-            auto cvl = sigma.critical_value_location_;
-
-//            n_conflicts += result.count(cvl);
-
-            if (use_max) {
-                // another column wants this location to make larger step -> it wins, do not overwrite with our target value
-                if (result.count(cvl) and abs(target_death - sigma.value()) <= abs(result[cvl] - sigma.value()))
-                    continue;
-
-                result[cvl] = target_death;
-            } else {
-                result_fin.template emplace_back(cvl, target_death);
-            }
+        for(auto b_idx: death_x) {
+            L cvl = simplices[death_idx].critical_value_location_;
+            if (not use_max or result.count(cvl) == 0 or
+                (abs(simplices[death_idx].value() - target_death) > (simplices[death_idx].value() - result[cvl].back())))
+                    result[cvl].push_back(target_death);
         }
     }
 
 //    if (n_conflicts or n_points_with_conflict or n_single_point_conflicts)
 //        std::cerr << "conflicts for one critical value location: " << n_conflicts << ", single dgm points with conflict: " << n_points_with_conflict << ", conflicts from single point: " << n_single_point_conflicts << std::endl;
 
-    if (use_max) {
-        for(auto&& key_val : result)
-            result_fin.template emplace_back(key_val.first, key_val.second);
+    TargetMatching<L, Real> result_fin;
+
+    if (not use_max) {
+        for(auto&& key_values : result) {
+            Real avg = std::accumulate(key_values.second.begin(), key_values.second.end(), static_cast<Real>(0)) / key_values.second.size();
+            result_fin.emplace_back(key_values.first, avg);
+        }
+    } else {
+        for(auto&& key_values : result) {
+            result_fin.emplace_back(key_values.first, key_values.second.back());
+        }
     }
 
     return result_fin;
