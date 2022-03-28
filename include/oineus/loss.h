@@ -463,6 +463,7 @@ TargetMatching<L, Real> get_target_values_diagram_loss(dim_type d, const Diagram
         result.template emplace_back(birth_cvl, target_point.birth);
     }
 
+    std::cerr << "diagram loss result.size = " << result.size() << std::endl;
     return result;
 }
 
@@ -776,15 +777,15 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
 //        std::cerr << "indices: (" << birth_idx << ", " << death_idx <<  "): MOVE (" << current_birth << ", " << current_death << ") -> (" << target_birth << ", " << target_death << ")" << std::endl;
 
         auto death_x = change_death_x<Int>(d, death_idx, fil, decmp_hom, target_death);
-//        if (death_x.size() > 1)
-//            std::cerr << "death_x.size = " << death_x.size() << std::endl;
+        if (death_x.size() > 1)
+            std::cerr << "death_x.size = " << death_x.size() << std::endl;
 
 //        for(auto x_d : death_x)
 //            std::cerr << fil.simplices()[x_d] << std::endl;
 
         auto birth_x = change_birth_x<Int>(d, birth_idx, fil, decmp_coh, target_birth);
-//        if (birth_x.size() > 1)
-//            std::cerr << "birth_x.size = " << birth_x.size() << std::endl;
+        if (birth_x.size() > 1)
+            std::cerr << "birth_x.size = " << birth_x.size() << std::endl;
 
 //        for(auto x_b : birth_x)
 //            std::cerr << fil.simplices()[x_b] << std::endl;
@@ -798,16 +799,16 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
 //        }
 
         for(auto b_idx: birth_x) {
-            L cvl = simplices[birth_idx].critical_value_location_;
+            L cvl = simplices[b_idx].critical_value_location_;
             if (not use_max or result.count(cvl) == 0 or
-                (abs(simplices[birth_idx].value() - target_birth) > (simplices[birth_idx].value() - result[cvl].back())))
+                (abs(simplices[b_idx].value() - target_birth) > (simplices[b_idx].value() - result[cvl].back())))
                     result[cvl].push_back(target_birth);
         }
 
-        for(auto b_idx: death_x) {
-            L cvl = simplices[death_idx].critical_value_location_;
+        for(auto d_idx: death_x) {
+            L cvl = simplices[d_idx].critical_value_location_;
             if (not use_max or result.count(cvl) == 0 or
-                (abs(simplices[death_idx].value() - target_death) > (simplices[death_idx].value() - result[cvl].back())))
+                (abs(simplices[d_idx].value() - target_death) > (simplices[d_idx].value() - result[cvl].back())))
                     result[cvl].push_back(target_death);
         }
     }
@@ -827,6 +828,8 @@ TargetMatching<L, Real> get_target_values_x(dim_type d,
             result_fin.emplace_back(key_values.first, key_values.second.back());
         }
     }
+
+    std::cerr << "set_x result_fin.size = " << result_fin.size() << std::endl;
 
     return result_fin;
 }
