@@ -235,12 +235,16 @@ void init_oineus_common(py::module& m)
             .value("BirthBirth", DenoiseStrategy::BirthBirth, "(b, d) maps to (b, b)")
             .value("DeathDeath", DenoiseStrategy::DeathDeath, "(b, d) maps to (d, d)")
             .value("Midway", DenoiseStrategy::Midway, "((b, d) maps to ((b+d)/2, (b+d)/2)")
+            .def("__repr__", [](const DenoiseStrategy& self) { return denoise_strategy_to_string(self); })
+            .def("__str__", [](const DenoiseStrategy& self) { return denoise_strategy_to_string(self); })
             ;
 
     py::enum_<ConflictStrategy>(m, "ConflictStrategy", py::arithmetic())
             .value("Max", ConflictStrategy::Max, "choose maximal displacement")
             .value("Avg", ConflictStrategy::Avg, "average gradients")
             .value("Max", ConflictStrategy::Sum, "sum gradients")
+            .def("__repr__", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); })
+            .def("__str__", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); })
             ;
 
     py::class_<Decomposition>(m, "Decomposition")

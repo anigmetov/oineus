@@ -46,11 +46,47 @@ enum class DenoiseStrategy {
     Midway
 };
 
+std::ostream& operator<<(std::ostream& out, const DenoiseStrategy& s)
+{
+    if (s == DenoiseStrategy::BirthBirth)
+        out << "bb";
+    else if (s == DenoiseStrategy::DeathDeath)
+        out << "dd";
+    else if (s == DenoiseStrategy::Midway)
+        out << "mid";
+    return out;
+}
+
+std::string denoise_strategy_to_string(const DenoiseStrategy& s)
+{
+    std::stringstream ss;
+    ss << s;
+    return ss.str();
+}
+
 enum class ConflictStrategy {
     Max,
     Avg,
     Sum
 };
+
+std::ostream& operator<<(std::ostream& out, const ConflictStrategy& s)
+{
+    if (s == ConflictStrategy::Max)
+        out << "max";
+    else if (s == ConflictStrategy::Avg)
+        out << "avg";
+    else if (s == ConflictStrategy::Sum)
+        out << "sum";
+    return out;
+}
+
+std::string conflict_strategy_to_string(const ConflictStrategy& s)
+{
+    std::stringstream ss;
+    ss << s;
+    return ss.str();
+}
 
 template<class Real>
 typename Diagrams<Real>::Point denoise_point(Real birth, Real death, DenoiseStrategy s)
