@@ -46,6 +46,12 @@ enum class DenoiseStrategy {
     Midway
 };
 
+enum class ConflictStrategy {
+    Max,
+    Avg,
+    Sum
+};
+
 template<class Real>
 typename Diagrams<Real>::Point denoise_point(Real birth, Real death, DenoiseStrategy s)
 {
@@ -78,9 +84,6 @@ typename Diagrams<Real>::Point enhance_point(Real birth, Real death, Real min_bi
 
 template<class Real>
 using DiagramToValues = std::unordered_map<DgmPoint < size_t>, DgmPoint<Real>>;
-
-//template<class ValueLocation, class Real>
-//using TargetMatching = std::unordered_map<ValueLocation, Real>;
 
 template<class ValueLocation, class Real>
 using TargetMatching = std::vector<std::pair<ValueLocation, Real>>;
@@ -437,131 +440,21 @@ DiagramToValues<Real> get_denoise_target(dim_type d, const Filtration<Int, Real,
     return result;
 }
 
-// given target points (diagram_to_values), compute values on intermediate simplices from R, V columns
-template<class Int, class Real, class L>
-TargetMatching<L, Real> get_target_values_diagram_loss(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil)
+template<class Real>
+TargetMatching<size_t, Real> get_prescribed_simplex_values_diagram_loss(const DiagramToValues<Real>& diagram_to_values, bool death_only)
 {
-    TargetMatching<L, Real> result;
-    const auto& simplices = fil.simplices();
+    TargetMatching<size_t, Real> result;
+    result.reserve(2 * diagram_to_values.size());
 
-    for(auto&& kv: diagram_to_values) {
-        auto dgm_point = kv.first;
-        auto target_point = kv.second;
-
-        auto birth_cvl = simplices[dgm_point.birth].critical_value_location_;
-        auto death_cvl = simplices[dgm_point.death].critical_value_location_;
-
-//        result[death_cvl] = target_point.death;
-        result.template emplace_back(death_cvl, target_point.death);
-
-        // special case: Vietoris--Rips, dim 0 -- all vertices have critical value 0
-        // do not use R column at all
-        if (d == 0 and std::is_same<L, VREdge>::value)
-            continue;
-
-//        result[birth_cvl] = target_point.birth;
-        result.template emplace_back(birth_cvl, target_point.birth);
+    for(auto [dgm_point, target_point]: diagram_to_values) {
+        result.emplace_back(dgm_point.death, target_point.death);
+        // for Vietoris--Rips filtration changing birth value of vertex is impossible
+        if (not death_only) {
+            result.emplace_back(dgm_point.birth, target_point.birth);
+        }
     }
 
-    std::cerr << "diagram loss result.size = " << result.size() << std::endl;
     return result;
-}
-
-// given target points (diagram_to_values), compute values on intermediate simplices from R, V columns
-template<class Int, class Real, class L>
-TargetMatching<L, Real> get_target_values(dim_type d, const DiagramToValues<Real>& diagram_to_values, const oineus::Filtration<Int, Real, L>& fil, const oineus::VRUDecomposition<Int>& rv_matrix, bool use_max)
-{
-    TargetMatching<L, Real> result_fin;
-    std::unordered_map<L, Real> result;
-
-    const auto& simplices = fil.simplices();
-
-    std::unordered_map<Int, Real> simplices_to_values;
-
-    for(auto&& kv: diagram_to_values) {
-        auto dgm_point = kv.first;
-        auto target_point = kv.second;
-
-        size_t birth_idx = dgm_point.birth;
-        size_t death_idx = dgm_point.death;
-
-        Real target_birth = target_point.birth;
-        Real target_death = target_point.death;
-
-        Real current_birth = simplices[birth_idx].value();
-        Real current_death = simplices[death_idx].value();
-
-        Real min_birth = fil.min_value(d);
-
-        auto birth_column = rv_matrix.r_data[death_idx];
-        auto death_column = rv_matrix.v_data[death_idx];
-
-        // birth simplices are in R column
-        std::vector<Real> current_r_values;
-        std::vector<Int> r_simplex_indices;
-
-        for(auto sigma_idx: birth_column) {
-            r_simplex_indices.push_back(sigma_idx);
-            current_r_values.push_back(simplices[sigma_idx].value());
-        }
-
-        auto target_r_values = lin_interp<Real>(current_r_values, min_birth, current_birth, min_birth, target_birth);
-
-        // death simplices are in V column
-        std::vector<Real> current_v_values;
-        std::vector<Int> v_simplex_indices;
-
-        for(auto sigma_idx: death_column) {
-            v_simplex_indices.push_back(sigma_idx);
-            current_v_values.push_back(simplices[sigma_idx].value());
-        }
-
-        auto target_v_values = lin_interp<Real>(current_v_values, current_birth, current_death, target_birth, target_death);
-
-        assert(birth_column.size() == target_r_values.size() and target_r_values.size() == r_simplex_indices.size());
-        assert(death_column.size() == target_v_values.size() and target_v_values.size() == v_simplex_indices.size());
-
-        if (d == 0 and std::is_same<L, VREdge>::value) {
-            // special case: Vietoris--Rips, dim 0 -- all vertices have critical value 0
-            // do not use R column at all
-            r_simplex_indices.clear();
-            target_r_values.clear();
-        }
-
-        // put r_ and v_ indices and values together
-
-        std::vector<Int> simplex_indices(std::move(r_simplex_indices));
-        simplex_indices.reserve(birth_column.size() + death_column.size());
-        simplex_indices.insert(simplex_indices.end(), v_simplex_indices.begin(), v_simplex_indices.end());
-
-        std::vector<Real> target_values(std::move(target_r_values));
-        target_values.reserve(birth_column.size() + death_column.size());
-        target_values.insert(target_values.end(), target_v_values.begin(), target_v_values.end());
-
-        for(size_t idx = 0; idx < target_values.size(); ++idx) {
-            const auto& sigma = simplices[simplex_indices[idx]];
-            auto cvl = sigma.critical_value_location_;
-
-            if (use_max) {
-                if (result.count(cvl)) {
-                    Real current_delta = abs(result[cvl] - sigma.value());
-                    Real new_delta = abs(target_values[idx] - sigma.value());
-                    // another column wants this simplex to make larger step -> it wins, do not overwrite with our target value
-                    if (new_delta <= current_delta)
-                        continue;
-                }
-                result[cvl] = target_values[idx];
-            } else {
-                result_fin.template emplace_back(cvl, target_values[idx]);
-            }
-        }
-    }
-
-    if (use_max)
-        for(auto key_val : result)
-            result_fin.template emplace_back(key_val.first, key_val.second);
-
-    return result_fin;
 }
 
 
@@ -731,108 +624,68 @@ std::vector<Int> change_birth_x(dim_type d, size_t positive_simplex_idx, const o
         return {};
 }
 
-// given target points (diagram_to_values), compute values on intermediate simplices using X set definition
 template<class Int, class Real, class L>
-TargetMatching<L, Real> get_target_values_x(dim_type d,
+TargetMatching<size_t, Real> get_prescribed_simplex_values_set_x(dim_type d,
         const DiagramToValues<Real>& diagram_to_values,
         const oineus::Filtration<Int, Real, L>& fil,
         const oineus::VRUDecomposition<Int>& decmp_hom,
         const oineus::VRUDecomposition<Int>& decmp_coh,
-        bool use_max)
+        ConflictStrategy conflict_strategy,
+        bool death_only)
 {
-
-//    std::cerr << "enter get_target_values_x, diagram_to_values.size = " << diagram_to_values.size() << ", fil.size = " << fil.size() << std::endl;
-
     if (decmp_hom.dualize())
-        throw std::runtime_error("this parameter must be homology");
+        throw std::runtime_error("decmp_hom: this parameter must be homology");
 
-//    if (not decmp_coh.dualize())
-//        throw std::runtime_error("this parameter must be cohomology");
+    if (not decmp_coh.dualize())
+        throw std::runtime_error("this parameter must be cohomology");
 
-    std::unordered_map<L, std::vector<Real>> result;
+    std::unordered_map<size_t, std::vector<Real>> result;
 
-    const auto& simplices = fil.simplices();
+    for(auto&& dgm_to_target : diagram_to_values) {
+        size_t death_idx = dgm_to_target.first.death;
+        Real target_death = dgm_to_target.second.death;
 
-    std::unordered_map<Int, Real> simplices_to_values;
-
-//    int n_conflicts = 0;
-//    int n_single_point_conflicts = 0;
-//    int n_points_with_conflict = 0;
-
-    for(auto&& kv: diagram_to_values) {
-        auto dgm_point = kv.first;
-        auto target_point = kv.second;
-
-        size_t birth_idx = dgm_point.birth;
-        size_t death_idx = dgm_point.death;
-
-        Real target_birth = target_point.birth;
-        Real target_death = target_point.death;
-
-        Real current_birth = simplices[birth_idx].value();
-        Real current_death = simplices[death_idx].value();
-
-        Real min_birth = fil.min_value(d);
-
-//        std::cerr << "indices: (" << birth_idx << ", " << death_idx <<  "): MOVE (" << current_birth << ", " << current_death << ") -> (" << target_birth << ", " << target_death << ")" << std::endl;
-
-        auto death_x = change_death_x<Int>(d, death_idx, fil, decmp_hom, target_death);
-        if (death_x.size() > 1)
-            std::cerr << "death_x.size = " << death_x.size() << std::endl;
-
-//        for(auto x_d : death_x)
-//            std::cerr << fil.simplices()[x_d] << std::endl;
-
-        auto birth_x = change_birth_x<Int>(d, birth_idx, fil, decmp_coh, target_birth);
-        if (birth_x.size() > 1)
-            std::cerr << "birth_x.size = " << birth_x.size() << std::endl;
-
-//        for(auto x_b : birth_x)
-//            std::cerr << fil.simplices()[x_b] << std::endl;
-
-//        {
-//            // check for intersection
-//            std::vector<Int> birth_death;
-//            std::set_intersection(birth_x.begin(), birth_x.end(), death_x.begin(), death_x.end(), std::back_inserter(birth_death));
-//            n_points_with_conflict += (not birth_death.empty());
-//            n_single_point_conflicts += birth_death.size();
-//        }
-
-        for(auto b_idx: birth_x) {
-            L cvl = simplices[b_idx].critical_value_location_;
-            if (not use_max or result.count(cvl) == 0 or
-                (abs(simplices[b_idx].value() - target_birth) > (simplices[b_idx].value() - result[cvl].back())))
-                    result[cvl].push_back(target_birth);
+        for(auto d_idx : change_death_x<Int>(d, death_idx, fil, decmp_hom, target_death)) {
+            result[d_idx].push_back(target_death);
         }
 
-        for(auto d_idx: death_x) {
-            L cvl = simplices[d_idx].critical_value_location_;
-            if (not use_max or result.count(cvl) == 0 or
-                (abs(simplices[d_idx].value() - target_death) > (simplices[d_idx].value() - result[cvl].back())))
-                    result[cvl].push_back(target_death);
+        if (death_only)
+            continue;
+
+        size_t birth_idx = dgm_to_target.first.birth;
+        Real target_birth = dgm_to_target.second.birth;
+
+        for(auto b_idx : change_birth_x<Int>(d, birth_idx, fil, decmp_coh, target_birth)) {
+            result[b_idx].push_back(target_birth);
         }
     }
 
-//    if (n_conflicts or n_points_with_conflict or n_single_point_conflicts)
-//        std::cerr << "conflicts for one critical value location: " << n_conflicts << ", single dgm points with conflict: " << n_points_with_conflict << ", conflicts from single point: " << n_single_point_conflicts << std::endl;
+    TargetMatching<size_t, Real> final_result;
 
-    TargetMatching<L, Real> result_fin;
-
-    if (not use_max) {
-        for(auto&& key_values : result) {
-            Real avg = std::accumulate(key_values.second.begin(), key_values.second.end(), static_cast<Real>(0)) / key_values.second.size();
-            result_fin.emplace_back(key_values.first, avg);
+    if (conflict_strategy == ConflictStrategy::Max) {
+        for(auto&& [simplex_idx, values] : result) {
+            Real current_value = fil.value_by_sorted_id(simplex_idx);
+            // compare by displacement from current value
+            Real target_value = *std::max_element(values.begin(), values.end(), [current_value](Real a, Real b) { return abs(a - current_value) < abs(b - current_value); });
+            final_result.emplace_back(simplex_idx, target_value);
         }
-    } else {
-        for(auto&& key_values : result) {
-            result_fin.emplace_back(key_values.first, key_values.second.back());
+    } else if (conflict_strategy == ConflictStrategy::Avg) {
+        for(auto&& [simplex_idx, values] : result) {
+            Real target_value = std::accumulate(values.begin(), values.end(), static_cast<Real>(0)) / values.size();
+            final_result.emplace_back(simplex_idx, target_value);
+        }
+    } else if (conflict_strategy == ConflictStrategy::Sum) {
+        // return all prescribed values, gradient of loss will be summed
+        for(auto&& [simplex_idx, values] : result) {
+            for(auto value : values) {
+                final_result.emplace_back(simplex_idx, value);
+            }
         }
     }
 
-    std::cerr << "set_x result_fin.size = " << result_fin.size() << std::endl;
-
-    return result_fin;
+    return final_result;
 }
+
 
 } // namespace oineus
 

@@ -186,6 +186,7 @@ void init_oineus_common(py::module& m)
     using oineus::VREdge;
 
     using oineus::DenoiseStrategy;
+    using oineus::ConflictStrategy;
 
     using Decomposition = oineus::VRUDecomposition<Int>;
 
@@ -234,6 +235,12 @@ void init_oineus_common(py::module& m)
             .value("BirthBirth", DenoiseStrategy::BirthBirth, "(b, d) maps to (b, b)")
             .value("DeathDeath", DenoiseStrategy::DeathDeath, "(b, d) maps to (d, d)")
             .value("Midway", DenoiseStrategy::Midway, "((b, d) maps to ((b+d)/2, (b+d)/2)")
+            ;
+
+    py::enum_<ConflictStrategy>(m, "ConflictStrategy", py::arithmetic())
+            .value("Max", ConflictStrategy::Max, "choose maximal displacement")
+            .value("Avg", ConflictStrategy::Avg, "average gradients")
+            .value("Max", ConflictStrategy::Sum, "sum gradients")
             ;
 
     py::class_<Decomposition>(m, "Decomposition")
@@ -422,29 +429,19 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "get_denoise_target" + suffix;
     m.def(func_name.c_str(), &oineus::get_denoise_target<Int, Real, VREdge>);
 
-    // target values
-    func_name = "get_ls_target_values" + suffix;
-    m.def(func_name.c_str(), &oineus::get_target_values<Int, Real, Int>);
-
-    func_name = "get_vr_target_values" + suffix;
-    m.def(func_name.c_str(), &oineus::get_target_values<Int, Real, VREdge>);
-
     func_name = "get_ls_wasserstein_matching_target_values" + suffix;
     m.def(func_name.c_str(), &oineus::get_target_from_matching<Int, Real, Int>);
 
      // target values -- diagram loss
-    func_name = "get_ls_target_values_diagram_loss" + suffix;
-    m.def(func_name.c_str(), &oineus::get_target_values_diagram_loss<Int, Real, Int>);
-
-    func_name = "get_vr_target_values_diagram_loss" + suffix;
-    m.def(func_name.c_str(), &oineus::get_target_values_diagram_loss<Int, Real, VREdge>);
+    func_name = "get_target_values_diagram_loss" + suffix;
+    m.def(func_name.c_str(), &oineus::get_prescribed_simplex_values_diagram_loss<Real>);
 
     // target values --- X set
     func_name = "get_ls_target_values_x" + suffix;
-    m.def(func_name.c_str(), &oineus::get_target_values_x<Int, Real, Int>);
+    m.def(func_name.c_str(), &oineus::get_prescribed_simplex_values_set_x<Int, Real, Int>);
 
     func_name = "get_vr_target_values_x" + suffix;
-    m.def(func_name.c_str(), &oineus::get_target_values_x<Int, Real, VREdge>);
+    m.def(func_name.c_str(), &oineus::get_prescribed_simplex_values_set_x<Int, Real, VREdge>);
 
     // to reproduce "Topology layer for ML" experiments
     func_name = "get_bruelle_target" + suffix;
