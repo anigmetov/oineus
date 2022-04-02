@@ -235,16 +235,14 @@ void init_oineus_common(py::module& m)
             .value("BirthBirth", DenoiseStrategy::BirthBirth, "(b, d) maps to (b, b)")
             .value("DeathDeath", DenoiseStrategy::DeathDeath, "(b, d) maps to (d, d)")
             .value("Midway", DenoiseStrategy::Midway, "((b, d) maps to ((b+d)/2, (b+d)/2)")
-            .def("__repr__", [](const DenoiseStrategy& self) { return denoise_strategy_to_string(self); })
-            .def("__str__", [](const DenoiseStrategy& self) { return denoise_strategy_to_string(self); })
+            .def("as_str", [](const DenoiseStrategy& self) { return denoise_strategy_to_string(self); })
             ;
 
     py::enum_<ConflictStrategy>(m, "ConflictStrategy", py::arithmetic())
             .value("Max", ConflictStrategy::Max, "choose maximal displacement")
             .value("Avg", ConflictStrategy::Avg, "average gradients")
-            .value("Max", ConflictStrategy::Sum, "sum gradients")
-            .def("__repr__", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); })
-            .def("__str__", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); })
+            .value("Sum", ConflictStrategy::Sum, "sum gradients")
+            .def("as_str", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); })
             ;
 
     py::class_<Decomposition>(m, "Decomposition")
@@ -376,6 +374,7 @@ void init_oineus(py::module& m, std::string suffix)
             .def("max_dim", &LSFiltration::max_dim)
             .def("simplices", &LSFiltration::simplices_copy)
             .def("size_in_dimension", &LSFiltration::size_in_dimension)
+            .def("critical_vertex", &LSFiltration::cvl)
             .def("boundary_matrix", &LSFiltration::boundary_matrix_full);
 
     py::class_<VRFiltration>(m, vr_filtration_class_name.c_str())

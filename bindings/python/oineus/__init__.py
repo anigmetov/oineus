@@ -93,14 +93,14 @@ def get_well_group_target(d, fil, rv, t):
 
 def get_ls_target_values_diagram_loss(d, dtv, fil):
     type_part = get_real_type(fil)
-    func = getattr(_oineus, f"get_ls_target_values_diagram_loss_{type_part}")
-    return func(dtv, death_only=False)
+    func = getattr(_oineus, f"get_target_values_diagram_loss_{type_part}")
+    return func(dtv, False)
 
 
 def get_vr_target_values_diagram_loss(d, dtv, fil):
     type_part = get_real_type(fil)
     death_only = d == 0
-    func = getattr(_oineus, f"get_vr_target_values_diagram_loss_{type_part}")
+    func = getattr(_oineus, f"get_target_values_diagram_loss_{type_part}")
     return func(dtv, death_only)
 
 
@@ -108,7 +108,7 @@ def get_vr_target_values_diagram_loss(d, dtv, fil):
 def get_ls_target_values_x(d, dtv, fil, decmp, decmp_coh, conflict_strategy):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_ls_target_values_x_{type_part}")
-    return func(d, dtv, fil, decmp, decmp_coh, conflict_strategy, death_only=False)
+    return func(d, dtv, fil, decmp, decmp_coh, conflict_strategy, False)
 
 
 def get_vr_target_values_x(d, dtv, fil, decmp, decmp_coh, conflict_strategy):
