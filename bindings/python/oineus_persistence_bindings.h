@@ -343,11 +343,11 @@ void init_oineus(py::module& m, std::string suffix)
 
     py::class_<LSSimplex>(m, ls_simplex_class_name.c_str())
             .def(py::init<>())
-            .def_readwrite("id", &LSSimplex::id_)
-            .def_readwrite("sorted_id", &LSSimplex::sorted_id_)
-            .def_readwrite("vertices", &LSSimplex::vertices_)
-            .def_readwrite("value", &LSSimplex::value_)
-            .def_readwrite("critical_vertex", &LSSimplex::critical_value_location_)
+            .def_readonly("id", &LSSimplex::id_)
+            .def_readonly("sorted_id", &LSSimplex::sorted_id_)
+            .def_readonly("vertices", &LSSimplex::vertices_)
+            .def_readonly("value", &LSSimplex::value_)
+            .def_readonly("critical_vertex", &LSSimplex::critical_value_location_)
             .def("dim", &LSSimplex::dim)
             .def("__repr__", [](const LSSimplex& sigma) {
               std::stringstream ss;
@@ -357,11 +357,11 @@ void init_oineus(py::module& m, std::string suffix)
 
      py::class_<VRSimplex>(m, vr_simplex_class_name.c_str())
             .def(py::init<>())
-            .def_readwrite("id", &VRSimplex::id_)
-            .def_readwrite("sorted_id", &VRSimplex::sorted_id_)
-            .def_readwrite("vertices", &VRSimplex::vertices_)
-            .def_readwrite("value", &VRSimplex::value_)
-            .def_readwrite("critical_edge", &VRSimplex::critical_value_location_)
+            .def_readonly("id", &VRSimplex::id_)
+            .def_readonly("sorted_id", &VRSimplex::sorted_id_)
+            .def_readonly("vertices", &VRSimplex::vertices_)
+            .def_readonly("value", &VRSimplex::value_)
+            .def_readonly("critical_edge", &VRSimplex::critical_value_location_)
             .def("dim", &VRSimplex::dim)
             .def("__repr__", [](const VRSimplex& sigma) {
               std::stringstream ss;
@@ -380,6 +380,8 @@ void init_oineus(py::module& m, std::string suffix)
     py::class_<VRFiltration>(m, vr_filtration_class_name.c_str())
             .def(py::init<>())
             .def("max_dim", &VRFiltration::max_dim)
+            .def("simplices", &VRFiltration::simplices_copy)
+            .def("critical_edge", &VRFiltration::cvl)
             .def("size_in_dimension", &VRFiltration::size_in_dimension)
             .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
 

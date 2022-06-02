@@ -9,7 +9,7 @@ namespace oineus {
         bool sort_dgms{true};
         bool clearing_opt{true};
         bool acq_rel{false};
-        bool print_time{true};
+        bool print_time{false};
         bool compute_v{false};
         bool compute_u{false};
         bool do_sanity_check{false};

@@ -139,8 +139,8 @@ int main(int argc, char** argv)
     dim_type dim = 0;
     Real eps = 0.8;
 
-    auto dgm_target = oineus::get_denoise_target(dim, fil, rv, eps, oineus::DenoiseStrategy::BirthBirth);
-    auto targ_values = oineus::get_target_values(dim, dgm_target, fil, rv);
+    //auto dgm_target = oineus::get_denoise_target(dim, fil, rv, eps, oineus::DenoiseStrategy::BirthBirth);
+    //auto targ_values = oineus::get_target_values(dim, dgm_target, fil, rv);
 
     return 0;
 }

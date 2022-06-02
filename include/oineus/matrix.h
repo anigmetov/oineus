@@ -870,6 +870,9 @@ template<class Int>
 template<class Real, class L>
 Diagrams<size_t> VRUDecomposition<Int>::index_diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, bool include_zero_persistence_points) const
 {
+    if (not is_reduced)
+        throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
+
     Diagrams<size_t> result(fil.max_dim());
 
     std::unordered_set<size_t> rows_with_lowest_one;
