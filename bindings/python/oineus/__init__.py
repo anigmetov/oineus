@@ -38,7 +38,7 @@ def get_real_type(fil):
         raise RuntimeError(f"Unknown type: {type(fil)}")
 
 
-def get_type_dim(data):
+def get_type_dim(data: np.ndarray):
     if data.dtype == np.float32:
         type_part = "float"
     elif data.dtype == np.float64:
@@ -46,10 +46,10 @@ def get_type_dim(data):
     else:
         raise RuntimeError(f"Type not supported: {data.dtype}")
 
-    if data.ndim in [1, 2, 3]:
-        dim_part = str(data.ndim)
+    if data.ndim == 2 and data.shape[1] in [1, 2, 3]:
+        dim_part = str(data.shape[1])
     else:
-        raise RuntimeError(f"Dimension not supported: {data.ndim}")
+        raise RuntimeError(f"Dimension not supported: shape = {data.shape}")
 
     return type_part, dim_part
 
