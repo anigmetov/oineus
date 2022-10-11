@@ -469,6 +469,13 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "get_barycenter_target" + suffix;
     m.def(func_name.c_str(), &oineus::get_barycenter_target<Int, Real, Int>);
 
+    // to get permutation for Warm Starts
+    func_name = "get_permutation" + suffix;
+    m.def(func_name.c_str(), &oineus::targets_to_permutation<Int, Real, Int>);
+
+    func_name = "get_permutation" + suffix;
+    m.def(func_name.c_str(), &oineus::targets_to_permutation<Int, Real, VREdge>);
+
 }
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

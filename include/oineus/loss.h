@@ -124,6 +124,8 @@ using DiagramToValues = std::unordered_map<DgmPoint < size_t>, DgmPoint<Real>>;
 template<class ValueLocation, class Real>
 using TargetMatching = std::vector<std::pair<ValueLocation, Real>>;
 
+using Permutation = std::map<size_t, size_t>;
+
 // evaluate linear function f such that on f(x_1,2) = y_1,2 on xs
 template<class Real>
 std::vector<Real> lin_interp(std::vector<Real> xs, Real x_1, Real x_2, Real y_1, Real y_2)
@@ -720,6 +722,68 @@ TargetMatching<size_t, Real> get_prescribed_simplex_values_set_x(dim_type d,
     }
 
     return final_result;
+}
+
+
+template<class I, class Real, class L>
+Permutation targets_to_permutation_naive(const DiagramToValues<Real>& diagram_to_values, const Filtration<I, Real, L>& fil)
+{
+    Permutation result;
+
+    using DimValueIndex = std::tuple<dim_type, Real, size_t>;
+
+    std::vector<DimValueIndex> new_vals;
+
+    size_t idx = 0;
+
+    const bool negate = fil.negate();
+
+    // copy current values from filtration
+    for(const auto& sigma : fil.simplices()) {
+        if (negate)
+            new_vals.emplace_back(sigma.dim(), -sigma.value(), idx++);
+        else
+            new_vals.emplace_back(sigma.dim(), sigma.value(), idx++);
+    }
+
+    // update according to diagram_to_values
+
+    for(auto&& point_target : diagram_to_values) {
+        size_t birth_idx = point_target.first.birth;
+        size_t death_idx = point_target.first.birth;
+
+        dim_type birth_dim = fil.simplices()[birth_idx].dim();
+        dim_type death_dim = birth_dim + 1;
+
+        assert(death_dim = fil.simplices()[death_idx].dim());
+
+        Real birth_val = negate ? -point_target.second.birth : point_target.second.birth;
+        Real death_val = negate ? -point_target.second.death : point_target.second.death;
+
+        new_vals[birth_idx] = { birth_dim, birth_val, birth_idx };
+        new_vals[death_idx] = { death_dim, death_val, death_idx };
+    }
+
+    // tuples are automatically compared lexicographically, dimension -> value -> old index
+    std::sort(std::execution::par_unseq, new_vals.begin(), new_vals.end());
+
+    // record indices that are not mapped to itself
+    for(size_t new_index = 0; new_index < new_vals.size(); ++new_index) {
+        auto old_index = std::get<2>(new_vals[new_index]);
+        if (new_index != old_index) {
+            assert(result.count(old_index) == 0);
+            result[old_index] = new_index;
+        }
+    }
+
+    return result;
+}
+
+template<class I, class R, class L>
+Permutation targets_to_permutation(const DiagramToValues<R>& diagram_to_values, const Filtration<I, R, L>& fil)
+{
+    // TODO: find a better solution
+    return targets_to_permutation_naive(diagram_to_values, fil);
 }
 
 

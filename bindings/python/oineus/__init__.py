@@ -38,7 +38,7 @@ def get_real_type(fil):
         raise RuntimeError(f"Unknown type: {type(fil)}")
 
 
-def get_type_dim(data: np.ndarray):
+def get_type_dim(data: np.ndarray, points=False):
     if data.dtype == np.float32:
         type_part = "float"
     elif data.dtype == np.float64:
@@ -46,10 +46,16 @@ def get_type_dim(data: np.ndarray):
     else:
         raise RuntimeError(f"Type not supported: {data.dtype}")
 
-    if data.ndim == 2 and data.shape[1] in [1, 2, 3]:
-        dim_part = str(data.shape[1])
+    if points:
+        if data.ndim == 2 and data.shape[1] in [1, 2, 3]:
+            dim_part = str(data.shape[1])
+        else:
+            raise RuntimeError(f"Dimension not supported: shape = {data.shape}")
     else:
-        raise RuntimeError(f"Dimension not supported: shape = {data.shape}")
+        if data.ndim in [1, 2, 3]:
+            dim_part = str(data.ndim)
+        else:
+            raise RuntimeError(f"Dimension not supported: shape = {data.shape}")
 
     return type_part, dim_part
 
@@ -61,7 +67,7 @@ def get_freudenthal_filtration(data, negate, wrap, max_dim, n_threads):
 
 
 def get_vr_filtration(points, max_dim, max_radius, n_threads):
-    type_part, dim_part = get_type_dim(points)
+    type_part, dim_part = get_type_dim(points, True)
     func = getattr(_oineus, f"get_vr_filtration_{type_part}_{dim_part}")
     return func(points, max_dim, max_radius, n_threads)
 
