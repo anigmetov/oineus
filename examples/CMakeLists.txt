@@ -2,15 +2,6 @@ add_executable(oineus_lower_star oineus_lower_star.cpp)
 add_executable(oineus_v_opt oineus_v_opt.cpp)
 add_executable(oineus_vectorizer oineus_vectorizer.cpp)
 
-if(MSVC)
-    target_compile_options(oineus_lower_star PRIVATE /W4 /WX)
-    target_compile_options(oineus_vectorizer PRIVATE /W4 /WX)
-else()
-    target_compile_options(oineus_lower_star PRIVATE -Wall -Wextra -pedantic)
-    target_compile_options(oineus_v_opt PRIVATE -Wall -Wextra -pedantic)
-    target_compile_options(oineus_vectorizer PRIVATE -Wall -Wextra -pedantic)
-endif()
-
 target_include_directories(oineus_lower_star PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include
                                                      ${CMAKE_CURRENT_SOURCE_DIR}/../extern)
 
