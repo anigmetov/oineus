@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <utility>
 
-using namespace std::rel_ops;
+//using namespace std::rel_ops;
 
 namespace oineus {
 
@@ -14,7 +14,11 @@ struct VREdge {
     size_t x;
     size_t y;
     bool operator==(const VREdge& other) const { return x == other.x and y == other.y; }
+    bool operator!=(const VREdge& other) const { return !(*this == other); }
     bool operator<(const VREdge& other) const { return x < other.x or (x == other.x and y < other.y); };
+    bool operator>(const VREdge& other) const { return other < *this; }
+    bool operator<=(const VREdge& other) const { return *this < other or *this == other; }
+    bool operator>=(const VREdge& other) const { return *this > other or *this == other; }
     // rel_ops takes care of other comparison operators are
 };
 

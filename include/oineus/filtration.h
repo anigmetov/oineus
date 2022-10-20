@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <iterator>
 #include <ostream>
-#include <execution>
+//#include <execution>
 #include <algorithm>
 
 #include <icecream/icecream.hpp>
@@ -219,7 +219,8 @@ private:
           return std::tie(d_sigma, v_sigma, sigma.id_) < std::tie(d_tau, v_tau, tau.id_);
         };
 
-        std::sort(std::execution::par_unseq, simplices_.begin(), simplices_.end(), cmp);
+        //std::sort(std::execution::par_unseq, simplices_.begin(), simplices_.end(), cmp);
+        std::sort(simplices_.begin(), simplices_.end(), cmp);
 
         for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
             auto& sigma = simplices_[sorted_id];

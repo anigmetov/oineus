@@ -108,6 +108,12 @@ struct SparseMatrix {
         return col_data_ == other.col_data_;
     }
 
+    bool operator!=(const SparseMatrix& other) const
+    {
+        return !(col_data_ == other.col_data_);
+    }
+
+
     bool is_lower_triangular() const
     {
         for(size_t col_idx = 0; col_idx < n_cols(); ++col_idx) {

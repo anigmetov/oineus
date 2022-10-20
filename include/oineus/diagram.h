@@ -9,8 +9,6 @@
 #include <fstream>
 #include <stdexcept>
 
-using namespace std::rel_ops;
-
 namespace oineus {
 
 template<typename T>
@@ -84,6 +82,12 @@ bool operator==(const DgmPoint<R>& a, const DgmPoint<R>& b)
     return a.birth == b.birth and a.death == b.death;
 }
 
+template<class R>
+bool operator!=(const DgmPoint<R>& a, const DgmPoint<R>& b)
+{
+    return !(a == b);
+}
+
 // compare by persistence first
 template<class R>
 bool operator<(const DgmPoint<R>& a, const DgmPoint<R>& b)
@@ -93,7 +97,12 @@ bool operator<(const DgmPoint<R>& a, const DgmPoint<R>& b)
     return std::tie(pers, a.birth, a.death) < std::tie(other_pers, b.birth, b.death);
 }
 
-// compare by persistence first
+template<class R>
+bool operator<=(const DgmPoint<R>& a, const DgmPoint<R>& b)
+{
+    return a < b or a == b;
+}
+
 template<class R>
 bool operator>(const DgmPoint<R>& a, const DgmPoint<R>& b)
 {
@@ -101,6 +110,13 @@ bool operator>(const DgmPoint<R>& a, const DgmPoint<R>& b)
     R other_pers = b.persistence();
     return std::tie(pers, a.birth, a.death) > std::tie(other_pers, b.birth, b.death);
 }
+
+template<class R>
+bool operator>=(const DgmPoint<R>& a, const DgmPoint<R>& b)
+{
+    return a > b or a == b;
+}
+
 
 template<typename T>
 std::string to_string_possible_inf(const T& a)

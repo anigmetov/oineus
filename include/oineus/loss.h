@@ -765,7 +765,8 @@ Permutation targets_to_permutation_naive(const DiagramToValues<Real>& diagram_to
     }
 
     // tuples are automatically compared lexicographically, dimension -> value -> old index
-    std::sort(std::execution::par_unseq, new_vals.begin(), new_vals.end());
+    //std::sort(std::execution::par_unseq, new_vals.begin(), new_vals.end());
+    std::sort(new_vals.begin(), new_vals.end());
 
     // record indices that are not mapped to itself
     for(size_t new_index = 0; new_index < new_vals.size(); ++new_index) {
