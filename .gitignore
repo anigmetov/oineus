@@ -50,3 +50,4 @@ cmake-build-release/
 cmake-build-relwithdebinfo/
 build_*/
 killme/
+.peru/
