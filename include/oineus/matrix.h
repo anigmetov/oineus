@@ -12,6 +12,7 @@
 #include <numeric>
 #include <utility>
 #include <unordered_set>
+#include <set>
 #include <cstdlib>
 #include <stdexcept>
 
@@ -430,7 +431,7 @@ bool do_rows_and_columns_match(const std::vector<std::vector<Int>>& matrix_cols,
     if (matrix_cols.empty())
         return matrix_rows.empty();
 
-    std::unordered_set<std::pair<size_t, size_t>> e_rows, e_cols;
+    std::set<std::pair<size_t, size_t>> e_rows, e_cols;
 
     for(size_t col_idx = 0; col_idx < matrix_cols.size(); ++col_idx)
         for(auto row_idx : matrix_cols[col_idx])
