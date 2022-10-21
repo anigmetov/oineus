@@ -14,5 +14,6 @@ add_custom_target           (oineus ALL ${CMAKE_COMMAND} -E copy_directory
 
 pybind11_add_module         (_oineus oineus.cpp)
 target_link_libraries       (_oineus PRIVATE ${libraries})
-target_include_directories  (_oineus PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
+target_include_directories  (_oineus PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include"
+                                              "${CMAKE_CURRENT_SOURCE_DIR}/../../extern")
 set_target_properties       (_oineus PROPERTIES OUTPUT_NAME oineus/_oineus)

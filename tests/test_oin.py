@@ -8,7 +8,7 @@ import oineus as oin
 import dionysus as dion
 
 
-def compare_diagrams(n=16, negate=False, n_threads=4, seed=1, top_dim=2):
+def compare_diagrams(n=16, negate=False, n_threads=1, seed=1, top_dim=2):
     # no wrap in Dionysus
     wrap = False
 
@@ -17,7 +17,7 @@ def compare_diagrams(n=16, negate=False, n_threads=4, seed=1, top_dim=2):
     a = np.random.randn(n ** 3).reshape((n, n, n))
 
     # compute diagrams with Oineus
-    oin_dgms = oin.compute_diagrams_ls(a, negate, wrap, top_dim, n_threads)
+    oin_dgms = oin.compute_diagrams_ls(a, negate, wrap, top_dim, n_threads, True)
 
     # compute diagrams with Dionysis
     fil_us = dion.fill_freudenthal(a, reverse=negate)

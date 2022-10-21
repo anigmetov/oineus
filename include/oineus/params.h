@@ -7,9 +7,12 @@ namespace oineus {
         int chunk_size{128};
         bool write_dgms{false};
         bool sort_dgms{true};
-        bool clearing_opt{false};
+        bool clearing_opt{true};
         bool acq_rel{false};
-        bool print_time{true};
+        bool print_time{false};
+        bool compute_v{true};
+        bool compute_u{false};
+        bool do_sanity_check{false};
         double elapsed{0.0};
     };
 

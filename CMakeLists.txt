@@ -15,9 +15,15 @@ if (NOT CMAKE_BUILD_TYPE)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package (Threads)
-set (libraries ${libraries} ${CMAKE_THREAD_LIBS_INIT})
+find_package (Threads REQUIRED)
+find_package (TBB REQUIRED)
+find_package (Boost REQUIRED)
+
+include_directories(${Boost_INCLUDE_DIRS})
+
+set (libraries ${libraries} ${CMAKE_THREAD_LIBS_INIT} TBB::tbb)
 
 if (use_jemalloc)
     set (libraries ${libraries} jemalloc)

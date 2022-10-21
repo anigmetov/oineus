@@ -9,58 +9,65 @@
 #include <fstream>
 #include <stdexcept>
 
-using namespace std::rel_ops;
-
 namespace oineus {
 
-template <typename T>
+template<typename T>
 struct DgmPoint {
     T birth;
     T death;
 
+    id_type id {0};
+
+    DgmPoint() = default;
+    DgmPoint(const DgmPoint&) = default;
+
     DgmPoint(T b, T d)
             :birth(b), death(d) { };
 
+    DgmPoint(T b, T d, id_type i)
+            :birth(b), death(d), id(i) { };
+
     T persistence() const { return std::abs(death - birth); }
 
-    const T& operator[](int index) const
+    T& operator[](int index)
     {
-        switch (index) {
-        case 0 :
-            return birth;
-        case 1 :
-            return death;
-        default:
-            throw std::out_of_range("DgmPoint has only 2 coordinates.");
+        switch(index) {
+        case 0 :return birth;
+        case 1 :return death;
+        default:throw std::out_of_range("DgmPoint has only 2 coordinates.");
         }
     }
 
-    bool operator==(const DgmPoint& other) const { return birth == other.birth and death == other.death; }
 
-    // compare by persistence first
-    bool operator<(const DgmPoint& other) const
+    const T& operator[](int index) const
     {
-        T pers = persistence();
-        T other_pers = other.persistence();
-        return std::tie(pers, birth, death) < std::tie(other_pers, other.birth, other.death);
+        switch(index) {
+        case 0 :return birth;
+        case 1 :return death;
+        default:throw std::out_of_range("DgmPoint has only 2 coordinates.");
+        }
     }
+
 
     // if we want indices, T will be integral and won't have infinity;
     // then lowest and max will be used to represent points at infinity
-    static bool is_minus_inf(T x)
+    static bool is_minus_inf(T x) { return x == minus_inf(); }
+    static bool is_plus_inf(T x) { return x == plus_inf(); }
+
+    static constexpr T plus_inf()
     {
-        if (std::numeric_limits<T>::has_infinity)
-            return x == -std::numeric_limits<T>::infinity();
+        if constexpr (std::numeric_limits<T>::has_infinity)
+            return std::numeric_limits<T>::infinity();
         else
-            return x == std::numeric_limits<T>::lowest();
+            return std::numeric_limits<T>::max();
     }
 
-    static bool is_plus_inf(T x)
+    static constexpr T minus_inf()
     {
-        if (std::numeric_limits<T>::has_infinity)
-            return x == std::numeric_limits<T>::infinity();
+        if constexpr (std::numeric_limits<T>::has_infinity)
+            return -std::numeric_limits<T>::infinity();
         else
-            return x == std::numeric_limits<T>::max();
+            return std::numeric_limits<T>::lowest();
     }
 
     bool is_inf() const
@@ -69,42 +76,96 @@ struct DgmPoint {
     }
 };
 
-template <typename T>
+template<class R>
+bool operator==(const DgmPoint<R>& a, const DgmPoint<R>& b)
+{
+    return a.birth == b.birth and a.death == b.death;
+}
+
+template<class R>
+bool operator!=(const DgmPoint<R>& a, const DgmPoint<R>& b)
+{
+    return !(a == b);
+}
+
+// compare by persistence first
+template<class R>
+bool operator<(const DgmPoint<R>& a, const DgmPoint<R>& b)
+{
+    R pers = a.persistence();
+    R other_pers = b.persistence();
+    return std::tie(pers, a.birth, a.death) < std::tie(other_pers, b.birth, b.death);
+}
+
+template<class R>
+bool operator<=(const DgmPoint<R>& a, const DgmPoint<R>& b)
+{
+    return a < b or a == b;
+}
+
+template<class R>
+bool operator>(const DgmPoint<R>& a, const DgmPoint<R>& b)
+{
+    R pers = a.persistence();
+    R other_pers = b.persistence();
+    return std::tie(pers, a.birth, a.death) > std::tie(other_pers, b.birth, b.death);
+}
+
+template<class R>
+bool operator>=(const DgmPoint<R>& a, const DgmPoint<R>& b)
+{
+    return a > b or a == b;
+}
+
+
+template<typename T>
+std::string to_string_possible_inf(const T& a)
+{
+    if (DgmPoint<T>::is_minus_inf(a))
+        return "-inf, ";
+    else if (DgmPoint<T>::is_plus_inf(a))
+        return "inf, ";
+    else
+        return std::to_string(a);
+}
+
+template<typename T>
 std::ostream& operator<<(std::ostream& out, const DgmPoint<T>& p)
 {
-    out << "(";
-    if (DgmPoint<T>::is_minus_inf(p.birth))
-        out << "-inf, ";
-    else if (DgmPoint<T>::is_plus_inf(p.birth))
-        out << "inf, ";
-    else
-        out << p.birth << ", ";
-
-    if (DgmPoint<T>::is_minus_inf(p.death))
-        out << "-inf";
-    else if (DgmPoint<T>::is_plus_inf(p.death))
-        out << "inf";
-    else
-        out << p.death;
-    out << ")";
-
+    out << "(" << to_string_possible_inf<T>(p.birth) << ", " << to_string_possible_inf<T>(p.death)  << ", id = " << p.id << ")";
     return out;
 }
 
-template <typename Real_>
+template<typename Real_>
 struct Diagrams {
     using Real = Real_;
 
     using Point = DgmPoint<Real>;
     using Dgm = std::vector<Point>;
 
+    dim_type max_dim_;
+
+    Diagrams(dim_type filtration_dim) : max_dim_(filtration_dim - 1)
+    {
+        if (filtration_dim == 0)
+            throw std::runtime_error("refuse to compute diagram from 0-dim filtration");
+
+        for(dim_type d = 0; d <= max_dim_; ++d)
+            diagram_in_dimension_[d];
+    }
+
     std::map<dim_type, Dgm> diagram_in_dimension_;
+
+    [[nodiscard]] size_t n_dims() const noexcept { return diagram_in_dimension_.size(); }
 
     // will throw, if there is no diagram for dimension d
     Dgm get_diagram_in_dimension(dim_type d) const
     {
         return diagram_in_dimension_.at(d);
     }
+
+    Dgm& operator[](size_t d) { return diagram_in_dimension_.at(d); }
+    const Dgm& operator[](size_t d) const { return diagram_in_dimension_.at(d); }
 
     void add_point(dim_type dim, Real b, Real d)
     {
@@ -113,7 +174,7 @@ struct Diagrams {
 
     void sort()
     {
-        for (auto& dim_points : diagram_in_dimension_) {
+        for(auto& dim_points: diagram_in_dimension_) {
             auto& points = dim_points.second;
             std::sort(points.begin(), points.end(), [](const Point& a, const Point& b) { return a > b; });
         }
@@ -121,7 +182,7 @@ struct Diagrams {
 
     void save_as_txt(std::string fname, std::string extension = "txt", int prec = 4) const
     {
-        for (const auto& dim_points : diagram_in_dimension_) {
+        for(const auto& dim_points: diagram_in_dimension_) {
 
             const auto& points = dim_points.second;
 
@@ -140,7 +201,7 @@ struct Diagrams {
 
             f.precision(prec);
 
-            for (const auto& p : points)
+            for(const auto& p: points)
                 f << p << "\n";
 
             f.close();
@@ -149,6 +210,22 @@ struct Diagrams {
 };
 
 } // namespace oineus
+
+
+namespace std {
+template<class T>
+struct hash<oineus::DgmPoint<T>> {
+    std::size_t operator()(const oineus::DgmPoint<T>& p) const
+    {
+        std::size_t seed = 0;
+        oineus::hash_combine(seed, p.birth);
+        oineus::hash_combine(seed, p.death);
+        oineus::hash_combine(seed, p.id);
+        return seed;
+    }
+};
+};
+
 
 //  template<class Cont>
 //    std::string container_to_string(const Cont& v)

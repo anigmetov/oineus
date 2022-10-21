@@ -41,9 +41,12 @@ inline void info([[maybe_unused]] const Args& ... args)
 
 #endif
 
+#include "icecream/icecream.hpp"
+
 namespace oineus {
 
 using dim_type = size_t;
+using id_type = int;
 
 template<typename Real>
 struct RPoint {
@@ -83,6 +86,14 @@ struct RPoint {
         }
     }
 };
+
+template<class T>
+inline void hash_combine(std::size_t& seed, const T& v)
+{
+    std::hash<T> hasher;
+    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
 
 //template<typename Out>
 //void split_by_delim(const std::string& s, char delim, Out result)
