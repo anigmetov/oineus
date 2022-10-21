@@ -1,3 +1,0 @@
-[submodule "bindings/python/pybind11"]
-	path = bindings/python/pybind11
-	url = ../../pybind/pybind11
