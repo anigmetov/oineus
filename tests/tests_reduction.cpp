@@ -73,7 +73,9 @@ TEST_CASE("Simple reduction")
 
     std::vector<Real> xs;
 
-    std::ifstream f {"/home/narn/code/oineus/tests/a_6.txt"};
+    std::ifstream f {"./a_6.txt"};
+
+    REQUIRE(f.good());
 
     Real x;
     while(f >> x)
