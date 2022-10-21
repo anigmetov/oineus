@@ -505,18 +505,24 @@ bool VRUDecomposition<Int>::sanity_check()
     }
     if (verbose) std::cerr << "U upper-triangular" << std::endl;
 
-   if (uv != ii) {
-        std::cerr << "UV != I" << std::endl;
-        return false;
-    }
-    if (verbose) std::cerr << "UV = I" << std::endl;
-
     if (dv != rr) {
+        std::cerr << "R = " << rr << std::endl;
+        std::cerr << "D = " << dd << std::endl;
+        std::cerr << "V = " << vv << std::endl;
+        std::cerr << "U = " << uu << std::endl;
         std::cerr << "R != DV" << std::endl;
         return false;
     }
     if (verbose) std::cerr << "R = DV" << std::endl;
 
+
+    if (uv != ii) {
+        std::cerr << "uv: " << uv.sanity_check() << std::endl;
+        std::cerr << "ii: " << ii.sanity_check() << std::endl;
+        std::cerr << "UV != I" << std::endl;
+        return false;
+    }
+    if (verbose) std::cerr << "UV = I" << std::endl;
     return true;
 }
 

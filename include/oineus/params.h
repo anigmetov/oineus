@@ -10,7 +10,7 @@ namespace oineus {
         bool clearing_opt{true};
         bool acq_rel{false};
         bool print_time{false};
-        bool compute_v{false};
+        bool compute_v{true};
         bool compute_u{false};
         bool do_sanity_check{false};
         double elapsed{0.0};

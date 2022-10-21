@@ -245,6 +245,30 @@ SparseMatrix<Int> antitranspose(const SparseMatrix<Int>& a)
     return result;
 }
 
+template<typename Int>
+std::ostream& operator<<(std::ostream& out, const typename SparseMatrix<Int>::Column& c)
+{
+    out << "[";
+    for(int i = 0; i < c.size(); ++i) {
+        out << c[i];
+        if (i != c.size() - 1)
+            out << ", ";
+    }
+    out << "]";
+    return out;
+}
+
+
+template<typename Int>
+std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m)
+{
+    out << "Matrix(n_rows = " << m.n_rows() << ", n_cols = " << m.n_cols() << "\n[";
+    for(size_t col_idx = 0; col_idx < m.n_cols(); ++col_idx) {
+        out << m.col(col_idx) << "\n";
+    }
+    out << "]\n";
+    return out;
+}
 
 template<typename Int>
 std::vector<SparseColumn<Int>> antitranspose(const std::vector<SparseColumn<Int>>& a, size_t n_rows)
