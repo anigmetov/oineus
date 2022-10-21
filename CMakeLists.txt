@@ -30,6 +30,7 @@ if (use_jemalloc)
 endif()
 
 add_subdirectory(examples)
+add_subdirectory(extern/pybind11)
 add_subdirectory(bindings/python)
 
 find_package(Catch2)
