@@ -476,6 +476,13 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "get_permutation" + suffix;
     m.def(func_name.c_str(), &oineus::targets_to_permutation<Int, Real, VREdge>);
 
+    func_name = "get_permutation_dtv" + suffix;
+    m.def(func_name.c_str(), &oineus::targets_to_permutation_dtv<Int, Real, Int>);
+
+    func_name = "get_permutation_dtv" + suffix;
+    m.def(func_name.c_str(), &oineus::targets_to_permutation_dtv<Int, Real, VREdge>);
+
+
 }
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

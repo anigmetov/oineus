@@ -157,3 +157,11 @@ def get_nth_persistence(fil, rv, d, n):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_nth_persistence_{type_part}")
     return func(fil, rv, d, n)
+
+
+def get_permutation(target_values, fil):
+    if len(target_values) == 0:
+        return {}
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"get_permutation_{type_part}")
+    return func(target_values, fil)
