@@ -33,7 +33,7 @@ def get_real_type(fil):
     if "_double" in str(type(fil)):
         return "double"
     elif "_float" in str(type(fil)):
-        return "double"
+        return "float"
     else:
         raise RuntimeError(f"Unknown type: {type(fil)}")
 
