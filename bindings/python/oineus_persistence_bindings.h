@@ -229,7 +229,35 @@ void init_oineus_common(py::module& m)
             .def_readwrite("compute_v", &ReductionParams::compute_v)
             .def_readwrite("compute_u", &ReductionParams::compute_u)
             .def_readwrite("do_sanity_check", &ReductionParams::do_sanity_check)
-            ;
+            .def(py::pickle(
+                    // __getstate__
+                    [](const ReductionParams& p) { return py::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
+                        p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
+                        p.do_sanity_check, p.elapsed); },
+                    // __setstate__
+                    [](py::tuple t) {
+                      if (t.size() != 11)
+                          throw std::runtime_error("Invalid tuple for ReductionParams");
+
+                      ReductionParams p;
+
+                      int i = 0;
+
+                      p.n_threads       = t[i++].cast<decltype(p.n_threads)>();
+                      p.chunk_size      = t[i++].cast<decltype(p.chunk_size)>();
+                      p.write_dgms      = t[i++].cast<decltype(p.write_dgms)>();
+                      p.sort_dgms       = t[i++].cast<decltype(p.sort_dgms)>();
+                      p.clearing_opt    = t[i++].cast<decltype(p.clearing_opt)>();
+                      p.acq_rel         = t[i++].cast<decltype(p.acq_rel)>();
+                      p.print_time      = t[i++].cast<decltype(p.print_time)>();
+                      p.compute_v       = t[i++].cast<decltype(p.compute_v)>();
+                      p.compute_u       = t[i++].cast<decltype(p.compute_u)>();
+                      p.do_sanity_check = t[i++].cast<decltype(p.do_sanity_check)>();
+                      p.elapsed         = t[i++].cast<decltype(p.elapsed)>();
+
+                      return p;
+                    }))
+        ;
 
     py::enum_<DenoiseStrategy>(m, "DenoiseStrategy", py::arithmetic())
             .value("BirthBirth", DenoiseStrategy::BirthBirth, "(b, d) maps to (b, b)")
