@@ -80,7 +80,8 @@ std::ostream& operator<<(std::ostream& out, const ConflictStrategy& s)
     else if (s == ConflictStrategy::Sum)
         out << "sum";
     else if (s == ConflictStrategy::FixCritAvg)
-        out << "prescribed on critical, average on others";
+        out << "fca";
+        //out << "prescribed on critical, average on others";
     return out;
 }
 
