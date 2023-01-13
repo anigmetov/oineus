@@ -8,5 +8,5 @@ target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
 
 add_test(NAME all COMMAND tests)
 
-#file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/a_6.txt"
-#           DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/a_6.txt"
+           DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")

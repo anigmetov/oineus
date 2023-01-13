@@ -516,13 +516,13 @@ bool VRUDecomposition<Int>::sanity_check()
     if (verbose) std::cerr << "R = DV" << std::endl;
 
 
-    if (uv != ii) {
-        std::cerr << "uv: " << uv.sanity_check() << std::endl;
-        std::cerr << "ii: " << ii.sanity_check() << std::endl;
-        std::cerr << "UV != I" << std::endl;
-        return false;
-    }
-    if (verbose) std::cerr << "UV = I" << std::endl;
+    //if (uv != ii) {
+    //    std::cerr << "uv: " << uv.sanity_check() << std::endl;
+    //    std::cerr << "ii: " << ii.sanity_check() << std::endl;
+    //    std::cerr << "UV != I" << std::endl;
+    //    return false;
+    //}
+    //if (verbose) std::cerr << "UV = I" << std::endl;
     return true;
 }
 

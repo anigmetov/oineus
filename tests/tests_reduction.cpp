@@ -67,40 +67,75 @@ TEST_CASE("Basic reduction")
     REQUIRE(decmp.sanity_check());
 }
 
-//TEST_CASE("Simple reduction")
-//{
-//    using Real = double;
-//    using Int = int;
+TEST_CASE("Simple reduction")
+{
+    using Real = double;
+    using Int = int;
 
-//    std::vector<Real> xs;
+    std::vector<Real> xs;
 
-//    std::ifstream f {"./a_6.txt"};
+    std::ifstream f {"./a_6.txt"};
 
-//    REQUIRE(f.good());
+    REQUIRE(f.good());
 
-//    Real x;
-//    while(f >> x)
-//        xs.push_back(x);
+    Real x;
+    while(f >> x)
+        xs.push_back(x);
 
-//    REQUIRE(xs.size() == 216);
+    REQUIRE(xs.size() == 216);
 
-//    using Grid = oineus::Grid<int, Real, 3>;
-//    using GridPoint = typename Grid::GridPoint;
+    using Grid = oineus::Grid<int, Real, 3>;
+    using GridPoint = typename Grid::GridPoint;
 
-//    bool wrap = false;
-//    bool negate = true;
-//    int n_threads = 1;
-//    dim_type top_d = 2;
+    bool wrap = false;
+    bool negate = true;
+    int n_threads = 1;
+    dim_type top_d = 2;
 
-//    GridPoint dims {6, 6, 6};
+    GridPoint dims {6, 6, 6};
 
-//    Grid grid = get_grid<Int, Real, 3>(xs.data(), dims, wrap);
-//    auto dv = compute_diagrams_and_v_ls_freudenthal<Int, Real, 3>(grid, negate, wrap, top_d, n_threads);
-//    auto dgms = dv.first;
-//    auto decmp = dv.second;
-//    REQUIRE(dgms.n_dims() == top_d + 1);
-//    REQUIRE(decmp.sanity_check());
-//}
+    Grid grid = get_grid<Int, Real, 3>(xs.data(), dims, wrap);
+    auto dv = compute_diagrams_and_v_ls_freudenthal<Int, Real, 3>(grid, negate, wrap, top_d, n_threads);
+    auto dgms = dv.first;
+    auto decmp = dv.second;
+    REQUIRE(dgms.n_dims() == top_d + 1);
+    REQUIRE(decmp.sanity_check());
+}
+
+TEST_CASE("Simple reduction parallel")
+{
+    using Real = double;
+    using Int = int;
+
+    std::vector<Real> xs;
+
+    std::ifstream f {"./a_6.txt"};
+
+    REQUIRE(f.good());
+
+    Real x;
+    while(f >> x)
+        xs.push_back(x);
+
+    REQUIRE(xs.size() == 216);
+
+    using Grid = oineus::Grid<int, Real, 3>;
+    using GridPoint = typename Grid::GridPoint;
+
+    bool wrap = false;
+    bool negate = true;
+    int n_threads = 4;
+    dim_type top_d = 2;
+
+    GridPoint dims {6, 6, 6};
+
+    Grid grid = get_grid<Int, Real, 3>(xs.data(), dims, wrap);
+    auto dv = compute_diagrams_and_v_ls_freudenthal<Int, Real, 3>(grid, negate, wrap, top_d, n_threads);
+    auto dgms = dv.first;
+    auto decmp = dv.second;
+    REQUIRE(dgms.n_dims() == top_d + 1);
+    REQUIRE(decmp.sanity_check());
+}
 
 
 TEST_CASE("Vietoris--Rips")
