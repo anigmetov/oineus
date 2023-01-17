@@ -32,7 +32,7 @@ def is_reduced(a):
 def get_real_type(fil):
     if "_double" in str(type(fil)):
         return "double"
-    elif "_float" in str(type(fil)):
+    elif "_float" in str(type(fil))
         return "double"
     else:
         raise RuntimeError(f"Unknown type: {type(fil)}")

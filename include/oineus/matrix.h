@@ -392,6 +392,18 @@ struct VRUDecomposition {
     friend std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m);
 
     bool sanity_check();
+
+    public:
+        MatrixData get_D() {
+            return d_data;
+        }
+        MatrixData get_V() {
+            return v_data;
+        }
+
+        MatrixData get_R() {
+            return r_data;
+        }
 };
 
 template<class Int>

@@ -94,6 +94,11 @@ struct Simplex {
 
     template<typename I, typename R, typename L>
     friend std::ostream& operator<<(std::ostream&, const Simplex<I, R, L>&);
+
+    public:
+        Int get_sorted_id() {
+            return sorted_id_;
+        }
 };
 
 template<typename I, typename R, typename L>
