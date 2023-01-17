@@ -165,3 +165,6 @@ def get_permutation(target_values, fil):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_permutation_{type_part}")
     return func(target_values, fil)
+def reduce_im_ker_ls(KL):
+    func = getattr(_oineus, f"reduce_im_ker")
+    return func(KL)

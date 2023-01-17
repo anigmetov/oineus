@@ -30,6 +30,8 @@ namespace oineus {
             Filtration<Int, Real, int> L;
             std::vector<int> IdMapping;
 
+			FilteredPair() = default;
+
             FilteredPair(const Filtration<Int, Real, int> K_, const Filtration<Int, Real, int> L_, std::vector<int> IdMapping_, const Params params_) { //If the ids of simplices in L_ do not match their ids in K_ we need to know what the correspondence is.
                 K = K_;
                 L = L_;
@@ -123,7 +125,7 @@ namespace oineus {
 	};
 
 	template <typename Int_, typename Real_>
-	ImKerReduced<Int_, Real_> ReduceImKer(FilteredPair<Int_, Real_> KL) {
+	ImKerReduced<Int_, Real_> reduce_im_ker(FilteredPair<Int_, Real_> KL) {
 		using Int = Int_;
 		using Real = Real_;
 		using Int = Int_;
@@ -273,7 +275,7 @@ namespace oineus {
 	};
 
 	template <typename Int_, typename Real_>
-	CokReduced<Int_, Real_> ReduceCok(FilteredPair<Int_, Real_> KL) {
+	CokReduced<Int_, Real_> reduce_cok(FilteredPair<Int_, Real_> KL) {
 		using Int = Int_;
 		using Real = Real_;
 		using Int = Int_;
