@@ -10,3 +10,4 @@
 #include "matrix.h"
 #include "vectorizer.h"
 #include "loss.h"
+#include "kernel.h"

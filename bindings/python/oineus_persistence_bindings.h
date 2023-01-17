@@ -342,6 +342,10 @@ void init_oineus(py::module& m, std::string suffix)
     using oineus::VREdge;
     using VRFiltration = oineus::Filtration<Int, Real, VREdge>;
     using VRSimplex = typename VRFiltration::FiltrationSimplex;
+    using FilteredPair = oineus::FilteredPair<Int, Real>;
+    using VRUDecomp = oineus::VRUDecomposition<Int>;
+    using ImKerRed = oineus::ImKerReduced<Int, Real>;
+    using CokRed =  oineus::CokReduced<Int, Real>;
 
     std::string dgm_point_name = "DiagramPoint" + suffix;
     std::string dgm_class_name = "Diagrams" + suffix;
@@ -415,6 +419,16 @@ void init_oineus(py::module& m, std::string suffix)
             .def("critical_edge", &VRFiltration::cvl)
             .def("size_in_dimension", &VRFiltration::size_in_dimension)
             .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
+
+    py::class_<FilteredPair>(m, "FilteredPair")
+            .def(py::init<const oineus::Filtration<Int, Real, Int>, const oineus::Filtration<Int, Real, Int>, std::vector<int>, const oineus::Params>())
+            .def(py::init<const oineus::Filtration<Int, Real, Int>, const oineus::Filtration<Int, Real, Int>, const oineus::Params>());
+
+    py::class_<ImKerRed>(m, "ImKerReduced")
+            .def(py::init<VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp>());
+
+    py::class_<CokRed>(m, "CokReduced")
+            .def(py::init<VRUDecomp, VRUDecomp, VRUDecomp>());
 
     std::string func_name;
 
@@ -514,6 +528,13 @@ void init_oineus(py::module& m, std::string suffix)
     m.def(func_name.c_str(), &oineus::targets_to_permutation_dtv<Int, Real, VREdge>);
 
 
+    // reduce to create an ImKerReduced object
+    func_name = "ReduceImKer";
+    m.def(func_name.c_str(), &oineus::ReduceImKer<Int, Real>);
+
+    // reduce to create an CokReduced object
+    func_name = "ReduceCok";
+    m.def(func_name.c_str(), &oineus::ReduceCok<Int, Real>);
 }
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H
