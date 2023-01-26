@@ -151,54 +151,6 @@ list_to_filtration(py::list data) //take a list of simplices and turn it into a 
 }
 
 
-template<typename Int, typename Real>
-decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list IdMap_, int n_threads = 1) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]. 
-{
-    using IdxVector = std::vector<Int>;
-    using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
-    using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
-    using Filtration = oineus::Filtration<Int, Real, Int>;
-    using ImKerReduced = oineus::ImKerReduced<Int, Real>;
-    std::cout << "======================================" << std::endl;
-    std::cout << std:: endl;
-    std::cout << "You have called \'compute_kernel_image_diagrams\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
-    std::cout << "          [id, [boundary], filtration value]" << std::endl;
-    std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as an integer, telling oineus how many threads to use." << std::endl;
-    std::cout << std:: endl;
-    std::cout << "======================================" << std::endl;
-    std::cout << std:: endl;
-
-    std::cout << "------------ Importing K ------------" << std::endl;
-    Filtration K = list_to_filtration<Int, Real>(K_);
-    std::cout << "------------ Importing L ------------" << std::endl;
-    Filtration L = list_to_filtration<Int, Real>(L_);
-
-    int n_L = IdMap_.size();
-    std::vector<int> IdMapping;
-
-    for (int i = 0; i < n_L; i++) {
-        int i_map = IdMap_[i].cast<int>();
-        IdMapping.push_back(i_map);
-    }
-
-    for (int i = 0; i < n_L; i++){
-        std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
-    }
-
-    
-    oineus::Params params;
-
-    params.sort_dgms = false;
-    params.clearing_opt = true;
-    params.n_threads = n_threads;
-    
-    ImKerReduced IKR = oineus::reduce_im_ker<Int, Real>(K, L, IdMapping, params);
-
-    return IKR;
-}
-
-//template<typename Int, typename Real>
-
 
 template<class Int, class Real, size_t D>
 typename oineus::Filtration<Int, Real, oineus::VREdge>
@@ -265,6 +217,52 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
     return PyOineusDiagrams<Real>(decmp.diagram(fil, include_inf_points));
 }
 
+
+template<typename Int, typename Real>
+decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list IdMap_, int n_threads = 1) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]. 
+{
+    using IdxVector = std::vector<Int>;
+    using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
+    using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
+    using Filtration = oineus::Filtration<Int, Real, Int>;
+    using ImKerReduced = oineus::ImKerReduced<Int, Real>;
+    std::cout << "======================================" << std::endl;
+    std::cout << std:: endl;
+    std::cout << "You have called \'compute_kernel_image_diagrams\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
+    std::cout << "          [id, [boundary], filtration value]" << std::endl;
+    std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as an integer, telling oineus how many threads to use." << std::endl;
+    std::cout << std:: endl;
+    std::cout << "======================================" << std::endl;
+    std::cout << std:: endl;
+
+    std::cout << "------------ Importing K ------------" << std::endl;
+    Filtration K = list_to_filtration<Int, Real>(K_);
+    std::cout << "------------ Importing L ------------" << std::endl;
+    Filtration L = list_to_filtration<Int, Real>(L_);
+
+    int n_L = IdMap_.size();
+    std::vector<int> IdMapping;
+
+    for (int i = 0; i < n_L; i++) {
+        int i_map = IdMap_[i].cast<int>();
+        IdMapping.push_back(i_map);
+    }
+
+    for (int i = 0; i < n_L; i++){
+        std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
+    }
+
+    
+    oineus::Params params;
+
+    params.sort_dgms = false;
+    params.clearing_opt = true;
+    params.n_threads = n_threads;
+    
+    ImKerReduced IKR = oineus::reduce_im_ker<Int, Real>(K, L, IdMapping, params);
+
+    return IKR;
+}
 template<class Int>
 void init_oineus_common(py::module& m)
 {
