@@ -252,48 +252,4 @@ std::ostream& operator<<(std::ostream& out, const Filtration<I, R, L>& fil)
     return out;
 }
 
-/*
-    template<typename Int_, typename Real_>
-    class FilteredPair {
-        using Int = Int_;
-        using IntSparseColumn = SparseColumn<Int>;
-        using MatrixData = std::vector<IntSparseColumn>;
-        
-        public:
-            void ReduceAll() {
-                F(K.boundary_matrix_full());
-                F.reduce_parallel_rvu(&params);
-                G(L.boundary_matrix_full());
-                G.reduce_parallel_rvu(&params);
-                std::vector<int> to_del;
-                std::vector<int> new_order;
-
-
-                
-                MatrixData D_im(G.d_data, new_order, to_del);
-            }
-
-            FilteredPair(Filtration<Int_, Real_, int> K_, Filtration<Int_, Real_, int> L_, std::vector<int> IdMapping_, Params params_) {
-                K = K_;
-                L = L_;
-                IdMapping = IdMapping_;
-                params = params_;
-                ReduceAll();
-            }
-
-        private:
-            Params params;
-            Filtration<Int_, Real_, int> K;
-            Filtration<Int_, Real_, int> L;
-            VRUDecomposition<Int> F;
-            VRUDecomposition<Int> G;
-            VRUDecomposition<Int> Im;
-            VRUDecomposition<Int> Ker;
-            VRUDecomposition<Int> CoKer;
-            std::vector<int> IdMapping;
-
-    
-    };
-*/
-
 } // namespace oineus

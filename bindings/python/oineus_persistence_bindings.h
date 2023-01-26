@@ -113,6 +113,93 @@ decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::
     return points;
 }
 
+template<typename Int, typename Real>
+typename oineus::Filtration<Int, Real, Int>
+list_to_filtration(py::list data) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]'. 
+{
+    using IdxVector = std::vector<Int>;
+    using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
+    using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
+    using Filtration = oineus::Filtration<Int, Real, Int>;
+    
+    int n_simps = data.size();
+    std::cout << "Number of cells in the complex is: " << n_simps << std::endl;
+    FiltrationSimplexVector FSV;
+
+    for (int i = 0; i < n_simps; i++) {
+        auto data_i = data[i];
+        int count = 0;
+        Int id;
+        std::vector<Int> boundary;
+        Real val;
+        for (auto item : data_i) {
+            if (count == 0) {
+                id =  item.cast<Int>();
+            } else if (count == 1) {
+                boundary = item.cast<std::vector<Int>>();
+            } else if (count == 2) {
+                val = item.cast<Real>();
+            }
+            count += 1;
+        }
+        FiltrationSimplex simp_i(id, boundary, val);
+        FSV.push_back(simp_i);
+    }
+    Filtration Filt (FSV, false, 1);
+    
+    return Filt;
+}
+
+
+template<typename Int, typename Real>
+decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list IdMap_, int n_threads = 1) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]. 
+{
+    using IdxVector = std::vector<Int>;
+    using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
+    using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
+    using Filtration = oineus::Filtration<Int, Real, Int>;
+    using ImKerReduced = oineus::ImKerReduced<Int, Real>;
+    std::cout << "======================================" << std::endl;
+    std::cout << std:: endl;
+    std::cout << "You have called \'compute_kernel_image_diagrams\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
+    std::cout << "          [id, [boundary], filtration value]" << std::endl;
+    std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as an integer, telling oineus how many threads to use." << std::endl;
+    std::cout << std:: endl;
+    std::cout << "======================================" << std::endl;
+    std::cout << std:: endl;
+
+    std::cout << "------------ Importing K ------------" << std::endl;
+    Filtration K = list_to_filtration<Int, Real>(K_);
+    std::cout << "------------ Importing L ------------" << std::endl;
+    Filtration L = list_to_filtration<Int, Real>(L_);
+
+    int n_L = IdMap_.size();
+    std::vector<int> IdMapping;
+
+    for (int i = 0; i < n_L; i++) {
+        int i_map = IdMap_[i].cast<int>();
+        IdMapping.push_back(i_map);
+    }
+
+    for (int i = 0; i < n_L; i++){
+        std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
+    }
+
+    
+    oineus::Params params;
+
+    params.sort_dgms = false;
+    params.clearing_opt = true;
+    params.n_threads = n_threads;
+    
+    ImKerReduced IKR = oineus::reduce_im_ker<Int, Real>(K, L, IdMapping, params);
+
+    return IKR;
+}
+
+//template<typename Int, typename Real>
+
+
 template<class Int, class Real, size_t D>
 typename oineus::Filtration<Int, Real, oineus::VREdge>
 get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> points, dim_type max_dim, Real max_radius, int n_threads)
@@ -536,9 +623,17 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "reduce_im_ker" + suffix;
     m.def(func_name.c_str(), &oineus::reduce_im_ker<Int, Real>);
 
+    
     // reduce to create an CokReduced object
     func_name = "reduce_cok" + suffix;
     m.def(func_name.c_str(), &oineus::reduce_cok<Int, Real>);
+
+    func_name = "list_to_filtration" + suffix;
+    m.def(func_name.c_str(), &list_to_filtration<Int, Real>);
+    
+    
+    func_name = "compute_kernel_image_diagrams" + suffix;
+    m.def(func_name.c_str(), &compute_kernel_image_diagrams<Int, Real>);
 }
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

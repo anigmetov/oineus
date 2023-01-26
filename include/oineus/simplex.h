@@ -44,9 +44,22 @@ struct Simplex {
 
     Simplex() = default;
 
-    Simplex(const IdxVector& _vertices, Real _value, const ValueLocation& _critical_value_location)
+    Simplex(IdxVector& _vertices, Real _value, ValueLocation& _critical_value_location)
             :
             vertices_(_vertices), value_(_value), critical_value_location_(_critical_value_location)
+    {
+        if (vertices_.empty())
+            throw std::runtime_error("Empty simplex not allowed");
+
+        if (vertices_.size() == 1)
+            id_ = vertices_[0];
+        else
+            std::sort(vertices_.begin(), vertices_.end());
+    }
+
+    Simplex(const int _id, const IdxVector& _vertices, Real _value)
+            :
+            vertices_(_vertices), value_(_value), critical_value_location_(_value), id_(_id)
     {
         if (vertices_.empty())
             throw std::runtime_error("Empty simplex not allowed");

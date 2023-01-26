@@ -165,6 +165,32 @@ def get_permutation(target_values, fil):
     type_part = get_real_type(fil)
     func = getattr(_oineus, f"get_permutation_{type_part}")
     return func(target_values, fil)
-def reduce_im_ker_ls(KL):
-    func = getattr(_oineus, f"reduce_im_ker")
-    return func(KL)
+
+
+def list_to_filtration(simplex_list): #take a list which contains data for simplices and convert it to a filtration
+    string_type = str(type(simplex_list[0][2]))
+    if "int" in string_type:
+        func = getattr(_oineus, f"list_to_filtration_int")
+        return func(simplex_list)
+    elif "float" in string_type:
+        print("float")
+        func = getattr(_oineus, f"list_to_filtration_float")
+        return func(simplex_list)
+    elif "double" in string_type:
+        func = getattr(_oineus, f"list_to_filtration_double")
+        return func(simplex_list)
+
+def compute_kernel_image_diagrams(K_, L_, IdMap, n_threads): #take a list which contains data for simplices and convert it to a filtration
+    string_type = str(type(K_[0][2]))
+    #if "int" in string_type:
+    #    func = getattr(_oineus, f"compute_kernel_image_diagrams_int")
+    #    return func(K_, L_, IdMap, n_threads)
+    #elif "float" in string_type:
+    #    print("float")
+    #    func = getattr(_oineus, f"compute_kernel_image_diagrams_float")
+    #    return func(K_, L_, IdMap, n_threads)
+    #elif "double" in string_type:
+    func = getattr(_oineus, f"compute_kernel_image_diagrams_float")
+    return func(K_, L_, IdMap, n_threads)
+
+#def lists_to_paired_filtrations(simplex_list_1, simplex_list_2)
