@@ -52,10 +52,13 @@ namespace oineus {
 		using Int = Int_;
 		using Real = Real_;
         using IntSparseColumn = SparseColumn<Int>;
-        using MatrixData = SparseMatrix<Int>;//std::vector<IntSparseColumn>;
+        using MatrixData = std::vector<IntSparseColumn>;
 		using FiltrationSimplex = Simplex<Int, Real, int>;
     	using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
 		using VRUDecomp = VRUDecomposition<Int>;
+		using Point = DgmPoint<Real>;
+    	using Dgm = std::vector<Point>;
+		using Dgms = std::vector<Dgm>;
 
 		private:
 
@@ -63,6 +66,17 @@ namespace oineus {
 			VRUDecomp G;
 			VRUDecomp Im;
 			VRUDecomp Ker;
+			Dgms ImDiagrams;
+			Dgms KerDiagrams;
+			int top_dim;
+
+			void GenerateImDiagrams() {
+				
+			}
+
+			void GenereateKerDiagrams() {
+
+			}
 			
 
 		public: 
@@ -189,7 +203,7 @@ namespace oineus {
 
 		Diagram image_diagram;
 		Diagram kernel_diagram;
-		
+
 		return  IKR;
 	}
 
@@ -198,16 +212,20 @@ namespace oineus {
 		using Int = Int_;
 		using Real = Real_;
         using IntSparseColumn = SparseColumn<Int>;
-        using MatrixData = SparseMatrix<Int>;//std::vector<IntSparseColumn>;
+        using MatrixData = std::vector<IntSparseColumn>;
 		using FiltrationSimplex = Simplex<Int, Real, int>;
     	using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
 		using VRUDecomp = VRUDecomposition<Int>;
+		using Point = DgmPoint<Real>;
+    	using Dgm = std::vector<Point>;
+		using Dgms = std::vector<Dgm>;
 
 		private:
 
 			VRUDecomp F;
 			VRUDecomp G;
 			VRUDecomp Cok;
+			Dgms CokDiagrams;
 
 		public: 
 

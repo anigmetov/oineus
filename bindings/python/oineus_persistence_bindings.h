@@ -222,6 +222,8 @@ template<typename Int, typename Real>
 decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list IdMap_, int n_threads = 1) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]. 
 {
     using IdxVector = std::vector<Int>;
+    using IntSparseColumn = oineus::SparseColumn<Int>;
+    using MatrixData = std::vector<IntSparseColumn>;
     using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
     using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
     using Filtration = oineus::Filtration<Int, Real, Int>;
@@ -260,6 +262,18 @@ decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list 
     params.n_threads = n_threads;
     
     ImKerReduced IKR = oineus::reduce_im_ker<Int, Real>(K, L, IdMapping, params);
+
+    MatrixData R_ker = IKR.get_R_ker();
+
+    std::cout<< "===============" << std::endl;
+    std::cout << "R_ker is:" << std::endl;
+    for (int i = 0; i < R_ker.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < R_ker[i].size(); j++) {
+            std::cout << R_ker[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    }
 
     return IKR;
 }
