@@ -35,7 +35,6 @@ namespace oineus {
                 L = L_;
                 IdMapping = IdMapping_;
                 params = params_;
-                //ReduceAll();
             }
 
 			FilteredPair(const Filtration<Int_, Real_, int> K_, const Filtration<Int_, Real_, int> L_, const Params params_) { // If the ids of simplices in L_ agree with the ids of simplices in K_ we don't need an IdMapping as it it just the identity
@@ -68,16 +67,9 @@ namespace oineus {
 			VRUDecomp Ker;
 			Dgms ImDiagrams;
 			Dgms KerDiagrams;
-			int top_dim;
-
-			void GenerateImDiagrams() {
-				
-			}
-
-			void GenereateKerDiagrams() {
-
-			}
-			
+			int max_dim;
+			std::vector<int> L_K_sorted_to_id;
+		
 
 		public: 
 
@@ -85,8 +77,17 @@ namespace oineus {
 				F (F_),
 				G (G_),
 				Im (Im_),
-				Ker (Ker_)
-			{ }
+				Ker (Ker_) { 
+		
+			}
+
+			void GenerateImDiagrams() {//Generate the image diagrams
+				 std::vector<Dgms> ImDiagrams (max_dim);
+			}
+
+			void GenereateKerDiagrams() {//Generate the kernel diagrams
+
+			}
 
 			MatrixData get_D_f() {
 				return F.get_D();
@@ -134,6 +135,10 @@ namespace oineus {
 
 			MatrixData get_R_ker() {
 				return Ker.get_R();
+			}
+
+			void set_max_dim(int d) {
+				max_dim = d;
 			}
 	};
 
@@ -195,14 +200,14 @@ namespace oineus {
 			}
 		}
 		new_order.clear(); //We have already got everything in the correct order, so have an empty new order to not change anything
-		MatrixData D_ker(V_im);//, new_order, to_del);
+		MatrixData D_ker(V_im);//
 		VRUDecomp Ker(D_ker);
 		Ker.reduce_parallel_rvu(params);
 
-		ImKerReduced<Int, Real> IKR(F, G, Im, Ker);
+		ImKerReduced<Int, Real> IKR(F, G, Im, Ker);//, IdMapping);
 
-		Diagram image_diagram;
-		Diagram kernel_diagram;
+		IKR.GenerateImDiagrams();
+		IKR.GenereateKerDiagrams();
 
 		return  IKR;
 	}
@@ -301,7 +306,7 @@ namespace oineus {
 			if (!V_g[i].empty()) {
 				for (int j = 0; j < V_g[i].size(); j++) {
 					for (int k = 0; k < D_g[IdMapping[V_g[i][j]]].size(); k++) {
-						quasi_sum[D_g[IdMapping[V_g[i][j]]][k]] += 1;
+						quasi_sum[D_g[IdMapping[V_g[i][j]]][k]] += 1;//check if a column in V_g represents a cycle
 					}
 				}
 			}
