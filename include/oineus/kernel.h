@@ -61,28 +61,38 @@ namespace oineus {
 
 		private:
 
-			VRUDecomp F;
-			VRUDecomp G;
-			VRUDecomp Im;
-			VRUDecomp Ker;
-			Dgms ImDiagrams;
-			Dgms KerDiagrams;
-			int max_dim;
-			std::vector<int> L_K_sorted_to_id;
+			VRUDecomp F; //the reduced triple for F0
+			VRUDecomp G; //reduced triple for G
+			VRUDecomp Im; //reduced image triple
+			VRUDecomp Ker; //reduced kernel triple
+			Dgms ImDiagrams; //vector of image diagrams, one in each dimension poissble (these may be empty)
+			Dgms KerDiagrams; //vector of kernel diagrams, one in each dimension poissble (these may be empty)
+			int max_dim; //the maximum dimension of a cell
+			std::vector<bool> in_subcomplex; //track if a cell is in the subcomplex L
+			int number_cells; //number of cells in K
 		
 
 		public: 
 
-			ImKerReduced(VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_) : 
+			ImKerReduced(VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, std::vector<int> IdMapping) : 
 				F (F_),
 				G (G_),
 				Im (Im_),
 				Ker (Ker_) { 
-		
+					int number_cells = F.get_D().size();
+					std::vector<bool> in_subcomplex(number_cells, false);
+					for (int i = 0; i < IdMapping.size(); i++) {
+						in_subcomplex[IdMapping[i]] = true;
+					}
 			}
 
 			void GenerateImDiagrams() {//Generate the image diagrams
 				 std::vector<Dgms> ImDiagrams (max_dim);
+				 std::vector<bool> open_point (in_subcomplex);
+				 for (int i = 0; i < number_cells; i++) {
+
+				 }
+
 			}
 
 			void GenereateKerDiagrams() {//Generate the kernel diagrams
@@ -204,7 +214,7 @@ namespace oineus {
 		VRUDecomp Ker(D_ker);
 		Ker.reduce_parallel_rvu(params);
 
-		ImKerReduced<Int, Real> IKR(F, G, Im, Ker);//, IdMapping);
+		ImKerReduced<Int, Real> IKR(F, G, Im, Ker, IdMapping);
 
 		IKR.GenerateImDiagrams();
 		IKR.GenereateKerDiagrams();
@@ -231,14 +241,19 @@ namespace oineus {
 			VRUDecomp G;
 			VRUDecomp Cok;
 			Dgms CokDiagrams;
+			std::vector<bool> in_subcomplex;
 
 		public: 
 
-			CokReduced(VRUDecomp F_, VRUDecomp G_, VRUDecomp Cok_) : 
+			CokReduced(VRUDecomp F_, VRUDecomp G_, VRUDecomp Cok_, std::vector<int> IdMapping) : 
 				F (F_),
 				G (G_),
-				Cok (Cok_)
-			{ }
+				Cok (Cok_) { 
+				std::vector<bool> in_subcomplex(F.get_D().size(), false);
+					for (int i = 0; i < IdMapping.size(); i++) {
+						in_subcomplex[IdMapping[i]] = true;
+					}
+			}
 
 			MatrixData get_D_f() {
 				return F.get_D();
@@ -324,7 +339,7 @@ namespace oineus {
 		VRUDecomp Cok(D_cok);
 		Cok.reduce_parallel_rvu(params);
 
-		CokReduced<Int, Real> CkR(F, G, Cok);
+		CokReduced<Int, Real> CkR(F, G, Cok, IdMapping);
 		return  CkR;
 		
 	}
