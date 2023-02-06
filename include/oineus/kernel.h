@@ -69,7 +69,8 @@ namespace oineus {
 			Dgms KerDiagrams; //vector of kernel diagrams, one in each dimension poissble (these may be empty)
 			int max_dim; //the maximum dimension of a cell
 			std::vector<bool> in_subcomplex; //track if a cell is in the subcomplex L
-			int number_cells; //number of cells in K
+			int number_cells_K; //number of cells in K
+			int number_cells_L;
 		
 
 		public: 
@@ -79,19 +80,78 @@ namespace oineus {
 				G (G_),
 				Im (Im_),
 				Ker (Ker_) { 
-					int number_cells = F.get_D().size();
-					std::vector<bool> in_subcomplex(number_cells, false);
+					int number_cells_K = F.get_D().size();
+					int number_cells_L = G.get_D().size();
+					std::vector<bool> in_subcomplex(number_cells_K, false);
 					for (int i = 0; i < IdMapping.size(); i++) {
 						in_subcomplex[IdMapping[i]] = true;
 					}
 			}
 
 			void GenerateImDiagrams() {//Generate the image diagrams
-				 std::vector<Dgms> ImDiagrams (max_dim);
-				 std::vector<bool> open_point (in_subcomplex);
-				 for (int i = 0; i < number_cells; i++) {
+				std::vector<Dgms> ImDiagrams (max_dim);
+				std::vector<bool> open_point (number_cells_K);
+				
+				//Get the matrices we need to check the conditions
+				MatrixData R_f = F.get_R();
+				MatrixData D_f = F.get_D();
+				MatrixData V_f = F.get_V();
+				MatrixData R_g = G.get_R();
+				MatrixData D_g = G.get_D();
+				MatrixData V_g = G.get_V();
+				MatrixData R_ker = Ker.get_R();
 
-				 }
+				for (int i = 0; i < number_cells_K; i++) {
+					//Check if a cell gives birth to a class, need to check if it is negative in R_f
+					if (!in_subcomplex[i] && !R_f[i].empty()) { //cell needs to be in L, and needs to not be empty in R_f
+						std::vector<int> quasi_sum (number_cells_K, 0);
+						for (int j = 0; j < V_f[i].size(); j++) {
+							for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
+								quasi_sum[D_f[V_f[i][j]][k]] += 1;//get the boundary in K
+							}
+						}
+						bool cycle = true;
+						for (int k = 0; k < quasi_sum.size(); k++) {
+							if (quasi_sum[k]%2 !=0) { //check if represents a cycle in K
+								cycle = false;
+								break;
+							}
+						}
+						if (!cycle && R_f[i].back() < number_cells_L) { // check if lowest entry corresponds to a cell in L
+							open_point[i] = true;
+						}
+					}
+					//Now check if cell kills a class, in which case find the paired cell, need to check if it is positive in R_f
+					else if (in_subcomplex[i] && R_g[i].empty()) {
+						std::vector<int> quasi_sum (number_cells_K, 0);
+						for (int j = 0; j < V_f[i].size(); j++) {
+							for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
+								quasi_sum[D_f[V_f[i][j]][k]] += 1;//get the boundary in K
+							}
+						}
+						bool cycle = true;
+						for (int k = 0; k < quasi_sum.size(); k++) {
+							if (quasi_sum[k]%2 !=0) { //check if represents a cycle in K
+								cycle = false;
+								break;
+							}
+						}
+						if (cycle && !R_g[i].empty()) { //if it is a cycle, we check for negative in R_g, which requires R_g[i] to be not empty
+							//next check if cycle of not in L
+							std::vector<int> quasi_sum (number_cells_L, 0);
+							for (int j = 0; j < V_g[i].size(); j++) {
+								for (int k = 0; k < D_g[V_g[i][j]].size(); k++) {
+									quasi_sum[D_g[V_g[i][j]][k]] += 1;//get the boundary in K
+								}
+							}
+							for (int k = 0; k < quasi_sum.size(); k++) {
+								if (quasi_sum[k]%2 != 0) {
+									
+								}
+							}
+						}
+					}
+				}
 
 			}
 
@@ -169,8 +229,9 @@ namespace oineus {
 		F.reduce_parallel_rvu(params);
 		VRUDecomp G(L.boundary_matrix_full());
 		G.reduce_parallel_rvu(params);
-
-		int n_simps_K =  K.simplices().size(); // number of simplices in K
+		
+		FiltrationSimplexVector K_simps = K.simplices(); //simplices of L as we will need to work with them to get their order
+		int n_simps_K =  K_simps.size(); // number of simplices in K
 		FiltrationSimplexVector L_simps = L.simplices(); //simplices of L as we will need to work with them to get their order
 		int n_simps_L =  L_simps.size(); // number of simplices in L
 					
@@ -326,7 +387,7 @@ namespace oineus {
 				}
 			}
 			for (int j = 0; j < quasi_sum.size(); j++) {
-				if (quasi_sum[i]%2 !=0) {
+				if (quasi_sum[j]%2 !=0) {
 					replace = false;
 					break;
 				}
