@@ -53,6 +53,7 @@ public:
     auto dim_first() const { return dim_first_; }
     auto dim_last() const { return dim_last_; }
 
+    Real get_simplex_value(int i) { return simplices_[i].get_value(); }
     ValueLocation cvl(size_t simplex_idx) const { return simplices()[simplex_idx].critical_value_location_; }
 
     size_t size_in_dimension(dim_type d) const

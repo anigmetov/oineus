@@ -112,6 +112,10 @@ struct Simplex {
         Int get_sorted_id() {
             return sorted_id_;
         }
+
+        Real get_value() {
+            return value_;
+        }
 };
 
 template<typename I, typename R, typename L>

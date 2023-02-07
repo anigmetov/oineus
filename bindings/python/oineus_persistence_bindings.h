@@ -528,7 +528,7 @@ void init_oineus(py::module& m, std::string suffix)
             .def(py::init<const oineus::Filtration<Int, Real, Int>, const oineus::Filtration<Int, Real, Int>, const oineus::Params>());
 
     py::class_<ImKerRed>(m, im_ker_reduced_class_name.c_str())
-            .def(py::init<VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>>());
+            .def(py::init<VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<bool>, std::vector<int>, std::vector<int>>());
 
     py::class_<CokRed>(m, cok_reduced_class_name.c_str())
             .def(py::init<VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>>());
