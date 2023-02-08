@@ -83,8 +83,8 @@ namespace oineus {
 				Ker (Ker_),
 				OrderChange (OrderChange_),
 				InSubcomplex (InSubcomplex_) { 
-					int number_cells_K = F.get_D().size();
-					int number_cells_L = G.get_D().size();
+					number_cells_K = F_.get_D().size();
+					number_cells_L = G_.get_D().size();
 					/*std::vector<bool> InSubcomplex(number_cells_K, false);
 					for (int i = 0; i < IdMapping.size(); i++) {
 						InSubcomplex[IdMapping[i]] = true;
@@ -104,6 +104,8 @@ namespace oineus {
 				MatrixData V_g = G.get_V();
 				MatrixData R_ker = Ker.get_R();
 
+
+				std::cout << "Made it into GenerateImDiagrams" << std::endl;
 				for (int i = 0; i < number_cells_K; i++) {
 					//TODO: should this be a serpate test?
 					//Check if a cell gives birth to a class, need to check if it is negative in R_f
@@ -124,9 +126,12 @@ namespace oineus {
 						if (!cycle && R_f[i].back() < number_cells_L) { // check if lowest entry corresponds to a cell in L
 							open_point[i] = true;
 						}
+						std::cout << "checked if cell " << i << " gave birth." << std::endl;
 					}
 					//Now check if cell kills a class, in which case find the paired cell, need to check if it is positive in R_f
 					else if (InSubcomplex[i] && R_g[i].empty()) {
+						std::cout << "now check if cell " << i << " kills." << std::endl;
+
 						std::vector<int> quasi_sum (number_cells_K, 0);
 						for (int j = 0; j < V_f[i].size(); j++) {
 							for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
@@ -150,7 +155,7 @@ namespace oineus {
 							}
 							for (int k = 0; k < quasi_sum.size(); k++) {
 								if (quasi_sum[k]%2 != 0) {
-									int birth_id ;
+									//int birth_id;
 								}
 							}
 						}
@@ -233,9 +238,14 @@ namespace oineus {
 
 		VRUDecomp F(K.boundary_matrix_full());
 		F.reduce_parallel_rvu(params);
+		std::cout << "F sanity check." << std::endl;
+		F.sanity_check();
+
 		VRUDecomp G(L.boundary_matrix_full());
 		G.reduce_parallel_rvu(params);
-		
+		std::cout << "G sanity check." << std::endl;
+		G.sanity_check();
+
 		FiltrationSimplexVector K_simps = K.simplices(); //simplices of L as we will need to work with them to get their order
 		int n_cells_K =  K_simps.size(); // number of simplices in K
 		FiltrationSimplexVector L_simps = L.simplices(); //simplices of L as we will need to work with them to get their order
@@ -245,29 +255,50 @@ namespace oineus {
 		for (int i = 0; i < IdMapping.size(); i++) {
 			InSubcomplex[IdMapping[i]] = true;
 		}
+
+		std::cout << "InSubcomplex has size " << InSubcomplex.size() << std::endl;
 					
 		std::vector<int> to_del;
 		std::vector<int> NewOrder (n_cells_K);
 		std::iota (NewOrder.begin(), NewOrder.end(), 0);
+
+
 		std::vector<int> MapKtoL(n_cells_L);
 		for (int i = 0; i < n_cells_L; i++) {
 			MapKtoL[IdMapping[i]] = i;	
 		}
 
+		std::cout << "Current order is: ";
+		for (int i = 0; i < NewOrder.size(); i++) {
+			std::cout << NewOrder[i] << " ";
+ 		}
+		std::cout << std::endl;
+
 		std::sort(NewOrder.begin(), NewOrder.end(), [&](int i, int j) {
 			if (InSubcomplex[i] && InSubcomplex[j]) {
-				return L.get_simplex_value(i);
+				return L.get_simplex_value(i) < L.get_simplex_value(j);
+			} else if (InSubcomplex[i] && !InSubcomplex[j]) {
+				return true;
+			} else if (!InSubcomplex[i] && InSubcomplex[j]) {
+				return false;
+			} else {
+				return K.get_simplex_value(i) < K.get_simplex_value(j);
 			}
 		});
 
-		for (int i = 0; i < n_cells_L; i++) {
-			NewOrder[IdMapping[i]] = L_simps[i].get_sorted_id();
-		}
+		std::cout << "New order is: ";
+		for (int i = 0; i < NewOrder.size(); i++) {
+			std::cout << NewOrder[i] << " ";
+ 		}
+		std::cout << std::endl;
+	
 
 		MatrixData D_im(G.d_data);
 
 		VRUDecomp Im(D_im);
 		Im.reduce_parallel_rvu(params);
+		std::cout << "Im sanity check." << std::endl;
+		Im.sanity_check();
 
 		//NewOrder.clear();
 		MatrixData V_im = Im.get_V();
@@ -291,15 +322,19 @@ namespace oineus {
 				to_del.push_back(i);
 			}
 		}
+
 		//NewOrder.clear(); //We have already got everything in the correct order, so have an empty new order to not change anything
+
 		MatrixData D_ker(V_im);//
 		VRUDecomp Ker(D_ker);
 		Ker.reduce_parallel_rvu(params);
+		std::cout << "Ker sanity check." << std::endl;
+		Ker.sanity_check();
 
 		ImKerReduced<Int, Real> IKR(F, G, Im, Ker, InSubcomplex, IdMapping, NewOrder);
 
 		IKR.GenerateImDiagrams();
-		IKR.GenereateKerDiagrams();
+		//IKR.GenereateKerDiagrams();
 
 		return  IKR;
 	}

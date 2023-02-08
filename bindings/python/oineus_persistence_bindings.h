@@ -263,6 +263,18 @@ decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list 
     
     ImKerReduced IKR = oineus::reduce_im_ker<Int, Real>(K, L, IdMapping, params);
 
+    MatrixData D_f = IKR.get_D_f();
+
+    std::cout<< "===============" << std::endl;
+    std::cout << "D_f is:" << std::endl;
+    for (int i = 0; i < D_f.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < D_f[i].size(); j++) {
+            std::cout << D_f[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    }
+
     MatrixData R_ker = IKR.get_R_ker();
 
     std::cout<< "===============" << std::endl;
