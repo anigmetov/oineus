@@ -61,6 +61,8 @@ namespace oineus {
 
 		private:
 
+			Filtration<Int_, Real_, Int_> K;
+			Filtration<Int_, Real_, Int_> L;
 			VRUDecomp F; //the reduced triple for F0
 			VRUDecomp G; //reduced triple for G
 			VRUDecomp Im; //reduced image triple
@@ -70,29 +72,34 @@ namespace oineus {
 			int max_dim; //the maximum dimension of a cell
 			std::vector<bool> InSubcomplex; //track if a cell is in the subcomplex L
 			int number_cells_K; //number of cells in K
-			int number_cells_L;
-			std::vector<int> OrderChange;
+			int number_cells_L; //number of cells in L
+			std::vector<int> OrderChange; //OrderChange[i] is the (unsorted) id in K of the ith cell in the filtration.
 		
 
 		public: 
 
-			ImKerReduced(VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, std::vector<bool> InSubcomplex_, std::vector<int> IdMapping, std::vector<int> OrderChange_) : 
+			ImKerReduced(Filtration<Int_, Real_, Int_> K_, Filtration<Int_, Real_, Int_> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, std::vector<bool> InSubcomplex_, std::vector<int> IdMapping, std::vector<int> OrderChange_) : 
+				K (K_),
+				L (L_),
 				F (F_),
 				G (G_),
 				Im (Im_),
 				Ker (Ker_),
 				OrderChange (OrderChange_),
 				InSubcomplex (InSubcomplex_) { 
-					number_cells_K = F_.get_D().size();
-					number_cells_L = G_.get_D().size();
-					/*std::vector<bool> InSubcomplex(number_cells_K, false);
-					for (int i = 0; i < IdMapping.size(); i++) {
-						InSubcomplex[IdMapping[i]] = true;
-					}*/
+					number_cells_K = K.boundary_matrix_full().size();
+					number_cells_L = L.boundary_matrix_full().size();
 			}
 
-			void GenerateImDiagrams() {//Generate the image diagrams
-				std::vector<Dgms> ImDiagrams (max_dim);
+			void GenereateImDiagrams() {//Generate the kernel diagrams
+
+			}
+
+			void GenerateKerDiagrams() {//Generate the image diagrams
+			std::cout << "Starting to extract the kernel diagrams." << std::endl;
+				for (int i = 0; i < max_dim; i++){
+					ImDiagrams.push_back(Dgm());
+				}
 				std::vector<bool> open_point (number_cells_K);
 				
 				//Get the matrices we need to check the conditions
@@ -125,6 +132,7 @@ namespace oineus {
 						}
 						if (!cycle && R_f[i].back() < number_cells_L) { // check if lowest entry corresponds to a cell in L
 							open_point[i] = true;
+							std::cout << "cell " << i << " gave birth." << std::endl;
 						}
 						std::cout << "checked if cell " << i << " gave birth." << std::endl;
 					}
@@ -155,18 +163,29 @@ namespace oineus {
 							}
 							for (int k = 0; k < quasi_sum.size(); k++) {
 								if (quasi_sum[k]%2 != 0) {
-									//int birth_id;
+									int birth_id = R_ker[i].back();
+									int dim = K.dim_by_id(i)-1; 
+									std::cout << "This represents a point in dimension " << dim << std::endl;
+									ImDiagrams[dim].push_back(Point(K.get_simplex_value(OrderChange[birth_id]), K.get_simplex_value(OrderChange[i])));
+									open_point[birth_id] = false;
+									std::cout << "Have something that kills a class, and it is in dimension " << dim << std::endl;
 								}
 							}
 						}
 					}
 				}
 
+				for (int i = 0; i < open_point.size(); i++) {
+					if (open_point[i]) {
+						int dim = K.dim_by_id(OrderChange[i])-1;
+						std::cout << "The cell " << OrderChange[i] << " is an open point in dimension " << dim << " so we added a point (" << K.get_simplex_value(i) <<", " << std::numeric_limits<double>::infinity() << ")." << std::endl;
+						ImDiagrams[dim].push_back(Point(K.get_simplex_value(OrderChange[i]), std::numeric_limits<double>::infinity()));
+					}
+				}
+
 			}
 
-			void GenereateKerDiagrams() {//Generate the kernel diagrams
-
-			}
+			
 
 			MatrixData get_D_f() {
 				return F.get_D();
@@ -273,15 +292,22 @@ namespace oineus {
 			std::cout << NewOrder[i] << " ";
  		}
 		std::cout << std::endl;
+		std::cout << "The sort seems to be wrong. Let us have a clsoer look." << std::endl; //FIXME: the sorting is not correct, 1cells are begin placed before 0cells with the same value. 
+
 
 		std::sort(NewOrder.begin(), NewOrder.end(), [&](int i, int j) {
+			std::cout << "Comparing " << i << " and " << j << std::endl;
 			if (InSubcomplex[i] && InSubcomplex[j]) {
+				std::cout << "Both are in the sub complex, so sorting by their values in L: " << std::endl;
 				return L.get_simplex_value(i) < L.get_simplex_value(j);
 			} else if (InSubcomplex[i] && !InSubcomplex[j]) {
+				std::cout << i << " is in the subcomplex but " << j << "is not" << std::endl;
 				return true;
 			} else if (!InSubcomplex[i] && InSubcomplex[j]) {
+				std::cout << i <<" is not in the subcomplex but " << j << "is"<< std::endl;
 				return false;
 			} else {
+				std::cout << "Neither are in the sub complex, so sorting by their values in K" << std::endl;
 				return K.get_simplex_value(i) < K.get_simplex_value(j);
 			}
 		});
@@ -331,10 +357,10 @@ namespace oineus {
 		std::cout << "Ker sanity check." << std::endl;
 		Ker.sanity_check();
 
-		ImKerReduced<Int, Real> IKR(F, G, Im, Ker, InSubcomplex, IdMapping, NewOrder);
+		ImKerReduced<Int, Real> IKR(K, L, F, G, Im, Ker, InSubcomplex, IdMapping, NewOrder);
 
-		IKR.GenerateImDiagrams();
-		//IKR.GenereateKerDiagrams();
+		IKR.GenerateKerDiagrams();
+		//IKR.GenereateImDiagrams();
 
 		return  IKR;
 	}
