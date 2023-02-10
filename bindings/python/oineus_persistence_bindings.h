@@ -142,6 +142,7 @@ list_to_filtration(py::list data) //take a list of simplices and turn it into a 
             }
             count += 1;
         }
+        std::cout << "parsed the following data. id: " << id << " val: " << val << std::endl;
         FiltrationSimplex simp_i(id, boundary, val);
         FSV.push_back(simp_i);
     }
@@ -253,8 +254,7 @@ decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list 
     for (int i = 0; i < n_L; i++){
         std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
     }
-
-    
+	
     oineus::Params params;
 
     params.sort_dgms = false;

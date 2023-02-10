@@ -140,6 +140,10 @@ public:
     FiltrationSimplexVector&  simplices() { return simplices_; }
     FiltrationSimplexVector   simplices_copy() const { return simplices_; }
 
+    int get_sorted_id(int i) {
+        return id_to_sorted_id_[i];
+    }
+
 //        decltype(auto) vertices_to_sorted_id() const { return vertices_to_sorted_id_; }
 //        decltype(auto) id_to_sorted_id() const { return id_to_sorted_id_; }
 //        decltype(auto) sorted_id_to_value() const { return sorted_id_to_value_; }
@@ -240,7 +244,7 @@ private:
 template<typename I, typename R, typename L>
 std::ostream& operator<<(std::ostream& out, const Filtration<I, R, L>& fil)
 {
-    out << "Filtration(size = " << fil.size() << "[" << "\n";
+    out << "Filtration(size = " << fil.size() << ")[" << "\n";
     dim_type d = 0;
     for(size_t idx = 0; idx < fil.size(); ++idx) {
         if (idx == fil.dim_last(d))
