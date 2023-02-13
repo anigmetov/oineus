@@ -320,13 +320,8 @@ namespace oineus {
 			std::cout << NewOrder[i] << " ";
  		}
 		std::cout << std::endl;
-		std::cout << "The sort seems to be wrong. Let us have a closer look." << std::endl; //FIXME: the sorting is not correct, 1cells are begin placed before 0cells with the same value. This is due to Arnur working with the sorted IDs, but I really want to work with the actual IDs, because I need the matching between the sub-complex and the whole complex.
+		std::cout << "The sort seems to be wrong. Let us have a closer look." << std::endl; 
 
-		/*std::cout << "Check integrity of K." << std::endl;
-
-		for (int i = 0; i < number_cells_K; i++) {
-			std::cout << "cell " << i << " has value " << K.get_simplex_value(i) << std::endl;
-		}*/
 		std::cout << "Need to understand what happens when the cells are sorted. Let us start with K." << std::endl;
 		for (int i = 0; i < K.size(); i++) {
 			std::cout << "cell " << i << " has sorted id " << K.get_sorted_id(i) << std::endl;
@@ -374,7 +369,14 @@ namespace oineus {
 		std::cout << std::endl;
 	
 
-		MatrixData D_im(F.d_data);
+		MatrixData D_im;
+
+		for (int i = 0; i < F.d_data; i++) {
+			std::vector<int> new_col_i;
+			if (!F.d_data[i].empty()) {
+				new_col_i.push_back(NewOrder)
+			}
+		}
 
 		VRUDecomp Im(D_im);
 		Im.reduce_parallel_rvu(params);
