@@ -264,6 +264,8 @@ decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list 
     ImKerReduced IKR = oineus::reduce_im_ker<Int, Real>(K, L, IdMapping, params);
 
     MatrixData D_f = IKR.get_D_f();
+    MatrixData V_f = IKR.get_V_f();
+    MatrixData R_f = IKR.get_R_f();
 
     std::cout<< "===============" << std::endl;
     std::cout << "D_f is:" << std::endl;
@@ -271,6 +273,52 @@ decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list 
         std::cout << "[ ";
         for (int j = 0; j < D_f[i].size(); j++) {
             std::cout << D_f[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    }
+     std::cout << "R_f is:" << std::endl;
+    for (int i = 0; i < R_f.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < R_f[i].size(); j++) {
+            std::cout << R_f[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    }
+     std::cout << "V_f is:" << std::endl;
+    for (int i = 0; i < V_f.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < V_f[i].size(); j++) {
+            std::cout << V_f[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    }
+
+    MatrixData D_g = IKR.get_D_g();
+    MatrixData V_g = IKR.get_V_g();
+    MatrixData R_g = IKR.get_R_g();
+
+    std::cout<< "===============" << std::endl;
+    std::cout << "D_g is:" << std::endl;
+    for (int i = 0; i < D_g.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < D_g[i].size(); j++) {
+            std::cout << D_g[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    }
+     std::cout << "R_g is:" << std::endl;
+    for (int i = 0; i < R_g.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < R_g[i].size(); j++) {
+            std::cout << R_g[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    }
+     std::cout << "V_g is:" << std::endl;
+    for (int i = 0; i < V_g.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < V_g[i].size(); j++) {
+            std::cout << V_g[i][j] << " ";
         }
         std::cout << "]" << std::endl;
     }

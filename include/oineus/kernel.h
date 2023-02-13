@@ -112,12 +112,16 @@ namespace oineus {
 				MatrixData D_g = G.get_D();
 				MatrixData V_g = G.get_V();
 				MatrixData R_ker = Ker.get_R();
+				MatrixData R_im = Im.get_R();
+				
 
 
 				std::cout << "Made it into GenerateImDiagrams" << std::endl;
 				for (int i = 0; i < number_cells_K; i++) {
 					//TODO: should this be a serpate test?
 					//Check if a cell gives birth to a class, need to check if it is negative in R_f
+					std::cout << "looking at cell " << i << " in the sorted_id ordering." << std::endl;
+
 					if (!InSubcomplex[i] && !R_f[i].empty()) { //cell needs to be in L, and needs to not be empty in R_f
 						std::vector<int> quasi_sum (number_cells_K, 0);
 						for (int j = 0; j < V_f[i].size(); j++) {
@@ -132,7 +136,8 @@ namespace oineus {
 								break;
 							}
 						}
-						if (!cycle && R_f[i].back() < number_cells_L) { // check if lowest entry corresponds to a cell in L
+						std::cout << R_im << std::endl;
+						if (!cycle && InSubcomplex[R_im[i].back()]) { // check if lowest entry corresponds to a cell in L
 							open_point[i] = true;
 							std::cout << "cell " << OrderChange[i] << " gave birth." << std::endl;
 						}
@@ -274,29 +279,39 @@ namespace oineus {
 		
 
 		FiltrationSimplexVector K_simps = K.simplices(); //simplices of L as we will need to work with them to get their order
-		int n_cells_K =  K_simps.size(); // number of simplices in K
+		int number_cells_K =  K_simps.size(); // number of simplices in K
 		FiltrationSimplexVector L_simps = L.simplices(); //simplices of L as we will need to work with them to get their order
-		int n_cells_L =  L_simps.size(); // number of simplices in L
+		int number_cells_L =  L_simps.size(); // number of simplices in L
 
 		/*std::cout << "Need to check the values in K:" << std::endl;
-		for (int i = 0; i < n_cells_K; i++){
+		for (int i = 0; i < number_cells_K; i++){
 			std::cout << "Cell " << i << " has value " << K.get_simplex_value(i) << std::endl;
 		}*/
 
-		std::vector<bool> InSubcomplex(n_cells_K, false); //We need to keep track of which cells of K are in L
+		std::vector<bool> InSubcomplex(number_cells_K, false); //We need to keep track of which cells of K are in L, and we should do this with the sorted ids as it will make life easier later.
+		std::vector<int> sorted_id_to_id(number_cells_K);
+		for (int i = 0; i < number_cells_K; i++) {
+			sorted_id_to_id[K.get_sorted_id(i)] = i;
+		}
+
+		std::cout << "The cells are in the following sorted order:";
+		for (int i = 0; i < number_cells_K; i++) {
+			std::cout << " " << sorted_id_to_id[i] ;
+		}
+		std::cout << std::endl;
 		for (int i = 0; i < IdMap.size(); i++) {
-			InSubcomplex[IdMap[i]] = true;
+			InSubcomplex[IdMap[sorted_id_to_id[i]]] = true;
 		}
 
 		std::cout << "InSubcomplex has size " << InSubcomplex.size() << std::endl;
 					
 		std::vector<int> to_del;
-		std::vector<int> NewOrder (n_cells_K);
+		std::vector<int> NewOrder (number_cells_K);
 		std::iota (NewOrder.begin(), NewOrder.end(), 0);
 
 
-		std::vector<int> MapKtoL(n_cells_L);
-		for (int i = 0; i < n_cells_L; i++) {
+		std::vector<int> MapKtoL(number_cells_L);
+		for (int i = 0; i < number_cells_L; i++) {
 			MapKtoL[IdMap[i]] = i;	
 		}
 
@@ -309,7 +324,7 @@ namespace oineus {
 
 		/*std::cout << "Check integrity of K." << std::endl;
 
-		for (int i = 0; i < n_cells_K; i++) {
+		for (int i = 0; i < number_cells_K; i++) {
 			std::cout << "cell " << i << " has value " << K.get_simplex_value(i) << std::endl;
 		}*/
 		std::cout << "Need to understand what happens when the cells are sorted. Let us start with K." << std::endl;
@@ -359,7 +374,7 @@ namespace oineus {
 		std::cout << std::endl;
 	
 
-		MatrixData D_im(G.d_data);
+		MatrixData D_im(F.d_data);
 
 		VRUDecomp Im(D_im);
 		Im.reduce_parallel_rvu(params);
@@ -368,9 +383,9 @@ namespace oineus {
 
 		//NewOrder.clear();
 		MatrixData V_im = Im.get_V();
-		for (int i = 0; i < V_im[0].size(); i++) {
+		for (int i = 0; i < V_im.size(); i++) {
 			bool del = true;
-			std::vector<int> quasi_sum (n_cells_K, 0);
+			std::vector<int> quasi_sum (number_cells_K, 0);
 			if (!V_im[i].empty()) {
 				for (int j = 0; j < V_im[i].size(); j++) {
 					for (int k = 0; k < D_im[V_im[i][j]].size(); k++) {
@@ -384,14 +399,34 @@ namespace oineus {
 					break;
 				}
 			}
-			if (del) {
-				to_del.push_back(i);
-			}
+			to_del.push_back(del);
+			
 		}
 
-		//NewOrder.clear(); //We have already got everything in the correct order, so have an empty new order to not change anything
+		std::cout << "=================" << std::endl << "to_del is: " << std::endl;
+		for (int i = 0; i < to_del.size(); i++) {
+			std::cout << to_del[i] << std::endl;
+		}
 
-		MatrixData D_ker(V_im);//
+		MatrixData D_ker;
+
+		for (int i = 0; i < to_del.size(); i++) {
+			if (!to_del[i]) {
+				D_ker.push_back(V_im[i]);
+			}
+
+		}
+		std::cout<< "===============" << std::endl;
+    	std::cout << "D_ker is:" << std::endl;
+    	for (int i = 0; i < D_ker.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < D_ker[i].size(); j++) {
+            std::cout << D_ker[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    	}
+		std::cout<< "===============" << std::endl;
+
 		VRUDecomp Ker(D_ker);
 		Ker.reduce_parallel_rvu(params);
 		std::cout << "Ker sanity check." << std::endl;
@@ -491,16 +526,16 @@ namespace oineus {
 		VRUDecomp G(L.boundary_matrix_full());
 		G.reduce_parallel_rvu(params);
 
-		int n_cells_K =  K.simplices().size(); // number of simplices in K
+		int number_cells_K =  K.simplices().size(); // number of simplices in K
 		FiltrationSimplexVector L_simps = L.simplices(); //simplices of L as we will need to work with them to get their order
-		int n_cells_L =  L_simps.size(); // number of simplices in L
+		int number_cells_L =  L_simps.size(); // number of simplices in L
 					
 		MatrixData D_cok(F.get_D());
 		MatrixData D_g(G.get_D());
 		MatrixData V_g(G.get_V());
 		for (int i = 0; i < V_g.size(); i++) {
 			bool replace = true;
-			std::vector<int> quasi_sum (n_cells_L, 0);
+			std::vector<int> quasi_sum (number_cells_L, 0);
 			if (!V_g[i].empty()) {
 				for (int j = 0; j < V_g[i].size(); j++) {
 					for (int k = 0; k < D_g[IdMap[V_g[i][j]]].size(); k++) {
