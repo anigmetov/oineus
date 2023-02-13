@@ -371,36 +371,50 @@ namespace oineus {
 
 		MatrixData D_im;
 
-		for (int i = 0; i < F.d_data; i++) {
+		for (int i = 0; i < F.d_data.size(); i++) {
 			std::vector<int> new_col_i;
-			if (!F.d_data[i].empty()) {
-				new_col_i.push_back(NewOrder)
+			std::cout << "Looking at column " << i << " which is currently [";
+			for (int j = 0; j < F.d_data[i].size(); j++) {
+				std::cout << " " << F.d_data[i][j];
 			}
+			std::cout << "], and now it is [" << std::endl;
+			if (!F.d_data[i].empty()) {
+				for (int j = 0; j < F.d_data[i].size(); j++) {
+					new_col_i.push_back(NewOrder[F.d_data[i][j]]);
+					std::cout << " " << NewOrder[F.d_data[i][j]];
+				}
+			}
+			std::cout << "]" << std::endl;
+			D_im.push_back(new_col_i);
 		}
 
 		VRUDecomp Im(D_im);
 		Im.reduce_parallel_rvu(params);
-		std::cout << "Im sanity check." << std::endl;
+		std::cout << "Im sanity check." << Im.get_D() << std::endl;
 		Im.sanity_check();
 
 		//NewOrder.clear();
-		MatrixData V_im = Im.get_V();
+		MatrixData V_im = Im.get_V();//FIXME: need to fix these quasi sums
 		for (int i = 0; i < V_im.size(); i++) {
 			bool del = true;
 			std::vector<int> quasi_sum (number_cells_K, 0);
 			if (!V_im[i].empty()) {
 				for (int j = 0; j < V_im[i].size(); j++) {
-					for (int k = 0; k < D_im[V_im[i][j]].size(); k++) {
-						quasi_sum[D_im[V_im[i][j]][k]] += 1;
-					}
+					quasi_sum[D_im[V_im[i][j]]] = quasi_sum[D_im[V_im[i][j]]] + 1;
+					std::cout << "need to add 1?" << quasi_sum[D_im[V_im[i][j]]] << std::endl;
 				}
 			}
 			for (int j = 0; j < quasi_sum.size(); j++) {
+						std::cout << "???" << quasi_sum[j] << std::endl;
+					}
+			for (int j = 0; j < quasi_sum.size(); j++) {
+				std::cout << quasi_sum[i];
 				if (quasi_sum[i]%2 !=0) {
 					del = false;
 					break;
 				}
 			}
+			std::cout << std::endl;
 			to_del.push_back(del);
 			
 		}
