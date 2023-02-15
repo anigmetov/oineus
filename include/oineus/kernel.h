@@ -120,13 +120,14 @@ namespace oineus {
 				for (int i = 0; i < number_cells_K; i++) {
 					//TODO: should this be a serpate test?
 					//Check if a cell gives birth to a class, need to check if it is negative in R_f
-					std::cout << "looking at cell " << i << " in the sorted_id ordering." << std::endl;
+					std::cout << "looking at cell " << i << " in the sorted_id ordering. Cell " << i << " has InSubcomplex " << InSubcomplex[i] << std::endl;;
 
 					if (!InSubcomplex[i] && !R_f[i].empty()) { //cell needs to be in L, and needs to not be empty in R_f
+						
 						std::vector<int> quasi_sum (number_cells_K, 0);
 						for (int j = 0; j < V_f[i].size(); j++) {
 							for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
-								quasi_sum[D_f[V_f[i][j]][k]] += 1;//get the boundary in K
+								quasi_sum[D_f[V_f[i][j]][k]]++;//get the boundary in K
 							}
 						}
 						bool cycle = true;
@@ -268,13 +269,13 @@ namespace oineus {
 		}*/
 		VRUDecomp F(K.boundary_matrix_full());
 		F.reduce_parallel_rvu(params);
-		std::cout << "F sanity check." << std::endl;
-		F.sanity_check();
+		//std::cout << "F sanity check." << std::endl;
+		//F.sanity_check();
 
 		VRUDecomp G(L.boundary_matrix_full());
 		G.reduce_parallel_rvu(params);
-		std::cout << "G sanity check." << std::endl;
-		G.sanity_check();
+		//std::cout << "G sanity check." << std::endl;
+		//G.sanity_check();
 
 		
 
@@ -306,18 +307,18 @@ namespace oineus {
 		std::cout << "InSubcomplex has size " << InSubcomplex.size() << std::endl;
 					
 		std::vector<int> to_del;
-		std::vector<int> NewOrder (number_cells_K);
-		std::iota (NewOrder.begin(), NewOrder.end(), 0);
+		std::vector<int> new_order (number_cells_K);
+		std::iota (new_order.begin(), new_order.end(), 0);
 
 
 		std::vector<int> MapKtoL(number_cells_L);
 		for (int i = 0; i < number_cells_L; i++) {
 			MapKtoL[IdMap[i]] = i;	
 		}
-
+	/*
 		std::cout << "Current order is: ";
-		for (int i = 0; i < NewOrder.size(); i++) {
-			std::cout << NewOrder[i] << " ";
+		for (int i = 0; i < new_order.size(); i++) {
+			std::cout << new_order[i] << " ";
  		}
 		std::cout << std::endl;
 		std::cout << "The sort seems to be wrong. Let us have a closer look." << std::endl; 
@@ -326,62 +327,75 @@ namespace oineus {
 		for (int i = 0; i < K.size(); i++) {
 			std::cout << "cell " << i << " has sorted id " << K.get_sorted_id(i) << std::endl;
 		}
-
-		std::sort(NewOrder.begin(), NewOrder.end(), [&](int i, int j) {
+*/
+		std::sort(new_order.begin(), new_order.end(), [&](int i, int j) {
 			std::cout << "Comparing " << i << " and " << j << std::endl;
 			if (InSubcomplex[i] && InSubcomplex[j]) {//FIXME: this needs to work with the sorted order. 
-				std::cout << "Both are in the sub complex, so we need to sort by their values in L: ";
+				std::cout << "Both are in the sub complex, so we need to sort by their dimensions and values in L: ";
+				int i_dim, j_dim;
 				double i_val, j_val;
 				for (int k = 0; k < IdMap.size(); k++) {
-					if (IdMap[k] == i) {i_val = L.value_by_sorted_id(k);}
-					if (IdMap[k] == j) {j_val = L.value_by_sorted_id(k);}
+					if (IdMap[k] == i) {
+						i_dim = L.dim_by_sorted_id(k);
+						i_val = L.value_by_sorted_id(k);
+					}
+					if (IdMap[k] == j) {
+						j_dim = L.dim_by_sorted_id(k);
+						j_val = L.value_by_sorted_id(k);
+					}
 				}
-				std::cout << i_val << " and " << j_val << std::endl;
-				return i_val < j_val;
+				std::cout << i_dim << " and " << j_dim << " vs " << i_val << " and " << j_val << std::endl;
+				if (i_dim == j_dim) {
+					return i_val < j_val;
+				} else {
+					return i_dim < j_dim;
+				}
 			} else if (InSubcomplex[i] && !InSubcomplex[j]) {
 				std::cout << i << " is in the subcomplex but " << j << " is not" << std::endl;
-				double i_val, j_val;
-				for (int k = 0; k < IdMap.size(); k++) {
-					if (IdMap[k] == i) {i_val = L.value_by_sorted_id(k);}
-				}
 				return true;
 			} else if (!InSubcomplex[i] && InSubcomplex[j]) {
-				double i_val, j_val;
-				for (int k = 0; k < IdMap.size(); k++) {
-					if (IdMap[k] == j) {j_val = L.value_by_sorted_id(k);}
-				}
 				std::cout << i <<" is not in the subcomplex but " << j << " is"<< std::endl;
 				return false;
 			} else {
-				std::cout << "Neither are in the sub complex, so sorting by their values in K: " << std::endl;
+				std::cout << "Neither are in the sub complex, so sorting by their dimensions and values in K: " << std::endl;
+				int i_dim, j_dim;
 				double i_val, j_val;
+				i_dim = K.dim_by_sorted_id(i);
 				i_val = K.value_by_sorted_id(i);
+				j_dim = K.dim_by_sorted_id(j);
 				j_val = K.value_by_sorted_id(j);
-				std::cout << i_val << " and " << j_val << "." << std::endl;
-				return i_val < j_val;
+				std::cout << i_dim << " and " << j_dim << " vs " << i_val << " and " << j_val << std::endl;
+				if (i_dim == j_dim) {
+					return i_val < j_val;
+				} else {
+					return i_dim < j_dim;
+				}
 			}
 		});
 
 		std::cout << "New order is: ";
-		for (int i = 0; i < NewOrder.size(); i++) {
-			std::cout << NewOrder[i] << " ";
+		for (int i = 0; i < new_order.size(); i++) {
+			std::cout << new_order[i] << " ";
  		}
 		std::cout << std::endl;
-	
+		std::vector<int> old_to_new_order(number_cells_K);
+
+		for (int i = 0; i < number_cells_K; i++) {
+			old_to_new_order[new_order[i]] = i;
+		}
 
 		MatrixData D_im;
-
 		for (int i = 0; i < F.d_data.size(); i++) {
 			std::vector<int> new_col_i;
 			std::cout << "Looking at column " << i << " which is currently [";
 			for (int j = 0; j < F.d_data[i].size(); j++) {
 				std::cout << " " << F.d_data[i][j];
 			}
-			std::cout << "], and now it is [" << std::endl;
+			std::cout << "], and now it is [";
 			if (!F.d_data[i].empty()) {
 				for (int j = 0; j < F.d_data[i].size(); j++) {
-					new_col_i.push_back(NewOrder[F.d_data[i][j]]);
-					std::cout << " " << NewOrder[F.d_data[i][j]];
+					new_col_i.push_back(new_order[F.d_data[i][j]]);
+					std::cout << " " << new_order[F.d_data[i][j]];
 				}
 			}
 			std::cout << "]" << std::endl;
@@ -390,26 +404,25 @@ namespace oineus {
 
 		VRUDecomp Im(D_im);
 		Im.reduce_parallel_rvu(params);
-		std::cout << "Im sanity check." << Im.get_D() << std::endl;
-		Im.sanity_check();
-
-		//NewOrder.clear();
+	
 		MatrixData V_im = Im.get_V();//FIXME: need to fix these quasi sums
 		for (int i = 0; i < V_im.size(); i++) {
 			bool del = true;
 			std::vector<int> quasi_sum (number_cells_K, 0);
 			if (!V_im[i].empty()) {
 				for (int j = 0; j < V_im[i].size(); j++) {
-					quasi_sum[D_im[V_im[i][j]]] = quasi_sum[D_im[V_im[i][j]]] + 1;
-					std::cout << "need to add 1?" << quasi_sum[D_im[V_im[i][j]]] << std::endl;
+					for (int k = 0; k < D_im[V_im[i][j]].size(); k++) {
+						quasi_sum[D_im[V_im[i][j]][k]]++;
+					}
 				}
 			}
+			std::cout << "quasi_sum is " ;
 			for (int j = 0; j < quasi_sum.size(); j++) {
-						std::cout << "???" << quasi_sum[j] << std::endl;
-					}
+				std::cout << " " <<quasi_sum[j];
+			}
+			//std::cout << std::endl;
 			for (int j = 0; j < quasi_sum.size(); j++) {
-				std::cout << quasi_sum[i];
-				if (quasi_sum[i]%2 !=0) {
+				if (quasi_sum[j]%2 !=0) {
 					del = false;
 					break;
 				}
@@ -424,33 +437,37 @@ namespace oineus {
 			std::cout << to_del[i] << std::endl;
 		}
 
-		MatrixData D_ker;
+		MatrixData d_ker;
 
 		for (int i = 0; i < to_del.size(); i++) {
 			if (!to_del[i]) {
-				D_ker.push_back(V_im[i]);
+				d_ker.push_back(V_im[i]);
 			}
 
 		}
+
+		// We need to keep the 
 		std::cout<< "===============" << std::endl;
-    	std::cout << "D_ker is:" << std::endl;
-    	for (int i = 0; i < D_ker.size(); i++) {
+    	std::cout << "d_ker is:" << std::endl;
+    	for (int i = 0; i < d_ker.size(); i++) {
         std::cout << "[ ";
-        for (int j = 0; j < D_ker[i].size(); j++) {
-            std::cout << D_ker[i][j] << " ";
+        for (int j = 0; j < d_ker[i].size(); j++) {
+            std::cout << d_ker[i][j] << " ";
         }
         std::cout << "]" << std::endl;
     	}
 		std::cout<< "===============" << std::endl;
 
-		VRUDecomp Ker(D_ker);
+		VRUDecomp Ker(d_ker);
+		std::cout << "Constructed Ker." << std::endl;
+		std::cout << "I really need to figure out what is going wrong with the parallel reduction functionb." << std::endl;
 		Ker.reduce_parallel_rvu(params);
 		std::cout << "Ker sanity check." << std::endl;
 		Ker.sanity_check();
 
-		ImKerReduced<Int, Real> IKR(K, L, F, G, Im, Ker, InSubcomplex, IdMap, NewOrder);
+		ImKerReduced<Int, Real> IKR(K, L, F, G, Im, Ker, InSubcomplex, IdMap, new_order);
 
-		IKR.GenerateKerDiagrams();
+		//IKR.GenerateKerDiagrams();
 		//IKR.GenereateImDiagrams();
 
 		return  IKR;

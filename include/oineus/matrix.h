@@ -412,7 +412,7 @@ bool are_matrix_columns_sorted(const std::vector<std::vector<Int>>& matrix_cols)
     for(auto&& col : matrix_cols) {
         if (not std::is_sorted(col.begin(), col.end())) {
             for(auto e : col)
-                std::cerr << "NOT SORTED: " << e << std::endl;
+                std::cerr << "NOT xED: " << e << std::endl;
             return false;
         }
     }
@@ -738,7 +738,7 @@ template<class Int>
 void VRUDecomposition<Int>::reduce_parallel_rvu(Params& params)
 {
     using namespace std::placeholders;
-
+    int c= 0;
     size_t n_cols = size();
 
     v_data = std::vector<IntSparseColumn>(n_cols);
@@ -748,6 +748,7 @@ void VRUDecomposition<Int>::reduce_parallel_rvu(Params& params)
     using APRVColumn = std::atomic<RVColumnC*>;
     using RVMatrix = std::vector<APRVColumn>;
     using MemoryReclaimC = MemoryReclaim<RVColumnC>;
+
 
     RVMatrix r_v_matrix(n_cols);
 
@@ -762,7 +763,7 @@ void VRUDecomposition<Int>::reduce_parallel_rvu(Params& params)
     }
     debug("Matrix moved");
 
-//    IC(r_v_matrix, d_data);
+//    IC(r_v_matrix, d_data); 
 
     std::atomic<Int> counter;
     counter = 0;
@@ -775,7 +776,9 @@ void VRUDecomposition<Int>::reduce_parallel_rvu(Params& params)
     }
     debug("Pivots initialized");
 
+
     int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+ 
 
     std::vector<std::thread> ts;
     std::vector<std::unique_ptr<MemoryReclaimC>> mms;
@@ -791,7 +794,7 @@ void VRUDecomposition<Int>::reduce_parallel_rvu(Params& params)
     } else {
         next_free_chunk = 0;
     }
-
+ 
     Timer timer;
 
     for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
@@ -813,11 +816,10 @@ void VRUDecomposition<Int>::reduce_parallel_rvu(Params& params)
     }
 
     info("{} threads created", ts.size());
-
     for(auto& t: ts) {
         t.join();
     }
-
+ 
     params.elapsed = timer.elapsed_reset();
 
     if (params.print_time) {
@@ -831,7 +833,8 @@ void VRUDecomposition<Int>::reduce_parallel_rvu(Params& params)
         auto p = r_v_matrix[i].load(std::memory_order_relaxed);
         r_data[i] = std::move(p->r_column);
         v_data[i] = std::move(p->v_column);
-    }
+    } 
+
 
 //    IC("After R writen back: ", d_data);
 
