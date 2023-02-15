@@ -250,7 +250,7 @@ decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list 
         int i_map = IdMap_[i].cast<int>();
         IdMapping.push_back(i_map);
     }
-
+    std::cout << "---------- Map from L to K ----------" << std::endl;
     for (int i = 0; i < n_L; i++){
         std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
     }
@@ -323,10 +323,21 @@ decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list 
         std::cout << "]" << std::endl;
     }
 
+
+    MatrixData D_ker = IKR.get_D_ker();
+    MatrixData V_ker = IKR.get_V_ker();
     MatrixData R_ker = IKR.get_R_ker();
 
     std::cout<< "===============" << std::endl;
-    std::cout << "R_ker is:" << std::endl;
+    std::cout << "D_ker is:" << std::endl;
+    for (int i = 0; i < D_ker.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < D_ker[i].size(); j++) {
+            std::cout << D_ker[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    }
+     std::cout << "R_ker is:" << std::endl;
     for (int i = 0; i < R_ker.size(); i++) {
         std::cout << "[ ";
         for (int j = 0; j < R_ker[i].size(); j++) {
@@ -334,6 +345,46 @@ decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list 
         }
         std::cout << "]" << std::endl;
     }
+     std::cout << "V_ker is:" << std::endl;
+    for (int i = 0; i < V_ker.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < V_ker[i].size(); j++) {
+            std::cout << V_ker[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    }
+
+    MatrixData D_im = IKR.get_D_im();
+    MatrixData V_im = IKR.get_V_im();
+    MatrixData R_im = IKR.get_R_im();
+
+    std::cout<< "===============" << std::endl;
+    std::cout << "D_im is:" << std::endl;
+    for (int i = 0; i < D_im.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < D_im[i].size(); j++) {
+            std::cout << D_im[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    }
+     std::cout << "R_im is:" << std::endl;
+    for (int i = 0; i < R_im.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < R_im[i].size(); j++) {
+            std::cout << R_im[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    }
+     std::cout << "V_im is:" << std::endl;
+    for (int i = 0; i < V_im.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < V_im[i].size(); j++) {
+            std::cout << V_im[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    }
+
+
 
     return IKR;
 }

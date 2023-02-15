@@ -329,9 +329,9 @@ namespace oineus {
 		}
 */
 		std::sort(new_order.begin(), new_order.end(), [&](int i, int j) {
-			std::cout << "Comparing " << i << " and " << j << std::endl;
+			//std::cout << "Comparing " << i << " and " << j << std::endl;
 			if (InSubcomplex[i] && InSubcomplex[j]) {//FIXME: this needs to work with the sorted order. 
-				std::cout << "Both are in the sub complex, so we need to sort by their dimensions and values in L: ";
+				//std::cout << "Both are in the sub complex, so we need to sort by their dimensions and values in L: ";
 				int i_dim, j_dim;
 				double i_val, j_val;
 				for (int k = 0; k < IdMap.size(); k++) {
@@ -344,27 +344,27 @@ namespace oineus {
 						j_val = L.value_by_sorted_id(k);
 					}
 				}
-				std::cout << i_dim << " and " << j_dim << " vs " << i_val << " and " << j_val << std::endl;
+				//std::cout << i_dim << " and " << j_dim << " vs " << i_val << " and " << j_val << std::endl;
 				if (i_dim == j_dim) {
 					return i_val < j_val;
 				} else {
 					return i_dim < j_dim;
 				}
 			} else if (InSubcomplex[i] && !InSubcomplex[j]) {
-				std::cout << i << " is in the subcomplex but " << j << " is not" << std::endl;
+				//std::cout << i << " is in the subcomplex but " << j << " is not" << std::endl;
 				return true;
 			} else if (!InSubcomplex[i] && InSubcomplex[j]) {
-				std::cout << i <<" is not in the subcomplex but " << j << " is"<< std::endl;
+				//std::cout << i <<" is not in the subcomplex but " << j << " is"<< std::endl;
 				return false;
 			} else {
-				std::cout << "Neither are in the sub complex, so sorting by their dimensions and values in K: " << std::endl;
+				//std::cout << "Neither are in the sub complex, so sorting by their dimensions and values in K: " << std::endl;
 				int i_dim, j_dim;
 				double i_val, j_val;
 				i_dim = K.dim_by_sorted_id(i);
 				i_val = K.value_by_sorted_id(i);
 				j_dim = K.dim_by_sorted_id(j);
 				j_val = K.value_by_sorted_id(j);
-				std::cout << i_dim << " and " << j_dim << " vs " << i_val << " and " << j_val << std::endl;
+				//std::cout << i_dim << " and " << j_dim << " vs " << i_val << " and " << j_val << std::endl;
 				if (i_dim == j_dim) {
 					return i_val < j_val;
 				} else {
@@ -416,10 +416,10 @@ namespace oineus {
 					}
 				}
 			}
-			std::cout << "quasi_sum is " ;
+			/*std::cout << "quasi_sum is " ;
 			for (int j = 0; j < quasi_sum.size(); j++) {
 				std::cout << " " <<quasi_sum[j];
-			}
+			}*/
 			//std::cout << std::endl;
 			for (int j = 0; j < quasi_sum.size(); j++) {
 				if (quasi_sum[j]%2 !=0) {
