@@ -28,20 +28,20 @@ namespace oineus {
 			Params params;
             Filtration<Int, Real, int> K;
             Filtration<Int, Real, int> L;
-            std::vector<int> IdMap;
+            std::vector<int> L_to_K;
 
-            FilteredPair(const Filtration<Int, Real, int> K_, const Filtration<Int, Real, int> L_, std::vector<int> IdMap_, const Params params_) { //If the ids of simplices in L_ do not match their ids in K_ we need to know what the correspondence is.
+            FilteredPair(const Filtration<Int, Real, int> K_, const Filtration<Int, Real, int> L_, std::vector<int> L_to_K_, const Params params_) { //If the ids of simplices in L_ do not match their ids in K_ we need to know what the correspondence is.
                 K = K_;
                 L = L_;
-                IdMap = IdMap_;
+                L_to_K = L_to_K_;
                 params = params_;
             }
 
-			FilteredPair(const Filtration<Int_, Real_, int> K_, const Filtration<Int_, Real_, int> L_, const Params params_) { // If the ids of simplices in L_ agree with the ids of simplices in K_ we don't need an IdMap as it it just the identity
+			FilteredPair(const Filtration<Int_, Real_, int> K_, const Filtration<Int_, Real_, int> L_, const Params params_) { // If the ids of simplices in L_ agree with the ids of simplices in K_ we don't need an L_to_K as it it just the identity
                 K = K_;
                 L = L_;
-                IdMap = std::vector<int> (L.simplices().size());
-				std::iota (IdMap.begin(), IdMap.end(), 0);
+                L_to_K = std::vector<int> (L.simplices().size());
+				std::iota (L_to_K.begin(), L_to_K.end(), 0);
                 params = params_;
 			}
 	};
@@ -70,27 +70,28 @@ namespace oineus {
 			Dgms ImDiagrams; //vector of image diagrams, one in each dimension poissble (these may be empty)
 			Dgms KerDiagrams; //vector of kernel diagrams, one in each dimension poissble (these may be empty)
 			int max_dim; //the maximum dimension of a cell
-			std::vector<int> IdMap;
+			std::vector<int> L_to_K; //Map cells in L to cells in K.  
 			std::vector<bool> InSubcomplex; //track if a cell is in the subcomplex L
 			int number_cells_K; //number of cells in K
 			int number_cells_L; //number of cells in L
-			std::vector<int> OrderChange; //OrderChange[i] is the (unsorted) id in K of the ith cell in the filtration.
+			std::vector<int> order_change; //order_change[i] is the (unsorted) id in K of the ith cell in the filtration.
 		
 
 		public: 
 
-			ImKerReduced(Filtration<Int_, Real_, Int_> K_, Filtration<Int_, Real_, Int_> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, std::vector<bool> InSubcomplex_, std::vector<int> IdMap_, std::vector<int> OrderChange_) : 
+			ImKerReduced(Filtration<Int_, Real_, Int_> K_, Filtration<Int_, Real_, Int_> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, std::vector<bool> InSubcomplex_, std::vector<int> L_to_K_, std::vector<int> order_change_) : 
 				K (K_),
 				L (L_),
 				F (F_),
 				G (G_),
 				Im (Im_),
 				Ker (Ker_),
-				IdMap (IdMap_),
-				OrderChange (OrderChange_),
+				L_to_K (L_to_K_),
+				order_change (order_change_),
 				InSubcomplex (InSubcomplex_) { 
 					number_cells_K = K.boundary_matrix_full().size();
 					number_cells_L = L.boundary_matrix_full().size();
+					
 			}
 
 			void GenereateImDiagrams() {//Generate the kernel diagrams
@@ -120,7 +121,13 @@ namespace oineus {
 				for (int i = 0; i < number_cells_K; i++) {
 					//TODO: should this be a serpate test?
 					//Check if a cell gives birth to a class, need to check if it is negative in R_f
-					std::cout << "looking at cell " << i << " in the sorted_id ordering. Cell " << i << " has InSubcomplex " << InSubcomplex[i] << std::endl;;
+					std::cout << "looking at cell " << i << " in the sorted_id ordering. Cell " << i << " has InSubcomplex " << InSubcomplex[i] << std::endl;
+
+					std::vector<int> K_to_L(number_cells_K);
+
+					for (int i = 0; i < number_cells_L; i++) {
+						K_to_L[L_to_K[i]] = i;					
+					}
 
 					if (!InSubcomplex[i] && !R_f[i].empty()) { //cell needs to be in L, and needs to not be empty in R_f
 						
@@ -140,13 +147,13 @@ namespace oineus {
 						std::cout << R_im << std::endl;
 						if (!cycle && InSubcomplex[R_im[i].back()]) { // check if lowest entry corresponds to a cell in L
 							open_point[i] = true;
-							std::cout << "cell " << OrderChange[i] << " gave birth." << std::endl;
+							std::cout << "cell " << order_change[i] << " gave birth." << std::endl;
 						}
-						std::cout << "checked if cell " << OrderChange[i] << " gave birth." << std::endl;
+						std::cout << "checked if cell " << order_change[i] << " gave birth." << std::endl;
 					}
 					//Now check if cell kills a class, in which case find the paired cell, need to check if it is positive in R_f
 					else if (InSubcomplex[i] && R_g[i].empty()) {
-						std::cout << "now check if cell " << OrderChange[i] << " kills." << std::endl;
+						std::cout << "now check if cell " << order_change[i] << " kills." << std::endl;
 
 						std::vector<int> quasi_sum (number_cells_K, 0);
 						for (int j = 0; j < V_f[i].size(); j++) {
@@ -161,12 +168,12 @@ namespace oineus {
 								break;
 							}
 						}
-						if (cycle && !R_g[i].empty()) { //if it is a cycle, we check for negative in R_g, which requires R_g[i] to be not empty
+						if (cycle && !R_g[K_to_L[i]].empty()) { //if it is a cycle, we check for negative in R_g, which requires R_g[i] to be not empty
 							//next check if cycle or not in L
 							std::vector<int> quasi_sum (number_cells_L, 0);
-							for (int j = 0; j < V_g[i].size(); j++) {
-								for (int k = 0; k < D_g[V_g[i][j]].size(); k++) {
-									quasi_sum[D_g[V_g[i][j]][k]] += 1;//get the boundary in K
+							for (int j = 0; j < V_g[K_to_L[i]].size(); j++) {
+								for (int k = 0; k < D_g[V_g[K_to_L[i]][j]].size(); k++) {
+									quasi_sum[D_g[V_g[K_to_L[i]][j]][k]] += 1;//get the boundary in K
 								}
 							}
 							for (int k = 0; k < quasi_sum.size(); k++) {
@@ -174,7 +181,7 @@ namespace oineus {
 									int birth_id = R_ker[i].back();
 									int dim = K.dim_by_id(i)-1; 
 									std::cout << "This represents a point in dimension " << dim << std::endl;
-									ImDiagrams[dim].push_back(Point(K.get_simplex_value(OrderChange[birth_id]), K.get_simplex_value(OrderChange[i])));
+									ImDiagrams[dim].push_back(Point(K.get_simplex_value(order_change[birth_id]), K.get_simplex_value(order_change[i])));
 									open_point[birth_id] = false;
 									std::cout << "Have something that kills a class, and it is in dimension " << dim << std::endl;
 								}
@@ -185,8 +192,8 @@ namespace oineus {
 
 				for (int i = 0; i < open_point.size(); i++) {
 					if (open_point[i]) {
-						int dim = K.dim_by_sorted_id(i)-1;//(OrderChange[i])-1;
-						std::cout << i << " The cell " << OrderChange[i] << " is an open point in dimension " << dim << " so we added a point (" << K.value_by_sorted_id(i) <<", " << std::numeric_limits<double>::infinity() << ")." << std::endl;
+						int dim = K.dim_by_sorted_id(i)-1;//(order_change[i])-1;
+						std::cout << i << " The cell " << order_change[i] << " is an open point in dimension " << dim << " so we added a point (" << K.value_by_sorted_id(i) <<", " << std::numeric_limits<double>::infinity() << ")." << std::endl;
 						ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()));
 					}
 				}
@@ -252,7 +259,7 @@ namespace oineus {
 	
 
 	template <typename Int_, typename Real_>
-	ImKerReduced<Int_, Real_> reduce_im_ker(Filtration<Int_, Real_, Int_> K, Filtration<Int_, Real_, Int_> L, std::vector<int> IdMap, Params& params) {//IdMap maps a cell in L to a cell in K
+	ImKerReduced<Int_, Real_> reduce_im_ker(Filtration<Int_, Real_, Int_> K, Filtration<Int_, Real_, Int_> L, std::vector<int> L_to_K, Params& params) {//L_to_K maps a cell in L to a cell in K
 		using Real = Real_;
 		using Int = Int_;
     	using IntSparseColumn = SparseColumn<Int>;
@@ -300,8 +307,8 @@ namespace oineus {
 			std::cout << " " << sorted_id_to_id[i] ;
 		}
 		std::cout << std::endl;
-		for (int i = 0; i < IdMap.size(); i++) {
-			InSubcomplex[IdMap[sorted_id_to_id[i]]] = true;
+		for (int i = 0; i < L_to_K.size(); i++) {
+			InSubcomplex[L_to_K[sorted_id_to_id[i]]] = true;
 		}
 
 		std::cout << "InSubcomplex has size " << InSubcomplex.size() << std::endl;
@@ -313,7 +320,7 @@ namespace oineus {
 
 		std::vector<int> MapKtoL(number_cells_L);
 		for (int i = 0; i < number_cells_L; i++) {
-			MapKtoL[IdMap[i]] = i;	
+			MapKtoL[L_to_K[i]] = i;	
 		}
 	/*
 		std::cout << "Current order is: ";
@@ -334,12 +341,12 @@ namespace oineus {
 				std::cout << "Both are in the sub complex, so we need to sort by their dimensions and values in L: ";
 				int i_dim, j_dim;
 				double i_val, j_val;
-				for (int k = 0; k < IdMap.size(); k++) {
-					if (IdMap[k] == i) {
+				for (int k = 0; k < L_to_K.size(); k++) {
+					if (L_to_K[k] == i) {
 						i_dim = L.dim_by_sorted_id(k);
 						i_val = L.value_by_sorted_id(k);
 					}
-					if (IdMap[k] == j) {
+					if (L_to_K[k] == j) {
 						j_dim = L.dim_by_sorted_id(k);
 						j_val = L.value_by_sorted_id(k);
 					}
@@ -404,10 +411,39 @@ namespace oineus {
 
 		VRUDecomp Im(D_im);
 		Im.reduce_parallel_rvu(params);
+
+		
 	
 		MatrixData V_im = Im.get_V();//FIXME: need to fix these quasi sums
+    	MatrixData R_im = Im.get_R();
+
+    	std::cout<< "===============" << std::endl;
+    	std::cout << "D_im is:" << std::endl;
+		for (int i = 0; i < D_im.size(); i++) {
+			std::cout << "[ ";
+			for (int j = 0; j < D_im[i].size(); j++) {
+				std::cout << D_im[i][j] << " ";
+			}
+			std::cout << "]" << std::endl;
+		}
+		std::cout << "R_im is:" << std::endl;
+		for (int i = 0; i < R_im.size(); i++) {
+			std::cout << "[ ";
+			for (int j = 0; j < R_im[i].size(); j++) {
+				std::cout << R_im[i][j] << " ";
+			}
+			std::cout << "]" << std::endl;
+		}
+		std::cout << "V_im is:" << std::endl;
 		for (int i = 0; i < V_im.size(); i++) {
-			bool del = true;
+			std::cout << "[ ";
+			for (int j = 0; j < V_im[i].size(); j++) {
+				std::cout << V_im[i][j] << " ";
+			}
+			std::cout << "]" << std::endl;
+		}
+		for (int i = 0; i < V_im.size(); i++) {
+			bool del = false;
 			std::vector<int> quasi_sum (number_cells_K, 0);
 			if (!V_im[i].empty()) {
 				for (int j = 0; j < V_im[i].size(); j++) {
@@ -423,7 +459,7 @@ namespace oineus {
 			//std::cout << std::endl;
 			for (int j = 0; j < quasi_sum.size(); j++) {
 				if (quasi_sum[j]%2 !=0) {
-					del = false;
+					del = true;
 					break;
 				}
 			}
@@ -446,7 +482,46 @@ namespace oineus {
 
 		}
 
-		// We need to keep the 
+		// We need to keep the matrix square, so we also need to delete some rows. But we need to know which rows correspond to the columns we are deleting.
+		std::vector<int> rows_to_del;
+		for (int i = 0; i < to_del.size(); i++) {
+			if (to_del[i])
+			rows_to_del.push_back(old_to_new_order[i]);
+		}
+
+
+		std::sort(rows_to_del.begin(), rows_to_del.end(), std::greater<int>());
+
+		std::cout << "We need to delete the following rows:";
+		for (int i = 0; i < rows_to_del.size(); i++) {
+			std::cout << " " << rows_to_del[i];
+		}
+		std::cout << std::endl;
+		std::cout<< "===============" << std::endl;
+    	std::cout << "d_ker is:" << std::endl;
+    	for (int i = 0; i < d_ker.size(); i++) {
+        std::cout << "[ ";
+        for (int j = 0; j < d_ker[i].size(); j++) {
+            std::cout << d_ker[i][j] << " ";
+        }
+        std::cout << "]" << std::endl;
+    	}
+		std::cout<< "===============" << std::endl;
+		for (int i = 0; i < d_ker.size(); i++) {
+			for (int k = 0; k < rows_to_del.size(); k++) {
+				std::cout << "Deleting row " << rows_to_del[k] << " and d_ker[" << i<< "] is currently ";
+				for (int j = 0; j < d_ker[i].size(); j++) {
+            		std::cout << d_ker[i][j] << " ";
+        		}
+				for (int j = 0; j < d_ker[i].size(); j++) {
+					if (d_ker[i][j] > k) {
+						d_ker[i][j]--;
+					} else if (d_ker[i][j] == k) {
+						d_ker[i].erase(d_ker[i].begin()+j);
+					}
+				}
+			}
+		}
 		std::cout<< "===============" << std::endl;
     	std::cout << "d_ker is:" << std::endl;
     	for (int i = 0; i < d_ker.size(); i++) {
@@ -465,9 +540,9 @@ namespace oineus {
 		std::cout << "Ker sanity check." << std::endl;
 		Ker.sanity_check();
 
-		ImKerReduced<Int, Real> IKR(K, L, F, G, Im, Ker, InSubcomplex, IdMap, new_order);
+		ImKerReduced<Int, Real> IKR(K, L, F, G, Im, Ker, InSubcomplex, L_to_K, new_order);
 
-		//IKR.GenerateKerDiagrams();
+		IKR.GenerateKerDiagrams();
 		//IKR.GenereateImDiagrams();
 
 		return  IKR;
@@ -496,13 +571,13 @@ namespace oineus {
 
 		public: 
 
-			CokReduced(VRUDecomp F_, VRUDecomp G_, VRUDecomp Cok_, std::vector<int> IdMap) : 
+			CokReduced(VRUDecomp F_, VRUDecomp G_, VRUDecomp Cok_, std::vector<int> L_to_K) : 
 				F (F_),
 				G (G_),
 				Cok (Cok_) { 
 				std::vector<bool> InSubcomplex(F.get_D().size(), false);
-					for (int i = 0; i < IdMap.size(); i++) {
-						InSubcomplex[IdMap[i]] = true;
+					for (int i = 0; i < L_to_K.size(); i++) {
+						InSubcomplex[L_to_K[i]] = true;
 					}
 			}
 
@@ -544,7 +619,7 @@ namespace oineus {
 	};
 
 	template <typename Int_, typename Real_>
-	CokReduced<Int_, Real_> reduce_cok(Filtration<Int_, Real_, Int_> K, Filtration<Int_, Real_, Int_> L, std::vector<int> IdMap, Params& params) {//FilteredPair<Int_, Real_> KL) {
+	CokReduced<Int_, Real_> reduce_cok(Filtration<Int_, Real_, Int_> K, Filtration<Int_, Real_, Int_> L, std::vector<int> L_to_K, Params& params) {//FilteredPair<Int_, Real_> KL) {
 		using Int = Int_;
 		using Real = Real_;
 		using Int = Int_;
@@ -571,8 +646,8 @@ namespace oineus {
 			std::vector<int> quasi_sum (number_cells_L, 0);
 			if (!V_g[i].empty()) {
 				for (int j = 0; j < V_g[i].size(); j++) {
-					for (int k = 0; k < D_g[IdMap[V_g[i][j]]].size(); k++) {
-						quasi_sum[D_g[IdMap[V_g[i][j]]][k]] += 1;//check if a column in V_g represents a cycle
+					for (int k = 0; k < D_g[L_to_K[V_g[i][j]]].size(); k++) {
+						quasi_sum[D_g[L_to_K[V_g[i][j]]][k]] += 1;//check if a column in V_g represents a cycle
 					}
 				}
 			}
@@ -583,14 +658,14 @@ namespace oineus {
 				}
 			}
 			if (replace) {
-				D_cok[IdMap[i]] = V_g[i]; 
+				D_cok[L_to_K[i]] = V_g[i]; 
 			}
 		}
 
 		VRUDecomp Cok(D_cok);
 		Cok.reduce_parallel_rvu(params);
 
-		CokReduced<Int, Real> CkR(F, G, Cok, IdMap);
+		CokReduced<Int, Real> CkR(F, G, Cok, L_to_K);
 		return  CkR;
 		
 	}
