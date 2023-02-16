@@ -691,14 +691,12 @@ TargetMatching<size_t, Real> get_prescribed_simplex_values_set_x(dim_type d,
         size_t death_idx = dgm_to_target.first.death;
         Real target_death = dgm_to_target.second.death;
 
-        if (target_death != fil.value_by_sorted_id(death_idx)) {
-            for(auto d_idx : change_death_x<Int>(d, death_idx, fil, decmp_hom, target_death)) {
-                result[d_idx].push_back(target_death);
-            }
-
-            assert(critical_prescribed.count(death_idx) == 0);
-            critical_prescribed[death_idx] = target_death;
+        for(auto d_idx : change_death_x<Int>(d, death_idx, fil, decmp_hom, target_death)) {
+            result[d_idx].push_back(target_death);
         }
+
+        assert(critical_prescribed.count(death_idx) == 0);
+        critical_prescribed[death_idx] = target_death;
 
         if (death_only)
             continue;
@@ -706,18 +704,33 @@ TargetMatching<size_t, Real> get_prescribed_simplex_values_set_x(dim_type d,
         size_t birth_idx = dgm_to_target.first.birth;
         Real target_birth = dgm_to_target.second.birth;
 
-        if (target_birth != fil.value_by_sorted_id(birth_idx)) {
 
-            for(auto b_idx : change_birth_x<Int>(d, birth_idx, fil, decmp_coh, target_birth)) {
-                result[b_idx].push_back(target_birth);
-            }
+        for(auto b_idx : change_birth_x<Int>(d, birth_idx, fil, decmp_coh, target_birth))
+            result[b_idx].push_back(target_birth);
 
-            assert(critical_prescribed.count(birth_idx) == 0);
-            critical_prescribed[birth_idx] = target_birth;
-        }
+        assert(critical_prescribed.count(birth_idx) == 0);
+        critical_prescribed[birth_idx] = target_birth;
+
     }
 
     TargetMatching<size_t, Real> final_result;
+
+    bool print_conflict_info = false;
+
+    if (print_conflict_info) {
+        long long int n_conflict_simplices = 0;
+        long long int n_conflicts = 0;
+
+        for(auto&& [simplex_idx, values]: result) {
+            if (values.size() > 1) {
+                n_conflict_simplices++;
+                n_conflicts += values.size();
+                std::cerr << "simplex " << simplex_idx << " has prescribed values: " << container_to_string(values) << std::endl;
+            }
+        }
+
+        std::cerr << "Simplices with conflict: " << n_conflict_simplices << ", total conflicts: " << n_conflicts << std::endl;
+    }
 
     if (conflict_strategy == ConflictStrategy::Max) {
         for(auto&& [simplex_idx, values] : result) {

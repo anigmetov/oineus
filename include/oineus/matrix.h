@@ -330,6 +330,7 @@ struct VRUDecomposition {
     std::vector<size_t> dim_first;
     std::vector<size_t> dim_last;
 
+    const size_t n_rows;
     // methods
 
     template<class R, class L>
@@ -338,7 +339,8 @@ struct VRUDecomposition {
             r_data (d_data),
             dualize_(_dualize),
             dim_first(fil.dim_first()),
-            dim_last(fil.dim_last())
+            dim_last(fil.dim_last()),
+            n_rows(d_data.size())
     {
         if (dualize_) {
             std::reverse(dim_first.begin(), dim_first.end());
@@ -359,10 +361,11 @@ struct VRUDecomposition {
         }
     }
 
-    VRUDecomposition(const MatrixData& d) :
+    VRUDecomposition(const MatrixData& d, size_t n_rows=std::numeric_limits<decltype(n_rows)>::max()) :
             d_data (d),
             r_data (d),
             dualize_(false),
+            n_rows(n_rows == std::numeric_limits<decltype(n_rows)>::max() ? d_data.size() : n_rows),
             dim_first(std::vector<size_t>({0})),
             dim_last(std::vector<size_t>({d.size()-1}))
     {
@@ -770,7 +773,7 @@ void VRUDecomposition<Int>::reduce_parallel_rvu(Params& params)
 
     std::atomic<Int> next_free_chunk;
 
-    AtomicIdxVector pivots(n_cols);
+    AtomicIdxVector pivots(n_rows);
     for(auto& p: pivots) {
         p.store(-1, std::memory_order_relaxed);
     }
