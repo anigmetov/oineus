@@ -267,7 +267,7 @@ decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list 
     MatrixData V_f = IKR.get_V_f();
     MatrixData R_f = IKR.get_R_f();
 
-    std::cout<< "===============" << std::endl;
+    /*std::cout<< "===============" << std::endl;
     std::cout << "D_f is:" << std::endl;
     for (int i = 0; i < D_f.size(); i++) {
         std::cout << "[ ";
@@ -383,7 +383,7 @@ decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list 
         }
         std::cout << "]" << std::endl;
     }
-
+    */
 
 
     return IKR;
