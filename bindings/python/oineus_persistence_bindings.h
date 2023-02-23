@@ -552,7 +552,6 @@ void init_oineus(py::module& m, std::string suffix)
     using oineus::VREdge;
     using VRFiltration = oineus::Filtration<Int, Real, VREdge>;
     using VRSimplex = typename VRFiltration::FiltrationSimplex;
-    using FilteredPair = oineus::FilteredPair<Int, Real>;
     using VRUDecomp = oineus::VRUDecomposition<Int>;
     using ImKerRed = oineus::ImKerReduced<Int, Real>;
     using CokRed =  oineus::CokReduced<Int, Real>;
@@ -567,7 +566,6 @@ void init_oineus(py::module& m, std::string suffix)
     std::string vr_simplex_class_name = "VRSimplex" + suffix;
     std::string vr_filtration_class_name = "VRFiltration" + suffix;
     
-    std::string filtered_pair_class_name = "FilteredPair" + suffix;
     std::string im_ker_reduced_class_name = "ImKerReduced" + suffix;
     std::string cok_reduced_class_name = "CokReduced" + suffix;
 
@@ -633,10 +631,6 @@ void init_oineus(py::module& m, std::string suffix)
             .def("critical_edge", &VRFiltration::cvl)
             .def("size_in_dimension", &VRFiltration::size_in_dimension)
             .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
-
-    py::class_<FilteredPair>(m, filtered_pair_class_name.c_str())
-            .def(py::init<const oineus::Filtration<Int, Real, Int>, const oineus::Filtration<Int, Real, Int>, std::vector<int>, const oineus::Params>())
-            .def(py::init<const oineus::Filtration<Int, Real, Int>, const oineus::Filtration<Int, Real, Int>, const oineus::Params>());
 
     py::class_<ImKerRed>(m, im_ker_reduced_class_name.c_str())
             .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<bool>, std::vector<int>, std::vector<int>>());
