@@ -63,7 +63,39 @@ namespace oineus {
 			}
 
 			void GenereateImDiagrams(std::vector<int> new_cols) {//Generate the kernel diagrams
+				std::cout << "Starting to extract the image diagrams." << std::endl;
+
+				for (int i = 0; i < max_dim+1; i++){
+					ImDiagrams.push_back(Dgm());
+				}
+
+								std::vector<bool> open_point (number_cells_K);
 				
+				//Get the matrices we need to check the conditions
+				MatrixData R_f = F.get_R();
+				MatrixData D_f = F.get_D();
+				MatrixData V_f = F.get_V();
+				MatrixData R_g = G.get_R();
+				MatrixData D_g = G.get_D();
+				MatrixData V_g = G.get_V();
+				MatrixData R_im = Im.get_R();
+
+				std::vector<int> sorted_id_to_id(number_cells_K);
+				for (int i = 0; i < number_cells_K; i++) {
+					sorted_id_to_id[K.get_sorted_id(i)] = i;
+				}
+
+				std::vector<int> SubComplex(number_cells_K, -1);
+
+				for (int i = 0; i < number_cells_L; i++) {
+					SubComplex[K.get_sorted_id(L_to_K[i])] = i;
+				}
+
+				for (int i = 0; i < number_cells_K; i++) {
+					int id_in_L = SubComplex[i];
+
+				}
+
 			}
 
 			void GenerateKerDiagrams(std::vector<int> new_cols) {//Generate the image diagrams
