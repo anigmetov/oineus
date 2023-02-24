@@ -69,7 +69,7 @@ namespace oineus {
 					ImDiagrams.push_back(Dgm());
 				}
 
-								std::vector<bool> open_point (number_cells_K);
+				std::vector<bool> open_point (number_cells_K);
 				
 				//Get the matrices we need to check the conditions
 				MatrixData R_f = F.get_R();
@@ -80,7 +80,7 @@ namespace oineus {
 				MatrixData V_g = G.get_V();
 				MatrixData R_im = Im.get_R();
 
-				std::vector<int> sorted_id_to_id(number_cells_K);
+				std::vector<int> sorted_id_to_id(number_cells_K, 0);
 				for (int i = 0; i < number_cells_K; i++) {
 					sorted_id_to_id[K.get_sorted_id(i)] = i;
 				}
@@ -93,7 +93,78 @@ namespace oineus {
 
 				for (int i = 0; i < number_cells_K; i++) {
 					int id_in_L = SubComplex[i];
+				}
 
+				std::vector<bool> open_points(number_cells_L, false);
+
+				for (int i = 0; i < number_cells_K; i++) {
+					int id_in_L = SubComplex[i];
+					if (id_in_L != -1 && R_g[i].empty()) {//the cell needs to be in L, and negative in R_g, which requires R_g to be empty, and then we check if the column in V_g stores a cycle.
+
+						std::vector<int> quasi_sum_g(number_cells_L, 0);
+						for (int j = 0; j < V_g[i].size(); j++) {
+							for (int k = 0; k < D_g[V_g[i][j]].size(); k++) {
+								quasi_sum_g[D_g[V_g[i][j]][k]]++;
+							}
+						}
+						bool cycle_g = true;
+						for (int j = 0; j < number_cells_L; j++) {
+							if (quasi_sum_g[j] %2 != 0) {
+								cycle_g = false;
+								break;
+							}
+						}
+
+						if (cycle_g) {
+							open_points[id_in_L] = true;
+						}
+					} else if (!R_f[i].empty()) {
+						std::vector<int> quasi_sum_f(number_cells_K, 0);
+						std::cerr << " looking at " << V_f[i] << std::endl;
+
+						for (int j = 0; j < V_f[i].size(); j++) {
+							std::cerr << " looking at " << V_f[i][j] << " and " << D_f[V_f[i][j]]<< std::endl;
+							for (int k = 0; k < D_f[V_f[i][j]].size(); k++ ) {
+								quasi_sum_f[D_f[V_f[i][j]][k]]++;
+								std::cerr << "quasi_sum_f[" << D_f[V_f[i][j]][k] << "] increased to " << quasi_sum_f[D_f[V_f[i][j]][k]] << std::endl;
+							}
+						}
+
+						bool cycle_f = true;
+
+						for (int j = 0; j < quasi_sum_f.size(); j++) {
+							if (quasi_sum_f[j] %2 != 0) {
+								cycle_f = false;
+								break;
+							}
+						}
+
+						if (!cycle_f && SubComplex[OrderChange[R_im[i].back()]] != -1) {
+							int birth_id = OrderChange[R_im[i].back()];
+							int dim = K.dim_by_id(i)-1; 
+							ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //K.value_by_sorted_id(i)
+							open_point[birth_id] = false;
+						}
+					}
+				} 
+
+				for (int i = 0; i < open_point.size(); i++) {
+					if (open_point[i]) {
+						int dim = K.dim_by_sorted_id(i)-1;//(OrderChange[i])-1;
+						ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()));
+					}
+				}
+			
+				for (int i = 0; i < KerDiagrams.size(); i++){
+					if (ImDiagrams[i].empty()) {
+					std::cout << "Image diagram in dimension " << i << " is empty." << std::endl;
+
+					} else { 
+						std::cout << "Image diagram in dimension " << i << " is: " << std::endl;
+						for (int j = 0; j < ImDiagrams[i].size(); j++) {
+							std::cout << "(" << ImDiagrams[i][j].birth << ", " << ImDiagrams[i][j].death << ")" << std::endl;
+						}
+					}
 				}
 
 			}
@@ -191,7 +262,7 @@ namespace oineus {
 								
 								int birth_id = OrderChange[R_ker[new_cols[i]].back()];
 								int dim = K.dim_by_id(i)-1; 
-								KerDiagrams[dim].push_back(Point(K.get_simplex_value(K.get_sorted_id(birth_id)), K.value_by_sorted_id(i))); //K.value_by_sorted_id(i)
+								KerDiagrams[dim].push_back(Point(K.value_by_sorted_id(K.get_sorted_id(birth_id)), K.value_by_sorted_id(i))); //K.value_by_sorted_id(i)
 								open_point[birth_id] = false;
 								
 							}
@@ -207,12 +278,12 @@ namespace oineus {
 					}
 				}
 			
-			for (int i = 0; i < KerDiagrams.size(); i++){
+				for (int i = 0; i < KerDiagrams.size(); i++){
 					if (KerDiagrams[i].empty()) {
-					std::cout << "Image diagram in dimension " << i << " is empty." << std::endl;
+					std::cout << "Kernel diagram in dimension " << i << " is empty." << std::endl;
 
 					} else { 
-						std::cout << "Image diagram in dimension " << i << " is: " << std::endl;
+						std::cout << "Kernel diagram in dimension " << i << " is: " << std::endl;
 						for (int j = 0; j < KerDiagrams[i].size(); j++) {
 							std::cout << "(" << KerDiagrams[i][j].birth << ", " << KerDiagrams[i][j].death << ")" << std::endl;
 						}
@@ -431,7 +502,7 @@ namespace oineus {
 		ImKerReduced<Int, Real> IKR(K, L, F, G, Im, Ker, InSubcomplex, L_to_K, new_order);	
 
 		IKR.GenerateKerDiagrams(new_cols);
-		//IKR.GenereateImDiagrams();
+		IKR.GenereateImDiagrams(new_cols);
 
 		return  IKR;
 	}
