@@ -220,7 +220,7 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
 
 
 template<typename Int, typename Real>
-decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list IdMap_, int n_threads = 1) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]. 
+decltype(auto) compute_kernel_image_cokernel_diagrams(py::list K_, py::list L_, py::list IdMap_, int n_threads = 1) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]. 
 {
     using IdxVector = std::vector<Int>;
     using IntSparseColumn = oineus::SparseColumn<Int>;
@@ -228,10 +228,10 @@ decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list 
     using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
     using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
     using Filtration = oineus::Filtration<Int, Real, Int>;
-    using ImKerReduced = oineus::ImKerReduced<Int, Real>;
+    using ImKerCokReduced = oineus::ImKerCokReduced<Int, Real>;
     std::cout << "======================================" << std::endl;
     std::cout << std:: endl;
-    std::cout << "You have called \'compute_kernel_image_diagrams\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
+    std::cout << "You have called \'compute_kernel_image_cokernel_diagrams\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
     std::cout << "          [id, [boundary], filtration value]" << std::endl;
     std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as an integer, telling oineus how many threads to use." << std::endl;
     std::cout << std:: endl;
@@ -261,133 +261,58 @@ decltype(auto) compute_kernel_image_diagrams(py::list K_, py::list L_, py::list 
     params.clearing_opt = true;
     params.n_threads = n_threads;
     
-    ImKerReduced IKR = oineus::reduce_im_ker<Int, Real>(K, L, IdMapping, params);
+    ImKerCokReduced IKCR = oineus::reduce_im_ker_cok<Int, Real>(K, L, IdMapping, params);
 
-    MatrixData D_f = IKR.get_D_f();
-    MatrixData V_f = IKR.get_V_f();
-    MatrixData R_f = IKR.get_R_f();
-
-    /*std::cout<< "===============" << std::endl;
-    std::cout << "D_f is:" << std::endl;
-    for (int i = 0; i < D_f.size(); i++) {
-        std::cout << "[ ";
-        for (int j = 0; j < D_f[i].size(); j++) {
-            std::cout << D_f[i][j] << " ";
-        }
-        std::cout << "]" << std::endl;
-    }
-     std::cout << "R_f is:" << std::endl;
-    for (int i = 0; i < R_f.size(); i++) {
-        std::cout << "[ ";
-        for (int j = 0; j < R_f[i].size(); j++) {
-            std::cout << R_f[i][j] << " ";
-        }
-        std::cout << "]" << std::endl;
-    }
-     std::cout << "V_f is:" << std::endl;
-    for (int i = 0; i < V_f.size(); i++) {
-        std::cout << "[ ";
-        for (int j = 0; j < V_f[i].size(); j++) {
-            std::cout << V_f[i][j] << " ";
-        }
-        std::cout << "]" << std::endl;
-    }
-
-    MatrixData D_g = IKR.get_D_g();
-    MatrixData V_g = IKR.get_V_g();
-    MatrixData R_g = IKR.get_R_g();
-
-    std::cout<< "===============" << std::endl;
-    std::cout << "D_g is:" << std::endl;
-    for (int i = 0; i < D_g.size(); i++) {
-        std::cout << "[ ";
-        for (int j = 0; j < D_g[i].size(); j++) {
-            std::cout << D_g[i][j] << " ";
-        }
-        std::cout << "]" << std::endl;
-    }
-     std::cout << "R_g is:" << std::endl;
-    for (int i = 0; i < R_g.size(); i++) {
-        std::cout << "[ ";
-        for (int j = 0; j < R_g[i].size(); j++) {
-            std::cout << R_g[i][j] << " ";
-        }
-        std::cout << "]" << std::endl;
-    }
-     std::cout << "V_g is:" << std::endl;
-    for (int i = 0; i < V_g.size(); i++) {
-        std::cout << "[ ";
-        for (int j = 0; j < V_g[i].size(); j++) {
-            std::cout << V_g[i][j] << " ";
-        }
-        std::cout << "]" << std::endl;
-    }
-
-
-    MatrixData D_ker = IKR.get_D_ker();
-    MatrixData V_ker = IKR.get_V_ker();
-    MatrixData R_ker = IKR.get_R_ker();
-
-    std::cout<< "===============" << std::endl;
-    std::cout << "D_ker is:" << std::endl;
-    for (int i = 0; i < D_ker.size(); i++) {
-        std::cout << "[ ";
-        for (int j = 0; j < D_ker[i].size(); j++) {
-            std::cout << D_ker[i][j] << " ";
-        }
-        std::cout << "]" << std::endl;
-    }
-     std::cout << "R_ker is:" << std::endl;
-    for (int i = 0; i < R_ker.size(); i++) {
-        std::cout << "[ ";
-        for (int j = 0; j < R_ker[i].size(); j++) {
-            std::cout << R_ker[i][j] << " ";
-        }
-        std::cout << "]" << std::endl;
-    }
-     std::cout << "V_ker is:" << std::endl;
-    for (int i = 0; i < V_ker.size(); i++) {
-        std::cout << "[ ";
-        for (int j = 0; j < V_ker[i].size(); j++) {
-            std::cout << V_ker[i][j] << " ";
-        }
-        std::cout << "]" << std::endl;
-    }
-
-    MatrixData D_im = IKR.get_D_im();
-    MatrixData V_im = IKR.get_V_im();
-    MatrixData R_im = IKR.get_R_im();
-
-    std::cout<< "===============" << std::endl;
-    std::cout << "D_im is:" << std::endl;
-    for (int i = 0; i < D_im.size(); i++) {
-        std::cout << "[ ";
-        for (int j = 0; j < D_im[i].size(); j++) {
-            std::cout << D_im[i][j] << " ";
-        }
-        std::cout << "]" << std::endl;
-    }
-     std::cout << "R_im is:" << std::endl;
-    for (int i = 0; i < R_im.size(); i++) {
-        std::cout << "[ ";
-        for (int j = 0; j < R_im[i].size(); j++) {
-            std::cout << R_im[i][j] << " ";
-        }
-        std::cout << "]" << std::endl;
-    }
-     std::cout << "V_im is:" << std::endl;
-    for (int i = 0; i < V_im.size(); i++) {
-        std::cout << "[ ";
-        for (int j = 0; j < V_im[i].size(); j++) {
-            std::cout << V_im[i][j] << " ";
-        }
-        std::cout << "]" << std::endl;
-    }
-    */
-
-
-    return IKR;
+    return IKCR;
 }
+
+/*template<typename Int, typename Real>
+decltype(auto) compute_cokernel_diagrams(py::list K_, py::list L_, py::list IdMap_, int n_threads = 1) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]. 
+{
+    using IdxVector = std::vector<Int>;
+    using IntSparseColumn = oineus::SparseColumn<Int>;
+    using MatrixData = std::vector<IntSparseColumn>;
+    using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
+    using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
+    using Filtration = oineus::Filtration<Int, Real, Int>;
+    using CokReduced = oineus::CokReduced<Int, Real>;
+    std::cout << "======================================" << std::endl;
+    std::cout << std:: endl;
+    std::cout << "You have called \'compute_cokernel_diagrams\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
+    std::cout << "          [id, [boundary], filtration value]" << std::endl;
+    std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as an integer, telling oineus how many threads to use." << std::endl;
+    std::cout << std:: endl;
+    std::cout << "======================================" << std::endl;
+    std::cout << std:: endl;
+
+    std::cout << "------------ Importing K ------------" << std::endl;
+    Filtration K = list_to_filtration<Int, Real>(K_);
+    std::cout << "------------ Importing L ------------" << std::endl;
+    Filtration L = list_to_filtration<Int, Real>(L_);
+
+    int n_L = IdMap_.size();
+    std::vector<int> IdMapping;
+
+    for (int i = 0; i < n_L; i++) {
+        int i_map = IdMap_[i].cast<int>();
+        IdMapping.push_back(i_map);
+    }
+    std::cout << "---------- Map from L to K ----------" << std::endl;
+    for (int i = 0; i < n_L; i++){
+        std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
+    }
+	
+    oineus::Params params;
+
+    params.sort_dgms = false;
+    params.clearing_opt = true;
+    params.n_threads = n_threads;
+    
+    CokReduced CkR = oineus::reduce_cok<Int, Real>(K, L, IdMapping, params);
+
+    return CkR;
+}
+*/
 template<class Int>
 void init_oineus_common(py::module& m)
 {
@@ -553,8 +478,8 @@ void init_oineus(py::module& m, std::string suffix)
     using VRFiltration = oineus::Filtration<Int, Real, VREdge>;
     using VRSimplex = typename VRFiltration::FiltrationSimplex;
     using VRUDecomp = oineus::VRUDecomposition<Int>;
-    using ImKerRed = oineus::ImKerReduced<Int, Real>;
-    using CokRed =  oineus::CokReduced<Int, Real>;
+    using ImKerCokRed = oineus::ImKerCokReduced<Int, Real>;
+    //using CokRed =  oineus::CokReduced<Int, Real>;
 
     std::string dgm_point_name = "DiagramPoint" + suffix;
     std::string dgm_class_name = "Diagrams" + suffix;
@@ -566,8 +491,8 @@ void init_oineus(py::module& m, std::string suffix)
     std::string vr_simplex_class_name = "VRSimplex" + suffix;
     std::string vr_filtration_class_name = "VRFiltration" + suffix;
     
-    std::string im_ker_reduced_class_name = "ImKerReduced" + suffix;
-    std::string cok_reduced_class_name = "CokReduced" + suffix;
+    std::string im_ker_cok_reduced_class_name = "ImKerCokReduced" + suffix;
+    //std::string cok_reduced_class_name = "CokReduced" + suffix;
 
     py::class_<DgmPoint>(m, dgm_point_name.c_str())
             .def(py::init<Real, Real>())
@@ -632,11 +557,11 @@ void init_oineus(py::module& m, std::string suffix)
             .def("size_in_dimension", &VRFiltration::size_in_dimension)
             .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
 
-    py::class_<ImKerRed>(m, im_ker_reduced_class_name.c_str())
-            .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<bool>, std::vector<int>, std::vector<int>>());
+    py::class_<ImKerCokRed>(m, im_ker_cok_reduced_class_name.c_str())
+            .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<bool>, std::vector<int>, std::vector<int>>());
 
-    py::class_<CokRed>(m, cok_reduced_class_name.c_str())
-            .def(py::init<VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>>());
+    /*py::class_<CokRed>(m, cok_reduced_class_name.c_str())
+            .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<bool>, std::vector<int>>());*/
 
     std::string func_name;
 
@@ -737,20 +662,24 @@ void init_oineus(py::module& m, std::string suffix)
 
 
     // reduce to create an ImKerReduced object
-    func_name = "reduce_im_ker" + suffix;
-    m.def(func_name.c_str(), &oineus::reduce_im_ker<Int, Real>);
+    func_name = "reduce_im_ker_cok" + suffix;
+    m.def(func_name.c_str(), &oineus::reduce_im_ker_cok<Int, Real>);
 
     
     // reduce to create an CokReduced object
-    func_name = "reduce_cok" + suffix;
-    m.def(func_name.c_str(), &oineus::reduce_cok<Int, Real>);
+    /*func_name = "reduce_cok" + suffix;
+    m.def(func_name.c_str(), &oineus::reduce_cok<Int, Real>);*/
 
     func_name = "list_to_filtration" + suffix;
     m.def(func_name.c_str(), &list_to_filtration<Int, Real>);
     
     
-    func_name = "compute_kernel_image_diagrams" + suffix;
-    m.def(func_name.c_str(), &compute_kernel_image_diagrams<Int, Real>);
+    func_name = "compute_kernel_image_cokernel_diagrams" + suffix;
+    m.def(func_name.c_str(), &compute_kernel_image_cokernel_diagrams<Int, Real>);
+
+    /*func_name = "compute_cokernel_diagrams" + suffix;
+    m.def(func_name.c_str(), &compute_cokernel_diagrams<Int, Real>);*/
 }
+
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H
