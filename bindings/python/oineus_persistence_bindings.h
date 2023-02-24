@@ -377,6 +377,7 @@ void init_oineus(py::module& m, std::string suffix)
             .def("simplices", &LSFiltration::simplices_copy)
             .def("size_in_dimension", &LSFiltration::size_in_dimension)
             .def("critical_vertex", &LSFiltration::cvl)
+            .def("simplex_value", &LSFiltration::value_by_sorted_id)
             .def("boundary_matrix", &LSFiltration::boundary_matrix_full);
 
     py::class_<VRFiltration>(m, vr_filtration_class_name.c_str())
@@ -385,6 +386,7 @@ void init_oineus(py::module& m, std::string suffix)
             .def("simplices", &VRFiltration::simplices_copy)
             .def("critical_edge", &VRFiltration::cvl)
             .def("size_in_dimension", &VRFiltration::size_in_dimension)
+            .def("simplex_value", &VRFiltration::value_by_sorted_id)
             .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
 
     std::string func_name;

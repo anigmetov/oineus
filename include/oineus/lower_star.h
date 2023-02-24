@@ -270,7 +270,7 @@ public:
     GridFiltration freudenthal_filtration(size_t top_d, bool negate, int n_threads = 1) const
     {
         if (top_d > dim)
-            throw std::runtime_error("bad dimension");
+            throw std::runtime_error("bad dimension, top_d = " + std::to_string(top_d) + ", dim = " + std::to_string(dim));
 
         SimplexVec simplices;
 
