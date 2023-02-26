@@ -133,13 +133,14 @@ namespace oineus {
 
 						if (cycle_g) {
 							open_point_im[id_in_L] = true;
+							std::cerr << "for " << i << " with id_in_L " << id_in_L << " cycle_g is " << cycle_g << " and so we have something which gives birth, and now open_point is: [";
+							for (int j = 0; j < open_point_im.size(); j++) {
+								std::cerr << " " << open_point_im[j] ;
+							}
+							std::cerr << "]" << std::endl;
 						}
 
-						//std::cerr << "for " << i << " with id_in_L " << id_in_L << " cycle_g is " << cycle_g << " and so we have something which gives birth, and now open_point is: [";
-						//for (int j = 0; j < open_point.size(); j++) {
-						//	std::cerr << " " << open_point[j] ;
-						//}
-						//std::cerr << "]" << std::endl;
+						
 
 					} else if (!R_f[i].empty()) {
 						std::vector<int> quasi_sum_f(number_cells_K, 0);
@@ -166,14 +167,16 @@ namespace oineus {
 								break;
 							}
 						}
-						std::cerr << "for " << i << " cycle_f is " << cycle_f << " and  R_im is " << R_im << " and R_im[i].back() is " << R_im[i].back() << " and sorted_id_to_id[OrderChange[R_im[i].back()]] is " << sorted_id_to_id[OrderChange[R_im[i].back()]] <<" with SubComplex " << SubComplex[OrderChange[R_im[i].back()]]<< std::endl;
+						std::cerr << "for " << i << " cycle_f is " << cycle_f << " and  R_im is " << R_im << " and R_im[" << i << "] is " << R_im[i]<< std::endl; // << " and R_im[i].back() is " << R_im[i].back() << " and sorted_id_to_id[OrderChange[R_im[i].back()]] is " << sorted_id_to_id[OrderChange[R_im[i].back()]] <<" with SubComplex " << SubComplex[OrderChange[R_im[i].back()]]<< std::endl;
 
-						if (!cycle_f && SubComplex[OrderChange[R_im[i].back()]] != -1) {
-							int birth_id = R_im[i].back();
-							int dim = K.dim_by_id(i)-1; 
-							ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(OrderChange[birth_id]), K.value_by_sorted_id(i))); //K.value_by_sorted_id(i)
-							std::cerr << "Found a chain which should kill something, it has id " << i << " and the thing it kills was born by " << SubComplex[birth_id] << " which has open point " << open_point_im[SubComplex[birth_id]] << std::endl;
-							open_point_im[SubComplex[birth_id]] = false;
+						if (!cycle_f && !R_im[i].empty() && SubComplex[OrderChange[R_im[i].back()]] != -1 ) {
+							//if (SubComplex[OrderChange[R_im[i].back()]] != -1 ) {
+								int birth_id = R_im[i].back();
+								int dim = K.dim_by_id(i)-1; 
+								ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(OrderChange[birth_id]), K.value_by_sorted_id(i))); //K.value_by_sorted_id(i)
+								std::cerr << "Found a chain which should kill something, it has id " << i << " and the thing it kills was born by " << SubComplex[birth_id] << " which has open point " << open_point_im[SubComplex[birth_id]] << std::endl;
+								open_point_im[SubComplex[birth_id]] = false;
+							//}
 						}
 					}
 				} 
