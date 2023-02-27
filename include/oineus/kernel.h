@@ -614,7 +614,7 @@ namespace oineus {
 
 		ImKerCokReduced<Int, Real> IKCR(K, L, F, G, Im, Ker, Cok, InSubcomplex, L_to_K, new_order);	
 
-		//IKCR.GenerateKerDiagrams(new_cols);
+		IKCR.GenerateKerDiagrams(new_cols);
 		IKCR.GenereateImDiagrams(new_cols);
 
 		return  IKCR;
