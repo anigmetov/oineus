@@ -88,11 +88,11 @@ namespace oineus {
 					sorted_id_to_id[K.get_sorted_id(i)] = i;
 				}
 
-				std::cerr << "sorted_id_to_id is [";
-				for (int i = 0; i < sorted_id_to_id.size(); i++) {
-					std::cerr << " " << sorted_id_to_id[i];
-				}
-				std::cerr << "]" << std::endl;
+				//std::cerr << "sorted_id_to_id is [";
+				//for (int i = 0; i < sorted_id_to_id.size(); i++) {
+				//	std::cerr << " " << sorted_id_to_id[i];
+				//}
+				//std::cerr << "]" << std::endl;
 
 				std::vector<int> SubComplex(number_cells_K, -1);
 
@@ -100,97 +100,105 @@ namespace oineus {
 					SubComplex[K.get_sorted_id(L_to_K[i])] = i;
 				}
 
-				std::cerr << "SubComplex is: [" ;
-				for (int i = 0; i < SubComplex.size(); i++) {
-					std::cerr << " " << SubComplex[i];
-				}
-				std::cerr << "]" << std::endl;
+				//std::cerr << "SubComplex is: [" ;
+				//for (int i = 0; i < SubComplex.size(); i++) {
+				//	std::cerr << " " << SubComplex[i];
+				//}
+				//std::cerr << "]" << std::endl;
 
 				std::vector<bool> open_point_im(number_cells_L, false);
 
-				std::cerr << "R_f is " << R_f << std::endl;
-				F.sanity_check();
-				std::cerr << "R_g is " << R_g << std::endl;
+				//std::cerr << "R_f is " << R_f << std::endl;
+				//F.sanity_check();
+				//std::cerr << "R_g is " << R_g << std::endl;
+				//std::cerr << "D_g is " << D_g << std::endl;
+				//std::cerr << "V_g is " << V_g << std::endl;
+				//G.sanity_check();
 
 				for (int i = 0; i < number_cells_K; i++) {
-					int id_in_L = SubComplex[i];
-					std::cerr << "Looking at " << i << " in sorted K which has id_in_L " << id_in_L << " and value " << K.value_by_sorted_id(i) << " in K" << std::endl; 
-					if (id_in_L != -1 && R_g[i].empty()) {//the cell needs to be in L, and negative in R_g, which requires R_g to be empty, and then we check if the column in V_g stores a cycle.
+					int in_L = SubComplex[i];
+					std::cerr << "Looking at " << i << " in sorted K which has in_L " << in_L  << R_f[i] << std::endl;
+					if (in_L != -1) {
+						int id_in_L = L.get_sorted_id(SubComplex[i]);
+						std::cerr << " which has id_in_L " << id_in_L << " and value " << K.value_by_sorted_id(i) << " in K" << std::endl; 
+						if (R_g[id_in_L].empty()) {//the cell needs to be in L, and positive in R_g, which requires R_g to be empty, and then we check if the column in V_g stores a cycle.
 
-						std::vector<int> quasi_sum_g(number_cells_L, 0);
-						for (int j = 0; j < V_g[L.get_sorted_id(id_in_L)].size(); j++) {
-							for (int k = 0; k < D_g[V_g[L.get_sorted_id(id_in_L)][j]].size(); k++) {
-								quasi_sum_g[D_g[V_g[L.get_sorted_id(id_in_L)][j]][k]]++;
+							std::vector<int> quasi_sum_g(number_cells_L, 0);
+							for (int j = 0; j < V_g[id_in_L].size(); j++) {
+								for (int k = 0; k < D_g[V_g[id_in_L][j]].size(); k++) {
+									quasi_sum_g[D_g[V_g[id_in_L][j]][k]]++;
+								}
+							}
+							bool cycle_g = true;
+							for (int j = 0; j < number_cells_L; j++) {
+								if (quasi_sum_g[j] %2 != 0) {
+									cycle_g = false;
+									break;
+								}
+							}
+
+							if (cycle_g) {
+								open_point_im[id_in_L] = true;
+							//	std::cerr << "for " << i << " with id_in_L " << id_in_L << " cycle_g is " << cycle_g << " and so we have something which gives birth, and now open_point is: [";
+							//	for (int j = 0; j < open_point_im.size(); j++) {
+							//		std::cerr << " " << open_point_im[j] ;
+							//	}
+							//	std::cerr << "]" << std::endl;
 							}
 						}
-						bool cycle_g = true;
-						for (int j = 0; j < number_cells_L; j++) {
-							if (quasi_sum_g[j] %2 != 0) {
-								cycle_g = false;
-								break;
-							}
-						}
-
-						if (cycle_g) {
-							open_point_im[id_in_L] = true;
-							std::cerr << "for " << i << " with id_in_L " << id_in_L << " cycle_g is " << cycle_g << " and so we have something which gives birth, and now open_point is: [";
-							for (int j = 0; j < open_point_im.size(); j++) {
-								std::cerr << " " << open_point_im[j] ;
-							}
-							std::cerr << "]" << std::endl;
-						}
-
-						
-
-					} else if (!R_f[i].empty()) {
+					}
+					if (R_f[i].empty()) {
 						std::vector<int> quasi_sum_f(number_cells_K, 0);
-						std::cerr << " looking at " << V_f[i] << std::endl;
+						//std::cerr << " looking at " << V_f[i] << std::endl;
 
 						for (int j = 0; j < V_f[i].size(); j++) {
-							std::cerr << " looking at " << V_f[i][j] << " and " << D_f[V_f[i][j]]<< std::endl;
+						//	std::cerr << " looking at " << V_f[i][j] << " and " << D_f[V_f[i][j]]<< std::endl;
 							for (int k = 0; k < D_f[V_f[i][j]].size(); k++ ) {
 								quasi_sum_f[D_f[V_f[i][j]][k]]++;
-								std::cerr << "quasi_sum_f[" << D_f[V_f[i][j]][k] << "] increased to " << quasi_sum_f[D_f[V_f[i][j]][k]] << std::endl;
+							//	std::cerr << "quasi_sum_f[" << D_f[V_f[i][j]][k] << "] increased to " << quasi_sum_f[D_f[V_f[i][j]][k]] << std::endl;
 							}
 						}
 
 						bool cycle_f = true;
 
-						std::cerr << i << " quasi_sum_f is [";
-						for (int j = 0; j < quasi_sum_f.size(); j++) {
-							std::cerr << " " << quasi_sum_f[j];
-						}
-						std::cerr << "]" << std::endl;
+						//std::cerr << i << " quasi_sum_f is [";
+						//for (int j = 0; j < quasi_sum_f.size(); j++) {
+						//	std::cerr << " " << quasi_sum_f[j];
+						//}
+						//std::cerr << "]" << std::endl;
 						for (int j = 0; j < quasi_sum_f.size(); j++) {
 							if (quasi_sum_f[j] %2 != 0) {
 								cycle_f = false;
 								break;
 							}
 						}
-						std::cerr << "for " << i << " cycle_f is " << cycle_f << " and  R_im is " << R_im << " and R_im[" << i << "] is " << R_im[i]<< std::endl; // << " and R_im[i].back() is " << R_im[i].back() << " and sorted_id_to_id[OrderChange[R_im[i].back()]] is " << sorted_id_to_id[OrderChange[R_im[i].back()]] <<" with SubComplex " << SubComplex[OrderChange[R_im[i].back()]]<< std::endl;
+						MatrixData D_f = F.get_D();
+						MatrixData D_im = Im.get_D();
+						//std::cerr << "for " << i << " cycle_f is " << cycle_f << " and D_f is " << D_f << " and  D_im is" << D_im << " and R_im is " << R_im << " and R_im[" << i << "] is " << R_im[i]<< std::endl; // << " and R_im[i].back() is " << R_im[i].back() << " and sorted_id_to_id[OrderChange[R_im[i].back()]] is " << sorted_id_to_id[OrderChange[R_im[i].back()]] <<" with SubComplex " << SubComplex[OrderChange[R_im[i].back()]]<< std::endl;
 
-						if (!cycle_f && !R_im[i].empty() && SubComplex[OrderChange[R_im[i].back()]] != -1 ) {
-							//if (SubComplex[OrderChange[R_im[i].back()]] != -1 ) {
-								int birth_id = R_im[i].back();
-								int dim = K.dim_by_id(i)-1; 
-								ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(OrderChange[birth_id]), K.value_by_sorted_id(i))); //K.value_by_sorted_id(i)
+						if (!cycle_f && SubComplex[R_f[i].back()] != -1 ) {
+							int birth_id = R_f[i].back();
+							int dim = K.dim_by_id(birth_id); 
+							if ( K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
+								ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //K.value_by_sorted_id(i)
 								std::cerr << "Found a chain which should kill something, it has id " << i << " and the thing it kills was born by " << SubComplex[birth_id] << " which has open point " << open_point_im[SubComplex[birth_id]] << std::endl;
-								open_point_im[SubComplex[birth_id]] = false;
-							//}
+							}
+							open_point_im[SubComplex[birth_id]] = false;
 						}
 					}
 				} 
 
-				std::cerr << "Image open points are ";
-				for (int i = 0; i < open_point_im.size(); i++) {
-					std::cerr << " " << open_point_im[i];
-				}
+				//std::cerr << "Image open points are ";
+				//for (int i = 0; i < open_point_im.size(); i++) {
+				//	std::cerr << " " << open_point_im[i];
+				//}
 				std::cerr << std::endl;
 				for (int i = 0; i < open_point_im.size(); i++) {
 					if (open_point_im[i]) {
+						int id_in_K = K.get_sorted_id(L_to_K[i]);
 						int dim = K.dim_by_sorted_id(i);//(OrderChange[i])-1;
-						std::cerr << i << " is open with dimension " << dim << " and value " << K.value_by_sorted_id(i) << std::endl;
-						ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()));
+						std::cerr << i << " is open with dimension " << dim << " and value " << K.value_by_sorted_id(id_in_K) << std::endl;
+						ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(id_in_K), std::numeric_limits<double>::infinity()));
 					}
 				}
 			
@@ -243,7 +251,7 @@ namespace oineus {
 					//TODO: should this be a serpate test?
 					//Check if a cell gives birth to a class, need to check if it is negative in R_f
 					int id_in_L = SubComplex[i];
-					//std::cerr << i << " id_in_L is " << id_in_L << std::endl;
+					std::cerr << i << " id_in_L is " << id_in_L << std::endl;
 					if (id_in_L == -1 && !R_f[i].empty()) { //cell needs to be in K\L, and needs to not be empty in R_f
 						
 						std::vector<int> quasi_sum (number_cells_K, 0);
@@ -264,14 +272,14 @@ namespace oineus {
 						//	std::cerr << " " << SubComplex[j];
 						//}
 						//std:: cerr << "] and SubComplex[OrderChange[R_im[new_cols[i]].back()]] is " << SubComplex[OrderChange[R_im[new_cols[i]].back()]]  << std::endl;
-						if (!cycle && SubComplex[OrderChange[R_im[new_cols[i]].back()]] != -1) { // check if lowest entry corresponds to a cell in L
+						if (!cycle && SubComplex[R_f[i].back()] != -1) { // check if lowest entry corresponds to a cell in L
 							open_point_ker[sorted_id_to_id[i]] = true;
 						//	std::cerr << "set open_point[" << sorted_id_to_id[i] <<"] to true." << std::endl;
 						}
 					}
 					//Now check if cell kills a class, in which case find the paired cell, need to check if it is positive in R_f
 
-					else if (id_in_L != -1 && !R_g[SubComplex[i]].empty()) {
+					else if (id_in_L != -1 && !R_g[L.get_sorted_id(id_in_L)].empty()) {
 						std::vector<int> quasi_sum_g (number_cells_L, 0);
 						
 						for (int j = 0; j < V_g[id_in_L].size(); j++) {
@@ -307,7 +315,7 @@ namespace oineus {
 							if (cycle_f) {
 								std::cerr << R_ker[new_cols[i]] << std::endl;
 								int birth_id = OrderChange[R_ker[new_cols[i]].back()];
-								std::cerr << "birth_id is " << birth_id << std::endl;
+								std::cerr << new_cols[i] << " birth_id is " << birth_id << std::endl;
 								int dim = K.dim_by_id(i)-1; 
 								KerDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //K.value_by_sorted_id(i)
 								open_point_ker[sorted_id_to_id[birth_id]] = false;
@@ -317,7 +325,7 @@ namespace oineus {
 					}
 				}
 				
-				std::cerr << "made it to the end of the checks in Kernel diagrams" << std::endl;
+				//std::cerr << "made it to the end of the checks in Kernel diagrams" << std::endl;
 
 				for (int i = 0; i < open_point_ker.size(); i++) {
 					if (open_point_ker[i]) {
@@ -339,6 +347,132 @@ namespace oineus {
 				}
 			
 			}
+
+			void GenerateCokDiagrams() {
+				std::cout << "Starting to extract the cokernel diagrams." << std::endl;
+				
+				for (int i = 0; i < max_dim+1; i++){
+					CokDiagrams.push_back(Dgm());
+				}
+
+				std::vector<bool> open_point_cok (number_cells_K);
+				
+				//Get the matrices we need to check the conditions
+				MatrixData R_f = F.get_R();
+				MatrixData D_f = F.get_D();
+				MatrixData V_f = F.get_V();
+				MatrixData R_g = G.get_R();
+				MatrixData D_g = G.get_D();
+				MatrixData V_g = G.get_V();
+				MatrixData R_ker = Ker.get_R();
+				MatrixData R_im = Im.get_R();
+				MatrixData R_cok = Cok.get_R();
+				
+				std::vector<int> sorted_id_to_id(number_cells_K);
+
+				for (int i = 0; i < number_cells_K; i++) {
+					sorted_id_to_id[K.get_sorted_id(i)] = i;
+				}
+
+				std::vector<int> SubComplex(number_cells_K, -1);
+
+				for (int i = 0; i < number_cells_L; i++) {
+					SubComplex[K.get_sorted_id(L_to_K[i])] = i;
+				}
+
+				std::cerr << "SubComplex is [";
+				for (int i = 0; i < SubComplex.size(); i++) {
+					std::cerr << " " << SubComplex[i];
+				} 
+				std::cerr << "]" << std::endl;
+
+				for (int i = 0; i < number_cells_K; i++) {
+					std::cerr << "Looking at " << i << " which has SubComplex " << SubComplex[i] << " and value in K " << K.value_by_sorted_id(i) << std::endl; 
+
+					if (R_f[i].empty()) {// i needs to be positive in F, so R_f[i] needs to be empty, and now we check if V_f[i] stores a cycle
+						std::vector<int> quasi_sum_f(number_cells_K, 0);
+						if (!V_f[i].empty()) {
+							for (int j = 0; j < V_f[i].size(); j++) {
+								for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
+									quasi_sum_f[D_f[V_f[i][j]][k]]++;
+								}
+							}
+						}
+
+						std::cerr << "quasi_sum_f for " << i << " is " << quasi_sum_f << std::endl;
+						bool cycle_f = true;
+
+						for (int j = 0; j < quasi_sum_f.size(); j++) {
+							if (quasi_sum_f[j] % 2 != 0) {
+								cycle_f = false;
+								break;
+							}
+						}
+
+						if (cycle_f) {
+							std::cerr << i << " has cycle_f " << cycle_f << " and so we need to check if it is in K-L or is negative in R_g." << std::endl;
+							
+							if (SubComplex[i] == -1) {//If it is not in L then it gives birth
+								std::cerr << i << " has SubComplex " << SubComplex[i] << " and so it is an open point." << std::endl;
+								open_point_cok[i] = true;
+							} else { //if it is in L, we need to check that it is negative in R_g
+								int id_in_L = L.get_sorted_id(SubComplex[i]);
+								if (!R_g[id_in_L].empty()) {
+									bool cycle_g = true;
+									std::vector<int> quasi_sum_g (number_cells_L, 0);
+									for (int j = 0; j < V_g[i].size(); j++) {
+										for (int k = 0; k < D_g[V_g[id_in_L][j]].size(); k++) {
+											quasi_sum_f[D_g[V_g[id_in_L][j]][k]]++;
+										}
+									}
+
+									for (int k = 0; k < quasi_sum_g.size(); k++) {
+										if (quasi_sum_g[k] %2 !=0) {
+											cycle_g = false;
+											break;
+										}
+									}
+
+									if (!cycle_g) {
+										std::cerr << i << " has SubComplex " << SubComplex[i] << " but is negatve in R_g and so is an open point." << std::endl;
+										open_point_cok[i] = true;
+									}
+								}
+							}
+						}
+					} else if (!R_f[i].empty()) {//if i is negative in R_f then it potentially kills something
+					std::vector<int> quasi_sum_f(number_cells_K, 0);
+						if (!V_f[i].empty()) {
+							for (int j = 0; j < V_f[i].size(); j++) {
+								for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
+									quasi_sum_f[D_f[V_f[i][j]][k]]++;
+								}
+							}
+						}
+
+						std::cerr << "quasi_sum_f for " << i << " is " << quasi_sum_f << std::endl;
+						bool cycle_f = true;
+
+						for (int j = 0; j < quasi_sum_f.size(); j++) {
+							if (quasi_sum_f[j] % 2 != 0) {
+								cycle_f = false;
+								break;
+							}
+						}
+
+						if(!cycle_f) {//i is negative in R_f, so we need to check if the lowest one in its column in R_im belongs to K\L
+							 if (SubComplex[OrderChange[R_im[i].back()]] == -1) {
+								std::cerr << "Found that " << i << " kills something.";
+								int birth_id = R_cok[i].back();
+								int dim = K.dim_by_sorted_id(birth_id);
+								std::cerr << " The thing it kills was born by " << birth_id << " and so we are going to add the point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) <<  ") to the dimension " << K.dim_by_sorted_id(birth_id) << std::endl;
+
+								CokDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));
+							 }
+						}
+					}
+				}
+			};
 
 			
 
@@ -437,7 +571,7 @@ namespace oineus {
 		VRUDecomp G(L.boundary_matrix_full());
 		G.reduce_parallel_rvu(params);
 	
-		std::vector<int> to_del(number_cells_K);
+		std::vector<int> cycles(number_cells_K);
 		std::vector<int> new_order (number_cells_K);
 		std::iota (new_order.begin(), new_order.end(), 0);
 
@@ -533,7 +667,7 @@ namespace oineus {
 	
 		MatrixData V_im = Im.get_V();
 		for (int i = 0; i < V_im.size(); i++) {
-			bool del = false;
+			bool cycle = true;
 			std::vector<int> quasi_sum (number_cells_K, 0);
 			if (!V_im[i].empty()) {
 				for (int j = 0; j < V_im[i].size(); j++) {
@@ -545,43 +679,43 @@ namespace oineus {
 		
 			for (int j = 0; j < quasi_sum.size(); j++) {
 				if (quasi_sum[j]%2 !=0) {
-					del = true;
+					cycle = false;
 					break;
 				}
 			}
-			to_del[i] = del;
+			cycles[i] = cycle;
 			
 		}
 
 		MatrixData d_ker;
-
-		for (int i = 0; i < to_del.size(); i++) {
-			if (!to_del[i]) {
-				d_ker.push_back(V_im[i]);
-			}
-
-		}
-
 		std::vector<int> new_cols(number_cells_K, -1);
+		std::cerr << "D_im is " << D_im << std::endl;
+		std::cerr << "V_im is " << V_im << std::endl;
+		MatrixData R_im = Im.get_R();
+		std::cerr << "R_im is " << R_im << std::endl;
 		int counter = 0;
 
-		for (int i = 0; i < number_cells_K; i++) {
-			if (to_del[i] != 1) {
+		for (int i = 0; i < cycles.size(); i++) {
+			if (cycles[i]) {
+				d_ker.push_back(V_im[i]);
 				new_cols[i] = counter;
 				counter++;
 			}
+
 		}
+
+		
 		std::cerr << "new_cols is [";
 		for (int i = 0; i < new_cols.size(); i++) {
 			std::cerr << " " << new_cols[i];	
  		}
-		std::cerr << "]" << std::endl;
+		std::cerr << "] and d_ker is " << d_ker << std::endl;
 		
 		VRUDecomp Ker(d_ker, K.size());
 		Ker.reduce_parallel_rvu(params);
 		MatrixData R_ker = Ker.get_R();
 
-		std::cerr << "R_ker is " << R_ker;
+		std::cerr << "R_ker is " << R_ker << std::endl;
 
 		MatrixData D_cok(F.get_D());
 		MatrixData D_g = G.get_D();
@@ -614,8 +748,9 @@ namespace oineus {
 
 		ImKerCokReduced<Int, Real> IKCR(K, L, F, G, Im, Ker, Cok, InSubcomplex, L_to_K, new_order);	
 
-		//IKCR.GenerateKerDiagrams(new_cols);
+		IKCR.GenerateKerDiagrams(new_cols);
 		IKCR.GenereateImDiagrams(new_cols);
+		//IKCR.GenerateCokDiagrams();
 
 		return  IKCR;
 	}
