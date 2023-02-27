@@ -227,29 +227,32 @@ namespace oineus {
 				MatrixData V_g = G.get_V();
 				MatrixData R_ker = Ker.get_R();
 				MatrixData R_im = Im.get_R();
-				
+				MatrixData V_im = Im.get_V();
+				MatrixData D_im = Im.get_D();
+				std::cerr << "R_f is " << R_f << std::endl;
+				std::cerr << "R_im is " << R_im << std::endl;
 				for (int i = 0; i < number_cells_K; i++) {
-					std::cerr << "Looking at " << i << " which has sorted_K_to_sorted_L " << sorted_K_to_sorted_L[i] << " and R_f[" << i << "] is " << R_f[i] << std::endl; 
+					std::cerr << "Looking at " << i << " which has sorted_K_to_sorted_L " << sorted_K_to_sorted_L[i] << " and R_im[" << i << "] is " << R_im[i] << std::endl; 
 					if (sorted_K_to_sorted_L[i] == -1) {//to give birth in kernel case, i needs to be in K-L
 						//Next week check if it is negative in R_f
-						if (!R_f[i].empty()) {
-							bool cycle_f = true;
+						if (!R_im[i].empty()) {
+							bool cycle_im = true;
 							//next week check if it represents a cycle
-							std::vector<int> quasi_sum_f(number_cells_K, 0);
+							std::vector<int> quasi_sum_im(number_cells_K, 0);
 							for (int j = 0; j < V_f[i].size(); j++){
 								for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
-									quasi_sum_f[D_f[V_f[i][j]][k]]++;
+									quasi_sum_im[D_f[V_f[i][j]][k]]++;
 								}
 							}
 
-							for (int j = 0; j < quasi_sum_f.size(); j++) {
-								if (quasi_sum_f[j] %2 != 0) {
-									cycle_f = false;
+							for (int j = 0; j < quasi_sum_im.size(); j++) {
+								if (quasi_sum_im[j] %2 != 0) {
+									cycle_im = false;
 									break;
 								}
 							}
-							std::cerr << "cycle_f is " << cycle_f << std::endl;
-							if (!cycle_f) {
+							std::cerr << "cycle_im is " << cycle_im << std::endl;
+							if (!cycle_im) {
 								std::cerr << "R_f[" << i << "] is " << R_f[i] << " and R_im[" << i << "] is " << R_im[i] << std::endl;
 								if (sorted_K_to_sorted_L[R_f[i].back()] != -1) {
 									std::cerr << i << " is a cell which gives birth" << std::endl;
@@ -257,26 +260,27 @@ namespace oineus {
 								}
 							}
 						}
-					} else if (R_f[i].empty()) { //to kill something, i needs to be positive in f and negative in g, and so we begin with testing positive in f
-						bool cycle_f = true;
+					} else if (R_im[i].empty()) { //to kill something, i needs to be positive in f and negative in g, and so we begin with testing positive in f
+						bool cycle_im = true;
 						//next week check if it represents a cycle
-						std::vector<int> quasi_sum_f(number_cells_K, 0);
-						for (int j = 0; j < V_f[i].size(); j++){
-							for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
-								quasi_sum_f[D_f[V_f[i][j]][k]]++;
+						std::vector<int> quasi_sum_im(number_cells_K, 0);
+						for (int j = 0; j < V_im[i].size(); j++){
+							for (int k = 0; k < D_im[V_im[i][j]].size(); k++) {
+								quasi_sum_im[D_f[V_f[i][j]][k]]++;
 							}
 						}
-						for (int j = 0; j < quasi_sum_f.size(); j++) {
-							if (quasi_sum_f[j] %2 != 0) {
-								cycle_f = false;
+						for (int j = 0; j < quasi_sum_im.size(); j++) {
+							if (quasi_sum_im[j] %2 != 0) {
+								cycle_im = false;
 								break;
 							}
 						}							
-						std::cerr << "cycle_f is " << cycle_f << std::endl;
-						if (cycle_f) {
+						std::cerr << "cycle_im is " << cycle_im << std::endl;
+						if (cycle_im) {
 							//next we check negative in g
 							std::cerr << "R_g is " << R_g << " and sorted_K_to_sorted_L[" << i << "] is " << sorted_K_to_sorted_L[i]<< std::endl;
 							if (!R_g[sorted_K_to_sorted_L[i]].empty()) {
+
 								bool cycle_g = true;
 								//next week check if it represents a cycle
 								std::vector<int> quasi_sum_g(number_cells_L, 0);
@@ -291,18 +295,26 @@ namespace oineus {
 										break;
 									}
 								}
-								std::cerr << "cycle_g is " << cycle_g << std::endl;
+								std::cerr << "cycle_g is " << cycle_g << " and new_cols[" << i << "] is " << new_cols[i] << std::endl;
 								if (!cycle_g) {
 									std::cerr << "R_ker is " << R_ker << std::endl;
 									int birth_id = new_order_to_old[R_ker[new_cols[i]].back()];
-									int dim = K.dim_by_sorted_id(birth_id)-1;
-									//if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-										std::cerr << "Found something which kills a class, and that class was born by " << birth_id << " so we add (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ")" << std::endl;
+									int dim = K.dim_by_sorted_id(i)-1;
+									if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
+										std::cerr << "Found something which kills a class, and that class was born by " << birth_id << " so we add (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to the dimension " << dim << " diagram" << std::endl;
 										KerDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));
-									//}
+										std::cerr << "added point " << std::endl;
+									}
 								}
 							}
 						}
+					}
+				}
+
+				for (int i = 0; i < open_points_ker.size(); i++) {
+					if (open_points_ker[i]) {
+						int dim = K.dim_by_sorted_id(i)-1;
+						ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()));
 					}
 				}
 			}
@@ -471,53 +483,54 @@ namespace oineus {
 			std::cerr << " " << old_to_new_order[i];
 		}
 		std::cerr << "]" << std::endl;
-		MatrixData D_im;
-		for (int i = 0; i < F.d_data.size(); i++) {
-
+		MatrixData d_im;
+		for (int i = 0; i < F.get_D().size(); i++) {
 			std::vector<int> new_col_i;
-			if (!F.d_data[i].empty()) {
-				for (int j = 0; j < F.d_data[i].size(); j++) {
-					new_col_i.push_back(old_to_new_order[F.d_data[i][j]]);
+			if (!F.get_D()[i].empty()) {
+				for (int j = 0; j < F.get_D()[i].size(); j++) {
+					new_col_i.push_back(old_to_new_order[F.get_D()[i][j]]);
 				}
 			}
 			std::sort(new_col_i.begin(), new_col_i.end());
 			std::cerr << "old column is [" ;
-			for (int j = 0; j < F.d_data[i].size(); j++) {
-				std::cerr << " " << F.d_data[i][j];
+			for (int j = 0; j < F.get_D()[i].size(); j++) {
+				std::cerr << " " << F.get_D()[i][j];
 			}
 			std::cerr << "] and new column is [";
 			for (int j = 0; j < new_col_i.size(); j++) {
 				std::cerr << " " << new_col_i[j];
 			}
 			std::cerr << "]" << std::endl;
-			D_im.push_back(new_col_i);
+			d_im.push_back(new_col_i);
 		}
+		MatrixData D_f = F.get_D();
 
-		VRUDecomp Im(D_im);
+		std::cerr << "D_f is " << D_f << std::endl;
+		std::cerr << "d_im is " << d_im << std::endl;
+
+		VRUDecomp Im(d_im);
 		Im.reduce_parallel_rvu(params);
 
-		
-		std::vector<bool> to_keep(number_cells_K);
+		MatrixData D_im = Im.get_D();
+		std::vector<bool> to_keep(number_cells_K, false);
 		MatrixData V_im = Im.get_V();
 		for (int i = 0; i < V_im.size(); i++) {
-			bool cycle = true;
-			std::vector<int> quasi_sum (number_cells_K, 0);
 			if (!V_im[i].empty()) {
+				bool cycle = true;
+				std::vector<int> quasi_sum (number_cells_K, 0);
 				for (int j = 0; j < V_im[i].size(); j++) {
 					for (int k = 0; k < D_im[V_im[i][j]].size(); k++) {
 						quasi_sum[D_im[V_im[i][j]][k]]++;
 					}
 				}
-			}
-		
-			for (int j = 0; j < quasi_sum.size(); j++) {
-				if (quasi_sum[j]%2 !=0) {
-					cycle = false;
-					break;
+				for (int j = 0; j < quasi_sum.size(); j++) {
+					if (quasi_sum[j]%2 != 0) {
+						cycle = false;
+						break;
+					}
 				}
+				to_keep[i] = cycle;
 			}
-			to_keep[i] = cycle;
-			
 		}
 
 		MatrixData d_ker;
@@ -538,6 +551,7 @@ namespace oineus {
  		}
 		std::cerr << "]" << std::endl;
 		
+		std::cerr << "D_ker is " << d_ker << std::endl;
 		VRUDecomp Ker(d_ker, K.size());
 		Ker.reduce_parallel_rvu(params);
 		MatrixData R_ker = Ker.get_R();
