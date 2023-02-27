@@ -558,7 +558,7 @@ void init_oineus(py::module& m, std::string suffix)
             .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
 
     py::class_<ImKerCokRed>(m, im_ker_cok_reduced_class_name.c_str())
-            .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<bool>, std::vector<int>, std::vector<int>>());
+            .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>>());
 
     /*py::class_<CokRed>(m, cok_reduced_class_name.c_str())
             .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<bool>, std::vector<int>>());*/
