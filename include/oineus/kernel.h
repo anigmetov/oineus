@@ -152,7 +152,7 @@ namespace oineus {
                                     int birth_id = new_order_to_old[Ker.get_R()[new_cols[i]].back()];
                                     int dim = K.dim_by_sorted_id(i)-1;
                                     if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-                                        //std::cerr << "Found something which kills a class, and that class was born by " << birth_id << " so we add (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to the dimension " << dim << " diagram" << std::endl;
+                                        std::cerr << "birth_id is " << birth_id << " and death is " << i << " Found something which kills a class, and that class was born by " << birth_id << " so we add (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to the dimension " << dim << " diagram" << std::endl;
                                         KerDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));
                                         //std::cerr << "added point " << std::endl;
                                         open_points_ker[birth_id] = false;
@@ -252,9 +252,9 @@ namespace oineus {
                                 }
 
                                 //std::cerr << i << " gives birth" << std::endl;
-                                if (!Cok.get_R()[i].empty()){
+                                //if (Cok.get_R()[i].empty()){
                                     open_points_im[i] = true;
-                                }                   
+                                //}                   
 							}
                         }   
                     }
@@ -283,7 +283,7 @@ namespace oineus {
                                 int dim = K.dim_by_sorted_id(i)-1;
                                 if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
                                     ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));
-                                    //std::cerr << "Added the point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to dimension " << dim << " diagram." << std::endl;
+                                    //std::cerr << i << " Added the point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to dimension " << dim << " diagram." << std::endl;
                                 }
                                 open_points_im[birth_id] = false;
                             }
@@ -302,6 +302,7 @@ namespace oineus {
 					if (open_points_im[i]) {
 						int dim = K.dim_by_sorted_id(i);
 						ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()));
+						std::cerr << i << " Added the point (" << K.value_by_sorted_id(i) << ", " << std::numeric_limits<double>::infinity() << ") to dimension " << dim << " diagram." << std::endl;
 					}
 				}
 
@@ -333,6 +334,7 @@ namespace oineus {
 				//Get the matrices we need to check the conditions
 
 				for (int i = 0; i < number_cells_K; i++) {//we first check that i is positive in f
+					std::cerr << "looking at " << i << std::endl;
 					if (F.get_R()[i].empty()) {//the column in R needs to be empty
 						bool cycle_f = false;
 						if (!F.get_V()[i].empty()) {
@@ -351,10 +353,10 @@ namespace oineus {
 							}
 						}
 						if (cycle_f) {
-							//std::cerr << i << " is positive in f" << std::endl; 
+							std::cerr << i << " is positive in f" << std::endl; 
 							//now we check if either i is in K-L or negative in g
 							if (sorted_K_to_sorted_L[i] == -1) {
-								//std::cerr << i << " is in K-L and so gives birth" << std::endl;
+								std::cerr << i << " is in K-L and so gives birth" << std::endl;
 								open_points_cok[i] = true;
 							} else {
 								//int id_in_L = sorted_K_to_sorted_L[i];
@@ -377,12 +379,13 @@ namespace oineus {
 										}
 									}
 									if (!cycle_g) {
-										//std::cerr << sorted_K_to_sorted_L[i] << " is negative in g" << std::endl; 
+										std::cerr << sorted_K_to_sorted_L[i] << " is negative in g" << std::endl; 
 										open_points_cok[i] = true;
 									}
 								}
 							}
 						}
+						std::cerr << "finished with " << i << std::endl;
 					} else {
 						bool cycle_f = false;
 						if (!F.get_V()[i].empty()) {
@@ -401,12 +404,13 @@ namespace oineus {
 							}
 						}
 						if (!cycle_f) {
-							if (sorted_K_to_sorted_L[F.get_R()[i].back()] == -1) {
+							std::cerr << " F.get_R()[" << i << "] is " << F.get_R()[i] << " and Cok.get_R()[i] " << Cok.get_R()[i] << std::endl;
+							if (/*sorted_K_to_sorted_L[F.get_R()[i].back()] == -1 &&*/ !Cok.get_R()[i].empty()) {
 								int birth_id = Cok.get_R()[i].back();
 								//std::cerr << "Found a cell which kills something and that thing was born by " << birth_id << std::endl;
 								if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
 									int dim = K.dim_by_sorted_id(birth_id);
-									//std::cerr << "adding point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to the dimension " << dim << " diagram." << std::endl;
+									//std::cerr << i << "adding point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to the dimension " << dim << " diagram." << std::endl;
 								}
 								open_points_cok[birth_id] = false;
 							}
@@ -420,6 +424,7 @@ namespace oineus {
 					if (open_points_cok[i]) {
 						int dim = K.dim_by_sorted_id(i);
 						CokDiagrams[dim].push_back(Point(K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()));
+						std::cerr << i << " Added the point (" << K.value_by_sorted_id(i) << ", " << std::numeric_limits<double>::infinity() << ") to dimension " << dim << " diagram." << std::endl;
 					}
 				}
 
@@ -624,9 +629,6 @@ namespace oineus {
 		}
 		MatrixData D_f = F.get_D();
 
-		std::cerr << "D_f is " << D_f << std::endl;
-		std::cerr << "d_im is " << d_im << std::endl;
-
 		VRUDecomp Im(d_im);
 		Im.reduce_parallel_rvu(params);
 
@@ -694,11 +696,12 @@ namespace oineus {
 		MatrixData V_g = G.get_V();
 
 		for (int i = 0; i < number_cells_L; i++) {
-			bool replace = true;
+			bool replace = false;
 			std::vector<int> quasi_sum (number_cells_L, 0);
 			if (!V_g[i].empty()) {
+				replace = true;
 				for (int j = 0; j < V_g[i].size(); j++) {
-					for (int k = 0; k < D_g[V_g[i][j]++].size(); k++) {
+					for (int k = 0; k < D_g[V_g[i][j]].size(); k++) {
 						quasi_sum[D_g[V_g[i][j]][k]];//check if a column in V_g represents a cycle
 					}
 				}
@@ -711,7 +714,7 @@ namespace oineus {
 			}
 			if (replace) {
 				D_cok[sorted_L_to_sorted_K[i]] = V_g[i]; 
-			}
+			} 
 		}
 
 		VRUDecomp Cok(D_cok);
@@ -722,6 +725,26 @@ namespace oineus {
 		IKCR.GenerateKerDiagrams(new_cols);
 		IKCR.GenerateImDiagrams(new_cols);
 		IKCR.GenerateCokDiagrams(new_cols);
+
+		std::cerr << "F.get_R() is " << F.get_R() << std::endl;
+		std::cerr << "F.get_D() is " << F.get_D() << std::endl;
+		std::cerr << "F.get_V() is " << F.get_V() << std::endl;
+
+		std::cerr << "G.get_R() is " << G.get_R() << std::endl;
+		std::cerr << "G.get_D() is " << G.get_D() << std::endl;
+		std::cerr << "G.get_V() is " << G.get_V() << std::endl;
+
+		std::cerr << "Ker.get_R() is " << Ker.get_R() << std::endl;
+		std::cerr << "Ker.get_D() is " << Ker.get_D() << std::endl;
+		std::cerr << "Ker.get_V() is " << Ker.get_V() << std::endl;
+
+		std::cerr << "Im.get_R() is " << Im.get_R() << std::endl;
+		std::cerr << "Im.get_D() is " << Im.get_D() << std::endl;
+		std::cerr << "Im.get_V() is " << Im.get_V() << std::endl;
+
+		std::cerr << "Cok.get_R() is " << Cok.get_R() << std::endl;
+		std::cerr << "Cok.get_D() is " << Cok.get_D() << std::endl;
+		std::cerr << "Cok.get_V() is " << Cok.get_V() << std::endl;
 
 		return  IKCR;
 	}
