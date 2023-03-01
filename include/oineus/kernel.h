@@ -357,8 +357,93 @@ namespace oineus {
 				MatrixData D_g = G.get_D();
 				MatrixData V_g = G.get_V();
 				MatrixData R_im = Im.get_R();
+				MatrixData R_cok = Cok.get_R();
+				MatrixData D_cok = Cok.get_D();
+				MatrixData V_cok = Cok.get_V();
+
+				for (int i = 0; i < number_cells_K; i++) {//we first check that i is positive in f
+					if (R_f[i].empty()) {//the column in R needs to be empty
+						bool cycle_f = false;
+						if (!V_f[i].empty()) {
+							cycle_f = true;
+							std::vector<int> quasi_sum_f(number_cells_K, 0);
+							for (int j = 0; j < V_f[i].size(); j++) {
+								for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
+									quasi_sum_f[D_f[V_f[i][j]][k]]++;									
+								}						
+							}
+							for (int k = 0; k < quasi_sum_f.size(); k++) {
+								if (quasi_sum_f[k] %2 != 0) {
+									cycle_f = false;
+									break;									
+								}
+							}
+						}
+						if (cycle_f) {
+							std::cerr << i << " is positive in f" << std::endl; 
+							//now we check if either i is in K-L or negative in g
+							if (sorted_K_to_sorted_L[i] == -1) {
+								std::cerr << i << " is in K-L and so gives birth" << std::endl;
+								open_points_cok[i] = true;
+							} else {
+								//int id_in_L = sorted_K_to_sorted_L[i];
+								std::cerr << i << " sorted_K_to_sorted_L " << sorted_K_to_sorted_L[i] << " and R_g is " << R_g << " and V_g is " << V_g << " and D_g " << D_g <<std::endl; 
+								if (!R_g[sorted_K_to_sorted_L[i]].empty()) {
+									bool cycle_g = false;
+									if (!V_g[sorted_K_to_sorted_L[i]].empty()) {
+										cycle_g= true;
+										std::vector<int> quasi_sum_g(number_cells_L, 0);
+										for (int j = 0; j < V_g[sorted_K_to_sorted_L[i]].size(); j++) {
+											for (int k = 0; k < D_g[V_g[sorted_K_to_sorted_L[i]][j]].size(); k++) {
+												quasi_sum_g[D_g[V_g[sorted_K_to_sorted_L[i]][j]][k]]++;									
+											}						
+										}
+										for (int k = 0; k < quasi_sum_g.size(); k++) {
+											if (quasi_sum_g[k] %2 != 0) {
+												cycle_g = false;
+												break;									
+											}
+										}
+									}
+									if (!cycle_g) {
+										std::cerr << sorted_K_to_sorted_L[i] << " is negative in g" << std::endl; 
+										open_points_cok[i] = true;
+									}
+								}
+							}
+						}
+					} else {
+						bool cycle_f = false;
+						if (!V_f[i].empty()) {
+							cycle_f = true;
+							std::vector<int> quasi_sum_f(number_cells_K, 0);
+							for (int j = 0; j < V_f[i].size(); j++) {
+								for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
+									quasi_sum_f[D_f[V_f[i][j]][k]]++;									
+								}						
+							}
+							for (int k = 0; k < quasi_sum_f.size(); k++) {
+								if (quasi_sum_f[k] %2 != 0) {
+									cycle_f = false;
+									break;									
+								}
+							}
+						}
+						if (!cycle_f) {
+							if (sorted_K_to_sorted_L[R_f[i].back()] == -1) {
+								int birth_id = R_cok[i].back();
+								std::cerr << "Found a cell which kills something and that thing was born by " << birth_id << std::endl;
+								if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
+									int dim = K.dim_by_sorted_id(birth_id);
+									std::cerr << "adding point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to the dimension " << dim << " diagram." << std::endl;
+								}
+								open_points_cok[birth_id] = false;
+							}
+						}
+					}
 
 
+				}
 
 				for (int i = 0; i < open_points_cok.size(); i++) {
 					if (open_points_cok[i]) {
@@ -638,7 +723,7 @@ namespace oineus {
 		MatrixData R_g = G.get_R();
 		MatrixData V_g = G.get_V();
 
-		for (int i = 0; i < V_g.size(); i++) {
+		for (int i = 0; i < number_cells_L; i++) {
 			bool replace = true;
 			std::vector<int> quasi_sum (number_cells_L, 0);
 			if (!V_g[i].empty()) {
@@ -655,7 +740,7 @@ namespace oineus {
 				}
 			}
 			if (replace) {
-				D_cok[L_to_K[i]] = V_g[i]; 
+				D_cok[sorted_L_to_sorted_K[i]] = V_g[i]; 
 			}
 		}
 
