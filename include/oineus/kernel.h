@@ -74,107 +74,95 @@ namespace oineus {
 				}
 
 				std::vector<bool> open_points_ker (number_cells_K);
-				
-				//Get the matrices we need to check the conditions
-				MatrixData R_f = F.get_R();
-				MatrixData D_f = F.get_D();
-				MatrixData V_f = F.get_V();
-				MatrixData R_g = G.get_R();
-				MatrixData D_g = G.get_D();
-				MatrixData V_g = G.get_V();
-				MatrixData R_ker = Ker.get_R();
-				MatrixData R_im = Im.get_R();
-				MatrixData V_im = Im.get_V();
-				MatrixData D_im = Im.get_D();
-				//std::cerr << "R_f is " << R_f << std::endl;
-				//std::cerr << "R_im is " << R_im << std::endl;
-				for (int i = 0; i < number_cells_K; i++) {
-					//std::cerr << "Looking at " << i << " which has sorted_K_to_sorted_L " << sorted_K_to_sorted_L[i] << " and R_f[" << i << "] is " << R_f[i] << std::endl; 
-					if (sorted_K_to_sorted_L[i] == -1) {//to give birth in kernel case, i needs to be in K-L
-						//Next week check if it is negative in R_f
-						if (!R_f[i].empty()) {
-							bool cycle_f = true;
-							//next week check if it represents a cycle
-							std::vector<int> quasi_sum_f(number_cells_K, 0);
-							for (int j = 0; j < V_f[i].size(); j++){
-								for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
-									quasi_sum_f[D_f[V_f[i][j]][k]]++;
-								}
-							}
 
-							for (int j = 0; j < quasi_sum_f.size(); j++) {
-								if (quasi_sum_f[j] %2 != 0) {
-									cycle_f = false;
-									break;
-								}
-							}
-							//std::cerr << "cycle_f is " << cycle_f << std::endl;
-							if (!cycle_f) {
-								//std::cerr << "R_f[" << i << "] is " << R_f[i] << " and R_im[" << i << "] is " << R_im[i] << std::endl;
-								if (sorted_K_to_sorted_L[R_f[i].back()] != -1) {
-									//std::cerr << i << " is a cell which gives birth" << std::endl;
-									open_points_ker[i] = true;
-								}
-							}
-							//std::cerr << "open_points_im is [";
-							//for (int k = 0; k < open_points_ker.size(); k++) {
-							//	std::cerr << " " << open_points_ker[k];
-							//}
-							//std::cerr << "]" << std::endl;
-						}
-					} else if (R_f[i].empty()) { //to kill something, i needs to be positive in f and negative in g, and so we begin with testing positive in f
-						bool cycle_f = true;
-						if (!V_f[i].empty()) {	
-							cycle_f = true;
-							//next week check if it represents a cycle
-							std::vector<int> quasi_sum_f(number_cells_K, 0);
-							for (int j = 0; j < V_f[i].size(); j++){
-								for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
-									quasi_sum_f[D_f[V_f[i][j]][k]]++;
-								}
-							}
-							for (int j = 0; j < quasi_sum_f.size(); j++) {
-								if (quasi_sum_f[j] %2 != 0) {
-									cycle_f = false;
-									break;
-								}
-							}	
-						}						
-						//std::cerr << "cycle_f is " << cycle_f << std::endl;
-						if (cycle_f) {
-							//next we check negative in g
-							//std::cerr << "R_g is " << R_g << " and sorted_K_to_sorted_L[" << i << "] is " << sorted_K_to_sorted_L[i]<< std::endl;
-							if (!R_g[sorted_K_to_sorted_L[i]].empty()) {
-								bool cycle_g = true;
-								//next week check if it represents a cycle
-								std::vector<int> quasi_sum_g(number_cells_L, 0);
-								for (int j = 0; j < V_g[sorted_K_to_sorted_L[i]].size(); j++){
-									for (int k = 0; k < D_g[V_g[sorted_K_to_sorted_L[i]][j]].size(); k++) {
-										quasi_sum_g[D_g[V_g[sorted_K_to_sorted_L[i]][j]][k]]++;										
-									}
-								}
-								for (int j = 0; j < quasi_sum_g.size(); j++) {
-									if (quasi_sum_g[j] %2 != 0) {
-										cycle_g = false;
-										break;
-									}
-								}
-								//std::cerr << "cycle_g is " << cycle_g << " and new_cols[" << i << "] is " << new_cols[i] << std::endl;
-								if (!cycle_g) {
-									//std::cerr << "R_ker is " << R_ker << std::endl;
-									int birth_id = new_order_to_old[R_ker[new_cols[i]].back()];
-									int dim = K.dim_by_sorted_id(i)-1;
-									if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-										//std::cerr << "Found something which kills a class, and that class was born by " << birth_id << " so we add (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to the dimension " << dim << " diagram" << std::endl;
-										KerDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));
-										//std::cerr << "added point " << std::endl;
-										open_points_ker[birth_id] = false;
-									}
-								}
-							}
-						}
-					}
-				}
+				for (int i = 0; i < number_cells_K; i++) {
+                    //std::cerr << "Looking at " << i << " which has sorted_K_to_sorted_L " << sorted_K_to_sorted_L[i] << " and F.get_R()[" << i << "] is " << F.get_R()[i] << std::endl; 
+                    if (sorted_K_to_sorted_L[i] == -1) {//to give birth in kernel case, i needs to be in K-L
+                        //Next week check if it is negative in F.get_R()
+                        if (!F.get_R()[i].empty()) {
+                            bool cycle_f = true;
+                            //next week check if it represents a cycle
+                            std::vector<int> quasi_sum_f(number_cells_K, 0);
+                            for (int j = 0; j < F.get_V()[i].size(); j++){
+                                for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++) {
+                                    quasi_sum_f[F.get_D()[F.get_V()[i][j]][k]]++;
+                                }
+                            }
+
+                            for (int j = 0; j < quasi_sum_f.size(); j++) {
+                                if (quasi_sum_f[j] %2 != 0) {
+                                    cycle_f = false;
+                                    break;
+                                }
+                            }
+                            //std::cerr << "cycle_f is " << cycle_f << std::endl;
+                            if (!cycle_f) {
+                                //std::cerr << "F.get_R()[" << i << "] is " << F.get_R()[i] << " and Im.get_R()[" << i << "] is " << Im.get_R()[i] << std::endl;
+                                if (sorted_K_to_sorted_L[F.get_R()[i].back()] != -1) {
+                                    //std::cerr << i << " is a cell which gives birth" << std::endl;
+                                    open_points_ker[i] = true;
+                                }
+                            }
+                            //std::cerr << "open_points_im is [";
+                            //for (int k = 0; k < open_points_ker.size(); k++) {
+                            //  std::cerr << " " << open_points_ker[k];
+                            //}
+                            //std::cerr << "]" << std::endl;
+                        }
+                    } else if (F.get_R()[i].empty()) { //to kill something, i needs to be positive in f and negative in g, and so we begin with testing positive in f
+                        bool cycle_f = true;
+                        if (!F.get_V()[i].empty()) {  
+                            cycle_f = true;
+                            //next week check if it represents a cycle
+                            std::vector<int> quasi_sum_f(number_cells_K, 0);
+                            for (int j = 0; j < F.get_V()[i].size(); j++){
+                                for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++) {
+                                    quasi_sum_f[F.get_D()[F.get_V()[i][j]][k]]++;
+                                }
+                            }
+                            for (int j = 0; j < quasi_sum_f.size(); j++) {
+                                if (quasi_sum_f[j] %2 != 0) {
+                                    cycle_f = false;
+                                    break;
+                                }
+                            }   
+                        }                       
+                        //std::cerr << "cycle_f is " << cycle_f << std::endl;
+                        if (cycle_f) {
+                            //next we check negative in g
+                            //std::cerr << "G.get_R() is " << G.get_R() << " and sorted_K_to_sorted_L[" << i << "] is " << sorted_K_to_sorted_L[i]<< std::endl;
+                            if (!G.get_R()[sorted_K_to_sorted_L[i]].empty()) {
+                                bool cycle_g = true;
+                                //next week check if it represents a cycle
+                                std::vector<int> quasi_sum_g(number_cells_L, 0);
+                                for (int j = 0; j < G.get_V()[sorted_K_to_sorted_L[i]].size(); j++){
+                                    for (int k = 0; k < G.get_D()[G.get_V()[sorted_K_to_sorted_L[i]][j]].size(); k++) {
+                                        quasi_sum_g[G.get_D()[G.get_V()[sorted_K_to_sorted_L[i]][j]][k]]++;                                     
+                                    }
+                                }
+                                for (int j = 0; j < quasi_sum_g.size(); j++) {
+                                    if (quasi_sum_g[j] %2 != 0) {
+                                        cycle_g = false;
+                                        break;
+                                    }
+                                }
+                                //std::cerr << "cycle_g is " << cycle_g << " and new_cols[" << i << "] is " << new_cols[i] << std::endl;
+                                if (!cycle_g) {
+                                    //std::cerr << "R_ker is " << R_ker << std::endl;
+                                    int birth_id = new_order_to_old[Ker.get_R()[new_cols[i]].back()];
+                                    int dim = K.dim_by_sorted_id(i)-1;
+                                    if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
+                                        //std::cerr << "Found something which kills a class, and that class was born by " << birth_id << " so we add (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to the dimension " << dim << " diagram" << std::endl;
+                                        KerDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));
+                                        //std::cerr << "added point " << std::endl;
+                                        open_points_ker[birth_id] = false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
 
 				for (int i = 0; i < open_points_ker.size(); i++) {
 					if (open_points_ker[i]) {
@@ -206,110 +194,103 @@ namespace oineus {
 				}
 
 				std::vector<bool> open_points_im (number_cells_K);
-				
-				//Get the matrices we need to check the conditions
-				MatrixData R_f = F.get_R();
-				MatrixData D_f = F.get_D();
-				MatrixData V_f = F.get_V();
-				MatrixData R_g = G.get_R();
-				MatrixData D_g = G.get_D();
-				MatrixData V_g = G.get_V();
-				MatrixData R_im = Im.get_R();
 
 				for (int i = 0; i < number_cells_K; i++){ 
-					//std::cerr << "looking at " << i;
-					if (sorted_K_to_sorted_L[i] != -1) {//a cell only gives birth if it is in L
+                    //std::cerr << "looking at " << i;
+                    if (sorted_K_to_sorted_L[i] != -1) {//a cell only gives birth if it is in L
 
-						int sorted_id_in_L = sorted_K_to_sorted_L[i];
-						//std::cerr <<" which has sorted_id_in_L " << sorted_id_in_L << std::endl;
-						 //std::cerr << " and R_g is " << R_g << std::endl;
-						//std::cerr << " and D_g is " << D_g << std::endl;
-						//std::cerr << " and V_g is " << V_g << std::endl;
+                        int sorted_id_in_L = sorted_K_to_sorted_L[i];
+                        //std::cerr <<" which has sorted_id_in_L " << sorted_id_in_L << std::endl;
+                         //std::cerr << " and G.get_R() is " << G.get_R() << std::endl;
+                        //std::cerr << " and G.get_D() is " << G.get_D() << std::endl;
+                        //std::cerr << " and G.get_V() is " << G.get_V() << std::endl;
 
 
-						if (R_g[sorted_id_in_L].empty()) {//needs to be positive in g
-							std::vector<int> quasi_sum_g(number_cells_L, 0);
-							bool cycle_g = false;
-							if (!V_g[sorted_id_in_L].empty()){
-								cycle_g = true;
-								for (int j = 0; j < V_g[sorted_id_in_L].size(); j++) {
-									for (int k = 0; k < D_g[V_g[sorted_id_in_L][j]].size(); k++) {
-										quasi_sum_g[D_g[V_g[sorted_id_in_L][j]][k]]++;
-									}
-								}
-								for (int k = 0; k < quasi_sum_g.size(); k++) {
-									if (quasi_sum_g[k] %2 != 0) {
-										cycle_g = false;
-										break;
-									}
-								}
-							}
-							if (cycle_g) {
-								//std::cerr << "Maybe we should also check if it is positive in R_f?" << std::endl;
-								//std::cerr << "R_f is " << R_f << std::endl;
-								//std::cerr << "D_f is " << D_f << std::endl;
-								//std::cerr << "V_f is " << V_f << std::endl;
+                        if (G.get_R()[sorted_id_in_L].empty()) {//needs to be positive in g
+                            std::vector<int> quasi_sum_g(number_cells_L, 0);
+                            bool cycle_g = false;
+                            if (!G.get_V()[sorted_id_in_L].empty()){
+                                cycle_g = true;
+                                for (int j = 0; j < G.get_V()[sorted_id_in_L].size(); j++) {
+                                    for (int k = 0; k < G.get_D()[G.get_V()[sorted_id_in_L][j]].size(); k++) {
+                                        quasi_sum_g[G.get_D()[G.get_V()[sorted_id_in_L][j]][k]]++;
+                                    }
+                                }
+                                for (int k = 0; k < quasi_sum_g.size(); k++) {
+                                    if (quasi_sum_g[k] %2 != 0) {
+                                        cycle_g = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (cycle_g) {
+                                //std::cerr << "Maybe we should also check if it is positive in F.get_R()?" << std::endl;
+                                //std::cerr << "F.get_R() is " << F.get_R() << std::endl;
+                                //std::cerr << "F.get_D() is " << F.get_D() << std::endl;
+                                //std::cerr << "F.get_V() is " << F.get_V() << std::endl;
 
-								if (R_f[i].empty()) {//R_f[i] needs to be non-zero
-									bool cycle_f = false;
-									if (!V_f[i].empty()) {
-										cycle_f = true;
-										std::vector<int> quasi_sum_f(number_cells_K, 0);
-										for (int j = 0; j < V_f[i].size(); j++) {
-											for (int k = 0; k < D_f[V_f[i][j]].size(); k++){
-												quasi_sum_f[D_f[V_f[i][j]][k]]++;
-											}
-										}
-										for (int k = 0; k < quasi_sum_f.size(); k++) {
-											if (quasi_sum_f[k] %2 != 0) {
-												cycle_f = false;
-												break;
-											}
-										}
-									}
-									if (cycle_f) {
-										//std::cerr << i << " is positive in f " << std::endl;
-									}
-								}
+                                if (F.get_R()[i].empty()) {//F.get_R()[i] needs to be non-zero
+                                    bool cycle_f = false;
+                                    if (!F.get_V()[i].empty()) {
+                                        cycle_f = true;
+                                        std::vector<int> quasi_sum_f(number_cells_K, 0);
+                                        for (int j = 0; j < F.get_V()[i].size(); j++) {
+                                            for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++){
+                                                quasi_sum_f[F.get_D()[F.get_V()[i][j]][k]]++;
+                                            }
+                                        }
+                                        for (int k = 0; k < quasi_sum_f.size(); k++) {
+                                            if (quasi_sum_f[k] %2 != 0) {
+                                                cycle_f = false;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (cycle_f) {
+                                        //std::cerr << i << " is positive in f " << std::endl;
+                                    }
+                                }
 
-								//std::cerr << i << " gives birth" << std::endl;
-								open_points_im[i] = true;
+                                //std::cerr << i << " gives birth" << std::endl;
+                                if (!Cok.get_R()[i].empty()){
+                                    open_points_im[i] = true;
+                                }                   
 							}
-						}	
-					}
-					//cells in L and K-L can kill something, so we just test negativitity in 
-					if (!R_f[i].empty()) {//R_f[i] needs to be non-zero
-						bool cycle_f = false;
-						if (!V_f[i].empty()) {
-							cycle_f = true;
-							std::vector<int> quasi_sum_f(number_cells_K, 0);
-							for (int j = 0; j < V_f[i].size(); j++) {
-								for (int k = 0; k < D_f[V_f[i][j]].size(); k++){
-									quasi_sum_f[D_f[V_f[i][j]][k]]++;
-								}
-							}
-							for (int k = 0; k < quasi_sum_f.size(); k++) {
-								if (quasi_sum_f[k] %2 != 0) {
-									cycle_f = false;
-									break;
-								}
-							}
-						}
-						if (!cycle_f) {
-							//std::cerr << i << " is negative in f so we check what the lowest 1 corresponds to." << std::endl;
-							int birth_id = R_f[i].back();
-							if (sorted_K_to_sorted_L[i] != -1) {
-								//std::cerr << birth_id << " is in L." << std::endl;
-								int dim = K.dim_by_sorted_id(i)-1;
-								if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-									ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));
-									//std::cerr << "Added the point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to dimension " << dim << " diagram." << std::endl;
-								}
-								open_points_im[birth_id] = false;
-							}
-						}
-					}
-				}
+                        }   
+                    }
+                    //cells in L and K-L can kill something, so we just test negativitity in 
+                    if (!F.get_R()[i].empty()) {//F.get_R()[i] needs to be non-zero
+                        bool cycle_f = false;
+                        if (!F.get_V()[i].empty()) {
+                            cycle_f = true;
+                            std::vector<int> quasi_sum_f(number_cells_K, 0);
+                            for (int j = 0; j < F.get_V()[i].size(); j++) {
+                                for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++){
+                                    quasi_sum_f[F.get_D()[F.get_V()[i][j]][k]]++;
+                                }                           }
+                            for (int k = 0; k < quasi_sum_f.size(); k++) {
+                                if (quasi_sum_f[k] %2 != 0) {
+                                    cycle_f = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!cycle_f) {
+                            //std::cerr << i << " is negative in f so we check what the lowest 1 corresponds to." << std::endl;
+                            int birth_id = F.get_R()[i].back();
+                            if (sorted_K_to_sorted_L[i] != -1) {
+                                //std::cerr << birth_id << " is in L." << std::endl;
+                                int dim = K.dim_by_sorted_id(i)-1;
+                                if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
+                                    ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));
+                                    //std::cerr << "Added the point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to dimension " << dim << " diagram." << std::endl;
+                                }
+                                open_points_im[birth_id] = false;
+                            }
+                        }
+                    }
+                }
+
 
 				//std::cerr << "open_points_im is [";
 				//for (int i = 0; i < open_points_im.size(); i++) {
@@ -341,7 +322,7 @@ namespace oineus {
 			}
 			
 			void GenerateCokDiagrams(std::vector<int> new_cols) {//Generate the kernel diagrams
-				std::cout << "Starting to extract the image diagrams." << std::endl;
+				std::cout << "Starting to extract the cokernel diagrams." << std::endl;
 
 				for (int i = 0; i < max_dim+1; i++){
 					CokDiagrams.push_back(Dgm());
@@ -350,26 +331,16 @@ namespace oineus {
 				std::vector<bool> open_points_cok (number_cells_K);
 				
 				//Get the matrices we need to check the conditions
-				MatrixData R_f = F.get_R();
-				MatrixData D_f = F.get_D();
-				MatrixData V_f = F.get_V();
-				MatrixData R_g = G.get_R();
-				MatrixData D_g = G.get_D();
-				MatrixData V_g = G.get_V();
-				MatrixData R_im = Im.get_R();
-				MatrixData R_cok = Cok.get_R();
-				MatrixData D_cok = Cok.get_D();
-				MatrixData V_cok = Cok.get_V();
 
 				for (int i = 0; i < number_cells_K; i++) {//we first check that i is positive in f
-					if (R_f[i].empty()) {//the column in R needs to be empty
+					if (F.get_R()[i].empty()) {//the column in R needs to be empty
 						bool cycle_f = false;
-						if (!V_f[i].empty()) {
+						if (!F.get_V()[i].empty()) {
 							cycle_f = true;
 							std::vector<int> quasi_sum_f(number_cells_K, 0);
-							for (int j = 0; j < V_f[i].size(); j++) {
-								for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
-									quasi_sum_f[D_f[V_f[i][j]][k]]++;									
+							for (int j = 0; j < F.get_V()[i].size(); j++) {
+								for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++) {
+									quasi_sum_f[F.get_D()[F.get_V()[i][j]][k]]++;									
 								}						
 							}
 							for (int k = 0; k < quasi_sum_f.size(); k++) {
@@ -380,22 +351,22 @@ namespace oineus {
 							}
 						}
 						if (cycle_f) {
-							std::cerr << i << " is positive in f" << std::endl; 
+							//std::cerr << i << " is positive in f" << std::endl; 
 							//now we check if either i is in K-L or negative in g
 							if (sorted_K_to_sorted_L[i] == -1) {
-								std::cerr << i << " is in K-L and so gives birth" << std::endl;
+								//std::cerr << i << " is in K-L and so gives birth" << std::endl;
 								open_points_cok[i] = true;
 							} else {
 								//int id_in_L = sorted_K_to_sorted_L[i];
-								std::cerr << i << " sorted_K_to_sorted_L " << sorted_K_to_sorted_L[i] << " and R_g is " << R_g << " and V_g is " << V_g << " and D_g " << D_g <<std::endl; 
-								if (!R_g[sorted_K_to_sorted_L[i]].empty()) {
+								//std::cerr << i << " sorted_K_to_sorted_L " << sorted_K_to_sorted_L[i] << " and R_g is " << R_g << " and V_g is " << V_g << " and D_g " << D_g <<std::endl; 
+								if (!G.get_R()[sorted_K_to_sorted_L[i]].empty()) {
 									bool cycle_g = false;
-									if (!V_g[sorted_K_to_sorted_L[i]].empty()) {
+									if (!G.get_V()[sorted_K_to_sorted_L[i]].empty()) {
 										cycle_g= true;
 										std::vector<int> quasi_sum_g(number_cells_L, 0);
-										for (int j = 0; j < V_g[sorted_K_to_sorted_L[i]].size(); j++) {
-											for (int k = 0; k < D_g[V_g[sorted_K_to_sorted_L[i]][j]].size(); k++) {
-												quasi_sum_g[D_g[V_g[sorted_K_to_sorted_L[i]][j]][k]]++;									
+										for (int j = 0; j < G.get_V()[sorted_K_to_sorted_L[i]].size(); j++) {
+											for (int k = 0; k < G.get_D()[G.get_V()[sorted_K_to_sorted_L[i]][j]].size(); k++) {
+												quasi_sum_g[G.get_D()[G.get_V()[sorted_K_to_sorted_L[i]][j]][k]]++;									
 											}						
 										}
 										for (int k = 0; k < quasi_sum_g.size(); k++) {
@@ -406,7 +377,7 @@ namespace oineus {
 										}
 									}
 									if (!cycle_g) {
-										std::cerr << sorted_K_to_sorted_L[i] << " is negative in g" << std::endl; 
+										//std::cerr << sorted_K_to_sorted_L[i] << " is negative in g" << std::endl; 
 										open_points_cok[i] = true;
 									}
 								}
@@ -414,12 +385,12 @@ namespace oineus {
 						}
 					} else {
 						bool cycle_f = false;
-						if (!V_f[i].empty()) {
+						if (!F.get_V()[i].empty()) {
 							cycle_f = true;
 							std::vector<int> quasi_sum_f(number_cells_K, 0);
-							for (int j = 0; j < V_f[i].size(); j++) {
-								for (int k = 0; k < D_f[V_f[i][j]].size(); k++) {
-									quasi_sum_f[D_f[V_f[i][j]][k]]++;									
+							for (int j = 0; j < F.get_V()[i].size(); j++) {
+								for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++) {
+									quasi_sum_f[F.get_D()[F.get_V()[i][j]][k]]++;									
 								}						
 							}
 							for (int k = 0; k < quasi_sum_f.size(); k++) {
@@ -430,12 +401,12 @@ namespace oineus {
 							}
 						}
 						if (!cycle_f) {
-							if (sorted_K_to_sorted_L[R_f[i].back()] == -1) {
-								int birth_id = R_cok[i].back();
-								std::cerr << "Found a cell which kills something and that thing was born by " << birth_id << std::endl;
+							if (sorted_K_to_sorted_L[F.get_R()[i].back()] == -1) {
+								int birth_id = Cok.get_R()[i].back();
+								//std::cerr << "Found a cell which kills something and that thing was born by " << birth_id << std::endl;
 								if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
 									int dim = K.dim_by_sorted_id(birth_id);
-									std::cerr << "adding point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to the dimension " << dim << " diagram." << std::endl;
+									//std::cerr << "adding point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to the dimension " << dim << " diagram." << std::endl;
 								}
 								open_points_cok[birth_id] = false;
 							}
@@ -454,7 +425,6 @@ namespace oineus {
 
 				std::cerr << "The cokernel diagrams are: " << std::endl;
 				for (int i = 0; i < CokDiagrams.size(); i++) {
-					std::cerr << "looking at diagram " << i << std::endl;
 					if (CokDiagrams[i].empty()) {
 						std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
 					} else if (!CokDiagrams[i].empty()) {
@@ -728,8 +698,8 @@ namespace oineus {
 			std::vector<int> quasi_sum (number_cells_L, 0);
 			if (!V_g[i].empty()) {
 				for (int j = 0; j < V_g[i].size(); j++) {
-					for (int k = 0; k < D_g[L_to_K[V_g[i][j]++]].size(); k++) {
-						quasi_sum[D_g[L_to_K[V_g[i][j]]][k]];//check if a column in V_g represents a cycle
+					for (int k = 0; k < D_g[V_g[i][j]++].size(); k++) {
+						quasi_sum[D_g[V_g[i][j]][k]];//check if a column in V_g represents a cycle
 					}
 				}
 			}
