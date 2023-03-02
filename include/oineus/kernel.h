@@ -321,7 +321,7 @@ namespace oineus {
 
 				std::cerr << "The image diagrams are: " << std::endl;
 				for (int i = 0; i < ImDiagrams.size(); i++) {
-					std::cerr << "looking at diagram " << i << std::endl;
+					//std::cerr << "looking at diagram " << i << std::endl;
 					if (ImDiagrams[i].empty()) {
 						std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
 					} else if (!ImDiagrams[i].empty()) {
@@ -392,7 +392,7 @@ namespace oineus {
 										}
 									}
 									if (!cycle_g) {
-										std::cerr << sorted_K_to_sorted_L[i] << " is negative in g" << std::endl; 
+										//std::cerr << sorted_K_to_sorted_L[i] << " is negative in g" << std::endl; 
 										open_points_cok[i] = true;
 									}
 								}
@@ -546,11 +546,11 @@ namespace oineus {
 			sorted_K_to_sorted_L[sorted_L_to_sorted_K[i]] = i;
 		}
 
-		std::cerr << "sorted_K_to_sorted_L is [";
-		for (int i = 0; i < number_cells_K; i++) {
-			std::cerr << " " << sorted_K_to_sorted_L[i];
-		}
-		std::cerr << "]" << std::endl;
+		//std::cerr << "sorted_K_to_sorted_L is [";
+		//for (int i = 0; i < number_cells_K; i++) {
+		//	std::cerr << " " << sorted_K_to_sorted_L[i];
+		//}
+		//std::cerr << "]" << std::endl;
 
 
 		VRUDecomp F(K.boundary_matrix_full());
@@ -632,25 +632,21 @@ namespace oineus {
 				}
 			}
 			std::sort(new_col_i.begin(), new_col_i.end());
-			std::cerr << "old column is [" ;
-			for (int j = 0; j < F.get_D()[i].size(); j++) {
-				std::cerr << " " << F.get_D()[i][j];
-			}
-			std::cerr << "] and new column is [";
-			for (int j = 0; j < new_col_i.size(); j++) {
-				std::cerr << " " << new_col_i[j];
-			}
-			std::cerr << "]" << std::endl;
+			//std::cerr << "old column is [" ;
+			//for (int j = 0; j < F.get_D()[i].size(); j++) {
+			//	std::cerr << " " << F.get_D()[i][j];
+			//}
+			//std::cerr << "] and new column is [";
+			//for (int j = 0; j < new_col_i.size(); j++) {
+			//	std::cerr << " " << new_col_i[j];
+			//}
+			//std::cerr << "]" << std::endl;
 			d_im.push_back(new_col_i);
 		}
 
 
 		VRUDecomp Im(d_im);
 		Im.reduce_parallel_rvu(params);
-
-		std::cerr << "F.get_V() is " << F.get_V() << std::endl;
-
-		std::cerr << "Im.get_V() is " << Im.get_V() << std::endl;
 
 		std::vector<bool> to_keep(number_cells_K, false);
 		for (int i = 0; i < F.get_V().size(); i++) {
