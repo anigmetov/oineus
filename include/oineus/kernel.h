@@ -97,8 +97,10 @@ namespace oineus {
                             }
                             //std::cerr << "cycle_f is " << cycle_f << std::endl;
                             if (!cycle_f) {
-                                //std::cerr << "F.get_R()[" << i << "] is " << F.get_R()[i] << " and Im.get_R()[" << i << "] is " << Im.get_R()[i] << std::endl;
-                                if (sorted_K_to_sorted_L[F.get_R()[i].back()] != -1) {
+                                std::cerr << "F.get_R()[" << i << "] is " << F.get_R()[i] << " and Im.get_R()[" << i << "] is " << Im.get_R()[i] << std::endl;
+                                if (Im.get_R()[i].empty()) {
+									std::cerr << "Im.get_R()[" << i << "] is empty, and so the final check for if it gives birth in the kernel fails." << std::endl;
+								} else if (sorted_K_to_sorted_L[Im.get_R()[i].back()] != -1) {
                                     //std::cerr << i << " is a cell which gives birth" << std::endl;
                                     open_points_ker[i] = true;
                                 }
@@ -111,6 +113,7 @@ namespace oineus {
                         }
                     } else if (F.get_R()[i].empty()) { //to kill something, i needs to be positive in f and negative in g, and so we begin with testing positive in f
                         bool cycle_f = true;
+
                         if (!F.get_V()[i].empty()) {  
                             cycle_f = true;
                             //next week check if it represents a cycle
@@ -196,7 +199,7 @@ namespace oineus {
 				std::vector<bool> open_points_im (number_cells_K);
 
 				for (int i = 0; i < number_cells_K; i++){ 
-                    //std::cerr << "looking at " << i;
+                    std::cerr << "looking at " << i << std::endl;
                     if (sorted_K_to_sorted_L[i] != -1) {//a cell only gives birth if it is in L
 
                         int sorted_id_in_L = sorted_K_to_sorted_L[i];
@@ -224,43 +227,14 @@ namespace oineus {
                                 }
                             }
                             if (cycle_g) {
-                                //std::cerr << "Maybe we should also check if it is positive in F.get_R()?" << std::endl;
-                                //std::cerr << "F.get_R() is " << F.get_R() << std::endl;
-                                //std::cerr << "F.get_D() is " << F.get_D() << std::endl;
-                                //std::cerr << "F.get_V() is " << F.get_V() << std::endl;
-
-                                if (F.get_R()[i].empty()) {//F.get_R()[i] needs to be non-zero
-                                    bool cycle_f = false;
-                                    if (!F.get_V()[i].empty()) {
-                                        cycle_f = true;
-                                        std::vector<int> quasi_sum_f(number_cells_K, 0);
-                                        for (int j = 0; j < F.get_V()[i].size(); j++) {
-                                            for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++){
-                                                quasi_sum_f[F.get_D()[F.get_V()[i][j]][k]]++;
-                                            }
-                                        }
-                                        for (int k = 0; k < quasi_sum_f.size(); k++) {
-                                            if (quasi_sum_f[k] %2 != 0) {
-                                                cycle_f = false;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    if (cycle_f) {
-                                        //std::cerr << i << " is positive in f " << std::endl;
-                                    }
-                                }
-
-                                //std::cerr << i << " gives birth" << std::endl;
-                                //if (Cok.get_R()[i].empty()){
-                                    open_points_im[i] = true;
-                                //}                   
+                                    open_points_im[i] = true;          
 							}
                         }   
                     }
-                    //cells in L and K-L can kill something, so we just test negativitity in 
+                    //cells in L and K-L can kill something, so we just test negativitity in F
                     if (!F.get_R()[i].empty()) {//F.get_R()[i] needs to be non-zero
-                        bool cycle_f = false;
+                        std::cerr << "Now checking if " << i << " is negative in f" << std::endl;
+						bool cycle_f = false;
                         if (!F.get_V()[i].empty()) {
                             cycle_f = true;
                             std::vector<int> quasi_sum_f(number_cells_K, 0);
@@ -277,9 +251,10 @@ namespace oineus {
                         }
                         if (!cycle_f) {
                             //std::cerr << i << " is negative in f so we check what the lowest 1 corresponds to." << std::endl;
-                            //if (Im.get_R()[i].empty) {
+                            if (Im.get_R()[i].empty()) {
+								std::cerr << "Im.get_R()[" << i << "] is empty so to substituting F.get_R() which is not sustainable." << std::endl;
 								int birth_id = F.get_R()[i].back();
-								if (sorted_K_to_sorted_L[birth_id] != -1) {
+								if (sorted_K_to_sorted_L[new_order_to_old[birth_id]] != -1) {
 									//std::cerr << birth_id << " is in L." << std::endl;
 									int dim = K.dim_by_sorted_id(i)-1;
 									if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
@@ -288,10 +263,11 @@ namespace oineus {
 									}
 									open_points_im[birth_id] = false;
 								}
-							/*} else {
+							} else {
+								std::cerr <<"Im.get_R()[" << i << "] is thankfully not empty." << std::endl;
 								int birth_id = Im.get_R()[i].back();
 								if (sorted_K_to_sorted_L[i] != -1) {
-									//std::cerr << birth_id << " is in L." << std::endl;
+									std::cerr << birth_id << " is in L." << std::endl;
 									int dim = K.dim_by_sorted_id(i)-1;
 									if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
 										ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));
@@ -299,7 +275,7 @@ namespace oineus {
 									}
 									open_points_im[birth_id] = false;
 								}
-							}*/
+							}
                         }
                     }
                 }
@@ -632,15 +608,15 @@ namespace oineus {
 				}
 			}
 			std::sort(new_col_i.begin(), new_col_i.end());
-			//std::cerr << "old column is [" ;
-			//for (int j = 0; j < F.get_D()[i].size(); j++) {
-			//	std::cerr << " " << F.get_D()[i][j];
-			//}
-			//std::cerr << "] and new column is [";
-			//for (int j = 0; j < new_col_i.size(); j++) {
-			//	std::cerr << " " << new_col_i[j];
-			//}
-			//std::cerr << "]" << std::endl;
+			std::cerr << "old column is [" ;
+			for (int j = 0; j < F.get_D()[i].size(); j++) {
+				std::cerr << " " << F.get_D()[i][j];
+			}
+			std::cerr << "] and new column is [";
+			for (int j = 0; j < new_col_i.size(); j++) {
+				std::cerr << " " << new_col_i[j];
+			}
+			std::cerr << "]" << std::endl;
 			d_im.push_back(new_col_i);
 		}
 
