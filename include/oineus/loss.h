@@ -67,7 +67,8 @@ std::string denoise_strategy_to_string(const DenoiseStrategy& s)
 enum class ConflictStrategy {
     Max,
     Avg,
-    Sum
+    Sum,
+    FixCritAvg
 };
 
 std::ostream& operator<<(std::ostream& out, const ConflictStrategy& s)
@@ -78,6 +79,9 @@ std::ostream& operator<<(std::ostream& out, const ConflictStrategy& s)
         out << "avg";
     else if (s == ConflictStrategy::Sum)
         out << "sum";
+    else if (s == ConflictStrategy::FixCritAvg)
+        out << "fca";
+        //out << "prescribed on critical, average on others";
     return out;
 }
 
@@ -681,12 +685,19 @@ TargetMatching<size_t, Real> get_prescribed_simplex_values_set_x(dim_type d,
 
     std::unordered_map<size_t, std::vector<Real>> result;
 
+    std::unordered_map<size_t, Real> critical_prescribed;
+
     for(auto&& dgm_to_target : diagram_to_values) {
         size_t death_idx = dgm_to_target.first.death;
         Real target_death = dgm_to_target.second.death;
 
-        for(auto d_idx : change_death_x<Int>(d, death_idx, fil, decmp_hom, target_death)) {
-            result[d_idx].push_back(target_death);
+        if (target_death != fil.value_by_sorted_id(death_idx)) {
+            for(auto d_idx : change_death_x<Int>(d, death_idx, fil, decmp_hom, target_death)) {
+                result[d_idx].push_back(target_death);
+            }
+
+            assert(critical_prescribed.count(death_idx) == 0);
+            critical_prescribed[death_idx] = target_death;
         }
 
         if (death_only)
@@ -695,8 +706,14 @@ TargetMatching<size_t, Real> get_prescribed_simplex_values_set_x(dim_type d,
         size_t birth_idx = dgm_to_target.first.birth;
         Real target_birth = dgm_to_target.second.birth;
 
-        for(auto b_idx : change_birth_x<Int>(d, birth_idx, fil, decmp_coh, target_birth)) {
-            result[b_idx].push_back(target_birth);
+        if (target_birth != fil.value_by_sorted_id(birth_idx)) {
+
+            for(auto b_idx : change_birth_x<Int>(d, birth_idx, fil, decmp_coh, target_birth)) {
+                result[b_idx].push_back(target_birth);
+            }
+
+            assert(critical_prescribed.count(birth_idx) == 0);
+            critical_prescribed[birth_idx] = target_birth;
         }
     }
 
@@ -720,6 +737,22 @@ TargetMatching<size_t, Real> get_prescribed_simplex_values_set_x(dim_type d,
             for(auto value : values) {
                 final_result.emplace_back(simplex_idx, value);
             }
+        }
+    } else if (conflict_strategy == ConflictStrategy::FixCritAvg) {
+        // send critical simplices according to the matching loss
+        // average on others
+        for(auto&& [simplex_idx, values] : result) {
+            // where matching loss tells critical simplices to go
+            // is contained in critical_prescribed map
+            auto critical_iter = critical_prescribed.find(simplex_idx);
+
+            Real target_value;
+            if (critical_iter == critical_prescribed.end())
+                target_value = std::accumulate(values.begin(), values.end(), static_cast<Real>(0)) / values.size();
+            else
+                target_value = critical_iter->second;
+
+            final_result.emplace_back(simplex_idx, target_value);
         }
     }
 

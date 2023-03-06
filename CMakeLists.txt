@@ -2,8 +2,9 @@ cmake_minimum_required(VERSION 3.5)
 
 project(oineus LANGUAGES CXX)
 
-option(use_spdlog "Use spdlog" OFF)
-option(use_jemalloc "Use jemalloc" OFF)
+option(oin_use_spdlog "Use spdlog" OFF)
+option(oin_use_jemalloc "Use jemalloc" OFF)
+option(oin_build_tests "Build tests" ON)
 
 #set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -25,17 +26,15 @@ include_directories(${Boost_INCLUDE_DIRS})
 
 set (libraries ${libraries} ${CMAKE_THREAD_LIBS_INIT} TBB::tbb)
 
-if (use_jemalloc)
+if (oin_use_jemalloc)
     set (libraries ${libraries} jemalloc)
 endif()
 
 add_subdirectory(examples)
-add_subdirectory(extern/pybind11)
 add_subdirectory(bindings/python)
 
-find_package(Catch2)
-if (Catch2_FOUND)
+if (oin_build_tests)
+    add_subdirectory(extern/Catch2)
     enable_testing()
     add_subdirectory(tests)
 endif()
-
