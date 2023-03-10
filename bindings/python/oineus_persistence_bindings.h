@@ -373,7 +373,7 @@ void init_oineus(py::module& m, std::string suffix)
 
 
     py::class_<LSSimplex>(m, ls_simplex_class_name.c_str())
-            .def(py::init<>())
+            .def(py::init<typename LSSimplex::IdxVector, Real, typename LSSimplex::ValueLocation>())
             .def_readonly("id", &LSSimplex::id_)
             .def_readonly("sorted_id", &LSSimplex::sorted_id_)
             .def_readonly("vertices", &LSSimplex::vertices_)
@@ -387,7 +387,7 @@ void init_oineus(py::module& m, std::string suffix)
             });
 
      py::class_<VRSimplex>(m, vr_simplex_class_name.c_str())
-            .def(py::init<>())
+            .def(py::init<typename VRSimplex::IdxVector, Real, typename VRSimplex::ValueLocation>())
             .def_readonly("id", &VRSimplex::id_)
             .def_readonly("sorted_id", &VRSimplex::sorted_id_)
             .def_readonly("vertices", &VRSimplex::vertices_)
@@ -401,7 +401,7 @@ void init_oineus(py::module& m, std::string suffix)
             });
 
     py::class_<LSFiltration>(m, ls_filtration_class_name.c_str())
-            .def(py::init<>())
+            .def(py::init<typename LSFiltration::FiltrationSimplexVector, bool, int>())
             .def("max_dim", &LSFiltration::max_dim)
             .def("simplices", &LSFiltration::simplices_copy)
             .def("size_in_dimension", &LSFiltration::size_in_dimension)
@@ -410,7 +410,7 @@ void init_oineus(py::module& m, std::string suffix)
             .def("boundary_matrix", &LSFiltration::boundary_matrix_full);
 
     py::class_<VRFiltration>(m, vr_filtration_class_name.c_str())
-            .def(py::init<>())
+            .def(py::init<typename VRFiltration::FiltrationSimplexVector, bool, int>())
             .def("max_dim", &VRFiltration::max_dim)
             .def("simplices", &VRFiltration::simplices_copy)
             .def("critical_edge", &VRFiltration::cvl)

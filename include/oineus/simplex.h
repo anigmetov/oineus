@@ -28,11 +28,12 @@ std::ostream& operator<<(std::ostream& out, const VREdge& e)
     return out;
 }
 
-template<typename Int_, typename Real_, typename ValueLocation>
+template<typename Int_, typename Real_, typename ValueLocation_>
 struct Simplex {
     using Int = Int_;
     using Real = Real_;
     using IdxVector = std::vector<Int>;
+    using ValueLocation = ValueLocation_;
 
     static constexpr Int k_invalid_id = Int(-1);
 
