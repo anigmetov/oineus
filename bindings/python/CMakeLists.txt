@@ -16,3 +16,9 @@ target_link_libraries       (_oineus PRIVATE ${libraries})
 target_include_directories  (_oineus PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include"
                                               "${CMAKE_CURRENT_SOURCE_DIR}/../../extern")
 set_target_properties       (_oineus PROPERTIES OUTPUT_NAME oineus/_oineus)
+
+if (oin_use_spdlog)
+    target_compile_definitions(_oineus PRIVATE -DOINEUS_USE_SPDLOG)
+endif()
+
+
