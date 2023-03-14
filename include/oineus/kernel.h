@@ -97,9 +97,9 @@ namespace oineus {
                             }
                             //std::cerr << "cycle_f is " << cycle_f << std::endl;
                             if (!cycle_f) {
-                                std::cerr << "F.get_R()[" << i << "] is " << F.get_R()[i] << " and Im.get_R()[" << i << "] is " << Im.get_R()[i] << std::endl;
+                                //std::cerr << "F.get_R()[" << i << "] is " << F.get_R()[i] << " and Im.get_R()[" << i << "] is " << Im.get_R()[i] << std::endl;
                                 if (Im.get_R()[i].empty()) {
-									std::cerr << "Im.get_R()[" << i << "] is empty, and so the final check for if it gives birth in the kernel fails." << std::endl;
+									//std::cerr << "Im.get_R()[" << i << "] is empty, and so the final check for if it gives birth in the kernel fails." << std::endl;
 								} else if (sorted_K_to_sorted_L[Im.get_R()[i].back()] != -1) {
                                     //std::cerr << i << " is a cell which gives birth" << std::endl;
                                     open_points_ker[i] = true;
@@ -199,15 +199,11 @@ namespace oineus {
 				std::vector<bool> open_points_im (number_cells_K);
 
 				for (int i = 0; i < number_cells_K; i++){
-                    std::cerr << "looking at " << i << std::endl;
+                    //std::cerr << "looking at " << i << std::endl;
                     if (sorted_K_to_sorted_L[i] != -1) {//a cell only gives birth if it is in L
 
                         int sorted_id_in_L = sorted_K_to_sorted_L[i];
-                        //std::cerr <<" which has sorted_id_in_L " << sorted_id_in_L << std::endl;
-                         //std::cerr << " and G.get_R() is " << G.get_R() << std::endl;
-                        //std::cerr << " and G.get_D() is " << G.get_D() << std::endl;
-                        //std::cerr << " and G.get_V() is " << G.get_V() << std::endl;
-
+                        //std::cerr << i << " has sorted_id_in_L " << sorted_id_in_L << std::endl;
 
                         if (G.get_R()[sorted_id_in_L].empty()) {//needs to be positive in g
                             std::vector<int> quasi_sum_g(number_cells_L, 0);
@@ -227,13 +223,13 @@ namespace oineus {
                                 }
                             }
                             if (cycle_g) {
+									//std::cerr << i << " gives birth." << std::endl;
                                     open_points_im[i] = true;
 							}
                         }
                     }
                     //cells in L and K-L can kill something, so we just test negativitity in F
                     if (!F.get_R()[i].empty()) {//F.get_R()[i] needs to be non-zero
-                        std::cerr << "Now checking if " << i << " is negative in f" << std::endl;
 						bool cycle_f = false;
                         if (!F.get_V()[i].empty()) {
                             cycle_f = true;
@@ -250,42 +246,18 @@ namespace oineus {
                             }
                         }
                         if (!cycle_f) {
-                            //std::cerr << i << " is negative in f so we check what the lowest 1 corresponds to." << std::endl;
-                            if (Im.get_R()[i].empty()) {
-								std::cerr << "Im.get_R()[" << i << "] is empty so to substituting F.get_R() which is not sustainable." << std::endl;
-								int birth_id = F.get_R()[i].back();
-								if (sorted_K_to_sorted_L[new_order_to_old[birth_id]] != -1) {
-									//std::cerr << birth_id << " is in L." << std::endl;
-									int dim = K.dim_by_sorted_id(i)-1;
-									if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-										ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));
-										//std::cerr << i << " Added the point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to dimension " << dim << " diagram." << std::endl;
-									}
-									open_points_im[birth_id] = false;
+							int birth_id = new_order_to_old[Im.get_R()[i].back()];
+							if (sorted_K_to_sorted_L[birth_id] != -1) {
+								int dim = K.dim_by_sorted_id(i)-1;
+								if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
+									ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));
+									//std::cerr << i << " Added the point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to dimension " << dim << " diagram." << std::endl;
 								}
-							} else {
-								std::cerr <<"Im.get_R()[" << i << "] is thankfully not empty." << std::endl;
-								int birth_id = Im.get_R()[i].back();
-								if (sorted_K_to_sorted_L[i] != -1) {
-									std::cerr << birth_id << " is in L." << std::endl;
-									int dim = K.dim_by_sorted_id(i)-1;
-									if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-										ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));
-										//std::cerr << i << " Added the point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to dimension " << dim << " diagram." << std::endl;
-									}
-									open_points_im[birth_id] = false;
-								}
+								open_points_im[birth_id] = false;
 							}
                         }
                     }
                 }
-
-
-				//std::cerr << "open_points_im is [";
-				//for (int i = 0; i < open_points_im.size(); i++) {
-				//	std::cerr << " " << open_points_im[i];
-				//}
-				//std::cerr << "]" << std::endl;
 
 				for (int i = 0; i < open_points_im.size(); i++) {
 					if (open_points_im[i]) {
@@ -297,7 +269,6 @@ namespace oineus {
 
 				std::cerr << "The image diagrams are: " << std::endl;
 				for (int i = 0; i < ImDiagrams.size(); i++) {
-					//std::cerr << "looking at diagram " << i << std::endl;
 					if (ImDiagrams[i].empty()) {
 						std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
 					} else if (!ImDiagrams[i].empty()) {
@@ -368,13 +339,12 @@ namespace oineus {
 										}
 									}
 									if (!cycle_g) {
-										//std::cerr << sorted_K_to_sorted_L[i] << " is negative in g" << std::endl;
+										std::cerr << sorted_K_to_sorted_L[i] << " is negative in g so gives birth" << std::endl;
 										open_points_cok[i] = true;
 									}
 								}
 							}
 						}
-						//std::cerr << "finished with " << i << std::endl;
 					} else if (!Im.get_V()[i].empty()){
 						bool cycle_im = false;
 						if (!Im.get_V()[i].empty()) {
@@ -392,21 +362,14 @@ namespace oineus {
 								}
 							}
 						}
-						if (!cycle_im) {
-							//std::cerr << " Im.get_R()[" << i << "] is " << Im.get_R()[i] << " and Cok.get_R()[i] " << Cok.get_R()[i] << std::endl;
-							//if (/*sorted_K_to_sorted_L[F.get_R()[i].back()] == -1 &&*/ !Cok.get_R()[i].empty()) {
+						if (!cycle_im && sorted_K_to_sorted_L[new_order_to_old[Im.get_R()[i].back()]] == -1) {
 							int birth_id = new_order_to_old[Cok.get_R()[i].back()];
-								//std::cerr << "Found a cell which kills something and that thing was born by " << birth_id << std::endl;
 							if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
 								int dim = K.dim_by_sorted_id(birth_id);
-								//std::cerr << i << "adding point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to the dimension " << dim << " diagram." << std::endl;
+								CokDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id) ,K.value_by_sorted_id(i)));
+								//std::cerr << i << " adding point (" << K.value_by_sorted_id(birth_id) << ", " << K.value_by_sorted_id(i) << ") to the dimension " << dim << " diagram." << std::endl;
 							}
 							open_points_cok[birth_id] = false;
-							//} else if (sorted_K_to_sorted_L[F.get_R()[i].back()] == -1) {
-							//	int birth_id = F.get_R()[i].back();
-							//	open_points_cok[birth_id] = false;
-							//	std::cerr << i << " closed the open point " << birth_id << std::endl;
-							//}
 						}
 					}
 				}
@@ -636,11 +599,6 @@ namespace oineus {
 						quasi_sum[F.get_D()[F.get_V()[i][j]][k]]++;
 					}
 				}
-				//std::cerr << "For " << i << " quasi_sum is [";
-				//for (int j = 0; j < quasi_sum.size(); j++) {
-				//	std::cerr << " " << quasi_sum[j];
-				//}
-				//std::cerr << "]" << std::endl;
 				for (int j = 0; j < quasi_sum.size(); j++) {
 					if (quasi_sum[j]%2 != 0) {
 						cycle = false;
@@ -662,14 +620,6 @@ namespace oineus {
 				counter++;
 			}
 		}
-
-		//std::cerr << "new_cols is [";
-		//for (int i = 0; i < new_cols.size(); i++) {
-		//	std::cerr << " " << new_cols[i];
- 		//}
-		//std::cerr << "]" << std::endl;
-
-		//std::cerr << "D_ker is " << d_ker << std::endl;
 		VRUDecomp Ker(d_ker, K.size());
 		Ker.reduce_parallel_rvu(params);
 		//MatrixData R_ker = Ker.get_R();
