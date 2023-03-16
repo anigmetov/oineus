@@ -214,9 +214,35 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
 
     if (params.do_sanity_check and not decmp.sanity_check())
         throw std::runtime_error("sanity check failed");
-
     return PyOineusDiagrams<Real>(decmp.diagram(fil, include_inf_points));
 }
+
+
+template<typename Int, typename Real>
+class PyKerImCokReduced {
+    private:
+        oineus::KerImCokReduced<Int, Real> KICR;
+
+    public:
+
+        PyKerImCokReduced(oineus::KerImCokReduced<Int, Real> KICR_) :
+            KICR (KICR_){
+
+        }
+    
+        decltype(auto) get_kernel_diagrams(){
+            return PyOineusDiagrams<Real>(KICR.get_kernel_diagrams());
+        }
+
+        decltype(auto) get_image_diagrams(){
+            return PyOineusDiagrams(KICR.get_image_diagrams());
+        }
+
+        decltype(auto) get_cokernel_diagrams(){
+            return PyOineusDiagrams(KICR.get_cokernel_diagrams());
+        }
+        
+};
 
 
 template<typename Int, typename Real>
@@ -228,7 +254,7 @@ decltype(auto) compute_kernel_image_cokernel_diagrams(py::list K_, py::list L_, 
     using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
     using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
     using Filtration = oineus::Filtration<Int, Real, Int>;
-    using ImKerCokReduced = oineus::ImKerCokReduced<Int, Real>;
+    using KerImCokReduced = oineus::KerImCokReduced<Int, Real>;
     std::cout << "======================================" << std::endl;
     std::cout << std:: endl;
     std::cout << "You have called \'compute_kernel_image_cokernel_diagrams\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
@@ -258,12 +284,12 @@ decltype(auto) compute_kernel_image_cokernel_diagrams(py::list K_, py::list L_, 
     oineus::Params params;
 
     params.sort_dgms = false;
-    params.clearing_opt = true;
+    params.clearing_opt = false;
     params.n_threads = n_threads;
     
-    ImKerCokReduced IKCR = oineus::reduce_im_ker_cok<Int, Real>(K, L, IdMapping, params);
+    PyKerImCokReduced KICR(oineus::reduce_im_ker_cok<Int, Real>(K, L, IdMapping, params));
 
-    return IKCR;
+    return KICR;
 }
 
 
@@ -432,7 +458,8 @@ void init_oineus(py::module& m, std::string suffix)
     using VRFiltration = oineus::Filtration<Int, Real, VREdge>;
     using VRSimplex = typename VRFiltration::FiltrationSimplex;
     using VRUDecomp = oineus::VRUDecomposition<Int>;
-    using ImKerCokRed = oineus::ImKerCokReduced<Int, Real>;
+    using KerImCokRed = oineus::KerImCokReduced<Int, Real>;
+    using PyKerImCokRed = PyKerImCokReduced<Int, Real>;
     //using CokRed =  oineus::CokReduced<Int, Real>;
 
     std::string dgm_point_name = "DiagramPoint" + suffix;
@@ -445,8 +472,8 @@ void init_oineus(py::module& m, std::string suffix)
     std::string vr_simplex_class_name = "VRSimplex" + suffix;
     std::string vr_filtration_class_name = "VRFiltration" + suffix;
     
-    std::string im_ker_cok_reduced_class_name = "ImKerCokReduced" + suffix;
-    //std::string cok_reduced_class_name = "CokReduced" + suffix;
+    std::string ker_im_cok_reduced_class_name = "KerImCokReduced" + suffix;
+    std::string py_ker_im_cok_reduced_class_name = "PyKerImCokReduced" + suffix;
 
     py::class_<DgmPoint>(m, dgm_point_name.c_str())
             .def(py::init<Real, Real>())
@@ -511,11 +538,14 @@ void init_oineus(py::module& m, std::string suffix)
             .def("size_in_dimension", &VRFiltration::size_in_dimension)
             .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
 
-    py::class_<ImKerCokRed>(m, im_ker_cok_reduced_class_name.c_str())
+    py::class_<KerImCokRed>(m, ker_im_cok_reduced_class_name.c_str())
             .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>>());
 
-    /*py::class_<CokRed>(m, cok_reduced_class_name.c_str())
-            .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<bool>, std::vector<int>>());*/
+    py::class_<PyKerImCokRed>(m, py_ker_im_cok_reduced_class_name.c_str())
+            .def(py::init<KerImCokRed>())
+            .def("get_kernel_diagrams", &PyKerImCokRed::get_kernel_diagrams)
+            .def("get_image_diagrams", &PyKerImCokRed::get_image_diagrams)
+            .def("get_cokernel_diagrams", &PyKerImCokRed::get_cokernel_diagrams);
 
     std::string func_name;
 
@@ -618,11 +648,6 @@ void init_oineus(py::module& m, std::string suffix)
     // reduce to create an ImKerReduced object
     func_name = "reduce_im_ker_cok" + suffix;
     m.def(func_name.c_str(), &oineus::reduce_im_ker_cok<Int, Real>);
-
-    
-    // reduce to create an CokReduced object
-    /*func_name = "reduce_cok" + suffix;
-    m.def(func_name.c_str(), &oineus::reduce_cok<Int, Real>);*/
 
     func_name = "list_to_filtration" + suffix;
     m.def(func_name.c_str(), &list_to_filtration<Int, Real>);

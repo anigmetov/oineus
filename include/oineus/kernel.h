@@ -13,7 +13,7 @@
 
 namespace oineus {
 	template<typename Int_, typename Real_>
-	struct ImKerCokReduced {
+	struct KerImCokReduced {
 		using Int = Int_;
 		using Real = Real_;
         using IntSparseColumn = SparseColumn<Int>;
@@ -22,8 +22,8 @@ namespace oineus {
     	using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
 		using VRUDecomp = VRUDecomposition<Int>;
 		using Point = DgmPoint<Real>;
-    	using Dgm = std::vector<Point>;
-		using Dgms = std::vector<Dgm>;
+    	//using Dgm = oineus::Diagram;
+		using Dgms = oineus::Diagrams<Real>;
 
 		private:
 			Filtration<Int_, Real_, Int_> K; //Full complex with the function values for F
@@ -46,7 +46,7 @@ namespace oineus {
 
 		public:
 			//Constructor which takes as input the complex K, subcomplex L, and the decompositionfs for F, G, Im, Ker, Cok, as well as the map from sorted L to sorted K and sorted K to sorted L, as well as the change in ordering to have L before K.
-			ImKerCokReduced(Filtration<Int_, Real_, Int_> K_, Filtration<Int_, Real_, Int_> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, VRUDecomp Cok_, std::vector<int> sorted_L_to_sorted_K_, std::vector<int> sorted_K_to_sorted_L_, std::vector<int> new_order_to_old_) :
+			KerImCokReduced(Filtration<Int_, Real_, Int_> K_, Filtration<Int_, Real_, Int_> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, VRUDecomp Cok_, std::vector<int> sorted_L_to_sorted_K_, std::vector<int> sorted_K_to_sorted_L_, std::vector<int> new_order_to_old_) :
 				K (K_),
 				L (L_),
 				F (F_),
@@ -60,16 +60,14 @@ namespace oineus {
 					number_cells_K = K.boundary_matrix_full().size(); //set the number of cells in K
 					number_cells_L = L.boundary_matrix_full().size(); //set the number of cells in L
 					max_dim = K.max_dim(); //set the maximal dimension we can have cycles in. 
-					
+					Dgms KerDiagrams(max_dim+1);
+					Dgms ImDiagrams(max_dim);
+					Dgms CokDiagrams(max_dim);
 				}
 
 			//generate the kernel persistence diagrams and store them in KerDiagrams
 			void GenerateKerDiagrams(std::vector<int> new_cols) {//Extract the points in the image diagrams.
 				std::cout << "Generating kernel diagrams." << std::endl;
-
-				for (int i = 0; i < max_dim+1; i++){
-					KerDiagrams.push_back(Dgm()); //initialise a diagram in each potential dimension.
-				}
 
 				std::vector<bool> open_points_ker (number_cells_K); //keep track of points which give birth to a cycle
 
@@ -137,7 +135,7 @@ namespace oineus {
                                     int birth_id = new_order_to_old[Ker.get_R()[new_cols[i]].back()];
                                     int dim = K.dim_by_sorted_id(i)-1;
                                     if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-                                        KerDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //add point to the diagram
+                                        KerDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i));//[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //add point to the diagram
                                         open_points_ker[birth_id] = false; //close the point which gave birth to the cycle that was just killed, so we don't add an point at inifity to the diagram
                                     }
                                 }
@@ -149,19 +147,16 @@ namespace oineus {
 				for (int i = 0; i < open_points_ker.size(); i++) {//check if there are any cycles with infinite life times
 					if (open_points_ker[i]) {
 						int dim = K.dim_by_sorted_id(i)-1;
-						KerDiagrams[dim].push_back(Point(K.value_by_sorted_id(i), std::numeric_limits<double>::infinity())); //add point to the diagram
+						KerDiagrams.add_point(dim,K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()); //add point to the diagram
 					}
 				}
-
+				//KerDiagrams.add_point(1, 1,1);
 				std::cerr << "The kernel diagrams are: " << std::endl;
-				for (int i = 0; i < KerDiagrams.size(); i++) {
-					if (KerDiagrams[i].empty()) {
+				for (int i = 0; i <= max_dim; i++) {
+					if (KerDiagrams.extract(i).empty()) {
 						std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
 					} else {
-						std::cerr << "Diagram in dimension " << i << " is:" << std::endl;
-						for (int j = 0; j <KerDiagrams[i].size(); j++) {
-							std::cerr << "(" << KerDiagrams[i][j].birth << ", " << KerDiagrams[i][j].death << ")" << std::endl;
-						}
+						std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
 					}
 				}
 			}
@@ -169,10 +164,6 @@ namespace oineus {
 			//generate the image persistence diagrams and store them in ImDiagrams
 			void GenerateImDiagrams(std::vector<int> new_cols) {
 				std::cout << "Generating the image diagrams." << std::endl;
-
-				for (int i = 0; i < max_dim+1; i++){
-					ImDiagrams.push_back(Dgm());//initialise an empty diagram in each possible dimension
-				}
 
 				std::vector<bool> open_points_im (number_cells_K);//keep track of cells which give birth to a cycle and if that cycle is killed or nop
 
@@ -224,7 +215,7 @@ namespace oineus {
 							if (sorted_K_to_sorted_L[birth_id] != -1) {
 								int dim = K.dim_by_sorted_id(i)-1;
 								if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-									ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i)));//add the point to the diaram
+									ImDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i));//add the point to the diaram
 								}
 								open_points_im[birth_id] = false;
 							}
@@ -235,15 +226,15 @@ namespace oineus {
 				for (int i = 0; i < open_points_im.size(); i++) {
 					if (open_points_im[i]) {
 						int dim = K.dim_by_sorted_id(i);
-						ImDiagrams[dim].push_back(Point(K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()));
+						ImDiagrams.add_point(dim, K.value_by_sorted_id(i), std::numeric_limits<double>::infinity());
 					}
 				}
 
 				std::cerr << "The image diagrams are: " << std::endl;
-				for (int i = 0; i < ImDiagrams.size(); i++) {
-					if (ImDiagrams[i].empty()) {
+				for (int i = 0; i <= max_dim; i++) {
+					if (ImDiagrams.extract(i).empty()) {
 						std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
-					} else if (!ImDiagrams[i].empty()) {
+					} else if (!ImDiagrams.extract(i).empty()) {
 						std::cerr << "Diagram in dimension " << i << " is:" << std::endl;
 						for (int j = 0; j < ImDiagrams[i].size(); j++) {
 							std::cerr << "(" << ImDiagrams[i][j].birth << ", " << ImDiagrams[i][j].death << ")" << std::endl;
@@ -255,10 +246,6 @@ namespace oineus {
 			//Generate the cokernel diagrams and store them in CokDiagrams
 			void GenerateCokDiagrams(std::vector<int> new_cols) {
 				std::cout << "Starting to extract the cokernel diagrams." << std::endl;
-
-				for (int i = 0; i < max_dim+1; i++){
-					CokDiagrams.push_back(Dgm());//initialise empty diagram in each possible dimension
-				}
 
 				std::vector<bool> open_points_cok (number_cells_K);//keep track of open cycles
 
@@ -329,7 +316,7 @@ namespace oineus {
 							int birth_id = new_order_to_old[Cok.get_R()[i].back()];
 							if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
 								int dim = K.dim_by_sorted_id(birth_id);
-								CokDiagrams[dim].push_back(Point(K.value_by_sorted_id(birth_id) ,K.value_by_sorted_id(i)));//add point to the diagram
+								CokDiagrams.add_point(dim, K.value_by_sorted_id(birth_id) ,K.value_by_sorted_id(i));//add point to the diagram
 							}
 							open_points_cok[birth_id] = false;
 						}
@@ -340,15 +327,15 @@ namespace oineus {
 				for (int i = 0; i < open_points_cok.size(); i++) {
 					if (open_points_cok[i]) {
 						int dim = K.dim_by_sorted_id(i);
-						CokDiagrams[dim].push_back(Point(K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()));
+						CokDiagrams.add_point(dim, K.value_by_sorted_id(i), std::numeric_limits<double>::infinity());
 					}
 				}
 
 				std::cerr << "The cokernel diagrams are: " << std::endl;
-				for (int i = 0; i < CokDiagrams.size(); i++) {
-					if (CokDiagrams[i].empty()) {
+				for (int i = 0; i <= max_dim; i++) {
+					if (CokDiagrams.extract(i).empty()) {
 						std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
-					} else if (!CokDiagrams[i].empty()) {
+					} else if (!CokDiagrams.extract(i).empty()) {
 						std::cerr << "Diagram in dimension " << i << " is:" << std::endl;
 						for (int j = 0; j < CokDiagrams[i].size(); j++) {
 							std::cerr << "(" << CokDiagrams[i][j].birth << ", " << CokDiagrams[i][j].death << ")" << std::endl;
@@ -356,6 +343,7 @@ namespace oineus {
 					}
 				}
 			}
+			
 
 			//Useful functions to obtain the various matrices. Mostly useful in debugging, but potentially useful for other people depending on applications.
 			MatrixData get_D_f() {
@@ -405,11 +393,23 @@ namespace oineus {
 			MatrixData get_R_ker() {
 				return Ker.get_R();
 			}
+
+			Dgms get_kernel_diagrams(){
+				return KerDiagrams;
+			}
+	
+			Dgms get_image_diagrams(){
+				return ImDiagrams;
+			}
+
+			Dgms get_cokernel_diagrams(){
+				return CokDiagrams;
+			}
 	};
 
 	//Function which takes as input a complex K, a subcomplex L (only requirement is sorted by dimension), and a map from L to K, as well as params, TODO: max params optional and set a default?
 	template <typename Int_, typename Real_>
-	ImKerCokReduced<Int_, Real_> reduce_im_ker_cok(Filtration<Int_, Real_, Int_> K, Filtration<Int_, Real_, Int_> L, std::vector<int> L_to_K, Params& params) {
+	KerImCokReduced<Int_, Real_> reduce_im_ker_cok(Filtration<Int_, Real_, Int_> K, Filtration<Int_, Real_, Int_> L, std::vector<int> L_to_K, Params& params) {
 		using Real = Real_;
 		using Int = Int_;
     	using IntSparseColumn = SparseColumn<Int>;
@@ -568,13 +568,13 @@ namespace oineus {
 		VRUDecomp Cok(d_cok);
 		Cok.reduce_parallel_rvu(params);
 
-		ImKerCokReduced<Int, Real> IKCR(K, L, F, G, Im, Ker, Cok, sorted_L_to_sorted_K, sorted_K_to_sorted_L, new_order);
+		KerImCokReduced<Int, Real> KICR(K, L, F, G, Im, Ker, Cok, sorted_L_to_sorted_K, sorted_K_to_sorted_L, new_order);
 
-		IKCR.GenerateKerDiagrams(new_cols);
-		IKCR.GenerateImDiagrams(new_cols);
-		IKCR.GenerateCokDiagrams(new_cols);
+		KICR.GenerateKerDiagrams(new_cols);
+		KICR.GenerateImDiagrams(new_cols);
+		KICR.GenerateCokDiagrams(new_cols);
 
-		return  IKCR;
+		return  KICR;
 	}
 	
 }

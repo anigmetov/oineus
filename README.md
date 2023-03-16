@@ -56,6 +56,9 @@ as 2D numpy arrays `[(b_1, d_1),
 >>> dgm = dgms.in_dimension(0)
 ```
 
+### Kernel, image and cokernel persistence
+Oineus can compute the kernel, image and cokernel persistence diagrams as in ["Persistent Homology for Kernels, Images, and Cokernels"](https://doi.org/10.1137/1.9781611973068.110) by D. Cohen-Steiner, H. Edelsbrunner, D. Morozov. These are calculated using 
+
 ## License
 
 Oineus is a free program distributed under modified
