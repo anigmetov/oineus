@@ -56,6 +56,34 @@ as 2D numpy arrays `[(b_1, d_1),
 >>> dgm = dgms.in_dimension(0)
 ```
 
+### Kernel, image and cokernel persistence
+Oineus can compute the kernel, image and cokernel persistence diagrams as in ["Persistent Homology for Kernels, Images, and Cokernels"](https://doi.org/10.1137/1.9781611973068.110) by D. Cohen-Steiner, H. Edelsbrunner, D. Morozov. We first perform the required reductions using `compute_kernel_image_cokernel_diagrams`, which has arguments:
+* `K` the simplicial complex with function values, as a list with an element per simplex in the format `[simplex_id, vertices, value]`, where `vertices` is a list containing the ids of the vertices, and value is the value under the function f.
+* `L` the simplicial sub-complex with function values, as a list with an element per simplex in the format `[simplex_id, vertices, value]`, where `vertices` is a list containing the ids of the vertices, and value is the value under the function g.
+* `L_to_K` a list which maps the cells in L to their corresponding cells in K,
+* `n_threads` the number of threads you want to use,
+* `return` an object which contains the kernel, image and cokernel diagrams, as well as the reduced matrices.
+
+To obtain the different diagrams, we use `kernel()`, `image()`, `cokernel()`, and then we can use `in_dimension` to get the sepcific diagram in a specific dimension.
+
+**Note:** aside from the number of threads, all other parameters are set already. 
+
+#### Example
+Suppose we have a simplicial complex $K$ with a function $f$ on it, and a subcomplex $L \subset K$ with a function $g$ on it. In this example, $g = f|_L$. We then perform the 5 necessary reductions and compute the persistence diagrams using `compute_kernel_image_cokernel_diagrams`, and then access the 3 sets of diagrams using `kernel()`, `image()`, `cokernel()` respectively. After which we can obtain a diagram in a specific dimension $i$ using `in_dimension(i)`.
+
+```python
+>>> import oineus as oin
+>>> n_threads = 4
+>>> K = [[0, [0], 10], [1,[1],50], [2,[2], 10], [3, [3], 10], [4,[0,1], 50], [5, [1,2], 50], [6,[0,3], 10], [7, [2,3], 10]]
+>>> L = [[0, [0], 10], [1,[1],50], [2,[2], 10], [3, [0,1], 50], [4,[1,2],50]]
+>>> L_to_K = [0,1,2,4,5]
+>>> ker_im_cok_dgms = oin.compute_kernel_image_cokernel_diagrams(K, L, L_to_K, n_threads)
+>>> ker_dgms = ker_im_cok_dgms.kernel()
+>>> im_dgms = ker_im_cok_dgms.image()
+>>> cok_dgms = ker_im_cok_dgms.cokernel()
+>>> ker_dgms.in_dimension(0)
+```
+ 
 ## License
 
 Oineus is a free program distributed under modified

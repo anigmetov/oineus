@@ -180,17 +180,15 @@ def list_to_filtration(simplex_list): #take a list which contains data for simpl
         func = getattr(_oineus, f"list_to_filtration_double")
         return func(simplex_list)
 
-def compute_kernel_image_diagrams(K_, L_, IdMap, n_threads): #
+def compute_kernel_image_cokernel_diagrams(K_, L_, IdMap, n_threads): #
     string_type = str(type(K_[0][2]))
-    #if "int" in string_type:
-    #    func = getattr(_oineus, f"compute_kernel_image_diagrams_int")
-    #    return func(K_, L_, IdMap, n_threads)
-    #elif "float" in string_type:
-    #    print("float")
-    #    func = getattr(_oineus, f"compute_kernel_image_diagrams_float")
-    #    return func(K_, L_, IdMap, n_threads)
-    #elif "double" in string_type:
-    func = getattr(_oineus, f"compute_kernel_image_diagrams_float")
+    func = getattr(_oineus, f"compute_kernel_image_cokernel_diagrams_float")
     return func(K_, L_, IdMap, n_threads)
+
+#def compute_cokernel_diagrams(K_, L_, IdMap, n_threads): #
+#    string_type = str(type(K_[0][2]))
+#    func = getattr(_oineus, f"compute_cokernel_diagrams_float")
+#    return func(K_, L_, IdMap, n_threads)
+#
 
 #def lists_to_paired_filtrations(simplex_list_1, simplex_list_2)
