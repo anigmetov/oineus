@@ -154,7 +154,6 @@ struct Diagrams {
 
         for(dim_type d = 0; d <= max_dim_; ++d) {
             diagram_in_dimension_[d];
-            std::cerr << "added a diagram in dimension " << d << std::endl;
         }
     }
 

@@ -130,20 +130,20 @@ list_to_filtration(py::list data) //take a list of simplices and turn it into a 
         auto data_i = data[i];
         int count = 0;
         Int id;
-        std::vector<Int> boundary;
+        std::vector<Int> vertices;
         Real val;
         for (auto item : data_i) {
             if (count == 0) {
                 id =  item.cast<Int>();
             } else if (count == 1) {
-                boundary = item.cast<std::vector<Int>>();
+                vertices = item.cast<std::vector<Int>>();
             } else if (count == 2) {
                 val = item.cast<Real>();
             }
-            count += 1;
+            count++;
         }
         std::cout << "parsed the following data. id: " << id << " val: " << val << std::endl;
-        FiltrationSimplex simp_i(id, boundary, val);
+        FiltrationSimplex simp_i(id, vertices, val);
         FSV.push_back(simp_i);
     }
     Filtration Filt (FSV, false, 1);
@@ -219,26 +219,26 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
 
 
 template<typename Int, typename Real>
-class PyKerImCokReduced {
+class PyKerImCokDgms {
     private:
         oineus::KerImCokReduced<Int, Real> KICR;
 
     public:
 
-        PyKerImCokReduced(oineus::KerImCokReduced<Int, Real> KICR_) :
+        PyKerImCokDgms(oineus::KerImCokReduced<Int, Real> KICR_) :
             KICR (KICR_){
 
         }
     
-        decltype(auto) get_kernel_diagrams(){
+        decltype(auto) kernel(){
             return PyOineusDiagrams<Real>(KICR.get_kernel_diagrams());
         }
 
-        decltype(auto) get_image_diagrams(){
+        decltype(auto) image(){
             return PyOineusDiagrams(KICR.get_image_diagrams());
         }
 
-        decltype(auto) get_cokernel_diagrams(){
+        decltype(auto) cokernel(){
             return PyOineusDiagrams(KICR.get_cokernel_diagrams());
         }
         
@@ -287,7 +287,7 @@ decltype(auto) compute_kernel_image_cokernel_diagrams(py::list K_, py::list L_, 
     params.clearing_opt = false;
     params.n_threads = n_threads;
     
-    PyKerImCokReduced KICR(oineus::reduce_im_ker_cok<Int, Real>(K, L, IdMapping, params));
+    PyKerImCokDgms KICR(oineus::reduce_im_ker_cok<Int, Real>(K, L, IdMapping, params));
 
     return KICR;
 }
@@ -459,7 +459,7 @@ void init_oineus(py::module& m, std::string suffix)
     using VRSimplex = typename VRFiltration::FiltrationSimplex;
     using VRUDecomp = oineus::VRUDecomposition<Int>;
     using KerImCokRed = oineus::KerImCokReduced<Int, Real>;
-    using PyKerImCokRed = PyKerImCokReduced<Int, Real>;
+    using PyKerImCokRed = PyKerImCokDgms<Int, Real>;
     //using CokRed =  oineus::CokReduced<Int, Real>;
 
     std::string dgm_point_name = "DiagramPoint" + suffix;
@@ -473,7 +473,7 @@ void init_oineus(py::module& m, std::string suffix)
     std::string vr_filtration_class_name = "VRFiltration" + suffix;
     
     std::string ker_im_cok_reduced_class_name = "KerImCokReduced" + suffix;
-    std::string py_ker_im_cok_reduced_class_name = "PyKerImCokReduced" + suffix;
+    std::string py_ker_im_cok_reduced_class_name = "PyKerImCokDgms" + suffix;
 
     py::class_<DgmPoint>(m, dgm_point_name.c_str())
             .def(py::init<Real, Real>())
@@ -543,9 +543,9 @@ void init_oineus(py::module& m, std::string suffix)
 
     py::class_<PyKerImCokRed>(m, py_ker_im_cok_reduced_class_name.c_str())
             .def(py::init<KerImCokRed>())
-            .def("get_kernel_diagrams", &PyKerImCokRed::get_kernel_diagrams)
-            .def("get_image_diagrams", &PyKerImCokRed::get_image_diagrams)
-            .def("get_cokernel_diagrams", &PyKerImCokRed::get_cokernel_diagrams);
+            .def("kernel", &PyKerImCokRed::kernel)
+            .def("image", &PyKerImCokRed::image)
+            .def("cokernel", &PyKerImCokRed::cokernel);
 
     std::string func_name;
 

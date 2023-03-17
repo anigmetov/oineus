@@ -10,8 +10,9 @@ IdMapping = [0,1,2,3,4,6,7,8,9]
 
 kicr = oin.compute_kernel_image_cokernel_diagrams(K, L,IdMapping, n_threads)
 
-ker = kicr.get_kernel_diagrams()
 
-im = kicr.get_image_diagrams()
+ker = kicr.kernel()
 
-cok = kicr.get_cokernel_diagrams()
+im = kicr.image()
+
+cok = kicr.cokernel()

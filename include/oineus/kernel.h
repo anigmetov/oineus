@@ -61,8 +61,8 @@ namespace oineus {
 					number_cells_L = L.boundary_matrix_full().size(); //set the number of cells in L
 					max_dim = K.max_dim(); //set the maximal dimension we can have cycles in. 
 					Dgms KerDiagrams(max_dim+1);
-					Dgms ImDiagrams(max_dim);
-					Dgms CokDiagrams(max_dim);
+					Dgms ImDiagrams(max_dim+1);
+					Dgms CokDiagrams(max_dim+1);
 				}
 
 			//generate the kernel persistence diagrams and store them in KerDiagrams
@@ -150,13 +150,16 @@ namespace oineus {
 						KerDiagrams.add_point(dim,K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()); //add point to the diagram
 					}
 				}
-				//KerDiagrams.add_point(1, 1,1);
+				
 				std::cerr << "The kernel diagrams are: " << std::endl;
 				for (int i = 0; i <= max_dim; i++) {
 					if (KerDiagrams.extract(i).empty()) {
 						std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
 					} else {
-						std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
+						std::cerr << "Diagram in dimension " << i << " is:" << std::endl;
+						for (int j = 0; j < KerDiagrams[i].size(); j++) {
+							std::cerr << "(" << KerDiagrams[i][j].birth << ", " << KerDiagrams[i][j].death << ")" << std::endl;
+						}
 					}
 				}
 			}
