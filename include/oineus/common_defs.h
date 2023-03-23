@@ -45,54 +45,48 @@ inline void info([[maybe_unused]] const Args& ... args)
 
 namespace oineus {
 
-using dim_type = size_t;
-using id_type = int;
+    using dim_type = size_t;
+    using id_type = int;
 
-template<typename Real>
-struct RPoint {
-    Real x{0};
-    Real y{0};
+    template<typename Real>
+    struct RPoint {
+        Real x {0};
+        Real y {0};
 
-    RPoint() = default;
+        RPoint() = default;
 
-    RPoint(Real _x, Real _y)
-            :x(_x), y(_y) { };
+        RPoint(Real _x, Real _y)
+                :x(_x), y(_y) { };
 
-    const Real& operator[](int i) const
-    {
-        switch (i) {
-        case 0:
-            return x;
-            break;
-        case 1:
-            return y;
-            break;
-        default:
-            throw std::out_of_range("RPoint has only 2 coords");
+        const Real& operator[](int i) const
+        {
+            switch(i) {
+            case 0:return x;
+                break;
+            case 1:return y;
+                break;
+            default:throw std::out_of_range("RPoint has only 2 coords");
+            }
         }
-    }
 
-    Real& operator[](int i)
-    {
-        switch (i) {
-        case 0:
-            return x;
-            break;
-        case 1:
-            return y;
-            break;
-        default:
-            throw std::out_of_range("RPoint has only 2 coords");
+        Real& operator[](int i)
+        {
+            switch(i) {
+            case 0:return x;
+                break;
+            case 1:return y;
+                break;
+            default:throw std::out_of_range("RPoint has only 2 coords");
+            }
         }
-    }
-};
+    };
 
-template<class T>
-inline void hash_combine(std::size_t& seed, const T& v)
-{
-    std::hash<T> hasher;
-    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
+    template<class T>
+    inline void hash_combine(std::size_t& seed, const T& v)
+    {
+        std::hash<T> hasher;
+        seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    }
 
 
 //template<typename Out>

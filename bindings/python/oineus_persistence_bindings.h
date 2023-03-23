@@ -82,14 +82,12 @@ get_grid(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool
     return Grid(dims, wrap, pdata);
 }
 
-
-
 template<class Int, class Real, size_t D>
 typename oineus::Filtration<Int, Real, Int>
 get_fr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
     auto grid = get_grid<Int, Real, D>(data, wrap);
-    auto fil =  grid.freudenthal_filtration(max_dim, negate, n_threads);
+    auto fil = grid.freudenthal_filtration(max_dim, negate, n_threads);
     return fil;
 }
 
@@ -120,12 +118,11 @@ get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> p
     return oineus::get_vr_filtration_bk<Int, Real, D>(numpy_to_point_vector<Real, D>(points), max_dim, max_radius, n_threads);
 }
 
-
 template<class Int, class Real, class L>
 PyOineusDiagrams<Real>
 compute_diagrams_from_fil(const oineus::Filtration<Int, Real, L>& fil, int n_threads)
 {
-    oineus::VRUDecomposition<Int> d_matrix { fil, false };
+    oineus::VRUDecomposition<Int> d_matrix {fil, false};
 
     oineus::Params params;
 
@@ -155,7 +152,6 @@ get_coboundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecas
     return oineus::antitranspose(bm);
 }
 
-
 template<class Int, class Real, size_t D>
 PyOineusDiagrams<Real>
 compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, oineus::Params& params, bool include_inf_points)
@@ -164,7 +160,7 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
     Timer timer;
     auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, params.n_threads);
     auto elapsed_fil = timer.elapsed_reset();
-    oineus::VRUDecomposition<Int> decmp { fil, false };
+    oineus::VRUDecomposition<Int> decmp {fil, false};
     auto elapsed_decmp_ctor = timer.elapsed_reset();
 
     if (params.print_time)
@@ -231,9 +227,11 @@ void init_oineus_common(py::module& m)
             .def_readwrite("do_sanity_check", &ReductionParams::do_sanity_check)
             .def(py::pickle(
                     // __getstate__
-                    [](const ReductionParams& p) { return py::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
-                        p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
-                        p.do_sanity_check, p.elapsed); },
+                    [](const ReductionParams& p) {
+                      return py::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
+                              p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
+                              p.do_sanity_check, p.elapsed);
+                    },
                     // __setstate__
                     [](py::tuple t) {
                       if (t.size() != 11)
@@ -243,36 +241,33 @@ void init_oineus_common(py::module& m)
 
                       int i = 0;
 
-                      p.n_threads       = t[i++].cast<decltype(p.n_threads)>();
-                      p.chunk_size      = t[i++].cast<decltype(p.chunk_size)>();
-                      p.write_dgms      = t[i++].cast<decltype(p.write_dgms)>();
-                      p.sort_dgms       = t[i++].cast<decltype(p.sort_dgms)>();
-                      p.clearing_opt    = t[i++].cast<decltype(p.clearing_opt)>();
-                      p.acq_rel         = t[i++].cast<decltype(p.acq_rel)>();
-                      p.print_time      = t[i++].cast<decltype(p.print_time)>();
-                      p.compute_v       = t[i++].cast<decltype(p.compute_v)>();
-                      p.compute_u       = t[i++].cast<decltype(p.compute_u)>();
+                      p.n_threads = t[i++].cast<decltype(p.n_threads)>();
+                      p.chunk_size = t[i++].cast<decltype(p.chunk_size)>();
+                      p.write_dgms = t[i++].cast<decltype(p.write_dgms)>();
+                      p.sort_dgms = t[i++].cast<decltype(p.sort_dgms)>();
+                      p.clearing_opt = t[i++].cast<decltype(p.clearing_opt)>();
+                      p.acq_rel = t[i++].cast<decltype(p.acq_rel)>();
+                      p.print_time = t[i++].cast<decltype(p.print_time)>();
+                      p.compute_v = t[i++].cast<decltype(p.compute_v)>();
+                      p.compute_u = t[i++].cast<decltype(p.compute_u)>();
                       p.do_sanity_check = t[i++].cast<decltype(p.do_sanity_check)>();
-                      p.elapsed         = t[i++].cast<decltype(p.elapsed)>();
+                      p.elapsed = t[i++].cast<decltype(p.elapsed)>();
 
                       return p;
-                    }))
-        ;
+                    }));
 
     py::enum_<DenoiseStrategy>(m, "DenoiseStrategy", py::arithmetic())
             .value("BirthBirth", DenoiseStrategy::BirthBirth, "(b, d) maps to (b, b)")
             .value("DeathDeath", DenoiseStrategy::DeathDeath, "(b, d) maps to (d, d)")
-            .value("Midway",     DenoiseStrategy::Midway, "((b, d) maps to ((b+d)/2, (b+d)/2)")
-            .def("as_str",       [](const DenoiseStrategy& self) { return denoise_strategy_to_string(self); })
-            ;
+            .value("Midway", DenoiseStrategy::Midway, "((b, d) maps to ((b+d)/2, (b+d)/2)")
+            .def("as_str", [](const DenoiseStrategy& self) { return denoise_strategy_to_string(self); });
 
     py::enum_<ConflictStrategy>(m, "ConflictStrategy", py::arithmetic())
-            .value("Max",        ConflictStrategy::Max,        "choose maximal displacement")
-            .value("Avg",        ConflictStrategy::Avg,        "average gradients")
-            .value("Sum",        ConflictStrategy::Sum,        "sum gradients")
+            .value("Max", ConflictStrategy::Max, "choose maximal displacement")
+            .value("Avg", ConflictStrategy::Avg, "average gradients")
+            .value("Sum", ConflictStrategy::Sum, "sum gradients")
             .value("FixCritAvg", ConflictStrategy::FixCritAvg, "use matching on critical, average gradients on other simplices")
-            .def("as_str",       [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); })
-            ;
+            .def("as_str", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); });
 
     py::class_<Decomposition>(m, "Decomposition")
             .def(py::init<const oineus::Filtration<Int, double, Int>&, bool>())
@@ -289,11 +284,18 @@ void init_oineus_common(py::module& m)
             .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, VREdge>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
             .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, Int>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
             .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, Int>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
-            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, VREdge>& fil, bool include_inf_points, bool include_zero_persistence_points) { return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points)); })
-            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, VREdge>& fil, bool include_inf_points, bool include_zero_persistence_points) { return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points)); })
-            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, Int>& fil, bool include_inf_points, bool include_zero_persistence_points) { return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points)); })
-            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, Int>& fil, bool include_inf_points, bool include_zero_persistence_points) { return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points)); })
-            ;
+            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, VREdge>& fil, bool include_inf_points, bool include_zero_persistence_points) {
+              return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
+            })
+            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, VREdge>& fil, bool include_inf_points, bool include_zero_persistence_points) {
+              return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
+            })
+            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, Int>& fil, bool include_inf_points, bool include_zero_persistence_points) {
+              return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
+            })
+            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, Int>& fil, bool include_inf_points, bool include_zero_persistence_points) {
+              return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
+            });
 
     using DgmPointInt = typename oineus::DgmPoint<Int>;
     using DgmPointSizet = typename oineus::DgmPoint<size_t>;
@@ -310,7 +312,7 @@ void init_oineus_common(py::module& m)
               return ss.str();
             });
 
-     py::class_<DgmPointSizet>(m, "DgmPoint_Sizet")
+    py::class_<DgmPointSizet>(m, "DgmPoint_Sizet")
             .def(py::init<size_t, size_t>())
             .def_readwrite("birth", &DgmPointSizet::birth)
             .def_readwrite("death", &DgmPointSizet::death)
@@ -346,7 +348,6 @@ void init_oineus(py::module& m, std::string suffix)
     std::string dgm_point_name = "DiagramPoint" + suffix;
     std::string dgm_class_name = "Diagrams" + suffix;
 
-
     std::string ls_simplex_class_name = "LSSimplex" + suffix;
     std::string ls_filtration_class_name = "LSFiltration" + suffix;
 
@@ -365,12 +366,10 @@ void init_oineus(py::module& m, std::string suffix)
               return ss.str();
             });
 
-
     py::class_<Diagram>(m, dgm_class_name.c_str())
             .def(py::init<dim_type>())
             .def("in_dimension", &Diagram::get_diagram_in_dimension)
             .def("__getitem__", &Diagram::get_diagram_in_dimension);
-
 
     py::class_<LSSimplex>(m, ls_simplex_class_name.c_str())
             .def(py::init<typename LSSimplex::IdxVector, Real, typename LSSimplex::ValueLocation>())
@@ -386,7 +385,7 @@ void init_oineus(py::module& m, std::string suffix)
               return ss.str();
             });
 
-     py::class_<VRSimplex>(m, vr_simplex_class_name.c_str())
+    py::class_<VRSimplex>(m, vr_simplex_class_name.c_str())
             .def(py::init<typename VRSimplex::IdxVector, Real, typename VRSimplex::ValueLocation>())
             .def_readonly("id", &VRSimplex::id_)
             .def_readonly("sorted_id", &VRSimplex::sorted_id_)
@@ -440,7 +439,7 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "get_fr_filtration" + suffix + "_3";
     m.def(func_name.c_str(), &get_fr_filtration<Int, Real, 3>);
 
-     // Vietoris--Rips filtration
+    // Vietoris--Rips filtration
     func_name = "get_vr_filtration" + suffix + "_1";
     m.def(func_name.c_str(), &get_vr_filtration<Int, Real, 1>);
 
@@ -460,7 +459,7 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "get_boundary_matrix" + suffix + "_3";
     m.def(func_name.c_str(), &get_boundary_matrix<Int, Real, 3>);
 
-     // target values
+    // target values
     func_name = "get_denoise_target" + suffix;
     m.def(func_name.c_str(), &oineus::get_denoise_target<Int, Real, Int>);
 
@@ -470,7 +469,7 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "get_ls_wasserstein_matching_target_values" + suffix;
     m.def(func_name.c_str(), &oineus::get_target_from_matching<Int, Real, Int>);
 
-     // target values -- diagram loss
+    // target values -- diagram loss
     func_name = "get_target_values_diagram_loss" + suffix;
     m.def(func_name.c_str(), &oineus::get_prescribed_simplex_values_diagram_loss<Real>);
 
@@ -495,7 +494,7 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "get_nth_persistence" + suffix;
     m.def(func_name.c_str(), &oineus::get_nth_persistence<Int, Real, VREdge>);
 
-     // to equidistribute points
+    // to equidistribute points
     func_name = "get_barycenter_target" + suffix;
     m.def(func_name.c_str(), &oineus::get_barycenter_target<Int, Real, VREdge>);
 
@@ -514,7 +513,6 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "get_permutation_dtv" + suffix;
     m.def(func_name.c_str(), &oineus::targets_to_permutation_dtv<Int, Real, VREdge>);
-
 
 }
 

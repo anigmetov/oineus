@@ -31,18 +31,18 @@ namespace oineus {
                 :
                 n_threads_(_n_threads),
                 thread_id_(_thread_id),
-                counter_(_epoch_counter) {}
+                counter_(_epoch_counter) { }
 
         // dtor must be called only after all threads finish!
         ~MemoryReclaim()
         {
-            for(T* p : to_delete_)
+            for(T* p: to_delete_)
                 delete p;
 
-            for(T* p : retired_)
+            for(T* p: retired_)
                 delete p;
 
-            for(T* p : to_retire_)
+            for(T* p: to_retire_)
                 delete p;
         }
 
@@ -64,7 +64,7 @@ namespace oineus {
 
                 even_epoch_ = not even_epoch_;
 
-                for(T* p : to_delete_)
+                for(T* p: to_delete_)
                     delete p;
 
                 retired_.swap(to_delete_);
