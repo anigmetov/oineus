@@ -96,7 +96,7 @@ namespace oineus {
         }
     }
 
-// Bron-Kerbosch, from Dionysus
+    // Bron-Kerbosch, from Dionysus
     template<class Int, class Real, std::size_t D>
     decltype(auto) get_vr_filtration_bk(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
@@ -126,7 +126,7 @@ namespace oineus {
         return VRFiltration(simplices, negate, n_threads);
     }
 
-// stupid brute-force
+    // stupid brute-force
     template<class Int, class Real, std::size_t D>
     decltype(auto) get_vr_filtration_naive(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
     {

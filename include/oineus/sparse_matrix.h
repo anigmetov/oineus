@@ -13,12 +13,9 @@
 
 namespace oineus {
 
-// contains indices of non-zero entries
+    // contains indices of non-zero entries
     template<typename Int>
     using SparseColumn = std::vector<Int>;
-
-//template<typename Int>
-//class VRUDecomposition;
 
     template<typename Int_>
     struct SparseMatrix {
@@ -33,6 +30,7 @@ namespace oineus {
 
         SparseMatrix(size_t n_rows, size_t n_cols)
                 :n_rows_(n_rows), n_cols_(n_cols), col_data_(n_cols), row_data_(n_rows) { }
+
         SparseMatrix(const Data& data, size_t n_other, bool is_col)
                 :
                 n_rows_(is_col ? n_other : data.size()),
@@ -42,6 +40,8 @@ namespace oineus {
 
         SparseMatrix(Data&& col_data, size_t n_rows)
                 :n_rows_(n_rows), n_cols_(col_data.size()), col_data_(col_data) { compute_rows(); }
+
+        SparseMatrix(SparseMatrix<Int_>& R)=default;
 
         bool is_row_zero(size_t row_idx) const { return row_data_[row_idx].empty(); }
         bool is_col_zero(size_t col_idx) const { return col_data_[col_idx].empty(); }
@@ -85,22 +85,6 @@ namespace oineus {
             }
 
             assert(sanity_check());
-        }
-
-        template<class I>
-        friend SparseMatrix<I> mat_multiply_2(const SparseMatrix<I>& a, const SparseMatrix<I>& b);
-
-        template<class I>
-        friend SparseMatrix<I> antitranspose(const SparseMatrix<I>& a);
-
-        bool is_upper_triangular() const
-        {
-            for(size_t col_idx = 0; col_idx < n_cols(); ++col_idx) {
-                auto& col = col_data_[col_idx];
-                if (not col.empty() and col.back() > col_idx)
-                    return false;
-            }
-            return true;
         }
 
         bool operator==(const SparseMatrix& other) const
@@ -157,6 +141,59 @@ namespace oineus {
             return e_1 == e_2;
         }
 
+        Column get_col(int col_id)
+        {
+            return col_data_[col_id];
+        }
+
+        void update_col(int col_id, Column new_col)
+        {
+            col_data_[col_id] = new_col;
+        }
+
+        void delete_col(int col_ind)
+        {
+            col_data_.erase(col_ind);
+        }
+
+        void delete_cols(std::vector<int> cols_to_del)
+        {
+            for(int i = 0; i < cols_to_del.size(); i++) {
+                delete_col(cols_to_del[i]);
+            }
+
+            assert(sanity_check());
+        }
+
+        // compute columns data
+        void reorder_rows(std::vector<int> new_order)
+        {
+            for(int i = 0; i < n_cols(); i++) {
+                std::vector<int> new_col;
+                for(int j = 0; j < get_col(i).size(); j++) {
+                    new_col.push_back(new_order[get_col(i)[j]]);
+                }
+                update_col(i, new_col);
+            }
+
+            assert(sanity_check());
+        }
+
+        template<class I>
+        friend SparseMatrix<I> mat_multiply_2(const SparseMatrix<I>& a, const SparseMatrix<I>& b);
+
+        template<class I>
+        friend SparseMatrix<I> antitranspose(const SparseMatrix<I>& a);
+
+        bool is_upper_triangular() const
+        {
+            for(size_t col_idx = 0; col_idx < n_cols(); ++col_idx) {
+                auto& col = col_data_[col_idx];
+                if (not col.empty() and col.back() > col_idx)
+                    return false;
+            }
+            return true;
+        }
     private:
         size_t n_rows_ {0};
         size_t n_cols_ {0};
@@ -189,7 +226,6 @@ namespace oineus {
                 continue;
 
             for(size_t col_idx = 0; col_idx < b.n_cols(); ++col_idx) {
-//            IC(col_idx, row_idx);
                 if (b.is_col_zero(col_idx))
                     continue;
 
@@ -211,7 +247,6 @@ namespace oineus {
                         ++a_iter;
                         ++b_iter;
                     }
-//                IC(col_idx, row_idx, c_ij);
                 }
 
                 if (c_ij % 2) {

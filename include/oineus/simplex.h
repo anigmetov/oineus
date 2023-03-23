@@ -61,6 +61,20 @@ namespace oineus {
         Int dim() const { return static_cast<Int>(vertices_.size()) - 1; }
         Real value() const { return value_; }
 
+        Simplex(const int _id, const IdxVector& _vertices, Real _value)
+                :
+                vertices_(_vertices), value_(_value), critical_value_location_(_value), id_(_id)
+        {
+            if (vertices_.empty())
+                throw std::runtime_error("Empty simplex not allowed");
+
+            if (vertices_.size() == 1)
+                id_ = vertices_[0];
+            else
+                std::sort(vertices_.begin(), vertices_.end());
+        }
+
+
         std::vector<IdxVector> boundary() const
         {
             std::vector<IdxVector> bdry;
@@ -95,6 +109,11 @@ namespace oineus {
 
         template<typename I, typename R, typename L>
         friend std::ostream& operator<<(std::ostream&, const Simplex<I, R, L>&);
+
+        Int get_sorted_id()
+        {
+            return sorted_id_;
+        }
     };
 
     template<typename I, typename R, typename L>

@@ -111,6 +111,44 @@ decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::
     return points;
 }
 
+template<typename Int, typename Real>
+typename oineus::Filtration<Int, Real, Int>
+list_to_filtration(py::list data) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]'. 
+{
+    using IdxVector = std::vector<Int>;
+    using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
+    using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
+    using Filtration = oineus::Filtration<Int, Real, Int>;
+
+    int n_simps = data.size();
+    std::cout << "Number of cells in the complex is: " << n_simps << std::endl;
+    FiltrationSimplexVector FSV;
+
+    for(int i = 0; i < n_simps; i++) {
+        auto data_i = data[i];
+        int count = 0;
+        Int id;
+        std::vector<Int> vertices;
+        Real val;
+        for(auto item: data_i) {
+            if (count == 0) {
+                id = item.cast<Int>();
+            } else if (count == 1) {
+                vertices = item.cast<std::vector<Int>>();
+            } else if (count == 2) {
+                val = item.cast<Real>();
+            }
+            count++;
+        }
+        std::cout << "parsed the following data. id: " << id << " val: " << val << std::endl;
+        FiltrationSimplex simp_i(id, vertices, val);
+        FSV.push_back(simp_i);
+    }
+    Filtration Filt(FSV, false, 1);
+
+    return Filt;
+}
+
 template<class Int, class Real, size_t D>
 typename oineus::Filtration<Int, Real, oineus::VREdge>
 get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> points, dim_type max_dim, Real max_radius, int n_threads)
@@ -170,8 +208,86 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
 
     if (params.do_sanity_check and not decmp.sanity_check())
         throw std::runtime_error("sanity check failed");
-
     return PyOineusDiagrams<Real>(decmp.diagram(fil, include_inf_points));
+}
+
+template<typename Int, typename Real>
+class PyKerImCokDgms {
+private:
+    oineus::KerImCokReduced<Int, Real> KICR;
+
+public:
+
+    PyKerImCokDgms(oineus::KerImCokReduced<Int, Real> KICR_)
+            :
+            KICR(KICR_)
+    {
+
+    }
+
+    decltype(auto) kernel()
+    {
+        return PyOineusDiagrams<Real>(KICR.get_kernel_diagrams());
+    }
+
+    decltype(auto) image()
+    {
+        return PyOineusDiagrams(KICR.get_image_diagrams());
+    }
+
+    decltype(auto) cokernel()
+    {
+        return PyOineusDiagrams(KICR.get_cokernel_diagrams());
+    }
+
+};
+
+template<typename Int, typename Real>
+decltype(auto) compute_kernel_image_cokernel_diagrams(py::list K_, py::list L_, py::list IdMap_,
+        int n_threads = 1) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value].
+{
+    using IdxVector = std::vector<Int>;
+    using IntSparseColumn = oineus::SparseColumn<Int>;
+    using MatrixData = std::vector<IntSparseColumn>;
+    using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
+    using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
+    using Filtration = oineus::Filtration<Int, Real, Int>;
+    using KerImCokReduced = oineus::KerImCokReduced<Int, Real>;
+    std::cout << "======================================" << std::endl;
+    std::cout << std::endl;
+    std::cout << "You have called \'compute_kernel_image_cokernel_diagrams\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
+    std::cout << "          [id, [boundary], filtration value]" << std::endl;
+    std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as an integer, telling oineus how many threads to use." << std::endl;
+    std::cout << std::endl;
+    std::cout << "======================================" << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "------------ Importing K ------------" << std::endl;
+    Filtration K = list_to_filtration<Int, Real>(K_);
+    std::cout << "------------ Importing L ------------" << std::endl;
+    Filtration L = list_to_filtration<Int, Real>(L_);
+
+    int n_L = IdMap_.size();
+    std::vector<int> IdMapping;
+
+    for(int i = 0; i < n_L; i++) {
+        int i_map = IdMap_[i].cast<int>();
+        IdMapping.push_back(i_map);
+    }
+    std::cout << "---------- Map from L to K ----------" << std::endl;
+    for(int i = 0; i < n_L; i++) {
+        std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
+    }
+
+    oineus::Params params;
+
+    params.sort_dgms = false;
+    params.clearing_opt = false;
+    params.n_threads = n_threads;
+
+    PyKerImCokDgms KICR(oineus::reduce_im_ker_cok<Int, Real>(K, L, IdMapping, params));
+
+    return KICR;
 }
 
 template<class Int>
@@ -344,6 +460,10 @@ void init_oineus(py::module& m, std::string suffix)
     using oineus::VREdge;
     using VRFiltration = oineus::Filtration<Int, Real, VREdge>;
     using VRSimplex = typename VRFiltration::FiltrationSimplex;
+    using VRUDecomp = oineus::VRUDecomposition<Int>;
+    using KerImCokRed = oineus::KerImCokReduced<Int, Real>;
+    using PyKerImCokRed = PyKerImCokDgms<Int, Real>;
+    //using CokRed =  oineus::CokReduced<Int, Real>;
 
     std::string dgm_point_name = "DiagramPoint" + suffix;
     std::string dgm_class_name = "Diagrams" + suffix;
@@ -353,6 +473,9 @@ void init_oineus(py::module& m, std::string suffix)
 
     std::string vr_simplex_class_name = "VRSimplex" + suffix;
     std::string vr_filtration_class_name = "VRFiltration" + suffix;
+
+    std::string ker_im_cok_reduced_class_name = "KerImCokReduced" + suffix;
+    std::string py_ker_im_cok_reduced_class_name = "PyKerImCokDgms" + suffix;
 
     py::class_<DgmPoint>(m, dgm_point_name.c_str())
             .def(py::init<Real, Real>())
@@ -416,6 +539,15 @@ void init_oineus(py::module& m, std::string suffix)
             .def("size_in_dimension", &VRFiltration::size_in_dimension)
             .def("simplex_value", &VRFiltration::value_by_sorted_id)
             .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
+
+    py::class_<KerImCokRed>(m, ker_im_cok_reduced_class_name.c_str())
+            .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>>());
+
+    py::class_<PyKerImCokRed>(m, py_ker_im_cok_reduced_class_name.c_str())
+            .def(py::init<KerImCokRed>())
+            .def("kernel", &PyKerImCokRed::kernel)
+            .def("image", &PyKerImCokRed::image)
+            .def("cokernel", &PyKerImCokRed::cokernel);
 
     std::string func_name;
 
@@ -514,6 +646,18 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "get_permutation_dtv" + suffix;
     m.def(func_name.c_str(), &oineus::targets_to_permutation_dtv<Int, Real, VREdge>);
 
+    // reduce to create an ImKerReduced object
+    func_name = "reduce_im_ker_cok" + suffix;
+    m.def(func_name.c_str(), &oineus::reduce_im_ker_cok<Int, Real>);
+
+    func_name = "list_to_filtration" + suffix;
+    m.def(func_name.c_str(), &list_to_filtration<Int, Real>);
+
+    func_name = "compute_kernel_image_cokernel_diagrams" + suffix;
+    m.def(func_name.c_str(), &compute_kernel_image_cokernel_diagrams<Int, Real>);
+
+    /*func_name = "compute_cokernel_diagrams" + suffix;
+    m.def(func_name.c_str(), &compute_cokernel_diagrams<Int, Real>);*/
 }
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

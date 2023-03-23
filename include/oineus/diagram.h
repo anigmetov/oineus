@@ -86,7 +86,7 @@ namespace oineus {
         return !(a == b);
     }
 
-// compare by persistence first
+    // compare by persistence first
     template<class R>
     bool operator<(const DgmPoint<R>& a, const DgmPoint<R>& b)
     {
@@ -142,14 +142,17 @@ namespace oineus {
 
         dim_type max_dim_;
 
+        Diagrams() { };
+
         Diagrams(dim_type filtration_dim)
                 :max_dim_(filtration_dim - 1)
         {
             if (filtration_dim == 0)
                 throw std::runtime_error("refuse to compute diagram from 0-dim filtration");
 
-            for(dim_type d = 0; d <= max_dim_; ++d)
+            for(dim_type d = 0; d <= max_dim_; ++d) {
                 diagram_in_dimension_[d];
+            }
         }
 
         std::map<dim_type, Dgm> diagram_in_dimension_;
@@ -162,6 +165,7 @@ namespace oineus {
             return diagram_in_dimension_.at(d);
         }
 
+        Dgm& extract(int i) { return diagram_in_dimension_[i]; }
         Dgm& operator[](size_t d) { return diagram_in_dimension_.at(d); }
         const Dgm& operator[](size_t d) const { return diagram_in_dimension_.at(d); }
 

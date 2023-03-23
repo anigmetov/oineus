@@ -7,12 +7,10 @@
 #include <unordered_map>
 #include <cmath>
 
-#include "icecream/icecream.hpp"
-
 #include "diagram.h"
 #include "timer.h"
 #include "filtration.h"
-#include "matrix.h"
+#include "decomposition.h"
 
 // suppress pragma message from boost
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
@@ -433,8 +431,8 @@ namespace oineus {
         return result;
     }
 
-// return the n-th (finite) persistence value in dimension d
-// points at infinity are ignored
+    // return the n-th (finite) persistence value in dimension d
+    // points at infinity are ignored
     template<class Int, class Real, class L>
     Real get_nth_persistence(const Filtration<Int, Real, L>& fil, const VRUDecomposition<Int>& rv_matrix, dim_type d, int n)
     {
@@ -462,7 +460,7 @@ namespace oineus {
         return result;
     }
 
-// points (b, d) with persistence | b - d| <= eps should go to (b, b)
+    // points (b, d) with persistence | b - d| <= eps should go to (b, b)
     template<class Int, class Real, class L>
     DiagramToValues<Real> get_denoise_target(dim_type d, const Filtration<Int, Real, L>& fil, const VRUDecomposition<Int>& rv_matrix, Real eps, DenoiseStrategy strategy)
     {
@@ -537,16 +535,11 @@ namespace oineus {
 
         std::vector<Int> result;
 
-//    std::cerr << "in decrease_birth_x: u_data_t.size = " << decmp.u_data_t.size() << ", positive_simplex_idx = " << positive_simplex_idx << ", index = " << fil.index_in_matrix(positive_simplex_idx, decmp.dualize()) << ", row.size = " << decmp.u_data_t.at(fil.index_in_matrix(positive_simplex_idx, decmp.dualize())).size() << std::endl;
-
         for(auto index_in_matrix: decmp.u_data_t.at(fil.index_in_matrix(positive_simplex_idx, decmp.dualize()))) {
             auto fil_idx = fil.index_in_filtration(index_in_matrix, decmp.dualize());
             const auto& sigma = fil.simplices()[fil_idx];
 
-//        std::cerr << "fil_idx = " << fil_idx << ", index_in_matrix = " << index_in_matrix << std::endl;
-
             if (fil.cmp(sigma.value(), target_birth)) {
-//            std::cerr << " breaking for value" << ", target_birth = " << target_birth << ", sigma.value() = " << sigma.value() << std::endl;
                 break;
             }
 
@@ -565,8 +558,6 @@ namespace oineus {
         if (decmp.dualize())
             throw std::runtime_error("increase_death_x: expected homology, got cohomology");
 
-//    IC("increase_death_x");
-
         std::vector<Int> result;
 
         const auto& u_rows = decmp.u_data_t;
@@ -579,21 +570,15 @@ namespace oineus {
         if (not(sigma >= 0 and sigma < r_cols.size()))
             throw std::runtime_error("expected negative simplex");
 
-//    std::cerr << "in increase_death_x: u_data_t.size = " << decmp.u_data_t.size() << ", negative_simplex_idx = " << negative_simplex_idx << ", row.size = " << u_rows[negative_simplex_idx].size() << std::endl;
-
         for(auto tau_idx: u_rows.at(negative_simplex_idx)) {
             const auto& tau = simplices.at(tau_idx);
             assert(tau.dim() == d);
-//        std::cerr << "tau_idx = " << tau_idx;
             if (fil.cmp(target_death, tau.value())) {
-//            std::cerr << ", breaking for value" << std::endl;
                 break;
             }
 
             if (low(decmp.r_data[tau_idx]) <= sigma)
                 result.push_back(tau_idx);
-//        else
-//            std::cerr << ", not pushing: low = " << low(decmp.r_data[tau_idx]) << ", sigma = " << sigma << std::endl;
         }
 
         if (result.empty())
@@ -607,8 +592,6 @@ namespace oineus {
     {
         if (decmp.dualize())
             throw std::runtime_error("decrease_death_x: expected homology, got cohomology");
-
-//    IC("decrease_death_x");
 
         std::vector<Int> result;
 

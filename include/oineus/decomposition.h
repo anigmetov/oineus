@@ -28,7 +28,7 @@ namespace oineus {
     template<typename Int_, typename Real_, typename L_>
     class Filtration;
 
-// return index of the lowest non-zero in column i of r, -1 if empty
+    // return index of the lowest non-zero in column i of r, -1 if empty
     template<typename IdxType>
     IdxType low(const SparseColumn<IdxType>* c)
     {
@@ -328,6 +328,7 @@ namespace oineus {
         std::vector<size_t> dim_first;
         std::vector<size_t> dim_last;
 
+        const size_t n_rows;
         // methods
 
         template<class R, class L>
@@ -337,7 +338,8 @@ namespace oineus {
                 r_data(d_data),
                 dualize_(_dualize),
                 dim_first(fil.dim_first()),
-                dim_last(fil.dim_last())
+                dim_last(fil.dim_last()),
+                n_rows(d_data.size())
         {
             if (dualize_) {
                 std::reverse(dim_first.begin(), dim_first.end());
@@ -358,11 +360,12 @@ namespace oineus {
             }
         }
 
-        VRUDecomposition(const MatrixData& d)
+        VRUDecomposition(const MatrixData& d, size_t n_rows = std::numeric_limits<decltype(n_rows)>::max())
                 :
                 d_data(d),
                 r_data(d),
                 dualize_(false),
+                n_rows(n_rows == std::numeric_limits<decltype(n_rows)>::max() ? d_data.size() : n_rows),
                 dim_first(std::vector<size_t>({0})),
                 dim_last(std::vector<size_t>({d.size() - 1}))
         {
@@ -392,6 +395,21 @@ namespace oineus {
         friend std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m);
 
         bool sanity_check();
+
+    public:
+        MatrixData get_D()
+        {
+            return d_data;
+        }
+        MatrixData get_V()
+        {
+            return v_data;
+        }
+
+        MatrixData get_R()
+        {
+            return r_data;
+        }
     };
 
     template<class Int>
@@ -571,10 +589,6 @@ namespace oineus {
         IntSparseColumn new_col;
         for(int dim = dim_first.size() - 1; dim >= 0; --dim) {
             for(Int i = dim_first[dim]; i <= dim_last[dim]; ++i) {
-//            if (i == dim_first[dim]) { IC(dim, dim_first[dim], dim_last[dim], dualize_, r_data[i].size()); }
-
-//            IC(dim, i, r_data[i]);
-
                 if (params.clearing_opt and not is_zero(r_data[i])) {
                     // simplex i is pivot -> i is positive -> its column is 0
                     if (pivots[i] >= 0) {
@@ -632,8 +646,6 @@ namespace oineus {
 
         RVMatrix r_v_matrix(n_cols);
 
-//    IC("Before moving: ", d_data);
-
         // move data to r_v_matrix
         for(size_t i = 0; i < n_cols; ++i) {
             IntSparseColumn v_column = {static_cast<Int>(i)};
@@ -642,8 +654,6 @@ namespace oineus {
             r_v_matrix[i] = new RVColumnC(r_data[i], v_column);
         }
         debug("Matrix moved");
-
-//    IC(r_v_matrix, d_data);
 
         std::atomic<Int> counter;
         counter = 0;
@@ -714,8 +724,6 @@ namespace oineus {
             v_data[i] = std::move(p->v_column);
         }
 
-//    IC("After R writen back: ", d_data);
-
         is_reduced = true;
     }
 
@@ -724,6 +732,7 @@ namespace oineus {
     {
         using namespace std::placeholders;
 
+        int c = 0;
         size_t n_cols = size();
 
         v_data = std::vector<IntSparseColumn>(n_cols);
@@ -736,7 +745,6 @@ namespace oineus {
 
         RVMatrix r_v_matrix(n_cols);
 
-//    IC("Before moving: ", d_data);
 
         // move data to r_v_matrix
         for(size_t i = 0; i < n_cols; ++i) {
@@ -747,14 +755,12 @@ namespace oineus {
         }
         debug("Matrix moved");
 
-//    IC(r_v_matrix, d_data);
-
         std::atomic<Int> counter;
         counter = 0;
 
         std::atomic<Int> next_free_chunk;
 
-        AtomicIdxVector pivots(n_cols);
+        AtomicIdxVector pivots(n_rows);
         for(auto& p: pivots) {
             p.store(-1, std::memory_order_relaxed);
         }
@@ -817,8 +823,6 @@ namespace oineus {
             r_data[i] = std::move(p->r_column);
             v_data[i] = std::move(p->v_column);
         }
-
-//    IC("After R writen back: ", d_data);
 
         is_reduced = true;
     }
@@ -898,7 +902,6 @@ namespace oineus {
                 result.add_point(dim, col_idx, plus_inf);
             } else {
                 // finite point
-//            fil.
                 size_t birth_idx = static_cast<size_t>(low(col));
                 size_t death_idx = col_idx;
 

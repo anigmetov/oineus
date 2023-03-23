@@ -12,8 +12,8 @@
 
 #include "timer.h"
 #include "simplex.h"
-#include "matrix.h"
-
+#include "decomposition.h"
+#include "params.h"
 namespace oineus {
 
     template<typename Int_, typename Real_, size_t D>
@@ -53,6 +53,7 @@ namespace oineus {
         auto dim_first() const { return dim_first_; }
         auto dim_last() const { return dim_last_; }
 
+        Real get_simplex_value(size_t i) { return simplices_[i].value(); }
         ValueLocation cvl(size_t simplex_idx) const { return simplices()[simplex_idx].critical_value_location_; }
 
         size_t size_in_dimension(dim_type d) const
@@ -138,6 +139,11 @@ namespace oineus {
         const FiltrationSimplexVector& simplices() const { return simplices_; }
         FiltrationSimplexVector& simplices() { return simplices_; }
         FiltrationSimplexVector simplices_copy() const { return simplices_; }
+
+        int get_sorted_id(int i)
+        {
+            return id_to_sorted_id_[i];
+        }
 
 //        decltype(auto) vertices_to_sorted_id() const { return vertices_to_sorted_id_; }
 //        decltype(auto) id_to_sorted_id() const { return id_to_sorted_id_; }
@@ -238,7 +244,7 @@ namespace oineus {
     template<typename I, typename R, typename L>
     std::ostream& operator<<(std::ostream& out, const Filtration<I, R, L>& fil)
     {
-        out << "Filtration(size = " << fil.size() << "[" << "\n";
+        out << "Filtration(size = " << fil.size() << ")[" << "\n";
         dim_type d = 0;
         for(size_t idx = 0; idx < fil.size(); ++idx) {
             if (idx == fil.dim_last(d))
