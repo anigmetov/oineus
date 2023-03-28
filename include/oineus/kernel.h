@@ -443,12 +443,12 @@ namespace oineus {
 		}
 
 		//set up the reduction for F  on K
-		if (params.vervose) std::cout << "Reducing F on K." std::endl;
+		if (params.verbose) std::cout << "Reducing F on K." << std::endl;
 		VRUDecomp F(K.boundary_matrix_full());
 		F.reduce_parallel_rvu(params);
 
 		//set up reduction for G on L
-		if (params.vervose) std::cout << "Reducing G on L." std::endl;
+		if (params.verbose) std::cout << "Reducing G on L." << std::endl;
 		VRUDecomp G(L.boundary_matrix_full());
 		G.reduce_parallel_rvu(params);
 
@@ -509,7 +509,7 @@ namespace oineus {
 
         params.clearing_opt = false;//set clearing to false as this was interferring with the change in row order
 		//set up Im reduction
-		if (params.vervose) std::cout << "Reducing Image." std::endl;
+		if (params.verbose) std::cout << "Reducing Image." << std::endl;
 		VRUDecomp Im(d_im);
 		Im.reduce_parallel_rvu(params); 
 
@@ -546,7 +546,7 @@ namespace oineus {
 			}
 		}
 
-		if (params.vervose) std::cout << "Reducing Ker." std::endl;
+		if (params.verbose) std::cout << "Reducing Ker." << std::endl;
 		VRUDecomp Ker(d_ker, K.size());
 		Ker.reduce_parallel_rvu(params);
 		MatrixData d_cok(Im.get_D());
@@ -574,7 +574,7 @@ namespace oineus {
 			}
 		}
 
-		if (params.vervose) std::cout << "Reducing Cok." std::endl;		
+		if (params.verbose) std::cout << "Reducing Cok." << std::endl;		
 		VRUDecomp Cok(d_cok);
 		Cok.reduce_parallel_rvu(params);
 
