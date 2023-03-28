@@ -14,6 +14,10 @@ namespace oineus {
         bool compute_u{false};
         bool do_sanity_check{false};
         double elapsed{0.0};
+        bool kernel{false};
+        bool image{false};
+        bool cokernel{false};
+        bool verbose{false};
     };
 
     struct ThreadStats {
