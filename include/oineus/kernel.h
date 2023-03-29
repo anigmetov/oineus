@@ -411,7 +411,7 @@ namespace oineus {
 			}
 	};
 
-	//Function which takes as input a complex K, a subcomplex L (only requirement is sorted by dimension), and a map from L to K, as well as params, TODO: max params optional and set a default?
+	//Function which takes as input a complex K, a subcomplex L (only requirement is sorted by dimension), and a map from L to K, as well as params,te
 	template <typename Int_, typename Real_>
 	KerImCokReduced<Int_, Real_> reduce_ker_im_cok(Filtration<Int_, Real_, Int_> K, Filtration<Int_, Real_, Int_> L, std::vector<int> L_to_K, Params& params) {
 		using Real = Real_;
