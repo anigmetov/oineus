@@ -149,6 +149,59 @@ list_to_filtration(py::list data) //take a list of simplices and turn it into a 
     return Filt;
 }
 
+
+template<typename Int, typename Real>
+typename oineus::Filtration<Int, Real, Int>
+get_ls_filtration(const py::list& simplices, const py::array_t<Real>& vertex_values, bool negate, int n_threads)
+// take a list of simplices and a numpy array of their values and turn it into a filtration for oineus.
+// The list should contain simplices, each simplex is a list of vertices,
+// e.g., triangulation of one segment is [[0], [1], [0, 1]]
+{
+    using Filtration = oineus::Filtration<Int, Real, Int>;
+    using Simplex = typename Filtration::FiltrationSimplex;
+    using IdxVector = std::vector<Int>;
+    using SimplexVector = std::vector<Simplex>;
+
+    Timer timer;
+    timer.reset();
+
+    SimplexVector fil_simplices;
+    fil_simplices.reserve(simplices.size());
+
+    if (vertex_values.ndim() != 1) {
+        std::cerr << "get_ls_filtration: expected 1-dimensional array in get_ls_filtration, got " << vertex_values.ndim() << std::endl;
+        throw std::runtime_error("Expected 1-dimensional array in get_ls_filtration");
+    }
+
+    auto cmp = negate ? [](Real x, Real y) { return x > y; } : [](Real x, Real y) { return x < y; };
+
+    auto vv_buf = vertex_values.request();
+    Real* p_vertex_values = static_cast<Real*>(vv_buf.ptr);
+
+    for(auto&& item : simplices) {
+        IdxVector vertices = item.cast<IdxVector>();
+
+        Int critical_vertex;
+        Real critical_value = negate ? std::numeric_limits<Real>::max() : std::numeric_limits<Real>::lowest();
+
+        for(auto v : vertices) {
+            Real vv = p_vertex_values[v];
+            if (cmp(critical_value, vv)) {
+                critical_vertex = v;
+                critical_value = vv;
+            }
+        }
+
+        fil_simplices.emplace_back(vertices, critical_value, critical_vertex);
+    }
+
+//    std::cerr << "without filtration ctor, in get_ls_filtration elapsed: " << timer.elapsed_reset() << std::endl;
+
+    return Filtration(fil_simplices, negate, n_threads);
+}
+
+
+
 template<class Int, class Real, size_t D>
 typename oineus::Filtration<Int, Real, oineus::VREdge>
 get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> points, dim_type max_dim, Real max_radius, int n_threads)
@@ -502,6 +555,7 @@ void init_oineus(py::module& m, std::string suffix)
             .def_readonly("value", &LSSimplex::value_)
             .def_readonly("critical_vertex", &LSSimplex::critical_value_location_)
             .def("dim", &LSSimplex::dim)
+            .def("boundary", &LSSimplex::boundary)
             .def("__repr__", [](const LSSimplex& sigma) {
               std::stringstream ss;
               ss << sigma;
@@ -516,6 +570,7 @@ void init_oineus(py::module& m, std::string suffix)
             .def_readonly("value", &VRSimplex::value_)
             .def_readonly("critical_edge", &VRSimplex::critical_value_location_)
             .def("dim", &VRSimplex::dim)
+            .def("boundary", &VRSimplex::boundary)
             .def("__repr__", [](const VRSimplex& sigma) {
               std::stringstream ss;
               ss << sigma;
@@ -656,6 +711,8 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "compute_kernel_image_cokernel_diagrams" + suffix;
     m.def(func_name.c_str(), &compute_kernel_image_cokernel_diagrams<Int, Real>);
 
+    func_name = "get_ls_filtration" + suffix;
+    m.def(func_name.c_str(), &get_ls_filtration<Int, Real>);
     /*func_name = "compute_cokernel_diagrams" + suffix;
     m.def(func_name.c_str(), &compute_cokernel_diagrams<Int, Real>);*/
 }

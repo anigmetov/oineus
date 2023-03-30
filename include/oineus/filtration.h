@@ -38,11 +38,16 @@ namespace oineus {
                 negate_(_negate),
                 simplices_(_simplices)
         {
+            Timer timer;
+            timer.reset();
+
             set_ids();
             sort(n_threads);
             set_dim_info();
             assert(std::all_of(simplices_.begin(), simplices_.end(),
                     [](const FiltrationSimplex& sigma) { return sigma.is_valid_filtration_simplex(); }));
+
+//            std::cerr << "Filtration ctor done, elapsed: " << timer.elapsed() << std::endl;
         }
 
         size_t size() const { return simplices_.size(); }
@@ -212,6 +217,8 @@ namespace oineus {
         {
             Timer timer;
 
+            timer.reset();
+
             id_to_sorted_id_ = std::vector<Int>(size(), Int(-1));
             vertices_to_sorted_id_.clear();
             sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
@@ -235,6 +242,8 @@ namespace oineus {
                 vertices_to_sorted_id_[sigma.vertices_] = sorted_id;
                 sorted_id_to_value_[sorted_id] = sigma.value();
             }
+
+//            std::cerr << "Spent on sorting in filtration ctor: " << timer.elapsed() << std::endl;
         }
 
         template<typename I, typename R, typename L>
