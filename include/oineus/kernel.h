@@ -424,6 +424,12 @@ namespace oineus {
 		using Point = DgmPoint<Real>;
 		using Diagram = std::vector<Point>;
 
+		std::cout << "Performing kernel, image, cokernel reduction with the following parameters:" << std::endl;
+		std::cout << "n_threads: " << params.n_threads << std::endl;
+		std::cout << "kernel: " << params.kernel << std::endl;
+		std::cout << "image: " << params.image << std::endl;
+		std::cout << "cokernel: " << params.cokernel << std::endl;
+		std::cout << "verbose: " << params.verbose << std::endl;
 
 		FiltrationSimplexVector K_simps = K.simplices(); //simplices of L as we will need to work with them to get their order
 		int number_cells_K =  K_simps.size(); // number of simplices in K

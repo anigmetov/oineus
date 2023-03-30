@@ -360,17 +360,18 @@ void init_oineus_common(py::module& m)
             .def_readwrite("compute_v", &ReductionParams::compute_v)
             .def_readwrite("compute_u", &ReductionParams::compute_u)
             .def_readwrite("do_sanity_check", &ReductionParams::do_sanity_check)
-            .def_readwrite("kernel", &ReductionParams::do_sanity_check)
-            .def_readwrite("image", &ReductionParams::do_sanity_check)
+            .def_readwrite("kernel", &ReductionParams::kernel)
+            .def_readwrite("image", &ReductionParams::image)
             .def_readwrite("cokernel", &ReductionParams::cokernel)
+            .def_readwrite("verbose", &ReductionParams::verbose)
             .def(py::pickle(
                     // __getstate__
                     [](const ReductionParams& p) { return py::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
                         p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
-                        p.do_sanity_check, p.elapsed); },
+                        p.do_sanity_check, p.elapsed, p.kernel, p.image, p.cokernel, p.verbose); },
                     // __setstate__
                     [](py::tuple t) {
-                      if (t.size() != 11)
+                      if (t.size() != 15)
                           throw std::runtime_error("Invalid tuple for ReductionParams");
 
                       ReductionParams p;
@@ -391,6 +392,7 @@ void init_oineus_common(py::module& m)
                       p.kernel          = t[i++].cast<decltype(p.kernel)>();
                       p.image           = t[i++].cast<decltype(p.image)>();
                       p.cokernel        = t[i++].cast<decltype(p.cokernel)>();
+                      p.verbose         = t[i++].cast<decltype(p.verbose)>();
                     
                       return p;
                     }))
