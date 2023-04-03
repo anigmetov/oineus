@@ -9,7 +9,7 @@
 using namespace oineus;
 
 template<class Int, class Real, size_t D>
-std::pair<oineus::Grid<Int, Real, D>, std::vector<Real>> read_function(std::string fname, bool wrap)
+std::tuple<std::vector<Real>, typename oineus::Grid<Int,Real, D>::GridPoint> read_function(std::string fname)
 {
     using Grid = oineus::Grid<Int, Real, D>;
     using GridPoint = typename Grid::GridPoint;
@@ -38,7 +38,7 @@ std::pair<oineus::Grid<Int, Real, D>, std::vector<Real>> read_function(std::stri
         throw std::runtime_error("Bad file format");
     }
 
-    return {Grid(dims, wrap, func.data()), func};
+    return {func, dims};
 }
 
 void test_ls_2()
@@ -146,7 +146,7 @@ int main(int argc, char** argv)
     opts::Options ops;
 
     std::string fname_in, fname_dgm;
-    unsigned int top_d = 1;
+    unsigned int top_d = 2;
 
     bool help;
     bool bdry_matrix_only {false};
@@ -174,8 +174,10 @@ int main(int argc, char** argv)
 
     info("Reading file {}", fname_in);
 
-    auto grid_func = read_function<Int, Real, 3>(fname_in, wrap);
-    auto& grid = grid_func.first;
+    using Grid = oineus::Grid<Int, Real, 3>;
+
+    auto [func, dims] = read_function<Int, Real, 3>(fname_in);
+    Grid grid {dims, wrap, func.data()};
 
     auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
     VRUDecomposition<Int> decmp {fil, false };
@@ -183,6 +185,8 @@ int main(int argc, char** argv)
     info("Matrix read");
 
     fname_dgm = fname_in + "_t_" + std::to_string(params.n_threads) + "_c_" + std::to_string(params.chunk_size);
+
+    params.print_time = true;
 
     decmp.reduce(params);
 
@@ -197,10 +201,6 @@ int main(int argc, char** argv)
     dgm.save_as_txt(fname_dgm);
 
     info("Diagrams saved");
-
-//    Real sigma = 1.0;
-//    Vectorizer<Real> vectorizer(sigma);
-//    auto image = vectorizer.persistence_image_unstable(dgm.get_diagram_in_dimension(0));
 
     return 0;
 }

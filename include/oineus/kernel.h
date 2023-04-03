@@ -8,7 +8,6 @@
 // suppress pragma message from boost
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
-
 #pragma once
 
 namespace oineus {

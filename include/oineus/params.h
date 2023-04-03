@@ -22,8 +22,8 @@ namespace oineus {
 
     struct ThreadStats {
         const int thread_id;
-        long int n_right_pivots{0};
-        long int n_cleared{0};
+        long int n_right_pivots {0};
+        long int n_cleared {0};
 
         ThreadStats()
                 :thread_id(-1) { }

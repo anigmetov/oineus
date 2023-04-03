@@ -4,8 +4,7 @@
 
 #include <chrono>
 
-struct Timer
-{
+struct Timer {
     //using clock = std::chrono::steady_clock;
     using clock = std::chrono::high_resolution_clock;
     using second = std::chrono::duration<double, std::ratio<1>>;
@@ -13,10 +12,17 @@ struct Timer
 
     time last_;
 
-    Timer():
-        last_(clock::now())     {}
+    Timer()
+            :
+            last_(clock::now()) { }
 
-    void    reset()             { last_ = clock::now(); }
-    double  elapsed()           { return std::chrono::duration_cast<second> (clock::now() - last_).count(); }
-    double  elapsed_reset()     { time last = last_; last_ = clock::now(); auto diff = std::chrono::duration_cast<second> (last_ - last).count(); return diff; }
+    void reset() { last_ = clock::now(); }
+    double elapsed() { return std::chrono::duration_cast<second>(clock::now() - last_).count(); }
+    double elapsed_reset()
+    {
+        time last = last_;
+        last_ = clock::now();
+        auto diff = std::chrono::duration_cast<second>(last_ - last).count();
+        return diff;
+    }
 };
