@@ -224,6 +224,7 @@ namespace oineus {
                             // unset pivot from current_column_idx, if necessary
                             int c_current_low = current_r_v_column->low();
                             int c_current_column_idx = current_column_idx;
+
                             pivots[c_current_low].compare_exchange_weak(c_current_column_idx, -1, rel, relax);
 
                             // zero current column
@@ -675,7 +676,7 @@ namespace oineus {
         mms.reserve(n_threads);
         stats.reserve(n_threads);
 
-        bool go_down = false;
+        bool go_down = params.clearing_opt;
 
         if (go_down) {
             next_free_chunk = n_cols / params.chunk_size;
@@ -712,9 +713,10 @@ namespace oineus {
         params.elapsed = timer.elapsed_reset();
 
         if (params.print_time) {
-            for(auto& s: stats) { info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots); }
+            long total_cleared = 0;
+            for(auto& s: stats) { total_cleared += s.n_cleared; info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots); }
             info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
-            std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << std::endl;
+            std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << ", cleared: " << total_cleared << std::endl;
         }
 
         // write reduced matrix back, collect V matrix, mark as reduced
@@ -775,7 +777,7 @@ namespace oineus {
         mms.reserve(n_threads);
         stats.reserve(n_threads);
 
-        bool go_down = false;
+        bool go_down = params.clearing_opt;
 
         if (go_down) {
             next_free_chunk = n_cols / params.chunk_size;
@@ -812,9 +814,10 @@ namespace oineus {
         params.elapsed = timer.elapsed_reset();
 
         if (params.print_time) {
-            for(auto& s: stats) { info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots); }
+            long total_cleared = 0;
+            for(auto& s: stats) { total_cleared += s.n_cleared; info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots); }
             info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
-            std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << std::endl;
+            std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << ", total_cleared = " << total_cleared << std::endl;
         }
 
         // write reduced matrix back, collect V matrix, mark as reduced
@@ -822,6 +825,7 @@ namespace oineus {
             auto p = r_v_matrix[i].load(std::memory_order_relaxed);
             r_data[i] = std::move(p->r_column);
             v_data[i] = std::move(p->v_column);
+            delete p;
         }
 
         is_reduced = true;
