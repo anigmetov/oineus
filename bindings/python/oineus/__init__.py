@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+import typing
 import numpy as np
 import scipy.sparse
 
@@ -180,10 +181,18 @@ def list_to_filtration(simplex_list): #take a list which contains data for simpl
         func = getattr(_oineus, f"list_to_filtration_double")
         return func(simplex_list)
 
-def compute_kernel_image_cokernel_diagrams(K_, L_, IdMap, n_threads): #
+def compute_kernel_image_cokernel_reduction(K_, L_, IdMap, n_threads): #
     string_type = str(type(K_[0][2]))
-    func = getattr(_oineus, f"compute_kernel_image_cokernel_diagrams_float")
+    func = getattr(_oineus, f"compute_kernel_image_cokernel_reduction_float")
     return func(K_, L_, IdMap, n_threads)
+
+
+def get_ls_filtration(simplices: typing.List[typing.List[int]], vertex_values: np.ndarray, negate: bool, n_threads: int):
+    if vertex_values.dtype == np.float32:
+        func = getattr(_oineus, f"get_ls_filtration_float")
+    elif vertex_values.dtype == np.float64:
+        func = getattr(_oineus, f"get_ls_filtration_double")
+    return func(simplices, vertex_values, negate, n_threads)
 
 #def compute_cokernel_diagrams(K_, L_, IdMap, n_threads): #
 #    string_type = str(type(K_[0][2]))

@@ -14,12 +14,16 @@ namespace oineus {
         bool compute_u{false};
         bool do_sanity_check{false};
         double elapsed{0.0};
+        bool kernel{false};
+        bool image{false};
+        bool cokernel{false};
+        bool verbose{false};
     };
 
     struct ThreadStats {
         const int thread_id;
-        long int n_right_pivots{0};
-        long int n_cleared{0};
+        long int n_right_pivots {0};
+        long int n_cleared {0};
 
         ThreadStats()
                 :thread_id(-1) { }

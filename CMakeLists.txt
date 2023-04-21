@@ -30,7 +30,7 @@ if (oin_use_jemalloc)
     set (libraries ${libraries} jemalloc)
 endif()
 
-add_subdirectory(examples)
+#add_subdirectory(examples)
 add_subdirectory(bindings/python)
 
 if (oin_build_tests)

@@ -8,7 +8,6 @@
 // suppress pragma message from boost
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
-
 #pragma once
 
 namespace oineus {
@@ -42,11 +41,11 @@ namespace oineus {
 			int number_cells_K; //number of cells in K
 			int number_cells_L; //number of cells in L
 			std::vector<int> new_order_to_old; //new_order_to_old[i] is the (unsorted) id in K of the ith cell in the filtration.
-
+			std::vector<int> new_cols; //the id of the columns we retaub
 
 		public:
 			//Constructor which takes as input the complex K, subcomplex L, and the decompositionfs for F, G, Im, Ker, Cok, as well as the map from sorted L to sorted K and sorted K to sorted L, as well as the change in ordering to have L before K.
-			KerImCokReduced(Filtration<Int_, Real_, Int_> K_, Filtration<Int_, Real_, Int_> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, VRUDecomp Cok_, std::vector<int> sorted_L_to_sorted_K_, std::vector<int> sorted_K_to_sorted_L_, std::vector<int> new_order_to_old_) :
+			KerImCokReduced(Filtration<Int_, Real_, Int_> K_, Filtration<Int_, Real_, Int_> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, VRUDecomp Cok_, std::vector<int> sorted_L_to_sorted_K_, std::vector<int> sorted_K_to_sorted_L_, std::vector<int> new_order_to_old_,std::vector<int> new_cols_) :
 				K (K_),
 				L (L_),
 				F (F_),
@@ -56,7 +55,8 @@ namespace oineus {
 				Cok (Cok_),
 				sorted_L_to_sorted_K (sorted_L_to_sorted_K_),
 				sorted_K_to_sorted_L (sorted_K_to_sorted_L_),
-				new_order_to_old (new_order_to_old_) {
+				new_order_to_old (new_order_to_old_),
+				new_cols (new_cols_) {
 					number_cells_K = K.boundary_matrix_full().size(); //set the number of cells in K
 					number_cells_L = L.boundary_matrix_full().size(); //set the number of cells in L
 					max_dim = K.max_dim(); //set the maximal dimension we can have cycles in. 
@@ -66,7 +66,7 @@ namespace oineus {
 				}
 
 			//generate the kernel persistence diagrams and store them in KerDiagrams
-			void GenerateKerDiagrams(std::vector<int> new_cols) {//Extract the points in the image diagrams.
+			void GenerateKerDiagrams() {//Extract the points in the image diagrams.
 				std::cout << "Generating kernel diagrams." << std::endl;
 
 				std::vector<bool> open_points_ker (number_cells_K); //keep track of points which give birth to a cycle
@@ -165,7 +165,7 @@ namespace oineus {
 			}
 
 			//generate the image persistence diagrams and store them in ImDiagrams
-			void GenerateImDiagrams(std::vector<int> new_cols) {
+			void GenerateImDiagrams() {
 				std::cout << "Generating the image diagrams." << std::endl;
 
 				std::vector<bool> open_points_im (number_cells_K);//keep track of cells which give birth to a cycle and if that cycle is killed or nop
@@ -247,7 +247,7 @@ namespace oineus {
 			}
 			
 			//Generate the cokernel diagrams and store them in CokDiagrams
-			void GenerateCokDiagrams(std::vector<int> new_cols) {
+			void GenerateCokDiagrams() {
 				std::cout << "Starting to extract the cokernel diagrams." << std::endl;
 
 				std::vector<bool> open_points_cok (number_cells_K);//keep track of open cycles
@@ -410,9 +410,9 @@ namespace oineus {
 			}
 	};
 
-	//Function which takes as input a complex K, a subcomplex L (only requirement is sorted by dimension), and a map from L to K, as well as params, TODO: max params optional and set a default?
+	//Function which takes as input a complex K, a subcomplex L (only requirement is sorted by dimension), and a map from L to K, as well as params,te
 	template <typename Int_, typename Real_>
-	KerImCokReduced<Int_, Real_> reduce_im_ker_cok(Filtration<Int_, Real_, Int_> K, Filtration<Int_, Real_, Int_> L, std::vector<int> L_to_K, Params& params) {
+	KerImCokReduced<Int_, Real_> reduce_ker_im_cok(Filtration<Int_, Real_, Int_> K, Filtration<Int_, Real_, Int_> L, std::vector<int> L_to_K, Params& params) {
 		using Real = Real_;
 		using Int = Int_;
     	using IntSparseColumn = SparseColumn<Int>;
@@ -423,6 +423,12 @@ namespace oineus {
 		using Point = DgmPoint<Real>;
 		using Diagram = std::vector<Point>;
 
+		std::cout << "Performing kernel, image, cokernel reduction with the following parameters:" << std::endl;
+		std::cout << "n_threads: " << params.n_threads << std::endl;
+		std::cout << "kernel: " << params.kernel << std::endl;
+		std::cout << "image: " << params.image << std::endl;
+		std::cout << "cokernel: " << params.cokernel << std::endl;
+		std::cout << "verbose: " << params.verbose << std::endl;
 
 		FiltrationSimplexVector K_simps = K.simplices(); //simplices of L as we will need to work with them to get their order
 		int number_cells_K =  K_simps.size(); // number of simplices in K
@@ -442,10 +448,12 @@ namespace oineus {
 		}
 
 		//set up the reduction for F  on K
+		if (params.verbose) std::cout << "Reducing F on K." << std::endl;
 		VRUDecomp F(K.boundary_matrix_full());
 		F.reduce_parallel_rvu(params);
 
 		//set up reduction for G on L
+		if (params.verbose) std::cout << "Reducing G on L." << std::endl;
 		VRUDecomp G(L.boundary_matrix_full());
 		G.reduce_parallel_rvu(params);
 
@@ -506,6 +514,7 @@ namespace oineus {
 
         params.clearing_opt = false;//set clearing to false as this was interferring with the change in row order
 		//set up Im reduction
+		if (params.verbose) std::cout << "Reducing Image." << std::endl;
 		VRUDecomp Im(d_im);
 		Im.reduce_parallel_rvu(params); 
 
@@ -541,6 +550,8 @@ namespace oineus {
 				counter++;
 			}
 		}
+
+		if (params.verbose) std::cout << "Reducing Ker." << std::endl;
 		VRUDecomp Ker(d_ker, K.size());
 		Ker.reduce_parallel_rvu(params);
 		MatrixData d_cok(Im.get_D());
@@ -568,14 +579,15 @@ namespace oineus {
 			}
 		}
 
+		if (params.verbose) std::cout << "Reducing Cok." << std::endl;		
 		VRUDecomp Cok(d_cok);
 		Cok.reduce_parallel_rvu(params);
 
-		KerImCokReduced<Int, Real> KICR(K, L, F, G, Im, Ker, Cok, sorted_L_to_sorted_K, sorted_K_to_sorted_L, new_order);
+		KerImCokReduced<Int, Real> KICR(K, L, F, G, Im, Ker, Cok, sorted_L_to_sorted_K, sorted_K_to_sorted_L, new_order, new_cols);
 
-		KICR.GenerateKerDiagrams(new_cols);
-		KICR.GenerateImDiagrams(new_cols);
-		KICR.GenerateCokDiagrams(new_cols);
+		if (params.kernel) KICR.GenerateKerDiagrams();
+		if (params.image) KICR.GenerateImDiagrams();
+		if (params.cokernel) KICR.GenerateCokDiagrams();
 
 		return  KICR;
 	}
