@@ -714,7 +714,11 @@ namespace oineus {
 
         if (params.print_time) {
             long total_cleared = 0;
-            for(auto& s: stats) { total_cleared += s.n_cleared; info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots); }
+            for(auto& s: stats)
+            {
+                total_cleared += s.n_cleared;
+                info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
+            }
             info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
             std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << ", cleared: " << total_cleared << std::endl;
         }
@@ -815,9 +819,13 @@ namespace oineus {
 
         if (params.print_time) {
             long total_cleared = 0;
-            for(auto& s: stats) { total_cleared += s.n_cleared; info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots); }
+            for(auto& s: stats)
+            {
+                total_cleared += s.n_cleared;
+                info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
+            }
             info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
-            std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << ", total_cleared = " << total_cleared << std::endl;
+            std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << ", cleared: " << total_cleared << std::endl;
         }
 
         // write reduced matrix back, collect V matrix, mark as reduced
