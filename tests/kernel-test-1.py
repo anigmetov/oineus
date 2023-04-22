@@ -1,7 +1,7 @@
 import oineus as oin
 import math
 
-def kernel_test_1():
+def test_kernel_1():
 	params=oin.ReductionParams()
 	params.n_threads=4
 	params.kernel=True
@@ -36,7 +36,7 @@ def kernel_test_1():
 		return 0
  
 
-def kernel_test_2():
+def test_kernel_2():
 	params=oin.ReductionParams()
 	params.n_threads=4
 	params.kernel=True
