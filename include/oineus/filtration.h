@@ -5,9 +5,10 @@
 #include <unordered_map>
 #include <iterator>
 #include <ostream>
-#ifdef __GNUC__
-#include <execution>
-#endif
+
+//#ifdef __GNUC__
+//#include <execution>
+//#endif
 #include <algorithm>
 
 #include <icecream/icecream.hpp>
@@ -233,11 +234,11 @@ namespace oineus {
               return std::tie(d_sigma, v_sigma, sigma.id_) < std::tie(d_tau, v_tau, tau.id_);
             };
 
-#ifdef __GNUC__
-            std::sort(std::execution::par_unseq, simplices_.begin(), simplices_.end(), cmp);
-#else
+//#ifdef __GNUC__
+//            std::sort(std::execution::par_unseq, simplices_.begin(), simplices_.end(), cmp);
+//#else
             std::sort(simplices_.begin(), simplices_.end(), cmp);
-#endif
+//#endif
 
             for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
                 auto& sigma = simplices_[sorted_id];

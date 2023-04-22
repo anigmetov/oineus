@@ -3,17 +3,22 @@
 
 namespace oineus {
     struct Params {
-        int n_threads {1};
-        int chunk_size {128};
-        bool write_dgms {false};
-        bool sort_dgms {true};
-        bool clearing_opt {true};
-        bool acq_rel {false};
-        bool print_time {false};
-        bool compute_v {true};
-        bool compute_u {false};
-        bool do_sanity_check {false};
-        double elapsed {0.0};
+
+        int n_threads{1};
+        int chunk_size{128};
+        bool write_dgms{false};
+        bool sort_dgms{true};
+        bool clearing_opt{true};
+        bool acq_rel{false};
+        bool print_time{false};
+        bool compute_v{true};
+        bool compute_u{false};
+        bool do_sanity_check{false};
+        double elapsed{0.0};
+        bool kernel{false};
+        bool image{false};
+        bool cokernel{false};
+        bool verbose{false};
     };
 
     struct ThreadStats {

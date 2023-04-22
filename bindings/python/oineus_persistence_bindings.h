@@ -113,7 +113,7 @@ decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::
 
 template<typename Int, typename Real>
 typename oineus::Filtration<Int, Real, Int>
-list_to_filtration(py::list data) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]'. 
+list_to_filtration(py::list data, oineus::Params& params) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]'. 
 {
     using IdxVector = std::vector<Int>;
     using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
@@ -140,7 +140,7 @@ list_to_filtration(py::list data) //take a list of simplices and turn it into a 
             }
             count++;
         }
-        std::cout << "parsed the following data. id: " << id << " val: " << val << std::endl;
+        if (params.verbose) std::cout << "parsed the following data. id: " << id << " val: " << val << std::endl;
         FiltrationSimplex simp_i(id, vertices, val);
         FSV.push_back(simp_i);
     }
@@ -268,7 +268,6 @@ template<typename Int, typename Real>
 class PyKerImCokDgms {
 private:
     oineus::KerImCokReduced<Int, Real> KICR;
-
 public:
 
     PyKerImCokDgms(oineus::KerImCokReduced<Int, Real> KICR_)
@@ -296,8 +295,47 @@ public:
 };
 
 template<typename Int, typename Real>
-decltype(auto) compute_kernel_image_cokernel_diagrams(py::list K_, py::list L_, py::list IdMap_,
-        int n_threads = 1) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value].
+class PyKerImCokRed {
+    private:
+        oineus::KerImCokReduced<Int, Real> KICR;
+
+public:
+        bool kernel{false};
+        bool image{false};
+        bool cokernel{false};
+
+        PyKerImCokRed(oineus::KerImCokReduced<Int, Real> KICR_) :
+            KICR (KICR_){
+        }
+        
+        decltype(auto) kernel_diagrams(){
+            if (!kernel) {
+                KICR.GenerateKerDiagrams();
+                kernel = true;
+            }
+            return PyOineusDiagrams<Real>(KICR.get_kernel_diagrams());
+        }
+
+        decltype(auto) image_diagrams(){
+            if (!image) {
+                KICR.GenerateImDiagrams();
+                image = true;
+            }
+            return PyOineusDiagrams(KICR.get_image_diagrams());
+        }
+
+        decltype(auto) cokernel_diagrams(){
+            if (!cokernel) {
+                KICR.GenerateCokDiagrams();
+                cokernel = true;
+            }
+            return PyOineusDiagrams(KICR.get_cokernel_diagrams());
+        }
+        
+};
+
+template<typename Int, typename Real>
+decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_, py::list IdMap_, oineus::Params& params) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value].
 {
     using IdxVector = std::vector<Int>;
     using IntSparseColumn = oineus::SparseColumn<Int>;
@@ -307,8 +345,8 @@ decltype(auto) compute_kernel_image_cokernel_diagrams(py::list K_, py::list L_, 
     using Filtration = oineus::Filtration<Int, Real, Int>;
     using KerImCokReduced = oineus::KerImCokReduced<Int, Real>;
     std::cout << "======================================" << std::endl;
-    std::cout << std::endl;
-    std::cout << "You have called \'compute_kernel_image_cokernel_diagrams\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
+    std::cout << std:: endl;
+    std::cout << "You have called \'compute_kernel_image_cokernel_reduction\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
     std::cout << "          [id, [boundary], filtration value]" << std::endl;
     std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as an integer, telling oineus how many threads to use." << std::endl;
     std::cout << std::endl;
@@ -316,9 +354,9 @@ decltype(auto) compute_kernel_image_cokernel_diagrams(py::list K_, py::list L_, 
     std::cout << std::endl;
 
     std::cout << "------------ Importing K ------------" << std::endl;
-    Filtration K = list_to_filtration<Int, Real>(K_);
+    Filtration K = list_to_filtration<Int, Real>(K_, params);
     std::cout << "------------ Importing L ------------" << std::endl;
-    Filtration L = list_to_filtration<Int, Real>(L_);
+    Filtration L = list_to_filtration<Int, Real>(L_, params);
 
     int n_L = IdMap_.size();
     std::vector<int> IdMapping;
@@ -327,18 +365,20 @@ decltype(auto) compute_kernel_image_cokernel_diagrams(py::list K_, py::list L_, 
         int i_map = IdMap_[i].cast<int>();
         IdMapping.push_back(i_map);
     }
-    std::cout << "---------- Map from L to K ----------" << std::endl;
-    for(int i = 0; i < n_L; i++) {
-        std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
+
+    if (params.verbose) {
+        std::cout << "---------- Map from L to K ----------" << std::endl;
+        for (int i = 0; i < n_L; i++){
+            std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
+        }
     }
-
-    oineus::Params params;
-
     params.sort_dgms = false;
     params.clearing_opt = false;
-    params.n_threads = n_threads;
-
-    PyKerImCokDgms KICR(oineus::reduce_im_ker_cok<Int, Real>(K, L, IdMapping, params));
+    
+    PyKerImCokRed KICR(oineus::reduce_ker_im_cok<Int, Real>(K, L, IdMapping, params));
+    if (params.kernel) KICR.kernel = true;
+    if (params.image) KICR.image = true;
+    if (params.cokernel) KICR.cokernel = true;
 
     return KICR;
 }
@@ -394,16 +434,19 @@ void init_oineus_common(py::module& m)
             .def_readwrite("compute_v", &ReductionParams::compute_v)
             .def_readwrite("compute_u", &ReductionParams::compute_u)
             .def_readwrite("do_sanity_check", &ReductionParams::do_sanity_check)
+            .def_readwrite("kernel", &ReductionParams::kernel)
+            .def_readwrite("image", &ReductionParams::image)
+            .def_readwrite("cokernel", &ReductionParams::cokernel)
+            .def_readwrite("verbose", &ReductionParams::verbose)
             .def(py::pickle(
                     // __getstate__
-                    [](const ReductionParams& p) {
-                      return py::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
-                              p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
-                              p.do_sanity_check, p.elapsed);
-                    },
+
+                    [](const ReductionParams& p) { return py::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
+                        p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
+                        p.do_sanity_check, p.elapsed, p.kernel, p.image, p.cokernel, p.verbose); },
                     // __setstate__
                     [](py::tuple t) {
-                      if (t.size() != 11)
+                      if (t.size() != 15)
                           throw std::runtime_error("Invalid tuple for ReductionParams");
 
                       ReductionParams p;
@@ -420,8 +463,13 @@ void init_oineus_common(py::module& m)
                       p.compute_v = t[i++].cast<decltype(p.compute_v)>();
                       p.compute_u = t[i++].cast<decltype(p.compute_u)>();
                       p.do_sanity_check = t[i++].cast<decltype(p.do_sanity_check)>();
-                      p.elapsed = t[i++].cast<decltype(p.elapsed)>();
 
+                      p.elapsed         = t[i++].cast<decltype(p.elapsed)>();
+                      p.kernel          = t[i++].cast<decltype(p.kernel)>();
+                      p.image           = t[i++].cast<decltype(p.image)>();
+                      p.cokernel        = t[i++].cast<decltype(p.cokernel)>();
+                      p.verbose         = t[i++].cast<decltype(p.verbose)>();
+                    
                       return p;
                     }));
 
@@ -515,7 +563,7 @@ void init_oineus(py::module& m, std::string suffix)
     using VRSimplex = typename VRFiltration::FiltrationSimplex;
     using VRUDecomp = oineus::VRUDecomposition<Int>;
     using KerImCokRed = oineus::KerImCokReduced<Int, Real>;
-    using PyKerImCokRed = PyKerImCokDgms<Int, Real>;
+    using PyKerImCokRed = PyKerImCokRed<Int, Real>;
     //using CokRed =  oineus::CokReduced<Int, Real>;
 
     std::string dgm_point_name = "DiagramPoint" + suffix;
@@ -528,7 +576,7 @@ void init_oineus(py::module& m, std::string suffix)
     std::string vr_filtration_class_name = "VRFiltration" + suffix;
 
     std::string ker_im_cok_reduced_class_name = "KerImCokReduced" + suffix;
-    std::string py_ker_im_cok_reduced_class_name = "PyKerImCokDgms" + suffix;
+    std::string py_ker_im_cok_reduced_class_name = "PyKerImCokRed" + suffix;
 
     py::class_<DgmPoint>(m, dgm_point_name.c_str())
             .def(py::init<Real, Real>())
@@ -596,13 +644,13 @@ void init_oineus(py::module& m, std::string suffix)
             .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
 
     py::class_<KerImCokRed>(m, ker_im_cok_reduced_class_name.c_str())
-            .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>>());
+            .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>>());
 
     py::class_<PyKerImCokRed>(m, py_ker_im_cok_reduced_class_name.c_str())
             .def(py::init<KerImCokRed>())
-            .def("kernel", &PyKerImCokRed::kernel)
-            .def("image", &PyKerImCokRed::image)
-            .def("cokernel", &PyKerImCokRed::cokernel);
+            .def("kernel_diagrams", &PyKerImCokRed::kernel_diagrams)
+            .def("image_diagrams", &PyKerImCokRed::image_diagrams)
+            .def("cokernel_diagrams", &PyKerImCokRed::cokernel_diagrams);
 
     std::string func_name;
 
@@ -702,14 +750,14 @@ void init_oineus(py::module& m, std::string suffix)
     m.def(func_name.c_str(), &oineus::targets_to_permutation_dtv<Int, Real, VREdge>);
 
     // reduce to create an ImKerReduced object
-    func_name = "reduce_im_ker_cok" + suffix;
-    m.def(func_name.c_str(), &oineus::reduce_im_ker_cok<Int, Real>);
+    func_name = "reduce_ker_im_cok" + suffix;
+    m.def(func_name.c_str(), &oineus::reduce_ker_im_cok<Int, Real>);
 
     func_name = "list_to_filtration" + suffix;
     m.def(func_name.c_str(), &list_to_filtration<Int, Real>);
 
-    func_name = "compute_kernel_image_cokernel_diagrams" + suffix;
-    m.def(func_name.c_str(), &compute_kernel_image_cokernel_diagrams<Int, Real>);
+    func_name = "compute_kernel_image_cokernel_reduction" + suffix;
+    m.def(func_name.c_str(), &compute_kernel_image_cokernel_reduction<Int, Real>);
 
     func_name = "get_ls_filtration" + suffix;
     m.def(func_name.c_str(), &get_ls_filtration<Int, Real>);
