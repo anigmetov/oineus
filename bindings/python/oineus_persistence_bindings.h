@@ -351,7 +351,7 @@ decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_,
     std::cout << std:: endl;
     std::cout << "You have called \'compute_kernel_image_cokernel_reduction\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
     std::cout << "          [id, [boundary], filtration value]" << std::endl;
-    std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as an integer, telling oineus how many threads to use." << std::endl;
+    std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as parameters." << std::endl;
     std::cout << std::endl;
     std::cout << "======================================" << std::endl;
     std::cout << std::endl;

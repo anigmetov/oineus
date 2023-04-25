@@ -52,3 +52,5 @@ build_*/
 killme/
 .peru/
 .vscode/settings.json
+include/.DS_Store
+.DS_Store
