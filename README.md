@@ -61,10 +61,10 @@ Oineus can compute the kernel, image and cokernel persistence diagrams as in ["P
 * `K` the simplicial complex with function values, as a list with an element per simplex in the format `[simplex_id, vertices, value]`, where `vertices` is a list containing the ids of the vertices, and value is the value under the function f.
 * `L` the simplicial sub-complex with function values, as a list with an element per simplex in the format `[simplex_id, vertices, value]`, where `vertices` is a list containing the ids of the vertices, and value is the value under the function g.
 * `L_to_K` a list which maps the cells in L to their corresponding cells in K,
-* `n_threads` the number of threads you want to use,
+* `params` the parameters you want to use for the reduction: `n_threads`, `kernel`, `image`, `cokernel` are the ones that can be modified. `n_threads` is the number of threads you want to use, and `kernel`, `image`, `cokernel` are boolean values, which default to `False`. Set them to `True` if you want to extract the respective diagrams immediately.
 * `return` an object which contains the kernel, image and cokernel diagrams, as well as the reduced matrices.
 
-To obtain the different diagrams, we use `kernel()`, `image()`, `cokernel()`, and then we can use `in_dimension` to get the sepcific diagram in a specific dimension.
+To obtain the different diagrams, we use `kernel_diagrams`, `image_diagrams`, `cokernel_diagrams`, and then we can use `in_dimension` to get the sepcific diagram in a specific dimension. If a specific set of diagrams as not already been extracted, and you call them, they will be generated rather than an empty return value.
 
 **Note:** aside from the number of threads, all other parameters are set already. 
 
@@ -73,15 +73,21 @@ Suppose we have a simplicial complex $K$ with a function $f$ on it, and a subcom
 
 ```python
 >>> import oineus as oin
->>> n_threads = 4
+>>> params = oin.ReaductionParams()
+>>> params.n_threads = 4
+>>> params.kernel = True
+>>> params.image = True
+>>> params.cokernel = True
 >>> K = [[0, [0], 10], [1,[1],50], [2,[2], 10], [3, [3], 10], [4,[0,1], 50], [5, [1,2], 50], [6,[0,3], 10], [7, [2,3], 10]]
 >>> L = [[0, [0], 10], [1,[1],50], [2,[2], 10], [3, [0,1], 50], [4,[1,2],50]]
 >>> L_to_K = [0,1,2,4,5]
->>> ker_im_cok_dgms = oin.compute_kernel_image_cokernel_diagrams(K, L, L_to_K, n_threads)
->>> ker_dgms = ker_im_cok_dgms.kernel()
->>> im_dgms = ker_im_cok_dgms.image()
->>> cok_dgms = ker_im_cok_dgms.cokernel()
->>> ker_dgms.in_dimension(0)
+>>> ker_im_cok_dgms = oin.compute_kernel_image_cokernel_reduction(K, L, L_to_K, params)
+>>> ker_dgms = ker_im_cok_dgms.kernel_diagrams()
+>>> im_dgms = ker_im_cok_dgms.image_diagrams()
+>>> cok_dgms = ker_im_cok_dgms.cokernel_diagrams()
+>>> print(ker_dgms.in_dimension(0))
+>>> print(im_dgms.in_dimension(0))
+>>> print(cok_dgms.in_dimension(0))
 ```
  
 ## License
