@@ -347,7 +347,7 @@ namespace oineus {
 				}
 			}
 			
-	
+
 			//Useful functions to obtain the various matrices. Mostly useful in debugging, but potentially useful for other people depending on applications.
 			MatrixData get_D_f() {
 				return F.get_D();
@@ -396,7 +396,18 @@ namespace oineus {
 			MatrixData get_R_ker() {
 				return Ker.get_R();
 			}
+			
+			MatrixData get_D_cok() {
+				return Cok.get_D();
+			}
 
+			MatrixData get_V_cok() {
+				return Cok.get_V();
+			}
+
+			MatrixData get_R_cok() {
+				return Cok.get_R();
+			}
 			Dgms get_kernel_diagrams(){
 				return KerDiagrams;
 			}

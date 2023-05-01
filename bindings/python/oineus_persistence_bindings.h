@@ -412,7 +412,7 @@ decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_,
 	std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as parameters." << std::endl;
 
 	std::cout << std::endl;
-	std::cout << "======================================" << std::endl;python
+	std::cout << "======================================" << std::endl;
 	std::cout << std::endl;
 
 	std::cout << "------------ Importing K ------------" << std::endl;
