@@ -460,7 +460,7 @@ namespace oineus {
 		std::vector<int> new_order (number_cells_K);//we will need to reorder rows so that L comes first and then K-L
 		std::iota (new_order.begin(), new_order.end(), 0);
 
-
+		if (params.verbose) std::cout << "Sorting so that cells in L come before cells in K." << std::endl;
 		std::sort(new_order.begin(), new_order.end(), [&](int i, int j) {//sort so that all cells in L come first sorted by dimension and then value in G, and then cells in K-L sorted by dimension and value in F
 			if (sorted_K_to_sorted_L[i] != -1 && sorted_K_to_sorted_L[j] != -1) {//if both are in L, sort by dimension and then value under G
 				int i_dim, j_dim;
