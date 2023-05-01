@@ -347,7 +347,7 @@ namespace oineus {
 				}
 			}
 			
-
+	
 			//Useful functions to obtain the various matrices. Mostly useful in debugging, but potentially useful for other people depending on applications.
 			MatrixData get_D_f() {
 				return F.get_D();
