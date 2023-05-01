@@ -831,12 +831,9 @@ void init_oineus(py::module& m, std::string suffix)
 	func_name = "list_to_filtration" + suffix;
 	m.def(func_name.c_str(), &list_to_filtration<Int, Real>);
 	
-	
 	func_name = "compute_kernel_image_cokernel_reduction" + suffix;
 	m.def(func_name.c_str(), &compute_kernel_image_cokernel_reduction<Int, Real>);
 
-	/*func_name = "compute_cokernel_diagrams" + suffix;
-	m.def(func_name.c_str(), &compute_cokernel_diagrams<Int, Real>);*/
 }
 
 
