@@ -11,3 +11,4 @@
 #include "vectorizer.h"
 #include "loss.h"
 #include "kernel.h"
+#include "kernel_parallel.h"
