@@ -5,10 +5,11 @@
 #include <unordered_map>
 #include <iterator>
 #include <ostream>
-//#ifdef __GNUC__
-#include <execution>
-//#endif
+
 #include <algorithm>
+
+#include <tbb/parallel_sort.h>
+#include <tbb/global_control.h>
 
 #include <icecream/icecream.hpp>
 
@@ -233,11 +234,8 @@ namespace oineus {
               return std::tie(d_sigma, v_sigma, sigma.id_) < std::tie(d_tau, v_tau, tau.id_);
             };
 
-//#ifdef __GNUC__
-//            std::sort(std::execution::par_unseq, simplices_.begin(), simplices_.end(), cmp);
-//#else
-            std::sort(simplices_.begin(), simplices_.end(), cmp);
-//#endif
+            tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, n_threads);
+            tbb::parallel_sort(simplices_, cmp);
 
             for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
                 auto& sigma = simplices_[sorted_id];
@@ -247,8 +245,6 @@ namespace oineus {
                 vertices_to_sorted_id_[sigma.vertices_] = sorted_id;
                 sorted_id_to_value_[sorted_id] = sigma.value();
             }
-
-//            std::cerr << "Spent on sorting in filtration ctor: " << timer.elapsed() << std::endl;
         }
 
         template<typename I, typename R, typename L>

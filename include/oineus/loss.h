@@ -15,6 +15,9 @@
 // suppress pragma message from boost
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
+#include <tbb/parallel_sort.h>
+#include <tbb/global_control.h>
+
 #include "hera/wasserstein.h"
 
 #pragma once
@@ -774,8 +777,7 @@ namespace oineus {
         }
 
         // tuples are automatically compared lexicographically, dimension -> value -> old index
-        //std::sort(std::execution::par_unseq, new_vals.begin(), new_vals.end());
-        std::stable_sort(new_vals.begin(), new_vals.end());
+        tbb::parallel_sort(new_vals);
 
         // record indices that are not mapped to itself
         for(size_t new_index = 0; new_index < new_vals.size(); ++new_index) {

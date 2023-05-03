@@ -267,8 +267,7 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
 template<typename Int, typename Real>
 class PyKerImCokDgms {
 private:
-	oineus::KerImCokReduced<Int, Real> KICR;
-
+    oineus::KerImCokReduced<Int, Real> KICR;
 public:
 
 	PyKerImCokDgms(oineus::KerImCokReduced<Int, Real> KICR_)
@@ -834,6 +833,11 @@ void init_oineus(py::module& m, std::string suffix)
 	func_name = "compute_kernel_image_cokernel_reduction" + suffix;
 	m.def(func_name.c_str(), &compute_kernel_image_cokernel_reduction<Int, Real>);
 
+
+    func_name = "get_ls_filtration" + suffix;
+    m.def(func_name.c_str(), &get_ls_filtration<Int, Real>);
+    /*func_name = "compute_cokernel_diagrams" + suffix;
+    m.def(func_name.c_str(), &compute_cokernel_diagrams<Int, Real>);*/
 }
 
 
