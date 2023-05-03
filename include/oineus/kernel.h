@@ -547,7 +547,6 @@ namespace oineus {
 					std::vector<int> quasi_sum (number_cells_K, 0);
 					for (int j = 0; j < F_V[i].size(); j++) {
 						for (int k = 0; k < F_D[F_V[i][j]].size(); k++) {
-							std::cerr << "is it here " << i << std::endl;
 							quasi_sum[F_D[F_V[i][j]][k]]++;
 						}
 					}
