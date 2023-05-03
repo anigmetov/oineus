@@ -5,7 +5,7 @@
 #include "sparse_matrix.h"
 #include <numeric>
 #include <future>
-
+#include <oneapi/tbb/parallel_for.h>
 // suppress pragma message from boost
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
@@ -352,36 +352,6 @@ namespace oineus {
 				}
 			}
 
-			
-			void test_column(int i) {
-				std::cerr << "Looking at column " << i;
-				bool cycle = false;
-				if (!F.get_V()[i].empty()) {//cycle check as in the code for generating the persistence diagrams.
-					cycle = true;
-					std::vector<int> quasi_sum (number_cells_K, 0);
-					for (int j = 0; j < F.get_V()[i].size(); j++) {
-						for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++) {
-							quasi_sum[F.get_D()[F.get_V()[i][j]][k]]++;
-						}
-					}
-					for (int j = 0; j < quasi_sum.size(); j++) {
-						if (quasi_sum[j]%2 != 0) {
-							cycle = false;
-							break;
-						}
-					}
-				};
-				this -> to_keep[i] = cycle;
-			};
-
-
-			void test_columns() {
-				std::vector<int> t_k(number_cells_K);
-				std::iota(t_k.begin(), t_k.end(), 0);
-				std::for_each(std::execution::par_unseq, t_k.begin(), t_k.end(), test_column());
-			}
-			
-
 			//Useful functions to obtain the various matrices. Mostly useful in debugging, but potentially useful for other people depending on applications.
 			MatrixData get_D_f() {
 				return F.get_D();
@@ -563,42 +533,47 @@ namespace oineus {
 		VRUDecomp Im(d_im);
 		Im.reduce_parallel_rvu(params); 
 
-		//we need to remove some columns from Im to get Ker, so we need to know which ones we keep, and then what cells they correspond to
+		//we need to remove some columns from Im to get Ker, so we need to know which ones we keep, and then what cells they correspond t
 		if (params.verbose) std::cerr << "Checking which columns to keep." << std::endl;
-		std::vector<bool> to_keep(number_cells_K, false);
-		for (int i = 0; i < number_cells_K; i++){
-		//test_columns();
-			if (!F.get_V()[i].empty()) {//cycle check as in the code for generating the persistence diagrams.
-				bool cycle = true;
-				std::vector<int> quasi_sum (number_cells_K, 0);
-				for (int j = 0; j < F.get_V()[i].size(); j++) {
-					for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++) {
-						quasi_sum[F.get_D()[F.get_V()[i][j]][k]]++;
+		std::vector<char> to_keep(number_cells_K);
+		using MatrixData = std::vector<std::vector<int> >;
+
+		const MatrixData F_V(F.get_V());
+		const MatrixData F_D(F.get_D());
+		tbb::parallel_for(tbb::blocked_range<std::size_t>(0, number_cells_K), [&](const tbb::blocked_range<std::size_t> &r){
+			for (int i=r.begin(); i < r.end(); i++){
+				if (!F_V[i].empty()) {//cycle check as in the code for generating the persistence diagrams.
+					bool cycle = true;
+					std::vector<int> quasi_sum (number_cells_K, 0);
+					for (int j = 0; j < F_V[i].size(); j++) {
+						for (int k = 0; k < F_D[F_V[i][j]].size(); k++) {
+							std::cerr << "is it here " << i << std::endl;
+							quasi_sum[F_D[F_V[i][j]][k]]++;
+						}
 					}
-				}
-				for (int j = 0; j < quasi_sum.size(); j++) {
-					if (quasi_sum[j]%2 != 0) {
-						cycle = false;
-						break;
+					for (int j = 0; j < quasi_sum.size(); j++) {
+						if (quasi_sum[j]%2 != 0) {
+							break;
+						}
 					}
-				}
-				to_keep[i] = cycle;
-				if (params.verbose) std::cerr << ": " << cycle << std::endl;
+					if (cycle) {
+						to_keep[i] = 't';
+					} else {
+						to_keep[i] = 'f';
+					}
+				};
 			};
-		};
-
+		});
 		MatrixData d_ker;
-
 		std::vector<int> new_cols(number_cells_K, -1);
 		int counter = 0;
 		for (int i = 0; i < number_cells_K; i++) {
-			if (to_keep[i]) {
+			if (to_keep[i] == 't') {
 				d_ker.push_back(Im.get_V()[i]);
 				new_cols[i] = counter;
 				counter++;
 			}
 		}
-
 		if (params.verbose) std::cerr << "Reducing Ker." << std::endl;
 		VRUDecomp Ker(d_ker, K.size());
 		Ker.reduce_parallel_rvu(params);
@@ -639,6 +614,4 @@ namespace oineus {
 
 		return  KICR;
 	}
-	
-}
-
+} //end namespace
