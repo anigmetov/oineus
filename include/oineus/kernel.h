@@ -536,7 +536,7 @@ namespace oineus {
 		//we need to remove some columns from Im to get Ker, so we need to know which ones we keep, and then what cells they correspond t
 		if (params.verbose) std::cerr << "Checking which columns to keep." << std::endl;
 		std::vector<char> to_keep(number_cells_K);
-		using MatrixData = std::vector<std::vector<int> >;
+		//using MatrixData = std::vector<std::vector<int> >;
 
 		const MatrixData F_V(F.get_V());
 		const MatrixData F_D(F.get_D());
