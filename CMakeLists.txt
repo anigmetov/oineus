@@ -5,6 +5,7 @@ project(oineus LANGUAGES CXX)
 option(oin_use_spdlog "Use spdlog" OFF)
 option(oin_use_jemalloc "Use jemalloc" OFF)
 option(oin_build_tests "Build tests" ON)
+option(oin_gather_add_stats "Gather statistics about summand sizes" ON)
 
 #set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -29,6 +30,7 @@ set (libraries ${libraries} ${CMAKE_THREAD_LIBS_INIT} TBB::tbb)
 if (oin_use_jemalloc)
     set (libraries ${libraries} jemalloc)
 endif()
+
 
 #add_subdirectory(examples)
 add_subdirectory(bindings/python)

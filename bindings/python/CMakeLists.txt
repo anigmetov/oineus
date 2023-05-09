@@ -23,6 +23,9 @@ if (oin_use_spdlog)
     target_compile_definitions(_oineus PRIVATE -DOINEUS_USE_SPDLOG)
 endif()
 
+if (oin_gather_add_stats)
+    target_compile_definitions(_oineus PRIVATE -DOINEUS_GATHER_ADD_STATS)
+endif()
 
 if(oin_build_tests)
     add_custom_target       (oineus_copy_to_tests ALL

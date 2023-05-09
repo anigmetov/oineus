@@ -1,6 +1,8 @@
 #ifndef OINEUS_PARAMS_H
 #define OINEUS_PARAMS_H
 
+#include <map>
+
 namespace oineus {
     struct Params {
 
@@ -25,6 +27,13 @@ namespace oineus {
         const int thread_id;
         long int n_right_pivots {0};
         long int n_cleared {0};
+
+#ifdef OINEUS_GATHER_ADD_STATS
+        using AddStats = std::map<std::pair<size_t, size_t>, size_t>;
+        // key: size of pivot column size of right column (the column to which we add pivot)
+        AddStats r_column_summand_sizes;
+        AddStats v_column_summand_sizes;
+#endif
 
         ThreadStats()
                 :thread_id(-1) { }

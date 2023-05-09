@@ -258,6 +258,11 @@ namespace oineus {
                             break;
                         }
                     } else if (pivot_idx < current_column_idx) {
+                        // for now, record statistics for r matrix only
+#ifdef OINEUS_GATHER_ADD_STATS
+                        stats.r_column_summand_sizes[{pivot_r_v_column->r_column.size(), current_r_v_column->r_column.size()}]++;
+                        stats.v_column_summand_sizes[{pivot_r_v_column->v_column.size(), current_r_v_column->v_column.size()}]++;
+#endif
                         // pivot to the left: kill lowest one in current column
                         add_rv_column(current_r_v_column, pivot_r_v_column, reduced_r_v_column.get());
                         SparseColumn<Int> new_u;
@@ -608,6 +613,8 @@ namespace oineus {
                         pivot = i;
                         break;
                     } else {
+#ifdef OINEUS_GATHER_ADD_STATS
+#endif
                         add_column(r_data[i], r_data[pivot], new_col);
                         r_data[i] = std::move(new_col);
 
@@ -714,7 +721,7 @@ namespace oineus {
 
         if (params.print_time) {
             long total_cleared = 0;
-            for(auto& s: stats)
+            for(const auto& s: stats)
             {
                 total_cleared += s.n_cleared;
                 info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
@@ -722,6 +729,41 @@ namespace oineus {
             info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
             std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << ", cleared: " << total_cleared << std::endl;
         }
+
+#ifdef OINEUS_GATHER_ADD_STATS
+        if (params.print_time) {
+            ThreadStats::AddStats total_r_stats, total_v_stats;
+            for(const auto& s: stats)
+            {
+                for(auto [k, v] : s.r_column_summand_sizes)
+                    total_r_stats[k] += v;
+                for(auto [k, v] : s.v_column_summand_sizes)
+                    total_v_stats[k] += v;
+            }
+
+            std::ofstream f_r("add_stats_r.bin", std::ios::binary);
+
+            std::cerr << "writing to add_stats_r.bin, stats size = " << total_r_stats.size() << std::endl;
+
+            for(auto [k, v]: total_r_stats) {
+                f_r.write(reinterpret_cast<char*>(&(k.first)), sizeof(k.first));
+                f_r.write(reinterpret_cast<char*>(&(k.second)), sizeof(k.first));
+                f_r.write(reinterpret_cast<char*>(&v), sizeof(v));
+            }
+
+            f_r.close();
+
+            std::ofstream f_v("add_stats_v.bin", std::ios::binary);
+
+            for(auto [k, v]: total_v_stats) {
+                f_v.write(reinterpret_cast<char*>(&(k.first)), sizeof(k.first));
+                f_v.write(reinterpret_cast<char*>(&(k.second)), sizeof(k.first));
+                f_v.write(reinterpret_cast<char*>(&v), sizeof(v));
+            }
+
+            f_v.close();
+        }
+#endif
 
         // write reduced matrix back, collect V matrix, mark as reduced
         for(size_t i = 0; i < n_cols; ++i) {
@@ -827,6 +869,41 @@ namespace oineus {
             info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
             std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << ", cleared: " << total_cleared << std::endl;
         }
+
+#ifdef OINEUS_GATHER_ADD_STATS
+        if (params.print_time) {
+            ThreadStats::AddStats total_r_stats, total_v_stats;
+            for(const auto& s: stats)
+            {
+                for(auto [k, v] : s.r_column_summand_sizes)
+                    total_r_stats[k] += v;
+                for(auto [k, v] : s.v_column_summand_sizes)
+                    total_v_stats[k] += v;
+            }
+
+            std::ofstream f_r("add_stats_r.bin", std::ios::binary);
+
+            std::cerr << "writing to add_stats_r.bin, stats size = " << total_r_stats.size() << std::endl;
+
+            for(auto [k, v]: total_r_stats) {
+                f_r.write(reinterpret_cast<const char*>(&(k.first)), sizeof(k.first));
+                f_r.write(reinterpret_cast<const char*>(&(k.second)), sizeof(k.first));
+                f_r.write(reinterpret_cast<const char*>(&v), sizeof(v));
+            }
+
+            f_r.close();
+
+            std::ofstream f_v("add_stats_v.bin", std::ios::binary);
+
+            for(auto [k, v]: total_v_stats) {
+                f_v.write(reinterpret_cast<const char*>(&(k.first)), sizeof(k.first));
+                f_v.write(reinterpret_cast<const char*>(&(k.second)), sizeof(k.first));
+                f_v.write(reinterpret_cast<const char*>(&v), sizeof(v));
+            }
+
+            f_v.close();
+        }
+#endif
 
         // write reduced matrix back, collect V matrix, mark as reduced
         for(size_t i = 0; i < n_cols; ++i) {
