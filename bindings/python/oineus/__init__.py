@@ -181,10 +181,10 @@ def list_to_filtration(simplex_list): #take a list which contains data for simpl
         func = getattr(_oineus, f"list_to_filtration_double")
         return func(simplex_list)
 
-def compute_kernel_image_cokernel_reduction(K_, L_, IdMap, n_threads): #
+def compute_kernel_image_cokernel_reduction(K_, L_, IdMap, params): #
     string_type = str(type(K_[0][2]))
     func = getattr(_oineus, f"compute_kernel_image_cokernel_reduction_float")
-    return func(K_, L_, IdMap, n_threads)
+    return func(K_, L_, IdMap, params)
 
 
 def get_ls_filtration(simplices: typing.List[typing.List[int]], vertex_values: np.ndarray, negate: bool, n_threads: int):
