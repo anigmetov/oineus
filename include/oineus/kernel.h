@@ -479,7 +479,7 @@ namespace oineus {
 		std::sort(new_order.begin(), new_order.end(), [&](int i, int j) {//sort so that all cells in L come first sorted by dimension and then value in G, and then cells in K-L sorted by dimension and value in F
 			if (sorted_K_to_sorted_L[i] != -1 && sorted_K_to_sorted_L[j] != -1) {//if both are in L, sort by dimension and then value under G
 				int i_dim, j_dim;
-				double i_val, j_val;
+				double i_vagit sl, j_val;
 				i_dim = L.dim_by_sorted_id(sorted_K_to_sorted_L[i]);
 				j_dim = L.dim_by_sorted_id(sorted_K_to_sorted_L[j]);
 				if (i_dim == j_dim) {
@@ -540,7 +540,7 @@ namespace oineus {
 
 		const MatrixData F_V(F.get_V());
 		const MatrixData F_D(F.get_D());
-		tbb::parallel_for(tbb::blocked_range<std::size_t>(0, number_cells_K), [&](const tbb::blocked_range<std::size_t> &r){
+		tbb::parallel_for(tbb::blocked_range<std::size_t>(0, number_cells_K), [&](const tbb::blocked_range<std::size_t> &r) {
 			for (int i=r.begin(); i < r.end(); i++){
 				if (!F_V[i].empty()) {//cycle check as in the code for generating the persistence diagrams.
 					bool cycle = true;
@@ -563,6 +563,13 @@ namespace oineus {
 				};
 			};
 		});
+		if (params.verbose) {
+			std::cerr << "to_keep is: [";
+			for (int i = 0; i < number_cells_K-1; i++) {
+				std::cerr << to_keep[i] << ", ";
+			}
+			std::cerr << to_keep[number_cells_K-1] << "]" << std::endl; 
+		}
 		MatrixData d_ker;
 		std::vector<int> new_cols(number_cells_K, -1);
 		int counter = 0;
