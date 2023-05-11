@@ -5,9 +5,8 @@ project(oineus LANGUAGES CXX)
 option(oin_use_spdlog "Use spdlog" OFF)
 option(oin_use_jemalloc "Use jemalloc" OFF)
 option(oin_build_tests "Build tests" ON)
-option(oin_gather_add_stats "Gather statistics about summand sizes" ON)
-
-#set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+option(oin_gather_add_stats "Gather statistics about summand sizes" OFF)
+option(oin_caliper "Enable profiling with Caliper" OFF)
 
 # Default to Release
 
@@ -31,8 +30,14 @@ if (oin_use_jemalloc)
     set (libraries ${libraries} jemalloc)
 endif()
 
+if(oin_caliper)
+    find_package(Caliper REQUIRED)
+    add_compile_definitions (OINEUS_USE_CALIPER)
+    set(libraries ${libraries} caliper)
+endif()
 
-#add_subdirectory(examples)
+
+add_subdirectory(examples)
 add_subdirectory(bindings/python)
 
 if (oin_build_tests)

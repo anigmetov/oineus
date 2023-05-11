@@ -450,12 +450,12 @@ namespace oineus {
 		//set up the reduction for F  on K
 		if (params.verbose) std::cout << "Reducing F on K." << std::endl;
 		VRUDecomp F(K.boundary_matrix_full());
-		F.reduce_parallel_rvu(params);
+		F.reduce_parallel_rv(params);
 
 		//set up reduction for G on L
 		if (params.verbose) std::cout << "Reducing G on L." << std::endl;
 		VRUDecomp G(L.boundary_matrix_full());
-		G.reduce_parallel_rvu(params);
+		G.reduce_parallel_rv(params);
 
 		std::vector<int> new_order (number_cells_K);//we will need to reorder rows so that L comes first and then K-L
 		std::iota (new_order.begin(), new_order.end(), 0);
@@ -516,7 +516,7 @@ namespace oineus {
 		//set up Im reduction
 		if (params.verbose) std::cout << "Reducing Image." << std::endl;
 		VRUDecomp Im(d_im);
-		Im.reduce_parallel_rvu(params); 
+		Im.reduce_parallel_rv(params);
 
 		//we nee4d to remove some columns from Im to get Ker, so we need to know which ones we keep, and then what cells they correspond to
 		std::vector<bool> to_keep(number_cells_K, false);
@@ -553,7 +553,7 @@ namespace oineus {
 
 		if (params.verbose) std::cout << "Reducing Ker." << std::endl;
 		VRUDecomp Ker(d_ker, K.size());
-		Ker.reduce_parallel_rvu(params);
+		Ker.reduce_parallel_rv(params);
 		MatrixData d_cok(Im.get_D());
 
 
@@ -581,7 +581,7 @@ namespace oineus {
 
 		if (params.verbose) std::cout << "Reducing Cok." << std::endl;		
 		VRUDecomp Cok(d_cok);
-		Cok.reduce_parallel_rvu(params);
+		Cok.reduce_parallel_rv(params);
 
 		KerImCokReduced<Int, Real> KICR(K, L, F, G, Im, Ker, Cok, sorted_L_to_sorted_K, sorted_K_to_sorted_L, new_order, new_cols);
 

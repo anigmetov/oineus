@@ -26,7 +26,7 @@ get_boundary_matrix(const typename oineus::Grid<Int, Real, D>& grid, bool negate
 template<class Int, class Real, size_t D>
 decltype(auto) compute_diagrams_and_v_ls_freudenthal(const typename oineus::Grid<Int, Real, D>& grid, bool negate, bool wrap, dim_type top_d, int n_threads)
 {
-    auto fil = grid.freudenthal_filtration(top_d + 1, negate, n_threads);
+    auto fil = grid.freudenthal_filtration(top_d + 1, negate, n_threads).first;
     auto decmp = oineus::VRUDecomposition<Int>(fil, false);
 
     oineus::Params params;
@@ -160,8 +160,8 @@ TEST_CASE("Vietoris--Rips")
     dim_type max_dim = 3;
     Real max_radius = 0.4;
 
-    auto fil_1 = oineus::get_vr_filtration_bk<Int, Real, 2>(points, max_dim, max_radius);
-    auto fil_2 = oineus::get_vr_filtration_naive<Int, Real, 2>(points, max_dim, max_radius);
+    auto fil_1 = oineus::get_vr_filtration_bk<Int, Real, 2>(points, max_dim, max_radius).first;
+    auto fil_2 = oineus::get_vr_filtration_naive<Int, Real, 2>(points, max_dim, max_radius).first;
 
     REQUIRE(fil_1.simplices() == fil_2.simplices());
 }

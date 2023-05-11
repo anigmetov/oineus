@@ -60,12 +60,7 @@ void test_ls_2()
 
     IntGrid grid {dims, wrap, data};
 
-    auto ss = grid.freudenthal_simplices(2, negate);
-
-    for(const auto& s: ss)
-        std::cout << s << "\n";
-
-    auto fil = grid.freudenthal_filtration(2, negate);
+    auto fil = grid.freudenthal_filtration(2, negate).first;
     std::cout << fil << "\n";
 }
 
@@ -99,18 +94,7 @@ void test_ls_3()
 
     IntGrid grid {dims, wrap, data};
 
-    auto ss = grid.freudenthal_simplices(2, negate);
-
-    //std::cout << "2-skeleton:\n";
-    //for(const auto& s : ss)
-    //    std::cout << s << "\n";
-
-    //std::cout << "-----------------------------------------------\n";
-
-    //std::cout << "3-skeleton:\n";
-
-    ss = grid.freudenthal_simplices(3, negate);
-    auto fil = grid.freudenthal_filtration(3, negate);
+    auto fil = grid.freudenthal_filtration(3, negate).first;
 
     VRUDecomposition<int> m_D {fil, false};
 
@@ -179,7 +163,7 @@ int main(int argc, char** argv)
     auto [func, dims] = read_function<Int, Real, 3>(fname_in);
     Grid grid {dims, wrap, func.data()};
 
-    auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
+    auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads).first;
     VRUDecomposition<Int> decmp {fil, false };
 
     info("Matrix read");

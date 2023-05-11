@@ -13,6 +13,7 @@
 
 #include <icecream/icecream.hpp>
 
+#include "profile.h"
 #include "timer.h"
 #include "simplex.h"
 #include "decomposition.h"
@@ -51,16 +52,13 @@ namespace oineus {
                 negate_(_negate),
                 simplices_(_simplices)
         {
-            Timer timer;
-            timer.reset();
+            CALI_CXX_MARK_FUNCTION;
 
             set_ids();
             sort(n_threads);
             set_dim_info();
             assert(std::all_of(simplices_.begin(), simplices_.end(),
                     [](const FiltrationSimplex& sigma) { return sigma.is_valid_filtration_simplex(); }));
-
-//            std::cerr << "Filtration ctor done, elapsed: " << timer.elapsed() << std::endl;
         }
 
         // copy simplices
@@ -69,8 +67,7 @@ namespace oineus {
                 negate_(_negate),
                 simplices_(_simplices)
         {
-            Timer timer;
-            timer.reset();
+            CALI_CXX_MARK_FUNCTION;
 
             set_ids();
             sort(n_threads);
@@ -78,7 +75,6 @@ namespace oineus {
             assert(std::all_of(simplices_.begin(), simplices_.end(),
                     [](const FiltrationSimplex& sigma) { return sigma.is_valid_filtration_simplex(); }));
 
-//            std::cerr << "Filtration ctor done, elapsed: " << timer.elapsed() << std::endl;
         }
 
         size_t size() const { return simplices_.size(); }
@@ -105,6 +101,8 @@ namespace oineus {
 
         BoundaryMatrix boundary_matrix_full() const
         {
+            CALI_CXX_MARK_FUNCTION;
+
             BoundaryMatrix result;
             result.reserve(size());
 
@@ -179,10 +177,6 @@ namespace oineus {
         {
             return id_to_sorted_id_[i];
         }
-
-//        decltype(auto) vertices_to_sorted_id() const { return vertices_to_sorted_id_; }
-//        decltype(auto) id_to_sorted_id() const { return id_to_sorted_id_; }
-//        decltype(auto) sorted_id_to_value() const { return sorted_id_to_value_; }
 
         bool negate() const { return negate_; }
 
@@ -274,11 +268,11 @@ namespace oineus {
             }
         }
 
-        template<typename I, typename R, typename L>
+        template<typename I, typename R>
         friend std::ostream& operator<<(std::ostream&, const Filtration<I, R>&);
     };
 
-    template<typename I, typename R, typename L>
+    template<typename I, typename R>
     std::ostream& operator<<(std::ostream& out, const Filtration<I, R>& fil)
     {
         out << "Filtration(size = " << fil.size() << ")[" << "\n";
