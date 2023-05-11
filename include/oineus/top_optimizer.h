@@ -15,7 +15,8 @@ struct ComputeFlags {
     bool compute_cohomology_u {false};
 };
 
-template<class Int_, class Real_, class L=int>
+
+template<class Int_, class Real_>
 class TopologyOptimizer {
 public:
     using Real = Real_;
@@ -122,7 +123,6 @@ public:
             } else if (original_values_[idx_point.death] > target_point.death) {
                 decrease_death = true;
             }
-
         }
 
         ComputeFlags result;
@@ -223,7 +223,7 @@ public:
     {
         IndicesValues result;
 
-        auto index_diagram = decmp_hom_.template index_diagram<Real, L>(fil_, false, false)[d];
+        auto index_diagram = decmp_hom_.template index_diagram<Real>(fil_, false, false)[d];
 
         for(auto p: index_diagram) {
             Real birth = get_simplex_value(p.birth);
