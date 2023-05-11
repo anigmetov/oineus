@@ -25,162 +25,26 @@
 
 namespace oineus {
 
-    template<typename Int_, typename Real_, typename L_>
+    template<typename Int_, typename Real_>
     class Filtration;
 
-    // return index of the lowest non-zero in column i of r, -1 if empty
-    template<typename IdxType>
-    IdxType low(const SparseColumn<IdxType>* c)
-    {
-        return c->empty() ? -1 : c->back();
-    }
+    using AtomicIdxVector = std::vector<std::atomic<int>>;
 
-    template<typename IdxType>
-    IdxType low(const SparseColumn<IdxType>& c)
-    {
-        return c.empty() ? -1 : c.back();
-    }
-
-    template<typename IdxType>
-    bool is_zero(const SparseColumn<IdxType>& c)
-    {
-        return c.empty();
-    }
-
-    template<typename IdxType>
-    bool is_zero(const SparseColumn<IdxType>* c)
-    {
-        return c->empty();
-    }
-
-    template<typename IdxType>
-    void add_column(const SparseColumn<IdxType>& col_a, const SparseColumn<IdxType>& col_b, SparseColumn<IdxType>& sum)
-    {
-        sum.clear();
-        std::set_symmetric_difference(col_a.begin(), col_a.end(), col_b.begin(), col_b.end(), std::back_inserter(sum));
-    }
-
-    template<typename IdxType>
-    void add_column_1(const SparseColumn<IdxType>& col_a, const SparseColumn<IdxType>& col_b, SparseColumn<IdxType>& sum)
-    {
-        // add_column cannot work as +=
-        assert(col_a.data() != sum.data() and col_b.data() != sum.data());
-
-        auto a_iter = col_a.cbegin();
-        auto b_iter = col_b.cbegin();
-
-        sum.clear();
-
-        while(true) {
-            if (a_iter == col_a.cend() && b_iter == col_b.cend()) {
-                break;
-            } else if (a_iter == col_a.cend() && b_iter != col_b.cend()) {
-                sum.push_back(*b_iter++);
-            } else if (a_iter != col_a.cend() && b_iter == col_b.cend()) {
-                sum.push_back(*a_iter++);
-            } else if (*a_iter < *b_iter) {
-                sum.push_back(*a_iter++);
-            } else if (*b_iter < *a_iter) {
-                sum.push_back(*b_iter++);
-            } else {
-                assert(*a_iter == *b_iter);
-                ++a_iter;
-                ++b_iter;
-            }
-        }
-    }
-
-    template<typename IdxType_>
-    struct RVColumns {
-        using IdxType = IdxType_;
-        using Column = SparseColumn<IdxType>;
-
-        Column r_column;
-        Column v_column;
-
-        RVColumns() = default;
-        RVColumns(const RVColumns& other) = default;
-        RVColumns(RVColumns&& other) noexcept = default;
-        RVColumns(Column&& _r, Column&& _v)
-                :r_column(_r), v_column(_v) { }
-
-        RVColumns(const Column& _r, const Column& _v)
-                :r_column(_r), v_column(_v) { }
-
-        [[nodiscard]] bool is_zero() const
-        {
-            return oineus::is_zero(&r_column);
-        }
-
-        IdxType low() const
-        {
-            return oineus::low(&r_column);
-        }
-
-        void swap(RVColumns& other) noexcept
-        {
-            r_column.swap(other.r_column);
-            v_column.swap(other.v_column);
-        }
-
-        template<class I>
-        friend std::ostream& operator<<(std::ostream& out, const RVColumns<I>& rv);
-    };
-
-    template<class I>
-    std::ostream& operator<<(std::ostream& out, const RVColumns<I>& rv)
-    {
-        out << "R column: [";
-        for(auto x: rv.r_column)
-            out << x << ", ";
-
-        out << "], V column: [";
-        for(auto x: rv.v_column)
-            out << x << ", ";
-
-        out << "]";
-
-        return out;
-    }
-
-    template<class I>
-    std::ostream& operator<<(std::ostream& out, const std::atomic<RVColumns<I>*>& rv)
-    {
-        out << *rv;
-        return out;
-    }
-
-    template<class I>
-    std::ostream& operator<<(std::ostream& out, const std::vector<std::atomic<RVColumns<I>*>>& rvs)
-    {
-        out << "RV matrix:\n";
-        for(const auto& rv: rvs)
-            out << rv << "\n";
-        out << "\n";
-        return out;
-    }
-
-    template<typename IdxType>
-    void add_rv_column(const RVColumns<IdxType>* col_a, const RVColumns<IdxType>* col_b, RVColumns<IdxType>* sum)
-    {
-        add_column(col_a->r_column, col_b->r_column, sum->r_column);
-        add_column(col_a->v_column, col_b->v_column, sum->v_column);
-    }
-
-    template<class RVMatrices, class AtomicIdxVector, class Int, class MemoryReclaimC>
-    void parallel_reduction(RVMatrices& rv, std::vector<SparseColumn<Int>>& u_rows, AtomicIdxVector& pivots, std::atomic<Int>& next_free_chunk,
+    template<class MatrixTraits, class Int, class MemoryReclaimC>
+    void parallel_reduction(typename MatrixTraits::Matrix& rv, AtomicIdxVector& pivots, std::atomic<Int>& next_free_chunk,
             const Params params, int thread_idx, MemoryReclaimC* mm, ThreadStats& stats, bool go_down)
     {
-        using RVColumnC = RVColumns<Int>;
-        using PRVColumn = RVColumnC*;
+        using Column = typename MatrixTraits::Column;
+        using PColumn = typename MatrixTraits::PColumn;
 
         std::memory_order acq = params.acq_rel ? std::memory_order_acquire : std::memory_order_seq_cst;
         std::memory_order rel = params.acq_rel ? std::memory_order_release : std::memory_order_seq_cst;
         std::memory_order relax = params.acq_rel ? std::memory_order_relaxed : std::memory_order_seq_cst;
 
         debug("thread {} started, mm = {}", thread_idx, (void*) (mm));
-        std::unique_ptr<RVColumnC> reduced_r_v_column(new RVColumnC);
-        std::unique_ptr<RVColumnC> reduced_r_v_column_final(new RVColumnC);
+
+        std::unique_ptr<Column> reduced_r_v_column(new Column);
+        std::unique_ptr<Column> reduced_r_v_column_final(new Column);
 
         const int n_cols = rv.size();
 
@@ -210,25 +74,25 @@ namespace oineus {
 
                 debug("thread {}, column = {}", thread_idx, current_column_idx);
 
-                PRVColumn current_r_v_column = rv[current_column_idx].load(acq);
-                PRVColumn original_r_v_column = current_r_v_column;
+                PColumn current_r_v_column = rv[current_column_idx].load(acq);
+                PColumn original_r_v_column = current_r_v_column;
 
                 bool update_column = false;
 
                 int pivot_idx;
 
                 if (params.clearing_opt) {
-                    if (!current_r_v_column->is_zero()) {
+                    if (!MatrixTraits::is_zero(current_r_v_column)) {
                         int c_pivot_idx = pivots[current_column_idx].load(acq);
                         if (c_pivot_idx >= 0) {
                             // unset pivot from current_column_idx, if necessary
-                            int c_current_low = current_r_v_column->low();
+                            int c_current_low = MatrixTraits::low(current_r_v_column);
                             int c_current_column_idx = current_column_idx;
 
                             pivots[c_current_low].compare_exchange_weak(c_current_column_idx, -1, rel, relax);
 
                             // zero current column
-                            current_r_v_column = new RVColumnC();
+                            current_r_v_column = new Column();
                             rv[current_column_idx].store(current_r_v_column, rel);
                             mm->retire(original_r_v_column);
                             original_r_v_column = current_r_v_column;
@@ -238,10 +102,10 @@ namespace oineus {
                     }
                 }
 
-                while(!current_r_v_column->is_zero()) {
+                while(!MatrixTraits::is_zero(current_r_v_column)) {
 
-                    int current_low = current_r_v_column->low();
-                    PRVColumn pivot_r_v_column = nullptr;
+                    int current_low = MatrixTraits::low(current_r_v_column);
+                    PColumn pivot_r_v_column = nullptr;
 
                     debug("thread {}, column = {}, low = {}", thread_idx, current_column_idx, current_low);
 
@@ -251,7 +115,7 @@ namespace oineus {
                             pivot_r_v_column = rv[pivot_idx].load(acq);
                         }
                     }
-                    while(pivot_idx >= 0 && pivot_r_v_column->low() != current_low);
+                    while(pivot_idx >= 0 && MatrixTraits::low(pivot_r_v_column) != current_low);
 
                     if (pivot_idx == -1) {
                         if (pivots[current_low].compare_exchange_weak(pivot_idx, current_column_idx, rel, relax)) {
@@ -260,14 +124,11 @@ namespace oineus {
                     } else if (pivot_idx < current_column_idx) {
                         // for now, record statistics for r matrix only
 #ifdef OINEUS_GATHER_ADD_STATS
-                        stats.r_column_summand_sizes[{pivot_r_v_column->r_column.size(), current_r_v_column->r_column.size()}]++;
-                        stats.v_column_summand_sizes[{pivot_r_v_column->v_column.size(), current_r_v_column->v_column.size()}]++;
+                        stats.r_column_summand_sizes[{ MatrixTraits::r_column_size(*pivot_r_v_column), MatrixTraits::r_column_size(*current_r_v_column)}]++;
+                        stats.v_column_summand_sizes[{ MatrixTraits::v_column_size(*pivot_r_v_column), MatrixTraits::v_column_size(*current_r_v_column)}]++;
 #endif
                         // pivot to the left: kill lowest one in current column
-                        add_rv_column(current_r_v_column, pivot_r_v_column, reduced_r_v_column.get());
-                        SparseColumn<Int> new_u;
-                        //add_column(u_rows[pivot_idx], u_rows[current_column_idx], new_u);
-                        //u_rows[pivot_idx] = std::move(new_u);
+                        MatrixTraits::add_column(current_r_v_column, pivot_r_v_column, reduced_r_v_column.get());
 
                         update_column = true;
 
@@ -280,7 +141,7 @@ namespace oineus {
                         // pivot to the right: switch to reducing r[pivot_idx]
                         if (update_column) {
                             // create copy of reduced column and write in into matrix
-                            auto new_r_v_column = new RVColumnC(*reduced_r_v_column_final);
+                            auto new_r_v_column = new Column(*reduced_r_v_column_final);
                             rv[current_column_idx].store(new_r_v_column, rel);
                             // original column can be deleted
                             mm->retire(original_r_v_column);
@@ -300,7 +161,7 @@ namespace oineus {
                 if (update_column) {
                     // write copy of reduced column to matrix
                     // TODO: why not use reduced_r_column_final directly?
-                    current_r_v_column = new RVColumnC(*reduced_r_v_column_final);
+                    current_r_v_column = new Column(*reduced_r_v_column_final);
                     rv[current_column_idx].store(current_r_v_column, rel);
                     mm->retire(original_r_v_column);
                 }
@@ -319,9 +180,8 @@ namespace oineus {
     struct VRUDecomposition {
         // types
         using Int = Int_;
-        using IntSparseColumn = SparseColumn<Int>;
+        using IntSparseColumn = std::vector<Int>;
         using MatrixData = std::vector<IntSparseColumn>;
-        using AtomicIdxVector = std::vector<std::atomic<Int>>;
 
         // data
         MatrixData d_data;
@@ -334,11 +194,17 @@ namespace oineus {
         std::vector<size_t> dim_first;
         std::vector<size_t> dim_last;
 
-        const size_t n_rows;
-        // methods
+        const size_t n_rows {0};
 
-        template<class R, class L>
-        VRUDecomposition(const Filtration<Int, R, L>& fil, bool _dualize)
+        // methods
+        VRUDecomposition() = default;
+        VRUDecomposition(const VRUDecomposition&) = default;
+        VRUDecomposition(VRUDecomposition&&)  noexcept = default;
+        VRUDecomposition& operator=(VRUDecomposition&&)  noexcept = default;
+        VRUDecomposition& operator=(const VRUDecomposition&) = default;
+
+        template<class R>
+        VRUDecomposition(const Filtration<Int, R>& fil, bool _dualize)
                 :
                 d_data(!_dualize ? fil.boundary_matrix_full() : antitranspose(fil.boundary_matrix_full(), fil.size())),
                 r_data(d_data),
@@ -381,8 +247,6 @@ namespace oineus {
 
         bool dualize() const { return dualize_; }
 
-//    void append(VRUDecomposition&& other);
-
         void reduce(Params& params);
 
         void reduce_serial(Params& params);
@@ -391,11 +255,22 @@ namespace oineus {
         void reduce_parallel_rv(Params& params);
         void reduce_parallel_rvu(Params& params);
 
-        template<typename Real, typename L>
-        Diagrams<Real> diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points) const;
+        bool is_negative(size_t simplex) const
+        {
+            return not is_positive(simplex);
+        }
 
-        template<typename Real, typename L>
-        Diagrams<size_t> index_diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, bool include_zero_persistence_points) const;
+        bool is_positive(size_t simplex) const
+        {
+            assert(is_reduced);
+            return is_zero(r_data[simplex]);
+        }
+
+        template<typename Real>
+        Diagrams<Real> diagram(const Filtration<Int, Real>& fil, bool include_inf_points) const;
+
+        template<typename Real>
+        Diagrams<size_t> index_diagram(const Filtration<Int, Real>& fil, bool include_inf_points, bool include_zero_persistence_points) const;
 
         template<typename Int>
         friend std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m);
@@ -551,22 +426,23 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::reduce(Params& params)
     {
+        if (params.n_threads > 1 and params.compute_u)
+            throw std::runtime_error("Cannot compute U matrix in parallel");
+
         if (params.n_threads == 1)
             reduce_serial(params);
-        else
+        else if (params.compute_v)
             reduce_parallel_rvu(params);
-//    else if (params.compute_v and params.compute_u)
-//        reduce_parallel_rvu(params);
-//    else if (params.compute_v)
-//        reduce_parallel_rv(params);
-//    else
-//        reduce_parallel_r_only(params);
-
+        else
+            reduce_parallel_r_only(params);
     }
 
     template<class Int>
     void VRUDecomposition<Int>::reduce_serial(Params& params)
     {
+
+        using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
+
         Timer timer, timer_total;
         int n_cleared = 0;
 
@@ -615,11 +491,11 @@ namespace oineus {
                     } else {
 #ifdef OINEUS_GATHER_ADD_STATS
 #endif
-                        add_column(r_data[i], r_data[pivot], new_col);
+                        MatrixTraits::add_column(r_data[i], r_data[pivot], new_col);
                         r_data[i] = std::move(new_col);
 
                         if (params.compute_v) {
-                            add_column(v_data[i], v_data[pivot], new_col);
+                            MatrixTraits::add_column(v_data[i], v_data[pivot], new_col);
                             v_data[i] = std::move(new_col);
                         }
 
@@ -647,26 +523,24 @@ namespace oineus {
 
         size_t n_cols = size();
 
-        using RVColumnC = RVColumns<Int>;
-        using APRVColumn = std::atomic<RVColumnC*>;
-        using RVMatrix = std::vector<APRVColumn>;
-        using MemoryReclaimC = MemoryReclaim<RVColumnC>;
+        using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
+        using Column = typename MatrixTraits::Column;
+        using AMatrix = std::vector<typename MatrixTraits::APColumn>;
+        using MemoryReclaimC = MemoryReclaim<Column>;
 
-        RVMatrix r_v_matrix(n_cols);
-
-        // move data to r_v_matrix
-        for(size_t i = 0; i < n_cols; ++i) {
-            IntSparseColumn v_column = {static_cast<Int>(i)};
-            IntSparseColumn u_row = {static_cast<Int>(i)};
-            u_data_t.push_back(u_row);
-            r_v_matrix[i] = new RVColumnC(r_data[i], v_column);
-        }
-        debug("Matrix moved");
-
-        std::atomic<Int> counter;
+        std::atomic<typename MemoryReclaimC::EpochCounter> counter;
         counter = 0;
 
         std::atomic<Int> next_free_chunk;
+
+        AMatrix ar_matrix(n_cols);
+
+        // move data to ar_matrix
+        for(size_t i = 0; i < n_cols; ++i) {
+            ar_matrix[i] = new Column(std::move(r_data[i]));
+        }
+        debug("Matrix moved");
+
 
         AtomicIdxVector pivots(n_cols);
         for(auto& p: pivots) {
@@ -698,17 +572,17 @@ namespace oineus {
             mms.emplace_back(new MemoryReclaimC(n_threads, counter, thread_idx));
             stats.emplace_back(thread_idx);
 
-            ts.emplace_back(parallel_reduction<RVMatrix, AtomicIdxVector, Int, MemoryReclaimC>,
-                    std::ref(r_v_matrix), std::ref(u_data_t), std::ref(pivots), std::ref(next_free_chunk),
+            ts.emplace_back(parallel_reduction<MatrixTraits, Int, MemoryReclaimC>,
+                    std::ref(ar_matrix), std::ref(pivots), std::ref(next_free_chunk),
                     params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]), go_down);
 
-#ifdef __linux__
+    #ifdef __linux__
             cpu_set_t cpuset;
             CPU_ZERO(&cpuset);
             CPU_SET(thread_idx, &cpuset);
             int rc = pthread_setaffinity_np(ts[thread_idx].native_handle(), sizeof(cpu_set_t), &cpuset);
             if (rc != 0) { std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n"; }
-#endif
+    #endif
         }
 
         info("{} threads created", ts.size());
@@ -730,147 +604,7 @@ namespace oineus {
             std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << ", cleared: " << total_cleared << std::endl;
         }
 
-#ifdef OINEUS_GATHER_ADD_STATS
-        if (params.print_time) {
-            ThreadStats::AddStats total_r_stats, total_v_stats;
-            for(const auto& s: stats)
-            {
-                for(auto [k, v] : s.r_column_summand_sizes)
-                    total_r_stats[k] += v;
-                for(auto [k, v] : s.v_column_summand_sizes)
-                    total_v_stats[k] += v;
-            }
-
-            std::ofstream f_r("add_stats_r.bin", std::ios::binary);
-
-            std::cerr << "writing to add_stats_r.bin, stats size = " << total_r_stats.size() << std::endl;
-
-            for(auto [k, v]: total_r_stats) {
-                f_r.write(reinterpret_cast<char*>(&(k.first)), sizeof(k.first));
-                f_r.write(reinterpret_cast<char*>(&(k.second)), sizeof(k.first));
-                f_r.write(reinterpret_cast<char*>(&v), sizeof(v));
-            }
-
-            f_r.close();
-
-            std::ofstream f_v("add_stats_v.bin", std::ios::binary);
-
-            for(auto [k, v]: total_v_stats) {
-                f_v.write(reinterpret_cast<char*>(&(k.first)), sizeof(k.first));
-                f_v.write(reinterpret_cast<char*>(&(k.second)), sizeof(k.first));
-                f_v.write(reinterpret_cast<char*>(&v), sizeof(v));
-            }
-
-            f_v.close();
-        }
-#endif
-
-        // write reduced matrix back, collect V matrix, mark as reduced
-        for(size_t i = 0; i < n_cols; ++i) {
-            auto p = r_v_matrix[i].load(std::memory_order_relaxed);
-            r_data[i] = std::move(p->r_column);
-            v_data[i] = std::move(p->v_column);
-        }
-
-        is_reduced = true;
-    }
-
-    template<class Int>
-    void VRUDecomposition<Int>::reduce_parallel_rvu(Params& params)
-    {
-        using namespace std::placeholders;
-
-        int c = 0;
-        size_t n_cols = size();
-
-        v_data = std::vector<IntSparseColumn>(n_cols);
-        u_data_t.reserve(n_cols);
-
-        using RVColumnC = RVColumns<Int>;
-        using APRVColumn = std::atomic<RVColumnC*>;
-        using RVMatrix = std::vector<APRVColumn>;
-        using MemoryReclaimC = MemoryReclaim<RVColumnC>;
-
-        RVMatrix r_v_matrix(n_cols);
-
-
-        // move data to r_v_matrix
-        for(size_t i = 0; i < n_cols; ++i) {
-            IntSparseColumn v_column = {static_cast<Int>(i)};
-            IntSparseColumn u_row = {static_cast<Int>(i)};
-            u_data_t.push_back(u_row);
-            r_v_matrix[i] = new RVColumnC(r_data[i], v_column);
-        }
-        debug("Matrix moved");
-
-        std::atomic<Int> counter;
-        counter = 0;
-
-        std::atomic<Int> next_free_chunk;
-
-        AtomicIdxVector pivots(n_rows);
-        for(auto& p: pivots) {
-            p.store(-1, std::memory_order_relaxed);
-        }
-        debug("Pivots initialized");
-
-        int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
-
-        std::vector<std::thread> ts;
-        std::vector<std::unique_ptr<MemoryReclaimC>> mms;
-        std::vector<ThreadStats> stats;
-
-        mms.reserve(n_threads);
-        stats.reserve(n_threads);
-
-        bool go_down = params.clearing_opt;
-
-        if (go_down) {
-            next_free_chunk = n_cols / params.chunk_size;
-        } else {
-            next_free_chunk = 0;
-        }
-
-        Timer timer;
-
-        for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
-
-            mms.emplace_back(new MemoryReclaimC(n_threads, counter, thread_idx));
-            stats.emplace_back(thread_idx);
-
-            ts.emplace_back(parallel_reduction<RVMatrix, AtomicIdxVector, Int, MemoryReclaimC>,
-                    std::ref(r_v_matrix), std::ref(u_data_t), std::ref(pivots), std::ref(next_free_chunk),
-                    params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]), go_down);
-
-#ifdef __linux__
-            cpu_set_t cpuset;
-            CPU_ZERO(&cpuset);
-            CPU_SET(thread_idx, &cpuset);
-            int rc = pthread_setaffinity_np(ts[thread_idx].native_handle(), sizeof(cpu_set_t), &cpuset);
-            if (rc != 0) { std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n"; }
-#endif
-        }
-
-        info("{} threads created", ts.size());
-
-        for(auto& t: ts) {
-            t.join();
-        }
-
-        params.elapsed = timer.elapsed_reset();
-
-        if (params.print_time) {
-            long total_cleared = 0;
-            for(auto& s: stats)
-            {
-                total_cleared += s.n_cleared;
-                info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
-            }
-            info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
-            std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << ", cleared: " << total_cleared << std::endl;
-        }
-
-#ifdef OINEUS_GATHER_ADD_STATS
+    #ifdef OINEUS_GATHER_ADD_STATS
         if (params.print_time) {
             ThreadStats::AddStats total_r_stats, total_v_stats;
             for(const auto& s: stats)
@@ -903,22 +637,302 @@ namespace oineus {
 
             f_v.close();
         }
-#endif
+    #endif
 
         // write reduced matrix back, collect V matrix, mark as reduced
         for(size_t i = 0; i < n_cols; ++i) {
-            auto p = r_v_matrix[i].load(std::memory_order_relaxed);
-            r_data[i] = std::move(p->r_column);
-            v_data[i] = std::move(p->v_column);
-            delete p;
+            auto p = ar_matrix[i].load(std::memory_order_relaxed);
+            r_data[i] = std::move(*p);
         }
 
         is_reduced = true;
     }
 
+
+template<class Int>
+void VRUDecomposition<Int>::reduce_parallel_rvu(Params& params)
+{
+    using namespace std::placeholders;
+
+    int c = 0;
+    size_t n_cols = size();
+
+    v_data = std::vector<IntSparseColumn>(n_cols);
+
+    using MatrixTraits = SimpleRVMatrixTraits<Int, 2>;
+
+    using RVColumn = typename MatrixTraits::Column;
+    using RVMatrix = std::vector<typename MatrixTraits::APColumn>;
+    using MemoryReclaimC = MemoryReclaim<RVColumn>;
+
+    RVMatrix r_v_matrix(n_cols);
+
+    // move data to r_v_matrix
+    for(size_t i = 0; i < n_cols; ++i) {
+        IntSparseColumn v_column = {static_cast<Int>(i)};
+        IntSparseColumn u_row = {static_cast<Int>(i)};
+        u_data_t.push_back(u_row);
+        r_v_matrix[i] = new RVColumn(r_data[i], v_column);
+    }
+    debug("Matrix moved");
+
+    std::atomic<typename MemoryReclaimC::EpochCounter> counter;
+    counter = 0;
+
+    std::atomic<Int> next_free_chunk;
+
+    AtomicIdxVector pivots(n_rows);
+    for(auto& p: pivots) {
+        p.store(-1, std::memory_order_relaxed);
+    }
+    debug("Pivots initialized");
+
+    int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+
+    std::vector<std::thread> ts;
+    std::vector<std::unique_ptr<MemoryReclaimC>> mms;
+    std::vector<ThreadStats> stats;
+
+    mms.reserve(n_threads);
+    stats.reserve(n_threads);
+
+    bool go_down = params.clearing_opt;
+
+    if (go_down) {
+        next_free_chunk = n_cols / params.chunk_size;
+    } else {
+        next_free_chunk = 0;
+    }
+
+    Timer timer;
+
+    for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
+
+        mms.emplace_back(new MemoryReclaimC(n_threads, counter, thread_idx));
+        stats.emplace_back(thread_idx);
+
+        ts.emplace_back(parallel_reduction<MatrixTraits, Int, MemoryReclaimC>,
+                std::ref(r_v_matrix), std::ref(pivots), std::ref(next_free_chunk),
+                params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]), go_down);
+
+#ifdef __linux__
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(thread_idx, &cpuset);
+        int rc = pthread_setaffinity_np(ts[thread_idx].native_handle(), sizeof(cpu_set_t), &cpuset);
+        if (rc != 0) { std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n"; }
+#endif
+    }
+
+    info("{} threads created", ts.size());
+
+    for(auto& t: ts) {
+        t.join();
+    }
+
+    params.elapsed = timer.elapsed_reset();
+
+    if (params.print_time) {
+        long total_cleared = 0;
+        for(auto& s: stats)
+        {
+            total_cleared += s.n_cleared;
+            info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
+        }
+        info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
+        std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << ", cleared: " << total_cleared << std::endl;
+    }
+
+#ifdef OINEUS_GATHER_ADD_STATS
+    if (params.print_time) {
+        ThreadStats::AddStats total_r_stats, total_v_stats;
+        for(const auto& s: stats)
+        {
+            for(auto [k, v] : s.r_column_summand_sizes)
+                total_r_stats[k] += v;
+            for(auto [k, v] : s.v_column_summand_sizes)
+                total_v_stats[k] += v;
+        }
+
+        std::ofstream f_r("add_stats_r.bin", std::ios::binary);
+
+        std::cerr << "writing to add_stats_r.bin, stats size = " << total_r_stats.size() << std::endl;
+
+        for(auto [k, v]: total_r_stats) {
+            f_r.write(reinterpret_cast<const char*>(&(k.first)), sizeof(k.first));
+            f_r.write(reinterpret_cast<const char*>(&(k.second)), sizeof(k.first));
+            f_r.write(reinterpret_cast<const char*>(&v), sizeof(v));
+        }
+
+        f_r.close();
+
+        std::ofstream f_v("add_stats_v.bin", std::ios::binary);
+
+        for(auto [k, v]: total_v_stats) {
+            f_v.write(reinterpret_cast<const char*>(&(k.first)), sizeof(k.first));
+            f_v.write(reinterpret_cast<const char*>(&(k.second)), sizeof(k.first));
+            f_v.write(reinterpret_cast<const char*>(&v), sizeof(v));
+        }
+
+        f_v.close();
+    }
+#endif
+
+    // write reduced matrix back, collect V matrix, mark as reduced
+    for(size_t i = 0; i < n_cols; ++i) {
+        auto p = r_v_matrix[i].load(std::memory_order_relaxed);
+        r_data[i] = std::move(p->r_column);
+        v_data[i] = std::move(p->v_column);
+        delete p;
+    }
+
+    is_reduced = true;
+}
+
+//    template<class Int>
+//    void VRUDecomposition<Int>::reduce_parallel_rvu(Params& params)
+//    {
+//        using namespace std::placeholders;
+//
+//        int c = 0;
+//        size_t n_cols = size();
+//
+//        v_data = std::vector<IntSparseColumn>(n_cols);
+//        u_data_t.reserve(n_cols);
+//
+//        using RVColumnC = RVColumns<Int>;
+//        using APRVColumn = std::atomic<RVColumnC*>;
+//        using RVMatrix = std::vector<APRVColumn>;
+//        using MemoryReclaimC = MemoryReclaim<RVColumnC>;
+//
+//        RVMatrix r_v_matrix(n_cols);
+//
+//
+//        // move data to r_v_matrix
+//        for(size_t i = 0; i < n_cols; ++i) {
+//            IntSparseColumn v_column = {static_cast<Int>(i)};
+//            IntSparseColumn u_row = {static_cast<Int>(i)};
+//            u_data_t.push_back(u_row);
+//            r_v_matrix[i] = new RVColumnC(r_data[i], v_column);
+//        }
+//        debug("Matrix moved");
+//
+//        std::atomic<typename MemoryReclaimC::EpochCounter> counter;
+//        counter = 0;
+//
+//        std::atomic<Int> next_free_chunk;
+//
+//        AtomicIdxVector pivots(n_rows);
+//        for(auto& p: pivots) {
+//            p.store(-1, std::memory_order_relaxed);
+//        }
+//        debug("Pivots initialized");
+//
+//        int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+//
+//        std::vector<std::thread> ts;
+//        std::vector<std::unique_ptr<MemoryReclaimC>> mms;
+//        std::vector<ThreadStats> stats;
+//
+//        mms.reserve(n_threads);
+//        stats.reserve(n_threads);
+//
+//        bool go_down = params.clearing_opt;
+//
+//        if (go_down) {
+//            next_free_chunk = n_cols / params.chunk_size;
+//        } else {
+//            next_free_chunk = 0;
+//        }
+//
+//        Timer timer;
+//
+//        for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
+//
+//            mms.emplace_back(new MemoryReclaimC(n_threads, counter, thread_idx));
+//            stats.emplace_back(thread_idx);
+//
+//            ts.emplace_back(parallel_reduction<RVMatrix, AtomicIdxVector, Int, MemoryReclaimC>,
+//                    std::ref(r_v_matrix), std::ref(u_data_t), std::ref(pivots), std::ref(next_free_chunk),
+//                    params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]), go_down);
+//
+//#ifdef __linux__
+//            cpu_set_t cpuset;
+//            CPU_ZERO(&cpuset);
+//            CPU_SET(thread_idx, &cpuset);
+//            int rc = pthread_setaffinity_np(ts[thread_idx].native_handle(), sizeof(cpu_set_t), &cpuset);
+//            if (rc != 0) { std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n"; }
+//#endif
+//        }
+//
+//        info("{} threads created", ts.size());
+//
+//        for(auto& t: ts) {
+//            t.join();
+//        }
+//
+//        params.elapsed = timer.elapsed_reset();
+//
+//        if (params.print_time) {
+//            long total_cleared = 0;
+//            for(auto& s: stats)
+//            {
+//                total_cleared += s.n_cleared;
+//                info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
+//            }
+//            info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
+//            std::cerr << "n_threads = " << n_threads << ", elapsed = " << params.elapsed << ", cleared: " << total_cleared << std::endl;
+//        }
+//
+//#ifdef OINEUS_GATHER_ADD_STATS
+//        if (params.print_time) {
+//            ThreadStats::AddStats total_r_stats, total_v_stats;
+//            for(const auto& s: stats)
+//            {
+//                for(auto [k, v] : s.r_column_summand_sizes)
+//                    total_r_stats[k] += v;
+//                for(auto [k, v] : s.v_column_summand_sizes)
+//                    total_v_stats[k] += v;
+//            }
+//
+//            std::ofstream f_r("add_stats_r.bin", std::ios::binary);
+//
+//            std::cerr << "writing to add_stats_r.bin, stats size = " << total_r_stats.size() << std::endl;
+//
+//            for(auto [k, v]: total_r_stats) {
+//                f_r.write(reinterpret_cast<const char*>(&(k.first)), sizeof(k.first));
+//                f_r.write(reinterpret_cast<const char*>(&(k.second)), sizeof(k.first));
+//                f_r.write(reinterpret_cast<const char*>(&v), sizeof(v));
+//            }
+//
+//            f_r.close();
+//
+//            std::ofstream f_v("add_stats_v.bin", std::ios::binary);
+//
+//            for(auto [k, v]: total_v_stats) {
+//                f_v.write(reinterpret_cast<const char*>(&(k.first)), sizeof(k.first));
+//                f_v.write(reinterpret_cast<const char*>(&(k.second)), sizeof(k.first));
+//                f_v.write(reinterpret_cast<const char*>(&v), sizeof(v));
+//            }
+//
+//            f_v.close();
+//        }
+//#endif
+//
+//        // write reduced matrix back, collect V matrix, mark as reduced
+//        for(size_t i = 0; i < n_cols; ++i) {
+//            auto p = r_v_matrix[i].load(std::memory_order_relaxed);
+//            r_data[i] = std::move(p->r_column);
+//            v_data[i] = std::move(p->v_column);
+//            delete p;
+//        }
+//
+//        is_reduced = true;
+//    }
+
     template<class Int>
-    template<class Real, class L>
-    Diagrams<Real> VRUDecomposition<Int>::diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points) const
+    template<class Real>
+    Diagrams<Real> VRUDecomposition<Int>::diagram(const Filtration<Int, Real>& fil, bool include_inf_points) const
     {
         if (not is_reduced)
             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
@@ -962,8 +976,8 @@ namespace oineus {
     }
 
     template<class Int>
-    template<class Real, class L>
-    Diagrams<size_t> VRUDecomposition<Int>::index_diagram(const Filtration<Int, Real, L>& fil, bool include_inf_points, bool include_zero_persistence_points) const
+    template<class Real>
+    Diagrams<size_t> VRUDecomposition<Int>::index_diagram(const Filtration<Int, Real>& fil, bool include_inf_points, bool include_zero_persistence_points) const
     {
         if (not is_reduced)
             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");

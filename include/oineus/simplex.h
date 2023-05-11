@@ -28,12 +28,11 @@ namespace oineus {
         return out;
     }
 
-    template<typename Int_, typename Real_, typename ValueLocation_>
+    template<typename Int_, typename Real_>
     struct Simplex {
         using Int = Int_;
         using Real = Real_;
         using IdxVector = std::vector<Int>;
-        using ValueLocation = ValueLocation_;
 
         static constexpr Int k_invalid_id = Int(-1);
 
@@ -41,13 +40,12 @@ namespace oineus {
         Int sorted_id_ {k_invalid_id};
         IdxVector vertices_;
         Real value_ {std::numeric_limits<Real>::max()};
-        ValueLocation critical_value_location_;
 
         Simplex() = default;
 
-        Simplex(const IdxVector& _vertices, Real _value, const ValueLocation& _critical_value_location)
+        Simplex(const IdxVector& _vertices, Real _value)
                 :
-                vertices_(_vertices), value_(_value), critical_value_location_(_critical_value_location)
+                vertices_(_vertices), value_(_value)
         {
             if (vertices_.empty())
                 throw std::runtime_error("Empty simplex not allowed");
@@ -63,7 +61,7 @@ namespace oineus {
 
         Simplex(const int _id, const IdxVector& _vertices, Real _value)
                 :
-                vertices_(_vertices), value_(_value), critical_value_location_(_value), id_(_id)
+                vertices_(_vertices), value_(_value), id_(_id)
         {
             if (vertices_.empty())
                 throw std::runtime_error("Empty simplex not allowed");
@@ -104,11 +102,11 @@ namespace oineus {
         bool operator==(const Simplex& other) const
         {
             // ignore id_ ?
-            return sorted_id_ == other.sorted_id_ and vertices_ == other.vertices_ and value_ == other.value_ and critical_value_location_ == other.critical_value_location_;
+            return sorted_id_ == other.sorted_id_ and vertices_ == other.vertices_ and value_ == other.value_;
         }
 
         template<typename I, typename R, typename L>
-        friend std::ostream& operator<<(std::ostream&, const Simplex<I, R, L>&);
+        friend std::ostream& operator<<(std::ostream&, const Simplex<I, R>&);
 
         Int get_sorted_id()
         {
@@ -116,15 +114,15 @@ namespace oineus {
         }
     };
 
-    template<typename I, typename R, typename L>
-    std::ostream& operator<<(std::ostream& out, const Simplex<I, R, L>& s)
+    template<typename I, typename R>
+    std::ostream& operator<<(std::ostream& out, const Simplex<I, R>& s)
     {
         out << "Simplex(id_=" << s.id_ << ", sorted_id_ = " << s.sorted_id_ << ", vertices_=(";
 
         for(size_t i = 0; i < s.vertices_.size() - 1; ++i)
             out << s.vertices_[i] << ", ";
 
-        out << s.vertices_[s.vertices_.size() - 1] << "), value_=" << s.value_ << ", value_location=" << s.critical_value_location_ << ")";
+        out << s.vertices_[s.vertices_.size() - 1] << "), value_=" << s.value_ << ")";
 
         return out;
     }

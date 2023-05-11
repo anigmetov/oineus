@@ -22,20 +22,48 @@ namespace oineus {
     template<typename Int_, typename Real_, size_t D>
     class Grid;
 
-    template<typename Int_, typename Real_, typename L_>
+    // filtration + vector of locations of critical value for each simplex
+    // L = int: vertex id in grid for lower-star
+    // L = VREdge: edge for Vietoris--Rips
+    template<typename Int, typename Real, typename L>
+    struct FiltrationCritValLocs {
+        Filtration<Int, Real> filtration;
+        std::vector<L> critical_value_locations;
+    };
+
+
+    template<typename Int_, typename Real_>
     class Filtration {
     public:
         using Int = Int_;
         using Real = Real_;
-        using ValueLocation = L_;
 
-        using FiltrationSimplex = Simplex<Int, Real, ValueLocation>;
+        using FiltrationSimplex = Simplex<Int, Real>;
         using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
         using IntVector = std::vector<Int>;
         using BoundaryMatrix = typename VRUDecomposition<Int>::MatrixData;
 
         Filtration() = default;
 
+        // use move constructor to move simplices
+        Filtration(FiltrationSimplexVector&& _simplices, bool _negate, int n_threads = 1)
+                :
+                negate_(_negate),
+                simplices_(_simplices)
+        {
+            Timer timer;
+            timer.reset();
+
+            set_ids();
+            sort(n_threads);
+            set_dim_info();
+            assert(std::all_of(simplices_.begin(), simplices_.end(),
+                    [](const FiltrationSimplex& sigma) { return sigma.is_valid_filtration_simplex(); }));
+
+//            std::cerr << "Filtration ctor done, elapsed: " << timer.elapsed() << std::endl;
+        }
+
+        // copy simplices
         Filtration(const FiltrationSimplexVector& _simplices, bool _negate, int n_threads = 1)
                 :
                 negate_(_negate),
@@ -62,7 +90,6 @@ namespace oineus {
         auto dim_last() const { return dim_last_; }
 
         Real get_simplex_value(size_t i) { return simplices_[i].value(); }
-        ValueLocation cvl(size_t simplex_idx) const { return simplices()[simplex_idx].critical_value_location_; }
 
         size_t size_in_dimension(dim_type d) const
         {
@@ -248,11 +275,11 @@ namespace oineus {
         }
 
         template<typename I, typename R, typename L>
-        friend std::ostream& operator<<(std::ostream&, const Filtration<I, R, L>&);
+        friend std::ostream& operator<<(std::ostream&, const Filtration<I, R>&);
     };
 
     template<typename I, typename R, typename L>
-    std::ostream& operator<<(std::ostream& out, const Filtration<I, R, L>& fil)
+    std::ostream& operator<<(std::ostream& out, const Filtration<I, R>& fil)
     {
         out << "Filtration(size = " << fil.size() << ")[" << "\n";
         dim_type d = 0;

@@ -29,10 +29,10 @@ namespace oineus {
     }
 
     template<class Int, class Real, std::size_t D>
-    Simplex<Int, Real, VREdge> vr_simplex(const std::vector<Point<Real, D>>& points, const std::vector<size_t>& vertices_)
+    std::pair<Simplex<Int, Real>, VREdge> vr_simplex_with_edge(const std::vector<Point<Real, D>>& points, const std::vector<size_t>& vertices_)
     {
-        using VRSimplex = Simplex<Int, Real, VREdge>;
-        using IdxVector = typename VRSimplex::IdxVector;
+        using Simplex = Simplex<Int, Real>;
+        using IdxVector = typename Simplex::IdxVector;
 
         assert(not vertices_.empty());
 
@@ -55,7 +55,7 @@ namespace oineus {
         // convert size_t to Int, if necessary
         IdxVector vertices {vertices_.begin(), vertices_.end()};
 
-        return VRSimplex(vertices, crit_value, crit_edge);
+        return {Simplex(vertices, crit_value), crit_edge};
     }
 
     template<class Functor, class NeighborTest, class VertexContainer>
@@ -98,22 +98,32 @@ namespace oineus {
 
     // Bron-Kerbosch, from Dionysus
     template<class Int, class Real, std::size_t D>
-    decltype(auto) get_vr_filtration_bk(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
+    std::pair<Filtration<Int, Real>, std::vector<VREdge>> get_vr_filtration_bk(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
-        using VRFiltration = Filtration<Int, Real, VREdge>;
-        using VRSimplex = Simplex<Int, Real, VREdge>;
+        using Filtration = Filtration<Int, Real>;
+        using Simplex = Simplex<Int, Real>;
         using VertexContainer = std::vector<size_t>;
 
         auto neighbor = [&](size_t u, size_t v) { return sq_dist(points[u], points[v]) <= max_radius * max_radius; };
 
-        std::vector<VRSimplex> simplices;
+        std::vector<Simplex> simplices;
+        std::vector<VREdge> edges;
         bool negate {false};
 
         // vertices are added manually to preserve order (id == index)
-        for(size_t v = 0; v < points.size(); ++v)
-            simplices.emplace_back(vr_simplex<Int, Real>(points, {v}));
+        for(size_t v = 0; v < points.size(); ++v) {
+            auto [simplex, edge] = vr_simplex_with_edge<Int, Real>(points, {v});
+            simplices.emplace_back(simplex);
+            edges.emplace_back(edge);
+        }
 
-        auto functor = [&](const VertexContainer& vs) { if (vs.size() > 1) simplices.push_back(vr_simplex<Int, Real, D>(points, vs)); };
+        auto functor = [&](const VertexContainer& vs)
+                { if (vs.size() > 1) {
+                    auto [simplex, edge] = vr_simplex_with_edge<Int, Real, D>(points, vs);
+                    simplices.emplace_back(simplex);
+                    edges.emplace_back(edge);
+                }
+                };
 
         VertexContainer current;
         VertexContainer candidates(points.size());
@@ -123,38 +133,45 @@ namespace oineus {
 
         bron_kerbosch(current, candidates, excluded_end, max_dim, neighbor, functor, check_initial);
 
-        return VRFiltration(simplices, negate, n_threads);
+        return std::make_pair(Filtration(std::move(simplices), negate, n_threads), std::move(edges));
     }
 
     // stupid brute-force
     template<class Int, class Real, std::size_t D>
     decltype(auto) get_vr_filtration_naive(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
-        using VRFiltration = Filtration<Int, Real, VREdge>;
-        using VRSimplex = Simplex<Int, Real, VREdge>;
+        using VRFiltration = Filtration<Int, Real>;
+        using VRSimplex = Simplex<Int, Real>;
 
         std::vector<VRSimplex> simplices;
+        std::vector<VREdge> edges;
 
         for(size_t v_idx = 0; v_idx < points.size(); ++v_idx) {
             std::vector<size_t> vertices {v_idx};
-            simplices.emplace_back(vr_simplex<Int, Real, D>(points, vertices));
+            auto [simplex, edge] = vr_simplex_with_edge<Int, Real, D>(points, vertices);
+            simplices.emplace_back(simplex);
+            edges.emplace_back(edge);
         }
 
         if (max_dim >= 1)
             for(size_t u_idx = 0; u_idx < points.size(); ++u_idx)
                 for(size_t v_idx = u_idx + 1; v_idx < points.size(); ++v_idx) {
-                    auto s = vr_simplex<Int, Real, D>(points, {u_idx, v_idx});
-                    if (s.value() <= max_radius)
+                    auto [s, e] = vr_simplex_with_edge<Int, Real, D>(points, {u_idx, v_idx});
+                    if (s.value() <= max_radius) {
                         simplices.emplace_back(s);
+                        edges.emplace_back(e);
+                    }
                 }
 
         if (max_dim >= 2)
             for(size_t u_idx = 0; u_idx < points.size(); ++u_idx)
                 for(size_t v_idx = u_idx + 1; v_idx < points.size(); ++v_idx)
                     for(size_t w_idx = v_idx + 1; w_idx < points.size(); ++w_idx) {
-                        auto s = vr_simplex<Int, Real, D>(points, {u_idx, v_idx, w_idx});
-                        if (s.value() <= max_radius)
+                        auto [s, e] = vr_simplex_with_edge<Int, Real, D>(points, {u_idx, v_idx, w_idx});
+                        if (s.value() <= max_radius) {
                             simplices.emplace_back(s);
+                            edges.emplace_back(e);
+                        }
                     }
 
         if (max_dim >= 3)
@@ -162,15 +179,17 @@ namespace oineus {
                 for(size_t v_idx = u_idx + 1; v_idx < points.size(); ++v_idx)
                     for(size_t w_idx = v_idx + 1; w_idx < points.size(); ++w_idx)
                         for(size_t t_idx = w_idx + 1; t_idx < points.size(); ++t_idx) {
-                            auto s = vr_simplex<Int, Real, D>(points, {u_idx, v_idx, w_idx, t_idx});
-                            if (s.value() <= max_radius)
+                            auto [s, e] = vr_simplex_with_edge<Int, Real, D>(points, {u_idx, v_idx, w_idx, t_idx});
+                            if (s.value() <= max_radius) {
                                 simplices.emplace_back(s);
+                                edges.emplace_back(e);
+                            }
                         }
 
         if (max_dim >= 4)
             throw std::runtime_error("not implemented");
 
-        return VRFiltration(simplices, false, n_threads);
+        return std::make_pair<VRFiltration, std::vector<VREdge>>(VRFiltration(std::move(simplices), false, n_threads), std::move(edges));
     }
 
 };

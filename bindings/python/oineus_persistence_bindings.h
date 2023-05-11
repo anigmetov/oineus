@@ -34,7 +34,7 @@ public:
 
         size_t arr_sz = dgm.size() * 2;
         Real* ptr = new Real[arr_sz];
-        for(size_t i = 0; i < dgm.size(); ++i) {
+        for(size_t i = 0 ; i < dgm.size() ; ++i) {
             ptr[2 * i] = dgm[i].birth;
             ptr[2 * i + 1] = dgm[i].death;
         }
@@ -76,19 +76,18 @@ get_grid(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool
     Real* pdata {static_cast<Real*>(data_buf.ptr)};
 
     GridPoint dims;
-    for(dim_type d = 0; d < D; ++d)
+    for(dim_type d = 0 ; d < D ; ++d)
         dims[d] = data.shape(d);
 
     return Grid(dims, wrap, pdata);
 }
 
 template<class Int, class Real, size_t D>
-typename oineus::Filtration<Int, Real, Int>
+decltype(auto)
 get_fr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
     auto grid = get_grid<Int, Real, D>(data, wrap);
-    auto fil = grid.freudenthal_filtration(max_dim, negate, n_threads);
-    return fil;
+    return grid.freudenthal_filtration(max_dim, negate, n_threads);
 }
 
 template<class Real, size_t D>
@@ -105,26 +104,27 @@ decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::
 
     Real* pdata {static_cast<Real*>(data_buf.ptr)};
 
-    for(size_t i = 0; i < data.size(); ++i)
+    for(size_t i = 0 ; i < data.size() ; ++i)
         points[i / D][i % D] = pdata[i];
 
     return points;
 }
 
+
 template<typename Int, typename Real>
-typename oineus::Filtration<Int, Real, Int>
+typename oineus::Filtration<Int, Real>
 list_to_filtration(py::list data, oineus::Params& params) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]'. 
 {
     using IdxVector = std::vector<Int>;
-    using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
+    using FiltrationSimplex = oineus::Simplex<Int, Real>;
     using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
-    using Filtration = oineus::Filtration<Int, Real, Int>;
+    using Filtration = oineus::Filtration<Int, Real>;
 
     int n_simps = data.size();
     std::cout << "Number of cells in the complex is: " << n_simps << std::endl;
     FiltrationSimplexVector FSV;
 
-    for(int i = 0; i < n_simps; i++) {
+    for(int i = 0 ; i < n_simps ; i++) {
         auto data_i = data[i];
         int count = 0;
         Int id;
@@ -149,15 +149,14 @@ list_to_filtration(py::list data, oineus::Params& params) //take a list of simpl
     return Filt;
 }
 
-
 template<typename Int, typename Real>
-typename oineus::Filtration<Int, Real, Int>
+decltype(auto)
 get_ls_filtration(const py::list& simplices, const py::array_t<Real>& vertex_values, bool negate, int n_threads)
 // take a list of simplices and a numpy array of their values and turn it into a filtration for oineus.
 // The list should contain simplices, each simplex is a list of vertices,
 // e.g., triangulation of one segment is [[0], [1], [0, 1]]
 {
-    using Filtration = oineus::Filtration<Int, Real, Int>;
+    using Filtration = oineus::Filtration<Int, Real>;
     using Simplex = typename Filtration::FiltrationSimplex;
     using IdxVector = std::vector<Int>;
     using SimplexVector = std::vector<Simplex>;
@@ -178,13 +177,13 @@ get_ls_filtration(const py::list& simplices, const py::array_t<Real>& vertex_val
     auto vv_buf = vertex_values.request();
     Real* p_vertex_values = static_cast<Real*>(vv_buf.ptr);
 
-    for(auto&& item : simplices) {
+    for(auto&& item: simplices) {
         IdxVector vertices = item.cast<IdxVector>();
 
         Int critical_vertex;
         Real critical_value = negate ? std::numeric_limits<Real>::max() : std::numeric_limits<Real>::lowest();
 
-        for(auto v : vertices) {
+        for(auto v: vertices) {
             Real vv = p_vertex_values[v];
             if (cmp(critical_value, vv)) {
                 critical_vertex = v;
@@ -192,18 +191,16 @@ get_ls_filtration(const py::list& simplices, const py::array_t<Real>& vertex_val
             }
         }
 
-        fil_simplices.emplace_back(vertices, critical_value, critical_vertex);
+        fil_simplices.emplace_back(vertices, critical_value);
     }
 
 //    std::cerr << "without filtration ctor, in get_ls_filtration elapsed: " << timer.elapsed_reset() << std::endl;
 
-    return Filtration(fil_simplices, negate, n_threads);
+    return Filtration(std::move(fil_simplices), negate, n_threads);
 }
 
-
-
 template<class Int, class Real, size_t D>
-typename oineus::Filtration<Int, Real, oineus::VREdge>
+decltype(auto)
 get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> points, dim_type max_dim, Real max_radius, int n_threads)
 {
     return oineus::get_vr_filtration_bk<Int, Real, D>(numpy_to_point_vector<Real, D>(points), max_dim, max_radius, n_threads);
@@ -211,7 +208,7 @@ get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> p
 
 template<class Int, class Real, class L>
 PyOineusDiagrams<Real>
-compute_diagrams_from_fil(const oineus::Filtration<Int, Real, L>& fil, int n_threads)
+compute_diagrams_from_fil(const oineus::Filtration<Int, Real>& fil, int n_threads)
 {
     oineus::VRUDecomposition<Int> d_matrix {fil, false};
 
@@ -230,7 +227,7 @@ template<class Int, class Real, size_t D>
 typename oineus::VRUDecomposition<Int>::MatrixData
 get_boundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads);
+    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads).first;
     return fil.boundary_matrix_full();
 }
 
@@ -238,7 +235,7 @@ template<class Int, class Real, size_t D>
 typename oineus::VRUDecomposition<Int>::MatrixData
 get_coboundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads);
+    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads).first;
     auto bm = fil.boundary_matrix_full();
     return oineus::antitranspose(bm);
 }
@@ -249,7 +246,7 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
 {
     // for diagram in dimension d, we need (d+1)-simplices
     Timer timer;
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, params.n_threads);
+    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, params.n_threads).first;
     auto elapsed_fil = timer.elapsed_reset();
     oineus::VRUDecomposition<Int> decmp {fil, false};
     auto elapsed_decmp_ctor = timer.elapsed_reset();
@@ -296,56 +293,62 @@ public:
 
 template<typename Int, typename Real>
 class PyKerImCokRed {
-    private:
-        oineus::KerImCokReduced<Int, Real> KICR;
+private:
+    oineus::KerImCokReduced<Int, Real> KICR;
 
 public:
-        bool kernel{false};
-        bool image{false};
-        bool cokernel{false};
+    bool kernel {false};
+    bool image {false};
+    bool cokernel {false};
 
-        PyKerImCokRed(oineus::KerImCokReduced<Int, Real> KICR_) :
-            KICR (KICR_){
-        }
-        
-        decltype(auto) kernel_diagrams(){
-            if (!kernel) {
-                KICR.GenerateKerDiagrams();
-                kernel = true;
-            }
-            return PyOineusDiagrams<Real>(KICR.get_kernel_diagrams());
-        }
+    PyKerImCokRed(oineus::KerImCokReduced<Int, Real> KICR_)
+            :
+            KICR(KICR_)
+    {
+    }
 
-        decltype(auto) image_diagrams(){
-            if (!image) {
-                KICR.GenerateImDiagrams();
-                image = true;
-            }
-            return PyOineusDiagrams(KICR.get_image_diagrams());
+    decltype(auto) kernel_diagrams()
+    {
+        if (!kernel) {
+            KICR.GenerateKerDiagrams();
+            kernel = true;
         }
+        return PyOineusDiagrams<Real>(KICR.get_kernel_diagrams());
+    }
 
-        decltype(auto) cokernel_diagrams(){
-            if (!cokernel) {
-                KICR.GenerateCokDiagrams();
-                cokernel = true;
-            }
-            return PyOineusDiagrams(KICR.get_cokernel_diagrams());
+    decltype(auto) image_diagrams()
+    {
+        if (!image) {
+            KICR.GenerateImDiagrams();
+            image = true;
         }
-        
+        return PyOineusDiagrams(KICR.get_image_diagrams());
+    }
+
+    decltype(auto) cokernel_diagrams()
+    {
+        if (!cokernel) {
+            KICR.GenerateCokDiagrams();
+            cokernel = true;
+        }
+        return PyOineusDiagrams(KICR.get_cokernel_diagrams());
+    }
+
 };
 
 template<typename Int, typename Real>
-decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_, py::list IdMap_, oineus::Params& params) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value].
+decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_, py::list IdMap_,
+        oineus::Params& params) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value].
 {
     using IdxVector = std::vector<Int>;
     using IntSparseColumn = oineus::SparseColumn<Int>;
     using MatrixData = std::vector<IntSparseColumn>;
-    using FiltrationSimplex = oineus::Simplex<Int, Real, Int>;
+    using FiltrationSimplex = oineus::Simplex<Int, Real>;
     using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
-    using Filtration = oineus::Filtration<Int, Real, Int>;
+    using Filtration = oineus::Filtration<Int, Real>;
     using KerImCokReduced = oineus::KerImCokReduced<Int, Real>;
     std::cout << "======================================" << std::endl;
-    std::cout << std:: endl;
+    std::cout << std::endl;
     std::cout << "You have called \'compute_kernel_image_cokernel_reduction\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
     std::cout << "          [id, [boundary], filtration value]" << std::endl;
     std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as an integer, telling oineus how many threads to use." << std::endl;
@@ -361,20 +364,20 @@ decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_,
     int n_L = IdMap_.size();
     std::vector<int> IdMapping;
 
-    for(int i = 0; i < n_L; i++) {
+    for(int i = 0 ; i < n_L ; i++) {
         int i_map = IdMap_[i].cast<int>();
         IdMapping.push_back(i_map);
     }
 
     if (params.verbose) {
         std::cout << "---------- Map from L to K ----------" << std::endl;
-        for (int i = 0; i < n_L; i++){
+        for(int i = 0 ; i < n_L ; i++) {
             std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
         }
     }
     params.sort_dgms = false;
     params.clearing_opt = false;
-    
+
     PyKerImCokRed KICR(oineus::reduce_ker_im_cok<Int, Real>(K, L, IdMapping, params));
     if (params.kernel) KICR.kernel = true;
     if (params.image) KICR.image = true;
@@ -441,9 +444,11 @@ void init_oineus_common(py::module& m)
             .def(py::pickle(
                     // __getstate__
 
-                    [](const ReductionParams& p) { return py::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
-                        p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
-                        p.do_sanity_check, p.elapsed, p.kernel, p.image, p.cokernel, p.verbose); },
+                    [](const ReductionParams& p) {
+                      return py::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
+                              p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
+                              p.do_sanity_check, p.elapsed, p.kernel, p.image, p.cokernel, p.verbose);
+                    },
                     // __setstate__
                     [](py::tuple t) {
                       if (t.size() != 15)
@@ -464,12 +469,12 @@ void init_oineus_common(py::module& m)
                       p.compute_u = t[i++].cast<decltype(p.compute_u)>();
                       p.do_sanity_check = t[i++].cast<decltype(p.do_sanity_check)>();
 
-                      p.elapsed         = t[i++].cast<decltype(p.elapsed)>();
-                      p.kernel          = t[i++].cast<decltype(p.kernel)>();
-                      p.image           = t[i++].cast<decltype(p.image)>();
-                      p.cokernel        = t[i++].cast<decltype(p.cokernel)>();
-                      p.verbose         = t[i++].cast<decltype(p.verbose)>();
-                    
+                      p.elapsed = t[i++].cast<decltype(p.elapsed)>();
+                      p.kernel = t[i++].cast<decltype(p.kernel)>();
+                      p.image = t[i++].cast<decltype(p.image)>();
+                      p.cokernel = t[i++].cast<decltype(p.cokernel)>();
+                      p.verbose = t[i++].cast<decltype(p.verbose)>();
+
                       return p;
                     }));
 
@@ -487,32 +492,23 @@ void init_oineus_common(py::module& m)
             .def("as_str", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); });
 
     py::class_<Decomposition>(m, "Decomposition")
-            .def(py::init<const oineus::Filtration<Int, double, Int>&, bool>())
-            .def(py::init<const oineus::Filtration<Int, double, VREdge>&, bool>())
-            .def(py::init<const oineus::Filtration<Int, float, Int>&, bool>())
-            .def(py::init<const oineus::Filtration<Int, float, VREdge>&, bool>())
+            .def(py::init<const oineus::Filtration<Int, double>&, bool>())
+            .def(py::init<const oineus::Filtration<Int, float>&, bool>())
             .def_readwrite("r_data", &Decomposition::r_data)
             .def_readwrite("v_data", &Decomposition::v_data)
             .def_readwrite("u_data_t", &Decomposition::u_data_t)
             .def_readwrite("d_data", &Decomposition::d_data)
             .def("reduce", &Decomposition::reduce, py::call_guard<py::gil_scoped_release>())
             .def("sanity_check", &Decomposition::sanity_check, py::call_guard<py::gil_scoped_release>())
-            .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, VREdge>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
-            .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, VREdge>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
-            .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, Int>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
-            .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, Int>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
-            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, VREdge>& fil, bool include_inf_points, bool include_zero_persistence_points) {
+            .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, double>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
+            .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, float>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
+            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, double>& fil, bool include_inf_points, bool include_zero_persistence_points) {
               return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
             })
-            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, VREdge>& fil, bool include_inf_points, bool include_zero_persistence_points) {
+            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, float>& fil, bool include_inf_points, bool include_zero_persistence_points) {
               return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
             })
-            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, double, Int>& fil, bool include_inf_points, bool include_zero_persistence_points) {
-              return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
-            })
-            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, float, Int>& fil, bool include_inf_points, bool include_zero_persistence_points) {
-              return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
-            });
+            ;
 
     using DgmPointInt = typename oineus::DgmPoint<Int>;
     using DgmPointSizet = typename oineus::DgmPoint<size_t>;
@@ -555,25 +551,20 @@ void init_oineus(py::module& m, std::string suffix)
     using DgmPoint = oineus::DgmPoint<Real>;
     using Diagram = PyOineusDiagrams<Real>;
 
-    using LSFiltration = oineus::Filtration<Int, Real, Int>;
-    using LSSimplex = typename LSFiltration::FiltrationSimplex;
+    using Filtration = oineus::Filtration<Int, Real>;
+    using Simplex = typename Filtration::FiltrationSimplex;
 
     using oineus::VREdge;
-    using VRFiltration = oineus::Filtration<Int, Real, VREdge>;
-    using VRSimplex = typename VRFiltration::FiltrationSimplex;
+
     using VRUDecomp = oineus::VRUDecomposition<Int>;
     using KerImCokRed = oineus::KerImCokReduced<Int, Real>;
     using PyKerImCokRed = PyKerImCokRed<Int, Real>;
     //using CokRed =  oineus::CokReduced<Int, Real>;
 
+    std::string filtration_class_name = "Filtration" + suffix;
+
     std::string dgm_point_name = "DiagramPoint" + suffix;
     std::string dgm_class_name = "Diagrams" + suffix;
-
-    std::string ls_simplex_class_name = "LSSimplex" + suffix;
-    std::string ls_filtration_class_name = "LSFiltration" + suffix;
-
-    std::string vr_simplex_class_name = "VRSimplex" + suffix;
-    std::string vr_filtration_class_name = "VRFiltration" + suffix;
 
     std::string ker_im_cok_reduced_class_name = "KerImCokReduced" + suffix;
     std::string py_ker_im_cok_reduced_class_name = "PyKerImCokRed" + suffix;
@@ -595,56 +586,32 @@ void init_oineus(py::module& m, std::string suffix)
             .def("in_dimension", &Diagram::get_diagram_in_dimension)
             .def("__getitem__", &Diagram::get_diagram_in_dimension);
 
-    py::class_<LSSimplex>(m, ls_simplex_class_name.c_str())
-            .def(py::init<typename LSSimplex::IdxVector, Real, typename LSSimplex::ValueLocation>())
-            .def_readonly("id", &LSSimplex::id_)
-            .def_readonly("sorted_id", &LSSimplex::sorted_id_)
-            .def_readonly("vertices", &LSSimplex::vertices_)
-            .def_readonly("value", &LSSimplex::value_)
-            .def_readonly("critical_vertex", &LSSimplex::critical_value_location_)
-            .def("dim", &LSSimplex::dim)
-            .def("boundary", &LSSimplex::boundary)
-            .def("__repr__", [](const LSSimplex& sigma) {
+    py::class_<Simplex>(m, "Simplex")
+            .def(py::init<typename Simplex::IdxVector, Real>())
+            .def_readonly("id", &Simplex::id_)
+            .def_readonly("sorted_id", &Simplex::sorted_id_)
+            .def_readonly("vertices", &Simplex::vertices_)
+            .def_readonly("value", &Simplex::value_)
+            .def("dim", &Simplex::dim)
+            .def("boundary", &Simplex::boundary)
+            .def("__repr__", [](const Simplex& sigma) {
               std::stringstream ss;
               ss << sigma;
               return ss.str();
             });
 
-    py::class_<VRSimplex>(m, vr_simplex_class_name.c_str())
-            .def(py::init<typename VRSimplex::IdxVector, Real, typename VRSimplex::ValueLocation>())
-            .def_readonly("id", &VRSimplex::id_)
-            .def_readonly("sorted_id", &VRSimplex::sorted_id_)
-            .def_readonly("vertices", &VRSimplex::vertices_)
-            .def_readonly("value", &VRSimplex::value_)
-            .def_readonly("critical_edge", &VRSimplex::critical_value_location_)
-            .def("dim", &VRSimplex::dim)
-            .def("boundary", &VRSimplex::boundary)
-            .def("__repr__", [](const VRSimplex& sigma) {
-              std::stringstream ss;
-              ss << sigma;
-              return ss.str();
-            });
 
-    py::class_<LSFiltration>(m, ls_filtration_class_name.c_str())
-            .def(py::init<typename LSFiltration::FiltrationSimplexVector, bool, int>())
-            .def("max_dim", &LSFiltration::max_dim)
-            .def("simplices", &LSFiltration::simplices_copy)
-            .def("size_in_dimension", &LSFiltration::size_in_dimension)
-            .def("critical_vertex", &LSFiltration::cvl)
-            .def("simplex_value", &LSFiltration::value_by_sorted_id)
-            .def("boundary_matrix", &LSFiltration::boundary_matrix_full);
+    py::class_<Filtration>(m, filtration_class_name.c_str())
+            .def(py::init<typename Filtration::FiltrationSimplexVector, bool, int>())
+            .def("max_dim", &Filtration::max_dim)
+            .def("simplices", &Filtration::simplices_copy)
+            .def("size_in_dimension", &Filtration::size_in_dimension)
+            .def("simplex_value", &Filtration::value_by_sorted_id)
+            .def("boundary_matrix", &Filtration::boundary_matrix_full);
 
-    py::class_<VRFiltration>(m, vr_filtration_class_name.c_str())
-            .def(py::init<typename VRFiltration::FiltrationSimplexVector, bool, int>())
-            .def("max_dim", &VRFiltration::max_dim)
-            .def("simplices", &VRFiltration::simplices_copy)
-            .def("critical_edge", &VRFiltration::cvl)
-            .def("size_in_dimension", &VRFiltration::size_in_dimension)
-            .def("simplex_value", &VRFiltration::value_by_sorted_id)
-            .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
 
     py::class_<KerImCokRed>(m, ker_im_cok_reduced_class_name.c_str())
-            .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>>());
+            .def(py::init<oineus::Filtration<Int, Real>, oineus::Filtration<Int, Real>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>>());
 
     py::class_<PyKerImCokRed>(m, py_ker_im_cok_reduced_class_name.c_str())
             .def(py::init<KerImCokRed>())
@@ -696,58 +663,40 @@ void init_oineus(py::module& m, std::string suffix)
 
     // target values
     func_name = "get_denoise_target" + suffix;
-    m.def(func_name.c_str(), &oineus::get_denoise_target<Int, Real, Int>);
+    m.def(func_name.c_str(), &oineus::get_denoise_target<Int, Real>);
 
-    func_name = "get_denoise_target" + suffix;
-    m.def(func_name.c_str(), &oineus::get_denoise_target<Int, Real, VREdge>);
-
-    func_name = "get_ls_wasserstein_matching_target_values" + suffix;
-    m.def(func_name.c_str(), &oineus::get_target_from_matching<Int, Real, Int>);
+    func_name = "get_wasserstein_matching_target_values" + suffix;
+    m.def(func_name.c_str(), &oineus::get_target_from_matching<Int, Real>);
 
     // target values -- diagram loss
     func_name = "get_target_values_diagram_loss" + suffix;
     m.def(func_name.c_str(), &oineus::get_prescribed_simplex_values_diagram_loss<Real>);
 
     // target values --- X set
-    func_name = "get_ls_target_values_x" + suffix;
-    m.def(func_name.c_str(), &oineus::get_prescribed_simplex_values_set_x<Int, Real, Int>);
-
-    func_name = "get_vr_target_values_x" + suffix;
-    m.def(func_name.c_str(), &oineus::get_prescribed_simplex_values_set_x<Int, Real, VREdge>);
+    func_name = "get_target_values_x" + suffix;
+    m.def(func_name.c_str(), &oineus::get_prescribed_simplex_values_set_x<Int, Real>);
 
     // to reproduce "Topology layer for ML" experiments
     func_name = "get_bruelle_target" + suffix;
-    m.def(func_name.c_str(), &oineus::get_bruelle_target<Int, Real, VREdge>);
+    m.def(func_name.c_str(), &oineus::get_bruelle_target<Int, Real>);
 
     // to reproduce "Well group loss" experiments
     func_name = "get_well_group_target" + suffix;
-    m.def(func_name.c_str(), &oineus::get_well_group_target<Int, Real, VREdge>);
-
-    func_name = "get_well_group_target" + suffix;
-    m.def(func_name.c_str(), &oineus::get_well_group_target<Int, Real, Int>);
+    m.def(func_name.c_str(), &oineus::get_well_group_target<Int, Real>);
 
     func_name = "get_nth_persistence" + suffix;
-    m.def(func_name.c_str(), &oineus::get_nth_persistence<Int, Real, VREdge>);
+    m.def(func_name.c_str(), &oineus::get_nth_persistence<Int, Real>);
 
     // to equidistribute points
     func_name = "get_barycenter_target" + suffix;
-    m.def(func_name.c_str(), &oineus::get_barycenter_target<Int, Real, VREdge>);
-
-    func_name = "get_barycenter_target" + suffix;
-    m.def(func_name.c_str(), &oineus::get_barycenter_target<Int, Real, Int>);
+    m.def(func_name.c_str(), &oineus::get_barycenter_target<Int, Real>);
 
     // to get permutation for Warm Starts
     func_name = "get_permutation" + suffix;
-    m.def(func_name.c_str(), &oineus::targets_to_permutation<Int, Real, Int>);
-
-    func_name = "get_permutation" + suffix;
-    m.def(func_name.c_str(), &oineus::targets_to_permutation<Int, Real, VREdge>);
+    m.def(func_name.c_str(), &oineus::targets_to_permutation<Int, Real>);
 
     func_name = "get_permutation_dtv" + suffix;
-    m.def(func_name.c_str(), &oineus::targets_to_permutation_dtv<Int, Real, Int>);
-
-    func_name = "get_permutation_dtv" + suffix;
-    m.def(func_name.c_str(), &oineus::targets_to_permutation_dtv<Int, Real, VREdge>);
+    m.def(func_name.c_str(), &oineus::targets_to_permutation_dtv<Int, Real>);
 
     // reduce to create an ImKerReduced object
     func_name = "reduce_ker_im_cok" + suffix;
@@ -761,8 +710,40 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "get_ls_filtration" + suffix;
     m.def(func_name.c_str(), &get_ls_filtration<Int, Real>);
-    /*func_name = "compute_cokernel_diagrams" + suffix;
-    m.def(func_name.c_str(), &compute_cokernel_diagrams<Int, Real>);*/
+}
+
+inline void init_oineus_top_optimizer(py::module& m)
+{
+
+    using Real = double;
+    using Int = int;
+
+    using TopologyOptimizer = oineus::TopologyOptimizer<Int, Real>;
+
+    // optimization
+    py::class_<TopologyOptimizer>(m, "TopologyOptimizer")
+            .def(py::init<const oineus::Filtration<Int, Real>& >())
+//            .def("compute_diagram", &TopologyOptimizer::compute_diagram)
+//            .def("simplify", &TopologyOptimizer ::simplify)
+            .def("match", &TopologyOptimizer::match)
+//            .def("singleton", &TopologyOptimizer::singleton)
+            .def("singletons", &TopologyOptimizer::singletons)
+//            .def("combined_loss", &TopologyOptimizer::combine_loss)
+            .def("update", &TopologyOptimizer::update)
+//            .def("get_flags", &TopologyOptimizer::get_flags)
+//            .def_readonly("id", &VRSimplex::id_)
+//            .def_readonly("sorted_id", &VRSimplex::sorted_id_)
+//            .def_readonly("vertices", &VRSimplex::vertices_)
+//            .def_readonly("value", &VRSimplex::value_)
+//            .def_readonly("critical_edge", &VRSimplex::critical_value_location_)
+//            .def("boundary", &VRSimplex::boundary)
+//            .def("__repr__", [](const VRSimplex& sigma) {
+//              std::stringstream ss;
+//              ss << sigma;
+//              return ss.str();
+//            });
+            ;
+
 }
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

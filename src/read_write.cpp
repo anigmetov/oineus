@@ -268,4 +268,57 @@ namespace std {
         return os;
     }
 
+    void read_phat_boundary_matrix(std::string matrix_fname, SparseMatrix& r_matrix, bool prepare_for_clearing)
+    {
+        std::map<int, SparseMatrix> dim_to_cols;
+
+        std::ifstream f(matrix_fname);
+        if (!f.good()) {
+            info("Cannot read D matrix from {}.", matrix_fname);
+            throw std::runtime_error("file not found");
+        }
+
+
+        std::string s;
+
+        long row_num = 0;
+        while(std::getline(f, s)) {
+            row_num++;
+            SparseColumn col;
+            std::stringstream ss(s);
+            size_t simplex_dim;
+            IdxType i;
+            ss >> simplex_dim;
+            while(ss >> i) {
+                col.push_back(i);
+            }
+
+            if (simplex_dim != col.size()) {
+                info("Error in file {}, row {}, dimension = {}, boundary has {} elements",
+                        matrix_fname, row_num, simplex_dim, col.size());
+                throw std::runtime_error("error in boundary matrix file");
+            }
+
+            dim_to_cols[simplex_dim].push_back(col);
+        }
+
+        f.close();
+
+        r_matrix.clear();
+        r_matrix.reserve(row_num);
+
+        if (prepare_for_clearing) {
+            // higher dimensions first
+            for(auto d = dim_to_cols.rbegin(); d != dim_to_cols.rend(); ++d) {
+                std::move(d->second.begin(), d->second.end(), std::back_inserter(r_matrix));
+                d->second.clear();
+            }
+        } else {
+            // standard order
+            for(auto d = dim_to_cols.begin(); d != dim_to_cols.end(); ++d) {
+                std::move(d->second.begin(), d->second.end(), std::back_inserter(r_matrix));
+                d->second.clear();
+            }
+        }
+    }
 }

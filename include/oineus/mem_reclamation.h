@@ -17,6 +17,8 @@ namespace oineus {
     template<class T>
     struct MemoryReclaim {
 
+        using EpochCounter = int;
+
         int n_threads_;
 
         const int thread_id_;
@@ -25,7 +27,7 @@ namespace oineus {
 
         bool even_epoch_ {false};
 
-        std::atomic<int>& counter_;
+        std::atomic<EpochCounter>& counter_;
 
         MemoryReclaim(int _n_threads, std::atomic<int>& _epoch_counter, int _thread_id)
                 :
