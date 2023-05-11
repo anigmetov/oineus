@@ -121,7 +121,7 @@ list_to_filtration(py::list data, oineus::Params& params) //take a list of simpl
 	using Filtration = oineus::Filtration<Int, Real, Int>;
 
 	int n_simps = data.size();
-	std::cout << "Number of cells in the complex is: " << n_simps << std::endl;
+	std::cerr << "Number of cells in the complex is: " << n_simps << std::endl;
 	FiltrationSimplexVector FSV;
 
 	for(int i = 0; i < n_simps; i++) {
@@ -140,7 +140,7 @@ list_to_filtration(py::list data, oineus::Params& params) //take a list of simpl
 			}
 			count++;
 		}
-		if (params.verbose) std::cout << "parsed the following data. id: " << id << " val: " << val << std::endl;
+		if (params.verbose) std::cerr << "parsed the following data. id: " << id << " val: " << val << std::endl;
 		FiltrationSimplex simp_i(id, vertices, val);
 		FSV.push_back(simp_i);
 	}
@@ -404,19 +404,19 @@ decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_,
 	using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
 	using Filtration = oineus::Filtration<Int, Real, Int>;
 	using KerImCokReduced = oineus::KerImCokReduced<Int, Real>;
-	std::cout << "======================================" << std::endl;
-	std::cout << std:: endl;
-	std::cout << "You have called \'compute_kernel_image_cokernel_reduction\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
-	std::cout << "          [id, [boundary], filtration value]" << std::endl;
-	std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as parameters." << std::endl;
+	std::cerr << "======================================" << std::endl;
+	std::cerr << std:: endl;
+	std::cerr << "You have called \'compute_kernel_image_cokernel_reduction\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
+	std::cerr << "          [id, [boundary], filtration value]" << std::endl;
+	std::cerr << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as parameters." << std::endl;
 
-	std::cout << std::endl;
-	std::cout << "======================================" << std::endl;
-	std::cout << std::endl;
+	std::cerr << std::endl;
+	std::cerr << "======================================" << std::endl;
+	std::cerr << std::endl;
 
-	std::cout << "------------ Importing K ------------" << std::endl;
+	std::cerr << "------------ Importing K ------------" << std::endl;
 	Filtration K = list_to_filtration<Int, Real>(K_, params);
-	std::cout << "------------ Importing L ------------" << std::endl;
+	std::cerr << "------------ Importing L ------------" << std::endl;
 	Filtration L = list_to_filtration<Int, Real>(L_, params);
 
 	int n_L = IdMap_.size();
@@ -427,9 +427,9 @@ decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_,
 		IdMapping.push_back(i_map);
 	}
 	if (params.verbose) {
-		std::cout << "---------- Map from L to K ----------" << std::endl;
+		std::cerr << "---------- Map from L to K ----------" << std::endl;
 		for (int i = 0; i < n_L; i++){
-			std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
+			std::cerr << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
 		}
 	}
 	params.sort_dgms = false;
