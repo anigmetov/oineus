@@ -297,49 +297,8 @@ public:
 
 
 template<typename Int, typename Real>
-class PyKerImCokReducedParallel {
-    private:
-        oineus::KerImCokReducedParallel<Int, Real> KICR;
-
-    public:
-//KerImCokReducedParallel(Filtration<Int_, Real_, Int_> K_, Filtration<Int_, Real_, Int_> L_, std::vector<int> L_to_K_, Params& params_) 
-        bool kernel{false};
-        bool image{false};
-        bool cokernel{false};
-
-        PyKerImCokRedParallel(oineus::Filtration<Int_, Real_, Int_> K_, oineus::Filtration<Int_, Real_, Int_> L_, std::vector<int> L_to_K_, oineus::Params& params_) :
-            {
-            KerImCokReducedParallel KICR(Filtration<Int_, Real_, Int_> K_, Filtration<Int_, Real_, Int_> L_, std::vector<int> L_to_K_, Params& params_);
-        }
-        
-        decltype(auto) kernel_diagrams(){
-            if (!kernel) {
-                KICR.GenerateKerDiagrams();
-                kernel = true;
-            }
-            return PyOineusDiagrams<Real>(KICR.get_kernel_diagrams());
-        }
-
-        decltype(auto) image_diagrams(){
-            if (!image) {
-                KICR.GenerateImDiagrams();
-                image = true;
-            }
-            return PyOineusDiagrams(KICR.get_image_diagrams());
-        }
-
-        decltype(auto) cokernel_diagrams(){
-            if (!cokernel) {
-                KICR.GenerateCokDiagrams();
-                cokernel = true;
-            }
-            return PyOineusDiagrams(KICR.get_cokernel_diagrams());
-        }    
-};
-
-template<typename Int, typename Real>
 class PyKerImCokRed {
-    private:
+    private:    
         oineus::KerImCokReduced<Int, Real> KICR;
 
     public:
@@ -620,8 +579,6 @@ void init_oineus(py::module& m, std::string suffix)
     
     std::string ker_im_cok_reduced_class_name = "KerImCokReduced" + suffix;
     std::string py_ker_im_cok_reduced_class_name = "PyKerImCokRed" + suffix;
-    std::string ker_im_cok_reduced_class_name = "KerImCokReducedParallel" + suffix;
-    std::string py_ker_im_cok_reduced_class_name = "PyKerImCokRedParallel" + suffix;
 
     py::class_<DgmPoint>(m, dgm_point_name.c_str())
             .def(py::init<Real, Real>())
@@ -689,7 +646,7 @@ void init_oineus(py::module& m, std::string suffix)
             .def("boundary_matrix", &VRFiltration::boundary_matrix_full);
 
     py::class_<KerImCokRed>(m, ker_im_cok_reduced_class_name.c_str())
-            .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>>());
+            .def(py::init<oineus::Filtration<Int, Real, Int>, oineus::Filtration<Int, Real, Int>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>, oineus::Params>());
 
     py::class_<PyKerImCokRed>(m, py_ker_im_cok_reduced_class_name.c_str())
             .def(py::init<KerImCokRed>())
@@ -697,11 +654,6 @@ void init_oineus(py::module& m, std::string suffix)
             .def("image_diagrams", &PyKerImCokRed::image_diagrams)
             .def("cokernel_diagrams", &PyKerImCokRed::cokernel_diagrams);
     
-    py::class_<PyKerImCokRedParallel>(m, py_ker_im_cok_reduced_parallel_class_name.c_str())
-            .def(py::init<KerImCokRedParallel>())
-            .def("kernel_diagrams", &PyKerImCokRedParallel::kernel_diagrams)
-            .def("image_diagrams", &PyKerImCokRedParallel::image_diagrams)
-            .def("cokernel_diagrams", &PyKerImCokRedParallel::cokernel_diagrams);
 
     std::string func_name;
 
@@ -810,9 +762,6 @@ void init_oineus(py::module& m, std::string suffix)
     
     func_name = "compute_kernel_image_cokernel_reduction" + suffix;
     m.def(func_name.c_str(), &compute_kernel_image_cokernel_reduction<Int, Real>);
-
-    func_name = "compute_kernel_image_cokernel_reduction_parallel" + suffix;
-    m.def(func_name.c_str(), &compute_kernel_image_cokernel_reduction_parallel<Int, Real>);
 }
 
 

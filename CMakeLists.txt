@@ -4,7 +4,7 @@ project(oineus LANGUAGES CXX)
 
 option(oin_use_spdlog "Use spdlog" OFF)
 option(oin_use_jemalloc "Use jemalloc" OFF)
-option(oin_build_tests "Build tests" ON)
+option(oin_build_tests "Build tests" OFF)
 
 #set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 

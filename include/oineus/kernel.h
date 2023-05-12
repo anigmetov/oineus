@@ -41,11 +41,12 @@ namespace oineus {
 			int number_cells_K; //number of cells in K
 			int number_cells_L; //number of cells in L
 			std::vector<int> new_order_to_old; //new_order_to_old[i] is the (unsorted) id in K of the ith cell in the filtration.
-			std::vector<int> new_cols; //the id of the columns we retaub
+			std::vector<int> new_cols; //the id of the columns we retain
+			Params params;
 
 		public:
 			//Constructor which takes as input the complex K, subcomplex L, and the decompositionfs for F, G, Im, Ker, Cok, as well as the map from sorted L to sorted K and sorted K to sorted L, as well as the change in ordering to have L before K.
-			KerImCokReduced(Filtration<Int_, Real_, Int_> K_, Filtration<Int_, Real_, Int_> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, VRUDecomp Cok_, std::vector<int> sorted_L_to_sorted_K_, std::vector<int> sorted_K_to_sorted_L_, std::vector<int> new_order_to_old_,std::vector<int> new_cols_) :
+			KerImCokReduced(Filtration<Int_, Real_, Int_> K_, Filtration<Int_, Real_, Int_> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, VRUDecomp Cok_, std::vector<int> sorted_L_to_sorted_K_, std::vector<int> sorted_K_to_sorted_L_, std::vector<int> new_order_to_old_,std::vector<int> new_cols_, Params params_) :
 				K (K_),
 				L (L_),
 				F (F_),
@@ -56,7 +57,8 @@ namespace oineus {
 				sorted_L_to_sorted_K (sorted_L_to_sorted_K_),
 				sorted_K_to_sorted_L (sorted_K_to_sorted_L_),
 				new_order_to_old (new_order_to_old_),
-				new_cols (new_cols_) {
+				new_cols (new_cols_),
+				params (params_) {
 					number_cells_K = K.boundary_matrix_full().size(); //set the number of cells in K
 					number_cells_L = L.boundary_matrix_full().size(); //set the number of cells in L
 					max_dim = K.max_dim(); //set the maximal dimension we can have cycles in. 
@@ -137,6 +139,7 @@ namespace oineus {
                                     if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
                                         KerDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i));//[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //add point to the diagram
                                         open_points_ker[birth_id] = false; //close the point which gave birth to the cycle that was just killed, so we don't add an point at inifity to the diagram
+										if (params.verbose) std::cerr << "Added point (" << K.value_by_sorted_id(birth_id) <<", " << K.value_by_sorted_id(i) <<") to the dimension " << dim << " kernel persistence diagram with birth id " << birth_id << " and death by " << i << std::endl;
                                     }
                                 }
                             }
@@ -319,7 +322,7 @@ namespace oineus {
 							int birth_id = new_order_to_old[Cok.get_R()[i].back()];
 							if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
 								int dim = K.dim_by_sorted_id(birth_id);
-								CokDiagrams.add_point(dim, K.value_by_sorted_id(birth_id) ,K.value_by_sorted_id(i));//add point to the diagram
+								CokDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i));//add point to the diagram
 							}
 							open_points_cok[birth_id] = false;
 						}
@@ -538,7 +541,7 @@ namespace oineus {
 				to_keep[i] = cycle;
 			}
 		}
-
+		
 		MatrixData d_ker;
 
 		std::vector<int> new_cols(number_cells_K, -1);
@@ -583,7 +586,7 @@ namespace oineus {
 		VRUDecomp Cok(d_cok);
 		Cok.reduce_parallel_rvu(params);
 
-		KerImCokReduced<Int, Real> KICR(K, L, F, G, Im, Ker, Cok, sorted_L_to_sorted_K, sorted_K_to_sorted_L, new_order, new_cols);
+		KerImCokReduced<Int, Real> KICR(K, L, F, G, Im, Ker, Cok, sorted_L_to_sorted_K, sorted_K_to_sorted_L, new_order, new_cols, params);
 
 		if (params.kernel) KICR.GenerateKerDiagrams();
 		if (params.image) KICR.GenerateImDiagrams();
