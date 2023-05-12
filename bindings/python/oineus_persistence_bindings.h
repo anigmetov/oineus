@@ -562,6 +562,7 @@ void init_oineus(py::module& m, std::string suffix)
     //using CokRed =  oineus::CokReduced<Int, Real>;
 
     std::string filtration_class_name = "Filtration" + suffix;
+    std::string simplex_class_name = "Simplex" + suffix;
 
     std::string dgm_point_name = "DiagramPoint" + suffix;
     std::string dgm_class_name = "Diagrams" + suffix;
@@ -586,7 +587,7 @@ void init_oineus(py::module& m, std::string suffix)
             .def("in_dimension", &Diagram::get_diagram_in_dimension)
             .def("__getitem__", &Diagram::get_diagram_in_dimension);
 
-    py::class_<Simplex>(m, "Simplex")
+    py::class_<Simplex>(m, simplex_class_name.c_str())
             .def(py::init<typename Simplex::IdxVector, Real>())
             .def_readonly("id", &Simplex::id_)
             .def_readonly("sorted_id", &Simplex::sorted_id_)
@@ -730,18 +731,6 @@ inline void init_oineus_top_optimizer(py::module& m)
             .def("singletons", &TopologyOptimizer::singletons)
 //            .def("combined_loss", &TopologyOptimizer::combine_loss)
             .def("update", &TopologyOptimizer::update)
-//            .def("get_flags", &TopologyOptimizer::get_flags)
-//            .def_readonly("id", &VRSimplex::id_)
-//            .def_readonly("sorted_id", &VRSimplex::sorted_id_)
-//            .def_readonly("vertices", &VRSimplex::vertices_)
-//            .def_readonly("value", &VRSimplex::value_)
-//            .def_readonly("critical_edge", &VRSimplex::critical_value_location_)
-//            .def("boundary", &VRSimplex::boundary)
-//            .def("__repr__", [](const VRSimplex& sigma) {
-//              std::stringstream ss;
-//              ss << sigma;
-//              return ss.str();
-//            });
             ;
 
 }

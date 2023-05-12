@@ -57,13 +57,12 @@ public:
         }
     };
 
-    // initialize lazily, homology only, no reduction
-    TopologyOptimizer(const BoundaryMatrix& boundary_matrix, const Values& values, bool negate = false)
-            :
-            decmp_hom_(boundary_matrix),
-            negate_(negate)
-    {
-    }
+//    TopologyOptimizer(const BoundaryMatrix& boundary_matrix, const Values& values, bool negate = false)
+//            :
+//            decmp_hom_(boundary_matrix),
+//            negate_(negate)
+//    {
+//    }
 
     template<class Filtration>
     TopologyOptimizer(const Filtration& fil)
@@ -112,15 +111,15 @@ public:
 
         for(const auto& [idx_point, target_point]: target) {
 
-            if (original_values_[idx_point.birth] < target_point.birth) {
+            if (get_simplex_value(idx_point.birth) < target_point.birth) {
                 increase_birth = true;
-            } else if (original_values_[idx_point.birth] > target_point.birth) {
+            } else if (get_simplex_value(idx_point.birth) > target_point.birth) {
                 decrease_birth = true;
             }
 
-            if (original_values_[idx_point.death] < target_point.death) {
+            if (get_simplex_value(idx_point.death) < target_point.death) {
                 increase_death = true;
-            } else if (original_values_[idx_point.death] > target_point.death) {
+            } else if (get_simplex_value(idx_point.death) > target_point.death) {
                 decrease_death = true;
             }
         }
@@ -171,7 +170,13 @@ public:
         return result;
     }
 
-    void update(const Values& new_values);
+    void update(const Values& new_values, int n_threads=1)
+    {
+        fil_.update(new_values);
+
+        decmp_hom_ = Decomposition(fil_, false);
+        decmp_coh_ = Decomposition(fil_, true);
+    }
 
     decltype(auto) convert_critical_sets(const CriticalSets& critical_sets) const
     {
@@ -189,12 +194,6 @@ public:
     {
         return fil_.value_by_sorted_id(simplex_idx);
     }
-
-//    DgmTarget match() const
-//    {
-//        DgmTarget result;
-//        return result;
-//    }
 
     Target dgm_target_to_target(const DgmTarget& dgm_target) const
     {
@@ -320,6 +319,7 @@ public:
 
     IndicesValues combine_loss(const CriticalSets& critical_sets, const Target& target, ConflictStrategy strategy)
     {
+        CALI_CXX_MARK_FUNCTION;
         auto simplex_to_values = convert_critical_sets(critical_sets);
         IndicesValues indvals;
 
@@ -374,14 +374,8 @@ public:
     }
 
 private:
+    // data
     bool negate_;
-    bool cmp(Real a, Real b)
-    {
-        return negate_ ? a > b : a < b;
-    }
-
-    Values original_values_;
-    Dgm original_diagram_;
 
     Fil fil_;
 
@@ -391,9 +385,20 @@ private:
     Params params_hom_;
     Params params_coh_;
 
+    // methods
+    bool cmp(Real a, Real b)
+    {
+        return negate_ ? a > b : a < b;
+    }
+
     Indices change_birth_x(dim_type d, size_t positive_simplex_idx, Real target_birth)
     {
-        Real current_birth = original_values_[positive_simplex_idx];
+        CALI_CXX_MARK_FUNCTION;
+        Real current_birth = get_simplex_value(positive_simplex_idx);
+
+        if (!decmp_coh_.is_reduced)
+            decmp_coh_.reduce(params_coh_);
+
         if (cmp(target_birth, current_birth))
             return decrease_birth_x<Int, Real>(d, positive_simplex_idx, fil_, decmp_coh_, target_birth);
         else if (fil_.cmp(current_birth, target_birth))
@@ -404,7 +409,8 @@ private:
 
     Indices change_death_x(dim_type d, size_t negative_simplex_idx, Real target_death)
     {
-        Real current_death = original_values_[negative_simplex_idx];
+        CALI_CXX_MARK_FUNCTION;
+        Real current_death = get_simplex_value(negative_simplex_idx);
         if (cmp(target_death, current_death))
             return decrease_death_x(d, negative_simplex_idx, fil_, decmp_hom_, target_death);
         else if (fil_.cmp(current_death, target_death))

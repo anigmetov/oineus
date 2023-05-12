@@ -16,7 +16,7 @@ get_grid(Real* pdata, typename oineus::Grid<Int, Real, D>::GridPoint dims, bool 
 template<class Int, class Real, size_t D>
 decltype(auto) compute_diagrams_and_v_ls_freudenthal(const typename oineus::Grid<Int, Real, D>& grid, bool negate, bool wrap, dim_type top_d, int n_threads)
 {
-    auto fil = grid.freudenthal_filtration(top_d + 1, negate, n_threads);
+    auto fil = grid.freudenthal_filtration(top_d + 1, negate, n_threads).first;
     auto decmp = oineus::VRUDecomposition<Int>(fil, false);
 
     oineus::Params params;

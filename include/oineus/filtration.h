@@ -193,7 +193,19 @@ namespace oineus {
         [[nodiscard]] size_t index_in_matrix(size_t simplex_idx, bool dualize) const { return dualize ? size() - simplex_idx - 1 : simplex_idx; }
         [[nodiscard]] size_t index_in_filtration(size_t matrix_idx, bool dualize) const { return dualize ? size() - matrix_idx - 1 : matrix_idx; }
 
+        void update(const std::vector<Real>& new_values, int n_threads=1)
+        {
+            if (new_values.size() != simplices_.size())
+                throw std::runtime_error("new_values.size() != simplices_.size()");
+
+            for(size_t i = 0; i < new_values.size(); ++i)
+                simplices_[i].value_ = new_values[i];
+
+            sort(n_threads);
+        }
+
     private:
+        // data
         bool negate_;
         FiltrationSimplexVector simplices_;
 
@@ -205,6 +217,7 @@ namespace oineus {
         std::vector<size_t> dim_first_;
         std::vector<size_t> dim_last_;
 
+        // private methods
         void set_ids()
         {
             // all vertices have ids already, 0..#vertices-1
@@ -239,9 +252,7 @@ namespace oineus {
         // sort simplices and assign sorted_ids
         void sort([[maybe_unused]] int n_threads = 1)
         {
-            Timer timer;
-
-            timer.reset();
+            CALI_CXX_MARK_FUNCTION;
 
             id_to_sorted_id_ = std::vector<Int>(size(), Int(-1));
             vertices_to_sorted_id_.clear();
@@ -255,8 +266,12 @@ namespace oineus {
               return std::tie(d_sigma, v_sigma, sigma.id_) < std::tie(d_tau, v_tau, tau.id_);
             };
 
-            tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, n_threads);
-            tbb::parallel_sort(simplices_, cmp);
+            if (n_threads > 1) {
+                tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, n_threads);
+                tbb::parallel_sort(simplices_, cmp);
+            } else {
+                std::sort(simplices_.begin(), simplices_.end(), cmp);
+            }
 
             for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
                 auto& sigma = simplices_[sorted_id];

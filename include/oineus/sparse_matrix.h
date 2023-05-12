@@ -47,9 +47,10 @@ struct SimpleSparseMatrixTraits {
     using Entry = std::pair<Int, FieldElement>;
 
     using Column = std::vector<Entry>;
+    using Matrix = std::vector<Column>;
     using PColumn = Column*;
     using APColumn = std::atomic<PColumn>;
-    using Matrix = std::vector<APColumn>;
+    using AMatrix = std::vector<APColumn>;
 
     static bool is_zero(const Column* c) { return c->empty(); }
     static bool is_zero(const Column& c) { return c.empty(); }
@@ -63,6 +64,16 @@ struct SimpleSparseMatrixTraits {
     static size_t v_column_size(const Column& col) { return 0; }
 
     static void add_column(const Column* col_a, const Column* col_b, Column* sum);
+
+    // get identity matrix
+    static Matrix eye(size_t n)
+    {
+        Matrix cols{n};
+
+        for(size_t i = 0 ; i < n ; ++i)
+            cols[i].emplace_back(i, 1);
+        return cols;
+    }
 };
 
 template<typename Int_>
@@ -71,9 +82,10 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
     using Entry = Int;
 
     using Column = std::vector<Entry>;
+    using Matrix = std::vector<Column>;
     using PColumn = Column*;
     using APColumn = std::atomic<PColumn>;
-    using Matrix = std::vector<APColumn>;
+    using AMatrix = std::vector<APColumn>;
 
     static bool is_zero(const Column* c) { return c->empty(); }
     static bool is_zero(const Column& c) { return c.empty(); }
@@ -120,6 +132,17 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
             }
         }
     }
+
+     // get identity matrix
+    static Matrix eye(size_t n)
+    {
+        Matrix cols{n};
+
+        for(Int i = 0 ; i < n ; ++i)
+            cols[i].emplace_back(i);
+        return cols;
+    }
+
 };
 
 template<typename Int_, int P>
@@ -270,7 +293,7 @@ struct SimpleRVMatrixTraits<Int_, 2> {
     using Column = RVColumn<Int, 2>;
     using PColumn = Column*;
     using APColumn = std::atomic<PColumn>;
-    using Matrix = std::vector<APColumn>;
+    using AMatrix = std::vector<APColumn>;
 
     static bool is_zero(const Column* col) { return col->is_zero(); }
 
@@ -290,6 +313,18 @@ struct SimpleRVMatrixTraits<Int_, 2> {
         SimpleSparseMatrixTraits<Int, 2>::add_column(a->r_column, b->r_column, sum->r_column);
         SimpleSparseMatrixTraits<Int, 2>::add_column(a->v_column, b->v_column, sum->v_column);
     }
+
+//    // get identity matrix
+//    static Matrix eye(size_t n)
+//    {
+//        Matrix cols{n};
+//
+//        for(Int i = 0 ; i < n ; ++i)
+//            cols[i].emplace_back(i);
+//        return cols;
+//    }
+
+
 };
 
 

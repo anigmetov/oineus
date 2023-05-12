@@ -60,12 +60,7 @@ void test_ls_2()
 
     IntGrid grid {dims, wrap, data};
 
-    auto ss = grid.freudenthal_simplices(2, negate);
-
-    for(const auto& s: ss)
-        std::cout << s << "\n";
-
-    auto fil = grid.freudenthal_filtration(2, negate);
+    auto fil = grid.freudenthal_filtration(2, negate).first;
     std::cout << fil << "\n";
 }
 

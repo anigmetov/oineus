@@ -32,7 +32,7 @@ namespace oineus {
     using AtomicIdxVector = std::vector<std::atomic<Idx>>;
 
     template<class MatrixTraits, class Int, class MemoryReclaimC>
-    void parallel_reduction(typename MatrixTraits::Matrix& rv, AtomicIdxVector& pivots, std::atomic<Int>& next_free_chunk,
+    void parallel_reduction(typename MatrixTraits::AMatrix& rv, AtomicIdxVector& pivots, std::atomic<Int>& next_free_chunk,
             const Params params, int thread_idx, MemoryReclaimC* mm, ThreadStats& stats, bool go_down)
     {
         using Column = typename MatrixTraits::Column;
@@ -125,8 +125,8 @@ namespace oineus {
                     } else if (pivot_idx < current_column_idx) {
                         // for now, record statistics for r matrix only
 #ifdef OINEUS_GATHER_ADD_STATS
-                        stats.r_column_summand_sizes[{ MatrixTraits::r_column_size(*pivot_r_v_column), MatrixTraits::r_column_size(*current_r_v_column)}]++;
-                        stats.v_column_summand_sizes[{ MatrixTraits::v_column_size(*pivot_r_v_column), MatrixTraits::v_column_size(*current_r_v_column)}]++;
+                        stats.r_column_summand_sizes[{MatrixTraits::r_column_size(*pivot_r_v_column), MatrixTraits::r_column_size(*current_r_v_column)}]++;
+                        stats.v_column_summand_sizes[{MatrixTraits::v_column_size(*pivot_r_v_column), MatrixTraits::v_column_size(*current_r_v_column)}]++;
 #endif
                         // pivot to the left: kill lowest one in current column
                         MatrixTraits::add_column(current_r_v_column, pivot_r_v_column, reduced_r_v_column.get());
@@ -190,12 +190,12 @@ namespace oineus {
         MatrixData v_data;
         MatrixData u_data_t;
         bool is_reduced {false};
-        const bool dualize_ {false};
+        bool dualize_ {false};
 
         std::vector<size_t> dim_first;
         std::vector<size_t> dim_last;
 
-        const size_t n_rows {0};
+        size_t n_rows {0};
 
         // methods
         VRUDecomposition() = default;
@@ -442,31 +442,23 @@ namespace oineus {
     {
         CALI_CXX_MARK_FUNCTION;
 
+        Timer timer_total;
+
         using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
 
-        Timer timer, timer_total;
+        ThreadStats stats {0};
         int n_cleared = 0;
 
         Int n_cols = d_data.size();
 
-        if (params.compute_v) {
-            v_data = MatrixData(d_data.size());
-            for(size_t i = 0; i < d_data.size(); ++i) {
-                v_data[i].push_back(static_cast<Int>(i));
-            }
-        }
+        if (params.compute_v)
+            v_data = MatrixTraits::eye(d_data.size());
 
-        if (params.compute_u) {
-            u_data_t = MatrixData(d_data.size());
-            for(size_t i = 0; i < d_data.size(); ++i) {
-                u_data_t[i].push_back(static_cast<Int>(i));
-            }
-        }
+        if (params.compute_u)
+            u_data_t = MatrixTraits::eye(d_data.size());
 
         std::vector<Int> pivots(d_data.size(), -1);
         assert(pivots.size() == d_data.size() and pivots.size() > 0);
-
-        auto init_time = timer.elapsed_reset();
 
         // homology: go from top dimension to 0, to make clearing possible
         // cohomology:
@@ -491,12 +483,17 @@ namespace oineus {
                         pivot = i;
                         break;
                     } else {
+
 #ifdef OINEUS_GATHER_ADD_STATS
+                        stats.r_column_summand_sizes[{MatrixTraits::r_column_size(r_data[pivot]), MatrixTraits::r_column_size(r_data[i])}]++;
 #endif
                         MatrixTraits::add_column(r_data[i], r_data[pivot], new_col);
                         r_data[i] = std::move(new_col);
 
                         if (params.compute_v) {
+ #ifdef OINEUS_GATHER_ADD_STATS
+                            stats.v_column_summand_sizes[{MatrixTraits::v_column_size(v_data[pivot]), MatrixTraits::v_column_size(v_data[i])}]++;
+#endif
                             MatrixTraits::add_column(v_data[i], v_data[pivot], new_col);
                             v_data[i] = std::move(new_col);
                         }
@@ -508,12 +505,10 @@ namespace oineus {
             } // loop over columns in fixed dimension
         } // loop over dimensions
 
-        auto reduction_time = timer.elapsed_reset();
         params.elapsed = timer_total.elapsed_reset();
 
         if (params.print_time)
-            std::cerr << "reduce_serial, matrix_size = " << r_data.size() << ", clearing_opt = " << params.clearing_opt << ", n_cleared = " << n_cleared << ", total elapsed: " << params.elapsed << ", reduction_time = " << reduction_time
-                      << std::endl;
+            std::cerr << "reduce_serial, matrix_size = " << r_data.size() << ", clearing_opt = " << params.clearing_opt << ", n_cleared = " << n_cleared << ", total elapsed: " << params.elapsed << std::endl;
 
         is_reduced = true;
     }
@@ -606,38 +601,7 @@ namespace oineus {
         }
 
 #ifdef OINEUS_GATHER_ADD_STATS
-        if (params.print_time) {
-            ThreadStats::AddStats total_r_stats, total_v_stats;
-            for(const auto& s: stats)
-            {
-                for(auto [k, v] : s.r_column_summand_sizes)
-                    total_r_stats[k] += v;
-                for(auto [k, v] : s.v_column_summand_sizes)
-                    total_v_stats[k] += v;
-            }
-
-            std::ofstream f_r("add_stats_r.bin", std::ios::binary);
-
-            std::cerr << "writing to add_stats_r.bin, stats size = " << total_r_stats.size() << std::endl;
-
-            for(auto [k, v]: total_r_stats) {
-                f_r.write(reinterpret_cast<const char*>(&(k.first)), sizeof(k.first));
-                f_r.write(reinterpret_cast<const char*>(&(k.second)), sizeof(k.first));
-                f_r.write(reinterpret_cast<const char*>(&v), sizeof(v));
-            }
-
-            f_r.close();
-
-            std::ofstream f_v("add_stats_v.bin", std::ios::binary);
-
-            for(auto [k, v]: total_v_stats) {
-                f_v.write(reinterpret_cast<const char*>(&(k.first)), sizeof(k.first));
-                f_v.write(reinterpret_cast<const char*>(&(k.second)), sizeof(k.first));
-                f_v.write(reinterpret_cast<const char*>(&v), sizeof(v));
-            }
-
-            f_v.close();
-        }
+        write_add_stats_file(stats);
 #endif
 
         // write reduced matrix back, collect V matrix, mark as reduced
@@ -743,38 +707,7 @@ namespace oineus {
         }
 
 #ifdef OINEUS_GATHER_ADD_STATS
-        if (params.print_time) {
-            ThreadStats::AddStats total_r_stats, total_v_stats;
-            for(const auto& s: stats)
-            {
-                for(auto [k, v] : s.r_column_summand_sizes)
-                    total_r_stats[k] += v;
-                for(auto [k, v] : s.v_column_summand_sizes)
-                    total_v_stats[k] += v;
-            }
-
-            std::ofstream f_r("add_stats_r.bin", std::ios::binary);
-
-            std::cerr << "writing to add_stats_r.bin, stats size = " << total_r_stats.size() << std::endl;
-
-            for(auto [k, v]: total_r_stats) {
-                f_r.write(reinterpret_cast<const char*>(&(k.first)), sizeof(k.first));
-                f_r.write(reinterpret_cast<const char*>(&(k.second)), sizeof(k.first));
-                f_r.write(reinterpret_cast<const char*>(&v), sizeof(v));
-            }
-
-            f_r.close();
-
-            std::ofstream f_v("add_stats_v.bin", std::ios::binary);
-
-            for(auto [k, v]: total_v_stats) {
-                f_v.write(reinterpret_cast<const char*>(&(k.first)), sizeof(k.first));
-                f_v.write(reinterpret_cast<const char*>(&(k.second)), sizeof(k.first));
-                f_v.write(reinterpret_cast<const char*>(&v), sizeof(v));
-            }
-
-            f_v.close();
-        }
+        write_add_stats_file(stats);
 #endif
 
         // write reduced matrix back, collect V matrix, mark as reduced
@@ -917,4 +850,5 @@ namespace oineus {
 
         return out;
     }
+
 }
