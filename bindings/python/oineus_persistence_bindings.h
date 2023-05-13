@@ -294,6 +294,7 @@ public:
 
 };
 
+
 template<typename Int, typename Real>
 class PyKerImCokRed {
 	private:
@@ -833,6 +834,9 @@ void init_oineus(py::module& m, std::string suffix)
 	func_name = "compute_kernel_image_cokernel_reduction" + suffix;
 	m.def(func_name.c_str(), &compute_kernel_image_cokernel_reduction<Int, Real>);
 
+    // reduce to create an ImKerReduced object
+    func_name = "reduce_ker_im_cok" + suffix;
+    m.def(func_name.c_str(), &oineus::reduce_ker_im_cok<Int, Real>);
 
     func_name = "get_ls_filtration" + suffix;
     m.def(func_name.c_str(), &get_ls_filtration<Int, Real>);
