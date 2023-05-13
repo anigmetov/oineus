@@ -488,9 +488,23 @@ namespace oineus {
 				if (i_dim == j_dim) {
 					i_val = L.value_by_sorted_id(sorted_K_to_sorted_L[i]);
 					j_val = L.value_by_sorted_id(sorted_K_to_sorted_L[j]);
-					return i_val < j_val;
+					if (i_val == j_val) {
+						if ( i < j) {
+							return true;
+						} else {
+							return false;
+						}
+					} else if  (i_val < j_val) {
+						return true;
+					} else {
+						return false;
+					}
 				} else {
-					return i_dim < j_dim;
+					if (i_dim < j_dim) {
+						return true;
+					} else {
+						return false;
+					}
 				}
 			} else if (sorted_K_to_sorted_L[i] != -1 && sorted_K_to_sorted_L[j] == -1) {//i is in L and j is not
 				return true;
@@ -502,14 +516,37 @@ namespace oineus {
 				i_dim = K.dim_by_sorted_id(i);
 				j_dim = K.dim_by_sorted_id(j);
 				if (i_dim == j_dim) {
-					return i_val < j_val;
-				} else {
 					i_val = K.value_by_sorted_id(i);
 					j_val = K.value_by_sorted_id(j);
-					return i_dim < j_dim;
+					if (i_val == j_val) {
+						if ( i < j) {
+							return true;
+						} else {
+							return false;
+						}
+					} else if  (i_val < j_val) {
+						return true;
+					} else {
+						return false;
+					}
+				} else {
+					if (i_dim < j_dim) {
+						return true;
+					} else {
+						return false;
+					}
 				}
 			}
 		});
+
+		if (params.verbose) {
+			std::cerr << "New order is: [";
+			for (int i = 0; i < new_order.size()-1; i++){
+				std::cerr << new_order[i] << ", ";
+			}
+			std::cerr << new_order[new_order.size()-1] << "]" << std::endl;
+
+		}
 
 		std::vector<int> old_to_new_order(number_cells_K);//map from old order to new order so that we know which cells correspond to which rows. This could be done by just shuffling the row indices, but as we create a new reduction isntance, we need to create a new matrix anyway.
 
