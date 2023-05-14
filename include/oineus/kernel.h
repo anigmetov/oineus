@@ -592,13 +592,6 @@ namespace oineus {
 				};
 			};
 		});
-		if (params.verbose) {
-			std::cerr << "to_keep is: [";
-			for (int i = 0; i < number_cells_K-1; i++) {
-				std::cerr << to_keep[i] << ", ";
-			}
-			std::cerr << to_keep[number_cells_K-1] << "]" << std::endl; 
-		}
 		
 		MatrixData d_ker;
 		std::vector<int> new_cols(number_cells_K, -1);
