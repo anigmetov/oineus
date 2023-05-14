@@ -144,8 +144,6 @@ namespace oineus {
                                     if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
                                         KerDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i));//[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //add point to the diagram
                                         open_points_ker[birth_id] = false; //close the point which gave birth to the cycle that was just killed, so we don't add an point at inifity to the diagram
-										if (params.verbose) std::cerr << "Added point (" << K.value_by_sorted_id(birth_id) <<", " << K.value_by_sorted_id(i) <<") to the dimension " << dim << " kernel persistence diagram with birth id " << birth_id << " and death by " << i << std::endl;
-                                    }
                                 }
                             }
                         }
@@ -538,15 +536,6 @@ namespace oineus {
 				}
 			}
 		});
-
-		if (params.verbose) {
-			std::cerr << "New order is: [";
-			for (int i = 0; i < new_order.size()-1; i++){
-				std::cerr << new_order[i] << ", ";
-			}
-			std::cerr << new_order[new_order.size()-1] << "]" << std::endl;
-
-		}
 
 		std::vector<int> old_to_new_order(number_cells_K);//map from old order to new order so that we know which cells correspond to which rows. This could be done by just shuffling the row indices, but as we create a new reduction isntance, we need to create a new matrix anyway.
 
