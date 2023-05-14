@@ -144,6 +144,7 @@ namespace oineus {
                                     if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
                                         KerDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i));//[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //add point to the diagram
                                         open_points_ker[birth_id] = false; //close the point which gave birth to the cycle that was just killed, so we don't add an point at inifity to the diagram
+									}
                                 }
                             }
                         }
@@ -581,6 +582,7 @@ namespace oineus {
 					}
 					for (int j = 0; j < quasi_sum.size(); j++) {
 						if (quasi_sum[j]%2 != 0) {
+							cycle = false;
 							break;
 						}
 					}
@@ -603,6 +605,7 @@ namespace oineus {
 				counter++;
 			}
 		}
+		if (params.verbose) std::cerr << "We kept " << counter << " columns." << std::endl;
 		if (params.verbose) std::cerr << "Reducing Ker." << std::endl;
 		VRUDecomp Ker(d_ker, K.size());
 		Ker.reduce_parallel_rvu(params);
