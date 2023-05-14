@@ -720,19 +720,24 @@ inline void init_oineus_top_optimizer(py::module& m)
     using Int = int;
 
     using TopologyOptimizer = oineus::TopologyOptimizer<Int, Real>;
+    using IndicesValues = typename TopologyOptimizer::IndicesValues;
+    using CrititcalSet = typename TopologyOptimizer::CriticalSet;
+    using CriticalSets = typename TopologyOptimizer::CriticalSets;
+    using ConflictStrategy = oineus::ConflictStrategy;
 
     // optimization
     py::class_<TopologyOptimizer>(m, "TopologyOptimizer")
-            .def(py::init<const oineus::Filtration<Int, Real>& >())
-//            .def("compute_diagram", &TopologyOptimizer::compute_diagram)
-//            .def("simplify", &TopologyOptimizer ::simplify)
+//            .def(py::init<const oineus::Filtration<Int, Real>& >())
+            .def("compute_diagram", &TopologyOptimizer::compute_diagram)
+            .def("simplify", &TopologyOptimizer ::simplify)
             .def("match", &TopologyOptimizer::match)
-//            .def("singleton", &TopologyOptimizer::singleton)
+            .def("singleton", &TopologyOptimizer::singleton)
             .def("singletons", &TopologyOptimizer::singletons)
-//            .def("combined_loss", &TopologyOptimizer::combine_loss)
+            .def("combine_loss", static_cast<IndicesValues (TopologyOptimizer::*)(const CriticalSets&, ConflictStrategy)>(&TopologyOptimizer::combine_loss))
             .def("update", &TopologyOptimizer::update)
             ;
 
+//    IndicesValues combine_loss(const CriticalSets& critical_sets, ConflictStrategy strategy)
 }
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

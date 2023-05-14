@@ -55,6 +55,12 @@ public:
             indices.push_back(i);
             values.push_back(v);
         }
+
+        void emplace_back(size_t i, Real v)
+        {
+            indices.emplace_back(i);
+            values.emplace_back(v);
+        }
     };
 
 //    TopologyOptimizer(const BoundaryMatrix& boundary_matrix, const Values& values, bool negate = false)
@@ -358,9 +364,11 @@ public:
                 indvals.emplace_back(simplex_idx, target_value);
             }
         }
+
+        return indvals;
     }
 
-    void combine_loss(const Indices& indices, const Values& values, ConflictStrategy strategy)
+    IndicesValues combine_loss(const Indices& indices, const Values& values, ConflictStrategy strategy)
     {
         return combine_loss(singletons(indices, values), strategy);
     }
