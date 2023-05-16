@@ -111,7 +111,7 @@ int main(int argc, char** argv)
     auto grid_func = read_function<Int, Real, 3>(fname_in, wrap);
     auto& grid = grid_func.first;
 
-    auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
+    auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads).first;
     VRUDecomposition<Int> rv { fil, false };
 
     info("Matrix read");
