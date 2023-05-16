@@ -293,8 +293,9 @@ public:
 
 template<typename Int, typename Real>
 class PyKerImCokRed {
-private:
-    oineus::KerImCokReduced<Int, Real> KICR;
+
+	private:
+		oineus::KerImCokReduced<Int, Real> KICR;
 
 public:
     bool kernel {false};
@@ -334,6 +335,66 @@ public:
         return PyOineusDiagrams(KICR.get_cokernel_diagrams());
     }
 
+
+	decltype(auto) D_F() {
+		return py::cast(KICR.get_D_f());
+	}
+
+	decltype(auto) D_G() {
+		return py::cast(KICR.get_D_g());
+	}
+	
+	decltype(auto) D_Ker() {
+		return py::cast(KICR.get_D_ker());
+	}
+		
+	decltype(auto) D_Im() {
+		return py::cast(KICR.get_D_im());
+	}
+		
+	decltype(auto) D_Cok() {
+		return py::cast(KICR.get_D_cok());
+	}
+	
+	decltype(auto) R_F() {
+		return py::cast(KICR.get_R_f());
+	}
+
+	decltype(auto) R_G() {
+		return py::cast(KICR.get_R_g());
+	}
+		
+	decltype(auto) R_Ker() {
+		return py::cast(KICR.get_R_ker());
+	}
+		
+	decltype(auto) R_Im() {
+		return py::cast(KICR.get_R_im());
+	}
+		
+	decltype(auto) R_Cok() {
+		return py::cast(KICR.get_V_cok());
+	}
+
+	decltype(auto) V_F() {
+		return py::cast(KICR.get_V_f());
+	}
+
+	decltype(auto) V_G() {
+		return py::cast(KICR.get_V_g());
+	}
+		
+	decltype(auto) V_Ker() {
+		return py::cast(KICR.get_V_ker());
+	}
+		
+	decltype(auto) V_Im() {
+		return py::cast(KICR.get_V_im());
+	}
+		
+	decltype(auto) V_Cok() {
+		return py::cast(KICR.get_V_cok());
+	}		
 };
 
 template<typename Int, typename Real>
@@ -612,13 +673,28 @@ void init_oineus(py::module& m, std::string suffix)
 
 
     py::class_<KerImCokRed>(m, ker_im_cok_reduced_class_name.c_str())
-            .def(py::init<Filtration, Filtration, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>>());
+			      .def(py::init<oineus::Filtration<oineus::Simplex<Int, Real>>, oineus::Filtration<oineus::Simplex<Int, Real>>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>, oineus::Params>());
 
-    py::class_<PyKerImCokRed>(m, py_ker_im_cok_reduced_class_name.c_str())
+	  py::class_<PyKerImCokRed>(m, py_ker_im_cok_reduced_class_name.c_str())
             .def(py::init<KerImCokRed>())
             .def("kernel_diagrams", &PyKerImCokRed::kernel_diagrams)
             .def("image_diagrams", &PyKerImCokRed::image_diagrams)
-            .def("cokernel_diagrams", &PyKerImCokRed::cokernel_diagrams);
+            .def("cokernel_diagrams", &PyKerImCokRed::cokernel_diagrams)
+            .def("D_F", &PyKerImCokRed::D_F)
+            .def("D_G", &PyKerImCokRed::D_G)
+            .def("D_Ker", &PyKerImCokRed::D_Ker)
+            .def("D_Im", &PyKerImCokRed::D_Im)
+            .def("D_Cok", &PyKerImCokRed::D_Cok)
+            .def("R_F", &PyKerImCokRed::R_F)
+            .def("R_G", &PyKerImCokRed::R_G)
+            .def("R_Ker", &PyKerImCokRed::R_Ker)
+            .def("R_Im", &PyKerImCokRed::R_Im)
+            .def("R_Cok", &PyKerImCokRed::R_Cok)
+            .def("V_F", &PyKerImCokRed::V_F)
+            .def("V_G", &PyKerImCokRed::V_G)
+            .def("V_Ker", &PyKerImCokRed::V_Ker)
+            .def("V_Im", &PyKerImCokRed::V_Im)
+            .def("V_Cok", &PyKerImCokRed::V_Cok);
 
     std::string func_name;
 
