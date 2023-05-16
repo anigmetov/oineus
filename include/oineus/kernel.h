@@ -25,8 +25,8 @@ namespace oineus {
 		using Dgms = oineus::Diagrams<Real>;
 
 		private:
-			Filtration<Int_, Real_> K; //Full complex with the function values for F
-			Filtration<Int_, Real_> L; //Sub complex with the function values for G
+			Filtration<Simplex<Int_, Real_>> K; //Full complex with the function values for F
+			Filtration<Simplex<Int_, Real_>> L; //Sub complex with the function values for G
 			VRUDecomp F; //the reduced triple for F0
 			VRUDecomp G; //reduced triple for G
 			VRUDecomp Im; //reduced image triple
@@ -45,7 +45,7 @@ namespace oineus {
 
 		public:
 			//Constructor which takes as input the complex K, subcomplex L, and the decompositionfs for F, G, Im, Ker, Cok, as well as the map from sorted L to sorted K and sorted K to sorted L, as well as the change in ordering to have L before K.
-			KerImCokReduced(Filtration<Int_, Real_> K_, Filtration<Int_, Real_> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, VRUDecomp Cok_, std::vector<int> sorted_L_to_sorted_K_, std::vector<int> sorted_K_to_sorted_L_, std::vector<int> new_order_to_old_,std::vector<int> new_cols_) :
+			KerImCokReduced(Filtration<Simplex<Int_, Real_>> K_, Filtration<Simplex<Int_, Real_>> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, VRUDecomp Cok_, std::vector<int> sorted_L_to_sorted_K_, std::vector<int> sorted_K_to_sorted_L_, std::vector<int> new_order_to_old_,std::vector<int> new_cols_) :
 				K (K_),
 				L (L_),
 				F (F_),
@@ -412,7 +412,7 @@ namespace oineus {
 
 	//Function which takes as input a complex K, a subcomplex L (only requirement is sorted by dimension), and a map from L to K, as well as params,te
 	template <typename Int_, typename Real_>
-	KerImCokReduced<Int_, Real_> reduce_ker_im_cok(Filtration<Int_, Real_> K, Filtration<Int_, Real_> L, std::vector<int> L_to_K, Params& params) {
+	KerImCokReduced<Int_, Real_> reduce_ker_im_cok(Filtration<Simplex<Int_, Real_>> K, Filtration<Simplex<Int_, Real_>> L, std::vector<int> L_to_K, Params& params) {
 		using Real = Real_;
 		using Int = Int_;
     	using IntSparseColumn = SparseColumn<Int>;

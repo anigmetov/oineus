@@ -26,28 +26,28 @@ namespace oineus {
     // filtration + vector of locations of critical value for each simplex
     // L = int: vertex id in grid for lower-star
     // L = VREdge: edge for Vietoris--Rips
-    template<typename Int, typename Real, typename L>
+    template<typename Simplex_, typename L>
     struct FiltrationCritValLocs {
-        Filtration<Int, Real> filtration;
+        Filtration<Simplex_> filtration;
         std::vector<L> critical_value_locations;
     };
 
 
-    template<typename Int_, typename Real_>
+    template<typename Simplex_>
     class Filtration {
     public:
-        using Int = Int_;
-        using Real = Real_;
+        using Simplex = Simplex_;
+        using Int = typename Simplex::Int;
+        using Real = typename Simplex::Real;
 
-        using FiltrationSimplex = Simplex<Int, Real>;
-        using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
+        using SimplexVector = std::vector<Simplex>;
         using IntVector = std::vector<Int>;
         using BoundaryMatrix = typename VRUDecomposition<Int>::MatrixData;
 
         Filtration() = default;
 
         // use move constructor to move simplices
-        Filtration(FiltrationSimplexVector&& _simplices, bool _negate, int n_threads = 1)
+        Filtration(SimplexVector&& _simplices, bool _negate, int n_threads = 1)
                 :
                 negate_(_negate),
                 simplices_(_simplices)
@@ -58,11 +58,11 @@ namespace oineus {
             sort(n_threads);
             set_dim_info();
             assert(std::all_of(simplices_.begin(), simplices_.end(),
-                    [](const FiltrationSimplex& sigma) { return sigma.is_valid_filtration_simplex(); }));
+                    [](const Simplex& sigma) { return sigma.is_valid_filtration_simplex(); }));
         }
 
         // copy simplices
-        Filtration(const FiltrationSimplexVector& _simplices, bool _negate, int n_threads = 1)
+        Filtration(const SimplexVector& _simplices, bool _negate, int n_threads = 1)
                 :
                 negate_(_negate),
                 simplices_(_simplices)
@@ -73,7 +73,7 @@ namespace oineus {
             sort(n_threads);
             set_dim_info();
             assert(std::all_of(simplices_.begin(), simplices_.end(),
-                    [](const FiltrationSimplex& sigma) { return sigma.is_valid_filtration_simplex(); }));
+                    [](const Simplex& sigma) { return sigma.is_valid_filtration_simplex(); }));
 
         }
 
@@ -169,9 +169,9 @@ namespace oineus {
             return simplices_.at(dim_first(d)).value();
         }
 
-        const FiltrationSimplexVector& simplices() const { return simplices_; }
-        FiltrationSimplexVector& simplices() { return simplices_; }
-        FiltrationSimplexVector simplices_copy() const { return simplices_; }
+        const SimplexVector& simplices() const { return simplices_; }
+        SimplexVector& simplices() { return simplices_; }
+        SimplexVector simplices_copy() const { return simplices_; }
 
         int get_sorted_id(int i)
         {
@@ -207,7 +207,7 @@ namespace oineus {
     private:
         // data
         bool negate_;
-        FiltrationSimplexVector simplices_;
+        SimplexVector simplices_;
 
         std::map<IntVector, Int> vertices_to_sorted_id_;
         std::vector<Int> id_to_sorted_id_;
@@ -259,7 +259,7 @@ namespace oineus {
             sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
 
             // sort by dimension first, then by value, then by id
-            auto cmp = [this](const FiltrationSimplex& sigma, const FiltrationSimplex& tau) {
+            auto cmp = [this](const Simplex& sigma, const Simplex& tau) {
               Real v_sigma = this->negate_ ? -sigma.value() : sigma.value();
               Real v_tau = this->negate_ ? -tau.value() : tau.value();
               Int d_sigma = sigma.dim(), d_tau = tau.dim();
@@ -283,12 +283,12 @@ namespace oineus {
             }
         }
 
-        template<typename I, typename R>
-        friend std::ostream& operator<<(std::ostream&, const Filtration<I, R>&);
+        template<typename S>
+        friend std::ostream& operator<<(std::ostream&, const Filtration<S>&);
     };
 
-    template<typename I, typename R>
-    std::ostream& operator<<(std::ostream& out, const Filtration<I, R>& fil)
+    template<typename S>
+    std::ostream& operator<<(std::ostream& out, const Filtration<S>& fil)
     {
         out << "Filtration(size = " << fil.size() << ")[" << "\n";
         dim_type d = 0;

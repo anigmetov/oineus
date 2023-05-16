@@ -98,10 +98,10 @@ namespace oineus {
 
     // Bron-Kerbosch, from Dionysus
     template<class Int, class Real, std::size_t D>
-    std::pair<Filtration<Int, Real>, std::vector<VREdge>> get_vr_filtration_bk(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
+    std::pair<Filtration<Simplex<Int, Real>>, std::vector<VREdge>> get_vr_filtration_bk(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
-        using Filtration = Filtration<Int, Real>;
         using Simplex = Simplex<Int, Real>;
+        using Filtration = Filtration<Simplex>;
         using VertexContainer = std::vector<size_t>;
 
         auto neighbor = [&](size_t u, size_t v) { return sq_dist(points[u], points[v]) <= max_radius * max_radius; };
@@ -140,8 +140,8 @@ namespace oineus {
     template<class Int, class Real, std::size_t D>
     decltype(auto) get_vr_filtration_naive(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
-        using VRFiltration = Filtration<Int, Real>;
         using VRSimplex = Simplex<Int, Real>;
+        using VRFiltration = Filtration<VRSimplex>;
 
         std::vector<VRSimplex> simplices;
         std::vector<VREdge> edges;

@@ -31,7 +31,7 @@ public:
     using Decomposition = VRUDecomposition<Int>;
     using Dgms = Diagrams<Real>;
     using Dgm = typename Dgms::Dgm;
-    using Fil = Filtration<Int, Real>;
+    using Fil = Filtration<Simplex<Int, Real>>;
 
     struct SimplexTarget {
         Real current_value;

@@ -112,13 +112,13 @@ decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::
 
 
 template<typename Int, typename Real>
-typename oineus::Filtration<Int, Real>
+typename oineus::Filtration<oineus::Simplex<Int, Real>>
 list_to_filtration(py::list data, oineus::Params& params) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]'. 
 {
     using IdxVector = std::vector<Int>;
-    using FiltrationSimplex = oineus::Simplex<Int, Real>;
-    using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
-    using Filtration = oineus::Filtration<Int, Real>;
+    using Simplex = oineus::Simplex<Int, Real>;
+    using Filtration = oineus::Filtration<Simplex>;
+    using FiltrationSimplexVector = typename Filtration::SimplexVector;
 
     int n_simps = data.size();
     std::cout << "Number of cells in the complex is: " << n_simps << std::endl;
@@ -141,7 +141,7 @@ list_to_filtration(py::list data, oineus::Params& params) //take a list of simpl
             count++;
         }
         if (params.verbose) std::cout << "parsed the following data. id: " << id << " val: " << val << std::endl;
-        FiltrationSimplex simp_i(id, vertices, val);
+        Simplex simp_i(id, vertices, val);
         FSV.push_back(simp_i);
     }
     Filtration Filt(FSV, false, 1);
@@ -156,8 +156,8 @@ get_ls_filtration(const py::list& simplices, const py::array_t<Real>& vertex_val
 // The list should contain simplices, each simplex is a list of vertices,
 // e.g., triangulation of one segment is [[0], [1], [0, 1]]
 {
-    using Filtration = oineus::Filtration<Int, Real>;
-    using Simplex = typename Filtration::FiltrationSimplex;
+    using Simplex = oineus::Simplex<Int, Real>;
+    using Filtration = oineus::Filtration<Simplex>;
     using IdxVector = std::vector<Int>;
     using SimplexVector = std::vector<Simplex>;
 
@@ -208,7 +208,7 @@ get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> p
 
 template<class Int, class Real, class L>
 PyOineusDiagrams<Real>
-compute_diagrams_from_fil(const oineus::Filtration<Int, Real>& fil, int n_threads)
+compute_diagrams_from_fil(const oineus::Filtration<oineus::Simplex<Int, Real>>& fil, int n_threads)
 {
     oineus::VRUDecomposition<Int> d_matrix {fil, false};
 
@@ -345,7 +345,7 @@ decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_,
     using MatrixData = std::vector<IntSparseColumn>;
     using FiltrationSimplex = oineus::Simplex<Int, Real>;
     using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
-    using Filtration = oineus::Filtration<Int, Real>;
+    using Filtration = oineus::Filtration<FiltrationSimplex>;
     using KerImCokReduced = oineus::KerImCokReduced<Int, Real>;
     std::cout << "======================================" << std::endl;
     std::cout << std::endl;
@@ -492,20 +492,20 @@ void init_oineus_common(py::module& m)
             .def("as_str", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); });
 
     py::class_<Decomposition>(m, "Decomposition")
-            .def(py::init<const oineus::Filtration<Int, double>&, bool>())
-            .def(py::init<const oineus::Filtration<Int, float>&, bool>())
+            .def(py::init<const oineus::Filtration<oineus::Simplex<Int, double>>&, bool>())
+            .def(py::init<const oineus::Filtration<oineus::Simplex<Int, float>>&, bool>())
             .def_readwrite("r_data", &Decomposition::r_data)
             .def_readwrite("v_data", &Decomposition::v_data)
             .def_readwrite("u_data_t", &Decomposition::u_data_t)
             .def_readwrite("d_data", &Decomposition::d_data)
             .def("reduce", &Decomposition::reduce, py::call_guard<py::gil_scoped_release>())
             .def("sanity_check", &Decomposition::sanity_check, py::call_guard<py::gil_scoped_release>())
-            .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, double>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
-            .def("diagram", [](const Decomposition& self, const oineus::Filtration<Int, float>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
-            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, double>& fil, bool include_inf_points, bool include_zero_persistence_points) {
+            .def("diagram", [](const Decomposition& self, const oineus::Filtration<oineus::Simplex<Int, double>>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
+            .def("diagram", [](const Decomposition& self, const oineus::Filtration<oineus::Simplex<Int, float>>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
+            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<oineus::Simplex<Int, double>>& fil, bool include_inf_points, bool include_zero_persistence_points) {
               return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
             })
-            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<Int, float>& fil, bool include_inf_points, bool include_zero_persistence_points) {
+            .def("index_diagram", [](const Decomposition& self, const oineus::Filtration<oineus::Simplex<Int, float>>& fil, bool include_inf_points, bool include_zero_persistence_points) {
               return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
             })
             ;
@@ -551,8 +551,8 @@ void init_oineus(py::module& m, std::string suffix)
     using DgmPoint = oineus::DgmPoint<Real>;
     using Diagram = PyOineusDiagrams<Real>;
 
-    using Filtration = oineus::Filtration<Int, Real>;
-    using Simplex = typename Filtration::FiltrationSimplex;
+    using Simplex = oineus::Simplex<Int, Real>;
+    using Filtration = oineus::Filtration<Simplex>;
 
     using oineus::VREdge;
 
@@ -603,7 +603,7 @@ void init_oineus(py::module& m, std::string suffix)
 
 
     py::class_<Filtration>(m, filtration_class_name.c_str())
-            .def(py::init<typename Filtration::FiltrationSimplexVector, bool, int>())
+            .def(py::init<typename Filtration::SimplexVector, bool, int>())
             .def("max_dim", &Filtration::max_dim)
             .def("simplices", &Filtration::simplices_copy)
             .def("size_in_dimension", &Filtration::size_in_dimension)
@@ -612,7 +612,7 @@ void init_oineus(py::module& m, std::string suffix)
 
 
     py::class_<KerImCokRed>(m, ker_im_cok_reduced_class_name.c_str())
-            .def(py::init<oineus::Filtration<Int, Real>, oineus::Filtration<Int, Real>, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>>());
+            .def(py::init<Filtration, Filtration, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>>());
 
     py::class_<PyKerImCokRed>(m, py_ker_im_cok_reduced_class_name.c_str())
             .def(py::init<KerImCokRed>())
@@ -728,11 +728,15 @@ inline void init_oineus_top_optimizer(py::module& m)
     using CriticalSets = typename TopologyOptimizer::CriticalSets;
     using ConflictStrategy = oineus::ConflictStrategy;
 
+    using Simplex = oineus::Simplex<Int, Real>;
+    using Filtration = oineus::Filtration<Simplex>;
+
+
     // optimization
     py::class_<TopologyOptimizer>(m, "TopologyOptimizer")
-            .def(py::init<const oineus::Filtration<Int, Real>& >())
+            .def(py::init<const Filtration& >())
             .def("compute_diagram", &TopologyOptimizer::compute_diagram)
-            .def("simplify", &TopologyOptimizer ::simplify)
+            .def("simplify", &TopologyOptimizer::simplify)
             .def("match", &TopologyOptimizer::match)
             .def("singleton", &TopologyOptimizer::singleton)
             .def("singletons", &TopologyOptimizer::singletons)

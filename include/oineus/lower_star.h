@@ -143,7 +143,7 @@ public:
     using CriticalVertices = std::vector<Int>;
     using IdxVector = typename GridSimplex::IdxVector;
 
-    using GridFiltration = Filtration<Int, Real>;
+    using GridFiltration = Filtration<GridSimplex>;
 
     static constexpr size_t dim {D};
 
