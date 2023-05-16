@@ -13,7 +13,7 @@ IdMapping = [0,1,2,3,4,6,7,8,9]
 kicr = oin.compute_kernel_image_cokernel_reduction(K, L, IdMapping, params)
 
 kernel_dgms = kicr.kernel_diagrams()
-image_dgms = kicr.image_diagrams()
+kernel_dgms = kicr.image_diagrams()
 cokernel_dgms = kicr.cokernel_diagrams()
 print(kernel_dgms.in_dimension(0))
 print(image_dgms.in_dimension(0))

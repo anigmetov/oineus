@@ -36,7 +36,6 @@ def test_kernel_1():
 		return 0
  
 
-
 def test_kernel_2():
 	params=oin.ReductionParams()
 	params.n_threads=4

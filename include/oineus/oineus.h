@@ -12,4 +12,3 @@
 #include "loss.h"
 #include "top_optimizer.h"
 #include "kernel.h"
-#include "kernel.h"
