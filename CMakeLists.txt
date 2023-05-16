@@ -8,6 +8,7 @@ option(oin_build_tests "Build tests" ON)
 option(oin_gather_add_stats "Gather statistics about summand sizes" OFF)
 option(oin_caliper "Enable profiling with Caliper" OFF)
 
+
 # Default to Release
 
 if (NOT CMAKE_BUILD_TYPE)
