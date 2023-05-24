@@ -96,9 +96,10 @@ namespace oineus {
         }
     }
 
+
     // Bron-Kerbosch, from Dionysus
     template<class Int, class Real, std::size_t D>
-    std::pair<Filtration<Int, Real>, std::vector<VREdge>> get_vr_filtration_bk(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
+    std::pair<Filtration<Int, Real>, std::vector<VREdge>> get_vr_filtration_and_critical_edges(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
         using Filtration = Filtration<Int, Real>;
         using Simplex = Simplex<Int, Real>;
@@ -136,9 +137,15 @@ namespace oineus {
         return std::make_pair(Filtration(std::move(simplices), negate, n_threads), std::move(edges));
     }
 
+    template<class Int, class Real, std::size_t D>
+    Filtration<Int, Real> get_vr_filtration(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
+    {
+        return get_vr_filtration_and_critical_edges<Int, Real, D>(points, max_dim, max_radius, n_threads).first;
+    }
+
     // stupid brute-force
     template<class Int, class Real, std::size_t D>
-    decltype(auto) get_vr_filtration_naive(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
+    std::pair<Filtration<Int, Real>, std::vector<VREdge>> get_vr_filtration_and_critical_edges_naive(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
         using VRFiltration = Filtration<Int, Real>;
         using VRSimplex = Simplex<Int, Real>;
@@ -190,6 +197,12 @@ namespace oineus {
             throw std::runtime_error("not implemented");
 
         return std::make_pair<VRFiltration, std::vector<VREdge>>(VRFiltration(std::move(simplices), false, n_threads), std::move(edges));
+    }
+
+    template<class Int, class Real, std::size_t D>
+    Filtration<Int, Real> get_vr_filtration_naive(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
+    {
+        return get_vr_filtration_and_critical_edges_naive<Int, Real, D>(points, max_dim, max_radius, n_threads).first;
     }
 
 };

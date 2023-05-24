@@ -113,7 +113,7 @@ decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::
 
 template<typename Int, typename Real>
 typename oineus::Filtration<Int, Real>
-list_to_filtration(py::list data, oineus::Params& params) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]'. 
+list_to_filtration(py::list data, oineus::Params& params) //take a list of simplices and turn it into a filtration for oineus. The list should contain simplices in the form '[id, [boundary], filtration value]'.
 {
     using IdxVector = std::vector<Int>;
     using FiltrationSimplex = oineus::Simplex<Int, Real>;
@@ -203,7 +203,7 @@ template<class Int, class Real, size_t D>
 decltype(auto)
 get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> points, dim_type max_dim, Real max_radius, int n_threads)
 {
-    return oineus::get_vr_filtration_bk<Int, Real, D>(numpy_to_point_vector<Real, D>(points), max_dim, max_radius, n_threads);
+    return oineus::get_vr_filtration<Int, Real, D>(numpy_to_point_vector<Real, D>(points), max_dim, max_radius, n_threads);
 }
 
 template<class Int, class Real, class L>
@@ -227,7 +227,7 @@ template<class Int, class Real, size_t D>
 typename oineus::VRUDecomposition<Int>::MatrixData
 get_boundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads).first;
+    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads);
     return fil.boundary_matrix_full();
 }
 
@@ -235,7 +235,7 @@ template<class Int, class Real, size_t D>
 typename oineus::VRUDecomposition<Int>::MatrixData
 get_coboundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads).first;
+    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads);
     auto bm = fil.boundary_matrix_full();
     return oineus::antitranspose(bm);
 }
@@ -246,7 +246,7 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
 {
     // for diagram in dimension d, we need (d+1)-simplices
     Timer timer;
-    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, params.n_threads).first;
+    auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, params.n_threads);
     auto elapsed_fil = timer.elapsed_reset();
     oineus::VRUDecomposition<Int> decmp {fil, false};
     auto elapsed_decmp_ctor = timer.elapsed_reset();
