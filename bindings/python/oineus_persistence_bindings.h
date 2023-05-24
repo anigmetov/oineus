@@ -727,7 +727,7 @@ inline void init_oineus_top_optimizer(py::module& m)
 
     // optimization
     py::class_<TopologyOptimizer>(m, "TopologyOptimizer")
-//            .def(py::init<const oineus::Filtration<Int, Real>& >())
+            .def(py::init<const oineus::Filtration<Int, Real>& >())
             .def("compute_diagram", &TopologyOptimizer::compute_diagram)
             .def("simplify", &TopologyOptimizer ::simplify)
             .def("match", &TopologyOptimizer::match)
