@@ -143,7 +143,7 @@ public:
     using CriticalVertices = std::vector<Int>;
     using IdxVector = typename GridSimplex::IdxVector;
 
-    using GridFiltration = Filtration<Int, Real>;
+    using GridFiltration = Filtration<GridSimplex>;
 
     static constexpr size_t dim {D};
 
@@ -257,7 +257,7 @@ public:
         SimplexVec simplices;
         CriticalVertices vertices;
 
-        // calculate total number of simplices to allocate memory once
+        // calculate total number of cells to allocate memory once
         size_t total_size = 0;
         for(dim_type d = 0 ; d <= top_d ; ++d) {
             total_size += get_fr_displacements(d).size() * size();

@@ -25,7 +25,7 @@
 
 namespace oineus {
 
-    template<typename Int_, typename Real_>
+    template<typename Cell>
     class Filtration;
 
     using Idx = int;
@@ -204,8 +204,8 @@ namespace oineus {
         VRUDecomposition& operator=(VRUDecomposition&&) noexcept = default;
         VRUDecomposition& operator=(const VRUDecomposition&) = default;
 
-        template<class R>
-        VRUDecomposition(const Filtration<Int, R>& fil, bool _dualize)
+        template<class C>
+        VRUDecomposition(const Filtration<C>& fil, bool _dualize)
                 :
                 d_data(!_dualize ? fil.boundary_matrix_full() : antitranspose(fil.boundary_matrix_full(), fil.size())),
                 r_data(d_data),
@@ -266,11 +266,11 @@ namespace oineus {
             return is_zero(r_data[simplex]);
         }
 
-        template<typename Real>
-        Diagrams<Real> diagram(const Filtration<Int, Real>& fil, bool include_inf_points) const;
+        template<typename Cell>
+        Diagrams<typename Cell::Real> diagram(const Filtration<Cell>& fil, bool include_inf_points) const;
 
-        template<typename Real>
-        Diagrams<size_t> index_diagram(const Filtration<Int, Real>& fil, bool include_inf_points, bool include_zero_persistence_points) const;
+        template<typename Cell>
+        Diagrams<size_t> index_diagram(const Filtration<Cell>& fil, bool include_inf_points, bool include_zero_persistence_points) const;
 
         template<typename Int>
         friend std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m);
@@ -722,9 +722,10 @@ namespace oineus {
     }
 
     template<class Int>
-    template<class Real>
-    Diagrams<Real> VRUDecomposition<Int>::diagram(const Filtration<Int, Real>& fil, bool include_inf_points) const
+    template<class Cell>
+    Diagrams<typename Cell::Real> VRUDecomposition<Int>::diagram(const Filtration<Cell>& fil, bool include_inf_points) const
     {
+        using Real = typename Cell::Real;
         if (not is_reduced)
             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
 
@@ -767,8 +768,8 @@ namespace oineus {
     }
 
     template<class Int>
-    template<class Real>
-    Diagrams<size_t> VRUDecomposition<Int>::index_diagram(const Filtration<Int, Real>& fil, bool include_inf_points, bool include_zero_persistence_points) const
+    template<class Cell>
+    Diagrams<size_t> VRUDecomposition<Int>::index_diagram(const Filtration<Cell>& fil, bool include_inf_points, bool include_zero_persistence_points) const
     {
         if (not is_reduced)
             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");

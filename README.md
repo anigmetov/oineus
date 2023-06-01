@@ -40,7 +40,7 @@ Functions are given as NumPy arrays of either np.float32 or np.float64 dtype.
 many threads to use.
 * `max_dim`: maximum dimension to compute diagrams (filtration will
 be one dimension higher: to get persistence diagrams in dimension 1,
-we need 2-simplices).
+we need 2-cells).
 * `n_threads`: number of threads to use, default: 1.
 * `return`: Diagrams in all dimensions. Diagrams in each dimension will be returned by `in_dimension` function
 as 2D numpy arrays `[(b_1, d_1),

@@ -163,5 +163,5 @@ TEST_CASE("Vietoris--Rips")
     auto fil_1 = oineus::get_vr_filtration<Int, Real, 2>(points, max_dim, max_radius);
     auto fil_2 = oineus::get_vr_filtration_naive<Int, Real, 2>(points, max_dim, max_radius);
 
-    REQUIRE(fil_1.simplices() == fil_2.simplices());
+    REQUIRE(fil_1.cells() == fil_2.cells());
 }

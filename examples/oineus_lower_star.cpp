@@ -158,33 +158,43 @@ int main(int argc, char** argv)
 
     info("Reading file {}", fname_in);
 
-    using Grid = oineus::Grid<Int, Real, 3>;
+    using Decomposition = VRUDecomposition<Int>;
+    using MatrixData = typename Decomposition::MatrixData;
 
-    auto [func, dims] = read_function<Int, Real, 3>(fname_in);
-    Grid grid {dims, wrap, func.data()};
+    if (bdry_matrix_only) {
+        MatrixData d_matrix;
+//        read_phat_boundary_matrix(fname_in, d_matrix, params.clearing_opt);
+        VRUDecomposition<Int> decmp {d_matrix};
 
-    auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
-    VRUDecomposition<Int> decmp {fil, false };
+    } else {
+        using Grid = oineus::Grid<Int, Real, 3>;
 
-    info("Matrix read");
+        auto [func, dims] = read_function<Int, Real, 3>(fname_in);
+        Grid grid {dims, wrap, func.data()};
 
-    fname_dgm = fname_in + "_t_" + std::to_string(params.n_threads) + "_c_" + std::to_string(params.chunk_size);
+        auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
+        VRUDecomposition<Int> decmp {fil, false };
 
-    params.print_time = true;
+        info("Matrix read");
 
-    decmp.reduce(params);
+        fname_dgm = fname_in + "_t_" + std::to_string(params.n_threads) + "_c_" + std::to_string(params.chunk_size);
 
-    if (params.print_time)
-        std::cerr << fname_in << ";" << params.n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << params.elapsed << std::endl;
+        params.print_time = true;
 
-    auto dgm = decmp.diagram(fil, true);
+        decmp.reduce(params);
 
-    if (params.sort_dgms)
-        dgm.sort();
+        if (params.print_time)
+            std::cerr << fname_in << ";" << params.n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << params.elapsed << std::endl;
 
-    dgm.save_as_txt(fname_dgm);
+        auto dgm = decmp.diagram(fil, true);
 
-    info("Diagrams saved");
+        if (params.sort_dgms)
+            dgm.sort();
+
+        dgm.save_as_txt(fname_dgm);
+
+        info("Diagrams saved");
+    }
 
     return 0;
 }

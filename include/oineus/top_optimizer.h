@@ -16,11 +16,12 @@ struct ComputeFlags {
 };
 
 
-template<class Int_, class Real_>
+template<class Cell_>
 class TopologyOptimizer {
 public:
-    using Real = Real_;
-    using Int = Int_;
+    using Cell = Cell_;
+    using Real = typename Cell::Real;
+    using Int = typename Cell::Int;
     using BoundaryMatrix = typename VRUDecomposition<Int>::MatrixData;
     using Indices = std::vector<Int>;
     using Values = std::vector<Real>;
@@ -31,7 +32,7 @@ public:
     using Decomposition = VRUDecomposition<Int>;
     using Dgms = Diagrams<Real>;
     using Dgm = typename Dgms::Dgm;
-    using Fil = Filtration<Int, Real>;
+    using Fil = Filtration<Cell>;
 
     struct SimplexTarget {
         Real current_value;
@@ -70,15 +71,13 @@ public:
 //    {
 //    }
 
-    template<class Filtration>
-    TopologyOptimizer(const Filtration& fil)
+    TopologyOptimizer(const Fil& fil)
             :
             decmp_hom_(fil, false),
             fil_(fil),
             negate_(fil.negate()) { }
 
-    template<class Filtration>
-    TopologyOptimizer(const Filtration& fil, const ComputeFlags& hints)
+    TopologyOptimizer(const Fil& fil, const ComputeFlags& hints)
             :
             decmp_hom_(fil, false),
             fil_(fil),
@@ -117,15 +116,15 @@ public:
 
         for(const auto& [idx_point, target_point]: target) {
 
-            if (get_simplex_value(idx_point.birth) < target_point.birth) {
+            if (get_cell_value(idx_point.birth) < target_point.birth) {
                 increase_birth = true;
-            } else if (get_simplex_value(idx_point.birth) > target_point.birth) {
+            } else if (get_cell_value(idx_point.birth) > target_point.birth) {
                 decrease_birth = true;
             }
 
-            if (get_simplex_value(idx_point.death) < target_point.death) {
+            if (get_cell_value(idx_point.death) < target_point.death) {
                 increase_death = true;
-            } else if (get_simplex_value(idx_point.death) > target_point.death) {
+            } else if (get_cell_value(idx_point.death) > target_point.death) {
                 decrease_death = true;
             }
         }
@@ -196,7 +195,7 @@ public:
         return result;
     }
 
-    Real get_simplex_value(size_t simplex_idx) const
+    Real get_cell_value(size_t simplex_idx) const
     {
         return fil_.value_by_sorted_id(simplex_idx);
     }
@@ -207,14 +206,14 @@ public:
 
         for(auto&& [idx_point, target_point]: dgm_target) {
             size_t birth_simplex = idx_point.birth;
-            Real current_birth_value = get_simplex_value(birth_simplex);
+            Real current_birth_value = get_cell_value(birth_simplex);
             Real target_birth_value = target_point.birth;
 
             if (current_birth_value != target_birth_value)
                 target.emplace(birth_simplex, {current_birth_value, target_birth_value, true});
 
             size_t death_simplex = idx_point.death;
-            Real current_death_value = get_simplex_value(death_simplex);
+            Real current_death_value = get_cell_value(death_simplex);
             Real target_death_value = target_point.death;
 
             if (current_death_value != target_death_value)
@@ -228,11 +227,11 @@ public:
     {
         IndicesValues result;
 
-        auto index_diagram = decmp_hom_.template index_diagram<Real>(fil_, false, false)[d];
+        auto index_diagram = decmp_hom_.template index_diagram<Cell>(fil_, false, false)[d];
 
         for(auto p: index_diagram) {
-            Real birth = get_simplex_value(p.birth);
-            Real death = get_simplex_value(p.death);
+            Real birth = get_cell_value(p.birth);
+            Real death = get_cell_value(p.death);
             Real pers = abs(death - birth);
             if (pers <= eps) {
                 if (strategy == DenoiseStrategy::BirthBirth)
@@ -277,8 +276,8 @@ public:
             auto birth_idx = current_index_dgm[current_dgm_id].birth;
             auto death_idx = current_index_dgm[current_dgm_id].death;
 
-            auto birth_val = get_simplex_value(birth_idx);
-            auto death_val = get_simplex_value(death_idx);
+            auto birth_val = get_cell_value(birth_idx);
+            auto death_val = get_cell_value(death_idx);
 
             // do not include diagonal points
             if (birth_val != death_val)
@@ -331,7 +330,7 @@ public:
 
         if (strategy == ConflictStrategy::Max) {
             for(auto&& [simplex_idx, values]: simplex_to_values) {
-                Real current_value = get_simplex_value(simplex_idx);
+                Real current_value = get_cell_value(simplex_idx);
                 // compare by displacement from current value
                 Real target_value = *std::max_element(values.begin(), values.end(), [current_value](Real a, Real b) { return abs(a - current_value) < abs(b - current_value); });
                 indvals.push_back(simplex_idx, target_value);
@@ -349,10 +348,10 @@ public:
                 }
             }
         } else if (strategy == ConflictStrategy::FixCritAvg) {
-            // send critical simplices according to the matching loss
+            // send critical cells according to the matching loss
             // average on others
             for(auto&& [simplex_idx, values]: simplex_to_values) {
-                // where matching loss tells critical simplices to go
+                // where matching loss tells critical cells to go
                 // is contained in critical_prescribed map
                 auto critical_iter = target.find(simplex_idx);
                 Real target_value;
@@ -402,15 +401,15 @@ private:
     Indices change_birth_x(dim_type d, size_t positive_simplex_idx, Real target_birth)
     {
         CALI_CXX_MARK_FUNCTION;
-        Real current_birth = get_simplex_value(positive_simplex_idx);
+        Real current_birth = get_cell_value(positive_simplex_idx);
 
         if (!decmp_coh_.is_reduced)
             decmp_coh_.reduce(params_coh_);
 
         if (cmp(target_birth, current_birth))
-            return decrease_birth_x<Int, Real>(d, positive_simplex_idx, fil_, decmp_coh_, target_birth);
+            return decrease_birth_x(d, positive_simplex_idx, fil_, decmp_coh_, target_birth);
         else if (fil_.cmp(current_birth, target_birth))
-            return increase_birth_x<Int, Real>(d, positive_simplex_idx, fil_, decmp_coh_, target_birth);
+            return increase_birth_x(d, positive_simplex_idx, fil_, decmp_coh_, target_birth);
         else
             return {};
     }
@@ -418,7 +417,7 @@ private:
     Indices change_death_x(dim_type d, size_t negative_simplex_idx, Real target_death)
     {
         CALI_CXX_MARK_FUNCTION;
-        Real current_death = get_simplex_value(negative_simplex_idx);
+        Real current_death = get_cell_value(negative_simplex_idx);
         if (cmp(target_death, current_death))
             return decrease_death_x(d, negative_simplex_idx, fil_, decmp_hom_, target_death);
         else if (fil_.cmp(current_death, target_death))
