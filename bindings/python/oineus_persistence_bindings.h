@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <sstream>
+#include <variant>
 #include <functional>
 
 #include <pybind11/pybind11.h>
@@ -91,6 +92,14 @@ get_fr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> d
     return grid.freudenthal_filtration(max_dim, negate, n_threads);
 }
 
+template<class Int, class Real, size_t D>
+decltype(auto)
+get_fr_filtration_and_critical_vertices(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
+{
+    auto grid = get_grid<Int, Real, D>(data, wrap);
+    return grid.freudenthal_filtration_and_critical_vertices(max_dim, negate, n_threads);
+}
+
 template<class Real, size_t D>
 decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::array::forcecast> data)
 {
@@ -110,7 +119,6 @@ decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::
 
     return points;
 }
-
 
 template<typename Int, typename Real>
 decltype(auto)
@@ -489,8 +497,7 @@ void init_oineus_common(py::module& m)
             })
             .def("index_diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, float>>& fil, bool include_inf_points, bool include_zero_persistence_points) {
               return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
-            })
-            ;
+            });
 
     using DgmPointInt = typename oin::DgmPoint<Int>;
     using DgmPointSizet = typename oin::DgmPoint<size_t>;
@@ -583,7 +590,6 @@ void init_oineus(py::module& m, std::string suffix)
               return ss.str();
             });
 
-
     py::class_<Filtration>(m, filtration_class_name.c_str())
             .def(py::init<typename Filtration::CellVector, bool, int>())
             .def("max_dim", &Filtration::max_dim)
@@ -591,7 +597,6 @@ void init_oineus(py::module& m, std::string suffix)
             .def("size_in_dimension", &Filtration::size_in_dimension)
             .def("simplex_value", &Filtration::value_by_sorted_id)
             .def("boundary_matrix", &Filtration::boundary_matrix_full);
-
 
     py::class_<KerImCokRed>(m, ker_im_cok_reduced_class_name.c_str())
             .def(py::init<Filtration, Filtration, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>>());
@@ -623,6 +628,15 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "get_fr_filtration" + suffix + "_3";
     m.def(func_name.c_str(), &get_fr_filtration<Int, Real, 3>);
+
+    func_name = "get_fr_filtration_and_critical_vertices" + suffix + "_1";
+    m.def(func_name.c_str(), &get_fr_filtration_and_critical_vertices<Int, Real, 1>);
+
+    func_name = "get_fr_filtration_and_critical_vertices" + suffix + "_2";
+    m.def(func_name.c_str(), &get_fr_filtration_and_critical_vertices<Int, Real, 2>);
+
+    func_name = "get_fr_filtration_and_critical_vertices" + suffix + "_3";
+    m.def(func_name.c_str(), &get_fr_filtration_and_critical_vertices<Int, Real, 3>);
 
     // Vietoris--Rips filtration
     func_name = "get_vr_filtration" + suffix + "_1";
@@ -704,22 +718,48 @@ inline void init_oineus_top_optimizer(py::module& m)
     using Simplex = oin::Simplex<Int, Real>;
     using Filtration = oin::Filtration<Simplex>;
     using TopologyOptimizer = oin::TopologyOptimizer<Simplex>;
+    using Indices = typename TopologyOptimizer::Indices;
+    using Values = typename TopologyOptimizer::Values;
     using IndicesValues = typename TopologyOptimizer::IndicesValues;
     using CrititcalSet = typename TopologyOptimizer::CriticalSet;
     using CriticalSets = typename TopologyOptimizer::CriticalSets;
     using ConflictStrategy = oin::ConflictStrategy;
 
+    py::class_<IndicesValues>(m, "IndicesValues")
+            .def("__getitem__", [](const IndicesValues& iv, int i) -> std::variant<Indices, Values> {
+              if (i == 0)
+                  return {iv.indices};
+              else if (i == 1)
+                  return {iv.values};
+              else
+                  throw std::out_of_range("IndicesValues: i must be  0 or 1");
+            })
+            .def("__repr__", [](const IndicesValues& iv) {
+              std::stringstream ss;
+              ss << iv;
+              return ss.str();
+            });
+
     // optimization
     py::class_<TopologyOptimizer>(m, "TopologyOptimizer")
             .def(py::init<const Filtration&>())
-            .def("compute_diagram", &TopologyOptimizer::compute_diagram)
-            .def("simplify", &TopologyOptimizer::simplify)
+            .def("compute_diagram", [](TopologyOptimizer& opt, bool include_inf_points) { return PyOineusDiagrams<Real>(opt.compute_diagram(include_inf_points)); },
+                    py::arg("include_inf_points"),
+                    "compute diagrams in all dimensions")
+            .def("simplify", &TopologyOptimizer::simplify,
+                    py::arg("epsilon"),
+                    py::arg("strategy"),
+                    py::arg("dim"), "make points with persistence less than epsilon go to the diagonal")
+            .def("get_nth_persistence", &TopologyOptimizer::get_nth_persistence,
+                    py::arg("dim"), py::arg("n"), "return n-th persistence value in d-dimensional persistence diagram")
             .def("match", &TopologyOptimizer::match)
             .def("singleton", &TopologyOptimizer::singleton)
             .def("singletons", &TopologyOptimizer::singletons)
-            .def("combine_loss", static_cast<IndicesValues (TopologyOptimizer::*)(const CriticalSets&, ConflictStrategy)>(&TopologyOptimizer::combine_loss))
-            .def("update", &TopologyOptimizer::update)
-            ;
+            .def("combine_loss", static_cast<IndicesValues (TopologyOptimizer::*)(const CriticalSets&, ConflictStrategy)>(&TopologyOptimizer::combine_loss),
+                    py::arg("critical_sets"),
+                    py::arg("strategy"),
+                    "combine critical sets into well-defined assignment of new values to indices")
+            .def("update", &TopologyOptimizer::update);
 
 //    IndicesValues combine_loss(const CriticalSets& critical_sets, ConflictStrategy strategy)
 }

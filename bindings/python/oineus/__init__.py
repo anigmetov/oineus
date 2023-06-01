@@ -66,6 +66,12 @@ def get_freudenthal_filtration(data, negate, wrap, max_dim, n_threads):
     func = getattr(_oineus, f"get_fr_filtration_{type_part}_{dim_part}")
     return func(data, negate, wrap, max_dim, n_threads)
 
+def get_freudenthal_filtration_and_critical_vertices(data, negate, wrap, max_dim, n_threads):
+    type_part, dim_part = get_type_dim(data)
+    func = getattr(_oineus, f"get_fr_filtration_and_critical_vertices_{type_part}_{dim_part}")
+    fil, cv = func(data, negate, wrap, max_dim, n_threads)
+    return fil, np.array(cv)
+
 
 def get_vr_filtration(points, max_dim, max_radius, n_threads):
     type_part, dim_part = get_type_dim(points, True)

@@ -62,6 +62,15 @@ public:
             indices.emplace_back(i);
             values.emplace_back(v);
         }
+
+        friend std::ostream& operator<<(std::ostream& out, const IndicesValues& iv)
+        {
+            out << "IndicesValue(indices=";
+            out << container_to_string(iv.indices);
+            out << ", values=";
+            out << container_to_string(iv.values);
+            return out;
+        }
     };
 
 //    TopologyOptimizer(const BoundaryMatrix& boundary_matrix, const Values& values, bool negate = false)
@@ -223,17 +232,17 @@ public:
         return target;
     }
 
-    IndicesValues simplify(Real eps, DenoiseStrategy strategy, dim_type d) const
+    IndicesValues simplify(Real epsilon, DenoiseStrategy strategy, dim_type dim) const
     {
         IndicesValues result;
 
-        auto index_diagram = decmp_hom_.template index_diagram<Cell>(fil_, false, false)[d];
+        auto index_diagram = decmp_hom_.index_diagram(fil_, false, false)[dim];
 
         for(auto p: index_diagram) {
             Real birth = get_cell_value(p.birth);
             Real death = get_cell_value(p.death);
             Real pers = abs(death - birth);
-            if (pers <= eps) {
+            if (pers <= epsilon) {
                 if (strategy == DenoiseStrategy::BirthBirth)
                     result.push_back(p.death, birth);
                 else if (strategy == DenoiseStrategy::DeathDeath)
@@ -245,6 +254,14 @@ public:
             }
         }
         return result;
+    }
+
+    Real get_nth_persistence(dim_type d, int n)
+    {
+        if (!decmp_hom_.is_reduced)
+            decmp_hom_.reduce(this->params_hom_);
+
+        return oineus::get_nth_persistence(fil_, decmp_hom_, d, n);
     }
 
     IndicesValues match(typename Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q)
@@ -427,4 +444,5 @@ private:
     }
 
 };
+
 } // namespace
