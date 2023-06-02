@@ -214,6 +214,14 @@ get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> p
 }
 
 template<class Int, class Real, size_t D>
+decltype(auto)
+get_vr_filtration_and_critical_edges(py::array_t<Real, py::array::c_style | py::array::forcecast> points, dim_type max_dim, Real max_radius, int n_threads)
+{
+    return oin::get_vr_filtration_and_critical_edges<Int, Real, D>(numpy_to_point_vector<Real, D>(points), max_dim, max_radius, n_threads);
+}
+
+
+template<class Int, class Real, size_t D>
 typename oin::VRUDecomposition<Int>::MatrixData
 get_boundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
@@ -647,6 +655,16 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "get_vr_filtration" + suffix + "_3";
     m.def(func_name.c_str(), &get_vr_filtration<Int, Real, 3>);
+
+    func_name = "get_vr_filtration_and_critical_edges" + suffix + "_1";
+    m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges<Int, Real, 1>);
+
+    func_name = "get_vr_filtration_and_critical_edges" + suffix + "_2";
+    m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges<Int, Real, 2>);
+
+    func_name = "get_vr_filtration_and_critical_edges" + suffix + "_3";
+    m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges<Int, Real, 3>);
+
 
     // boundary matrix as vector of columns
     func_name = "get_boundary_matrix" + suffix + "_1";

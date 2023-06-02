@@ -78,6 +78,13 @@ def get_vr_filtration(points, max_dim, max_radius, n_threads):
     func = getattr(_oineus, f"get_vr_filtration_{type_part}_{dim_part}")
     return func(points, max_dim, max_radius, n_threads)
 
+def get_vr_filtration_and_critical_edges(points, max_dim, max_radius, n_threads):
+    type_part, dim_part = get_type_dim(points, True)
+    func = getattr(_oineus, f"get_vr_filtration_and_critical_edges_{type_part}_{dim_part}")
+    fil, edges = func(points, max_dim, max_radius, n_threads)
+    edges = np.array([[e.x, e.y] for e in edges])
+    return fil, edges
+
 
 def get_boundary_matrix(data, negate, wrap, max_dim, n_threads):
     type_part, dim_part = get_type_dim(data)
