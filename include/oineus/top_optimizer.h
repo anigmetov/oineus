@@ -163,7 +163,9 @@ public:
             decmp_hom_.reduce(params_hom_);
 
         if (decmp_hom_.is_negative(index)) {
-            return {value, change_death_x(d, index, value)};
+            // change_death_x expects d to be the dimension of the persistence
+            // diagram, not the dimension of the simplex
+            return {value, change_death_x(d-1, index, value)};
         } else {
             return {value, change_birth_x(d, index, value)};
         }

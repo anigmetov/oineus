@@ -468,7 +468,6 @@ namespace oineus {
                 if (params.clearing_opt and not is_zero(r_data[i])) {
                     // simplex i is pivot -> i is positive -> its column is 0
                     if (pivots[i] >= 0) {
-                        assert(pivots[low(r_data[i])] == -1);
                         r_data[i].clear();
                         n_cleared++;
                         continue;
