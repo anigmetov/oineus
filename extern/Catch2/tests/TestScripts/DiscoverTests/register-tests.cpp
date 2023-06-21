@@ -6,8 +6,7 @@
 
 // SPDX-License-Identifier: BSL-1.0
 
-#include <catch2/interfaces/catch_interfaces_reporter_registry.hpp>
+#include <catch2/catch_test_macros.hpp>
 
-namespace Catch {
-    IReporterRegistry::~IReporterRegistry() = default;
-}
+TEST_CASE("@Script[C:\\EPM1A]=x;\"SCALA_ZERO:\"", "[script regressions]"){}
+TEST_CASE("Some test") {}

@@ -25,8 +25,8 @@ namespace oineus {
 		using Dgms = oineus::Diagrams<Real>;
 
 		private:
-			Filtration<Simplex<Int_, Real_>> K; //Full complex with the function values for F
-			Filtration<Simplex<Int_, Real_>> L; //Sub complex with the function values for G
+			Filtration<FiltrationSimplex> K; //Full complex with the function values for F
+			Filtration<FiltrationSimplex> L; //Sub complex with the function values for G
 			VRUDecomp F; //the reduced triple for F0
 			VRUDecomp G; //reduced triple for G
 			VRUDecomp Im; //reduced image triple
@@ -41,11 +41,12 @@ namespace oineus {
 			int number_cells_K; //number of cells in K
 			int number_cells_L; //number of cells in L
 			std::vector<int> new_order_to_old; //new_order_to_old[i] is the (unsorted) id in K of the ith cell in the filtration.
-			std::vector<int> new_cols; //the id of the columns we retaub
+			std::vector<int> new_cols; //the id of the columns we retain
+			Params params;
 
 		public:
 			//Constructor which takes as input the complex K, subcomplex L, and the decompositionfs for F, G, Im, Ker, Cok, as well as the map from sorted L to sorted K and sorted K to sorted L, as well as the change in ordering to have L before K.
-			KerImCokReduced(Filtration<Simplex<Int_, Real_>> K_, Filtration<Simplex<Int_, Real_>> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, VRUDecomp Cok_, std::vector<int> sorted_L_to_sorted_K_, std::vector<int> sorted_K_to_sorted_L_, std::vector<int> new_order_to_old_,std::vector<int> new_cols_) :
+			KerImCokReduced(Filtration<FiltrationSimplex> K_, Filtration<FiltrationSimplex> L_,VRUDecomp F_, VRUDecomp G_, VRUDecomp Im_, VRUDecomp Ker_, VRUDecomp Cok_, std::vector<int> sorted_L_to_sorted_K_, std::vector<int> sorted_K_to_sorted_L_, std::vector<int> new_order_to_old_,std::vector<int> new_cols_, Params params_) :
 				K (K_),
 				L (L_),
 				F (F_),
@@ -56,10 +57,11 @@ namespace oineus {
 				sorted_L_to_sorted_K (sorted_L_to_sorted_K_),
 				sorted_K_to_sorted_L (sorted_K_to_sorted_L_),
 				new_order_to_old (new_order_to_old_),
-				new_cols (new_cols_) {
+				new_cols (new_cols_),
+				params (params_) {
 					number_cells_K = K.boundary_matrix_full().size(); //set the number of cells in K
 					number_cells_L = L.boundary_matrix_full().size(); //set the number of cells in L
-					max_dim = K.max_dim(); //set the maximal dimension we can have cycles in. 
+					max_dim = K.max_dim(); //set the maximal dimension we can have cycles in.
 					Dgms KerDiagrams(max_dim+1);
 					Dgms ImDiagrams(max_dim+1);
 					Dgms CokDiagrams(max_dim+1);
@@ -150,7 +152,7 @@ namespace oineus {
 						KerDiagrams.add_point(dim,K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()); //add point to the diagram
 					}
 				}
-				
+
 				std::cerr << "The kernel diagrams are: " << std::endl;
 				for (int i = 0; i <= max_dim; i++) {
 					if (KerDiagrams.extract(i).empty()) {
@@ -245,7 +247,7 @@ namespace oineus {
 					}
 				}
 			}
-			
+
 			//Generate the cokernel diagrams and store them in CokDiagrams
 			void GenerateCokDiagrams() {
 				std::cout << "Starting to extract the cokernel diagrams." << std::endl;
@@ -346,7 +348,7 @@ namespace oineus {
 					}
 				}
 			}
-			
+
 
 			//Useful functions to obtain the various matrices. Mostly useful in debugging, but potentially useful for other people depending on applications.
 			MatrixData get_D_f() {
@@ -397,10 +399,21 @@ namespace oineus {
 				return Ker.get_R();
 			}
 
+			MatrixData get_D_cok() {
+				return Cok.get_D();
+			}
+
+			MatrixData get_V_cok() {
+				return Cok.get_V();
+			}
+
+			MatrixData get_R_cok() {
+				return Cok.get_R();
+			}
 			Dgms get_kernel_diagrams(){
 				return KerDiagrams;
 			}
-	
+
 			Dgms get_image_diagrams(){
 				return ImDiagrams;
 			}
@@ -423,20 +436,20 @@ namespace oineus {
 		using Point = DgmPoint<Real>;
 		using Diagram = std::vector<Point>;
 
-		std::cout << "Performing kernel, image, cokernel reduction with the following parameters:" << std::endl;
-		std::cout << "n_threads: " << params.n_threads << std::endl;
-		std::cout << "kernel: " << params.kernel << std::endl;
-		std::cout << "image: " << params.image << std::endl;
-		std::cout << "cokernel: " << params.cokernel << std::endl;
-		std::cout << "verbose: " << params.verbose << std::endl;
+		std::cerr << "Performing kernel, image, cokernel reduction with the following parameters:" << std::endl;
+		std::cerr << "n_threads: " << params.n_threads << std::endl;
+		std::cerr << "kernel: " << params.kernel << std::endl;
+		std::cerr << "image: " << params.image << std::endl;
+		std::cerr << "cokernel: " << params.cokernel << std::endl;
+		std::cerr << "verbose: " << params.verbose << std::endl;
 
-		FiltrationSimplexVector K_simps = K.simplices(); //simplices of L as we will need to work with them to get their order
-		int number_cells_K =  K_simps.size(); // number of simplices in K
-		FiltrationSimplexVector L_simps = L.simplices(); //simplices of L as we will need to work with them to get their order
-		int number_cells_L =  L_simps.size(); // number of simplices in L
+		FiltrationSimplexVector K_simps = K.cells(); //cells of L as we will need to work with them to get their order
+		int number_cells_K =  K_simps.size(); // number of cells in K
+		FiltrationSimplexVector L_simps = L.cells(); //cells of L as we will need to work with them to get their order
+		int number_cells_L =  L_simps.size(); // number of cells in L
 
 		std::vector<int> sorted_L_to_sorted_K(number_cells_L, 0); //need to create the map from sorted L to sorted K
-		std::vector<int> sorted_K_to_sorted_L(number_cells_K, -1); //need a map from sorted K to sorted L, for any cell not in L, we set the value to -1, which is convenient for getting the diagrams.	
+		std::vector<int> sorted_K_to_sorted_L(number_cells_K, -1); //need a map from sorted K to sorted L, for any cell not in L, we set the value to -1, which is convenient for getting the diagrams.
 
 
 		for (int i = 0; i < number_cells_L; i++) {//getting sorted L to sorted K is relatively easy
@@ -448,19 +461,19 @@ namespace oineus {
 		}
 
 		//set up the reduction for F  on K
-		if (params.verbose) std::cout << "Reducing F on K." << std::endl;
+		if (params.verbose) std::cerr << "Reducing F on K." << std::endl;
 		VRUDecomp F(K.boundary_matrix_full());
 		F.reduce_parallel_rv(params);
 
 		//set up reduction for G on L
-		if (params.verbose) std::cout << "Reducing G on L." << std::endl;
+		if (params.verbose) std::cerr << "Reducing G on L." << std::endl;
 		VRUDecomp G(L.boundary_matrix_full());
 		G.reduce_parallel_rv(params);
 
 		std::vector<int> new_order (number_cells_K);//we will need to reorder rows so that L comes first and then K-L
 		std::iota (new_order.begin(), new_order.end(), 0);
 
-
+		if (params.verbose) std::cerr << "Sorting so that cells in L come before cells in K." << std::endl;
 		std::sort(new_order.begin(), new_order.end(), [&](int i, int j) {//sort so that all cells in L come first sorted by dimension and then value in G, and then cells in K-L sorted by dimension and value in F
 			if (sorted_K_to_sorted_L[i] != -1 && sorted_K_to_sorted_L[j] != -1) {//if both are in L, sort by dimension and then value under G
 				int i_dim, j_dim;
@@ -470,9 +483,23 @@ namespace oineus {
 				if (i_dim == j_dim) {
 					i_val = L.value_by_sorted_id(sorted_K_to_sorted_L[i]);
 					j_val = L.value_by_sorted_id(sorted_K_to_sorted_L[j]);
-					return i_val < j_val;
+					if (i_val == j_val) {
+						if ( i < j) {
+							return true;
+						} else {
+							return false;
+						}
+					} else if  (i_val < j_val) {
+						return true;
+					} else {
+						return false;
+					}
 				} else {
-					return i_dim < j_dim;
+					if (i_dim < j_dim) {
+						return true;
+					} else {
+						return false;
+					}
 				}
 			} else if (sorted_K_to_sorted_L[i] != -1 && sorted_K_to_sorted_L[j] == -1) {//i is in L and j is not
 				return true;
@@ -484,11 +511,25 @@ namespace oineus {
 				i_dim = K.dim_by_sorted_id(i);
 				j_dim = K.dim_by_sorted_id(j);
 				if (i_dim == j_dim) {
-					return i_val < j_val;
-				} else {
 					i_val = K.value_by_sorted_id(i);
 					j_val = K.value_by_sorted_id(j);
-					return i_dim < j_dim;
+					if (i_val == j_val) {
+						if ( i < j) {
+							return true;
+						} else {
+							return false;
+						}
+					} else if  (i_val < j_val) {
+						return true;
+					} else {
+						return false;
+					}
+				} else {
+					if (i_dim < j_dim) {
+						return true;
+					} else {
+						return false;
+					}
 				}
 			}
 		});
@@ -507,51 +548,59 @@ namespace oineus {
 					new_col_i.push_back(old_to_new_order[F.get_D()[i][j]]);
 				}
 			}
-			std::sort(new_col_i.begin(), new_col_i.end());//sort to make sure this is all correct. 
+			std::sort(new_col_i.begin(), new_col_i.end());//sort to make sure this is all correct.
 			d_im.push_back(new_col_i);
 		}
 
 
         params.clearing_opt = false;//set clearing to false as this was interferring with the change in row order
 		//set up Im reduction
-		if (params.verbose) std::cout << "Reducing Image." << std::endl;
+		if (params.verbose) std::cerr << "Reducing Image." << std::endl;
 		VRUDecomp Im(d_im);
 		Im.reduce_parallel_rv(params);
 
-		//we nee4d to remove some columns from Im to get Ker, so we need to know which ones we keep, and then what cells they correspond to
-		std::vector<bool> to_keep(number_cells_K, false);
-		for (int i = 0; i < F.get_V().size(); i++) {
-			if (!F.get_V()[i].empty()) {//cycle check as in the code for generating the persistence diagrams.
-				bool cycle = true;
-				std::vector<int> quasi_sum (number_cells_K, 0);
-				for (int j = 0; j < F.get_V()[i].size(); j++) {
-					for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++) {
-						quasi_sum[F.get_D()[F.get_V()[i][j]][k]]++;
+		//we need to remove some columns from Im to get Ker, so we need to know which ones we keep, and then what cells they correspond t
+		if (params.verbose) std::cerr << "Checking which columns to keep." << std::endl;
+		std::vector<char> to_keep(number_cells_K);
+		//using MatrixData = std::vector<std::vector<int> >;
+
+		const MatrixData F_V(F.get_V());
+		const MatrixData F_D(F.get_D());
+		tbb::parallel_for(tbb::blocked_range<std::size_t>(0, number_cells_K), [&](const tbb::blocked_range<std::size_t> &r) {
+			for (int i=r.begin(); i < r.end(); i++){
+				if (!F_V[i].empty()) {//cycle check as in the code for generating the persistence diagrams.
+					bool cycle = true;
+					std::vector<int> quasi_sum (number_cells_K, 0);
+					for (int j = 0; j < F_V[i].size(); j++) {
+						for (int k = 0; k < F_D[F_V[i][j]].size(); k++) {
+							quasi_sum[F_D[F_V[i][j]][k]]++;
+						}
 					}
-				}
-				for (int j = 0; j < quasi_sum.size(); j++) {
-					if (quasi_sum[j]%2 != 0) {
-						cycle = false;
-						break;
+					for (int j = 0; j < quasi_sum.size(); j++) {
+						if (quasi_sum[j]%2 != 0) {
+							break;
+						}
 					}
-				}
-				to_keep[i] = cycle;
-			}
-		}
+					if (cycle) {
+						to_keep[i] = 't';
+					} else {
+						to_keep[i] = 'f';
+					}
+				};
+			};
+		});
 
 		MatrixData d_ker;
-
 		std::vector<int> new_cols(number_cells_K, -1);
 		int counter = 0;
-		for (int i = 0; i < to_keep.size(); i++) {
-			if (to_keep[i]) {
+		for (int i = 0; i < number_cells_K; i++) {
+			if (to_keep[i] == 't') {
 				d_ker.push_back(Im.get_V()[i]);
 				new_cols[i] = counter;
 				counter++;
 			}
 		}
-
-		if (params.verbose) std::cout << "Reducing Ker." << std::endl;
+		if (params.verbose) std::cerr << "Reducing Ker." << std::endl;
 		VRUDecomp Ker(d_ker, K.size());
 		Ker.reduce_parallel_rv(params);
 		MatrixData d_cok(Im.get_D());
@@ -579,11 +628,11 @@ namespace oineus {
 			}
 		}
 
-		if (params.verbose) std::cout << "Reducing Cok." << std::endl;		
+		if (params.verbose) std::cerr << "Reducing Cok." << std::endl;
 		VRUDecomp Cok(d_cok);
 		Cok.reduce_parallel_rv(params);
 
-		KerImCokReduced<Int, Real> KICR(K, L, F, G, Im, Ker, Cok, sorted_L_to_sorted_K, sorted_K_to_sorted_L, new_order, new_cols);
+		KerImCokReduced<Int, Real> KICR(K, L, F, G, Im, Ker, Cok, sorted_L_to_sorted_K, sorted_K_to_sorted_L, new_order, new_cols, params);
 
 		if (params.kernel) KICR.GenerateKerDiagrams();
 		if (params.image) KICR.GenerateImDiagrams();
@@ -591,6 +640,6 @@ namespace oineus {
 
 		return  KICR;
 	}
-	
+
 }
 

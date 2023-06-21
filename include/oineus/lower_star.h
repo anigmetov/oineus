@@ -249,7 +249,7 @@ public:
         return result;
     }
 
-    std::pair<GridFiltration, CriticalVertices> freudenthal_filtration(size_t top_d, bool negate, int n_threads = 1) const
+    std::pair<GridFiltration, CriticalVertices> freudenthal_filtration_and_critical_vertices(size_t top_d, bool negate, int n_threads = 1) const
     {
         if (top_d > dim)
             throw std::runtime_error("bad dimension, top_d = " + std::to_string(top_d) + ", dim = " + std::to_string(dim));
@@ -257,7 +257,7 @@ public:
         SimplexVec simplices;
         CriticalVertices vertices;
 
-        // calculate total number of simplices to allocate memory once
+        // calculate total number of cells to allocate memory once
         size_t total_size = 0;
         for(dim_type d = 0 ; d <= top_d ; ++d) {
             total_size += get_fr_displacements(d).size() * size();
@@ -271,6 +271,11 @@ public:
         }
 
         return {GridFiltration(std::move(simplices), negate, n_threads), vertices};
+    }
+
+    GridFiltration freudenthal_filtration(size_t top_d, bool negate, int n_threads = 1) const
+    {
+        return freudenthal_filtration_and_critical_vertices(top_d, negate, n_threads).first;
     }
 
     Real value_at_vertex(Int vertex) const

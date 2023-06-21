@@ -44,7 +44,6 @@ namespace oineus {
                 :thread_id(_thread_id) { }
     };
 
-
 #ifdef OINEUS_GATHER_ADD_STATS
     void write_add_stats_file(const std::vector<ThreadStats>& stats)
     {
@@ -86,12 +85,6 @@ namespace oineus {
         }
     }
 #endif
-
-
 }
-
-
-
-
 
 #endif //OINEUS_PARAMS_H

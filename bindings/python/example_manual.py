@@ -10,21 +10,16 @@ import oineus as oin
 # edges: e1 = [v0, v1]
 #
 
-# The filtration we create is not a lower-star filtration,
-# but we use lower-star simplices, it doesn't really matter.
-# The last parameter to ctor, critical_value_location (int)
-# is not used in this example, so we use 0 everywhere.
-
-v0 = oin.LSSimplex_double([0], 0.2, 0)
-v1 = oin.LSSimplex_double([1], 0.1, 0)
-v2 = oin.LSSimplex_double([2], 0.3, 0)
+v0 = oin.Simplex_double([0], 0.2)
+v1 = oin.Simplex_double([1], 0.1)
+v2 = oin.Simplex_double([2], 0.3)
 
 # indices of vertices should be sorted
-e1 = oin.LSSimplex_double([0, 1], 0.9, 0)
-e2 = oin.LSSimplex_double([0, 2], 0.5, 0)
-e3 = oin.LSSimplex_double([1, 2], 0.8, 0)
+e1 = oin.Simplex_double([0, 1], 0.9)
+e2 = oin.Simplex_double([0, 2], 0.5)
+e3 = oin.Simplex_double([1, 2], 0.8)
 
-t = oin.LSSimplex_double([0, 1, 2], 1.0, 0)
+t = oin.Simplex_double([0, 1, 2], 1.0)
 
 simplices = [v0, v1, v2, e1, e2, e3, t]
 
@@ -32,7 +27,7 @@ negate = False
 n_threads = 1
 
 # constructor will sort simplices and assign sorted_ids
-fil = oin.LSFiltration_double(simplices, negate, n_threads)
+fil = oin.Filtration_double(simplices, negate, n_threads)
 
 fil_simplices = fil.simplices()
 
