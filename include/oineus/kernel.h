@@ -563,7 +563,7 @@ namespace oineus {
 		if (params.verbose) std::cerr << "Checking which columns to keep." << std::endl;
 		std::vector<char> to_keep(number_cells_K);
 		//using MatrixData = std::vector<std::vector<int> >;
-
+        //
 		const MatrixData F_V(F.get_V());
 		const MatrixData F_D(F.get_D());
 		tbb::parallel_for(tbb::blocked_range<std::size_t>(0, number_cells_K), [&](const tbb::blocked_range<std::size_t> &r) {
