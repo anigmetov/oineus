@@ -246,7 +246,6 @@ public:
             Real death = get_cell_value(p.death);
             Real pers = abs(death - birth);
             if (pers <= epsilon) {
-                std::cerr << "point p of index_diagram: " << p << std::endl;
                 if (strategy == DenoiseStrategy::BirthBirth)
                     result.push_back(p.death, birth);
                 else if (strategy == DenoiseStrategy::DeathDeath)

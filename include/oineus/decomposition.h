@@ -214,7 +214,6 @@ namespace oineus {
                 dim_last(fil.dim_last()),
                 n_rows(d_data.size())
         {
-            std::cerr << "constructing decomposition, _dualize = " << _dualize << ", dualize_ = " << dualize_ << std::endl;
             if (dualize_) {
                 std::reverse(dim_first.begin(), dim_first.end());
                 std::reverse(dim_last.begin(), dim_last.end());

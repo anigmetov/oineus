@@ -259,6 +259,7 @@ namespace oineus {
             CALI_CXX_MARK_FUNCTION;
 
             id_to_sorted_id_ = std::vector<Int>(size(), Int(-1));
+            sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
             vertices_to_sorted_id_.clear();
             sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
 
