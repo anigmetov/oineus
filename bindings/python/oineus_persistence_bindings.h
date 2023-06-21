@@ -213,6 +213,24 @@ get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> p
     return oin::get_vr_filtration<Int, Real, D>(numpy_to_point_vector<Real, D>(points), max_dim, max_radius, n_threads);
 }
 
+template<class Int, class Real>
+decltype(auto) get_vr_filtration_and_critical_edges_from_pwdists(py::array_t<Real, py::array::c_style | py::array::forcecast> pw_dists, dim_type max_dim, Real max_radius, int n_threads)
+{
+    if (pw_dists.ndim() != 2 or pw_dists.shape(1) != pw_dists.shape(2))
+        throw std::runtime_error("Dimension mismatch");
+
+    py::buffer_info pw_dists_buf = pw_dists.request();
+
+    Real* pdata {static_cast<Real*>(pw_dists_buf.ptr)};
+
+    size_t n_points = pw_dists.shape(1);
+
+    oin::DistMatrix<Real> dist_matrix { pdata, n_points };
+
+    return oin::get_vr_filtration<Int, Real>(pw_dists, max_dim, max_radius, n_threads);
+}
+
+
 template<class Int, class Real, class L>
 PyOineusDiagrams<Real>
 compute_diagrams_from_fil(const oineus::Filtration<oineus::Simplex<Int, Real>>& fil, int n_threads)

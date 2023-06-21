@@ -270,7 +270,15 @@ public:
             add_freudenthal_simplices(d, negate, simplices, vertices);
         }
 
-        return {GridFiltration(std::move(simplices), negate, n_threads), vertices};
+        auto fil = GridFiltration(std::move(simplices), negate, n_threads);
+
+        CriticalVertices sorted_vertices;
+
+        for(const auto& cell: fil.cells()) {
+            sorted_vertices.push_back(vertices[cell.id_]);
+        }
+
+        return {fil, sorted_vertices};
     }
 
     GridFiltration freudenthal_filtration(size_t top_d, bool negate, int n_threads = 1) const

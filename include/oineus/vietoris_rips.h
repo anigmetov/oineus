@@ -10,6 +10,13 @@
 
 namespace oineus {
 
+    template<class Real>
+    struct DistMatrix {
+        Real* distances;
+        size_t n_points;
+        Real get_distance(size_t i, size_t j) const { return distances[n_points*i + j]; }
+    };
+
     template<class Real, std::size_t D>
     using Point = std::array<Real, D>;
 
@@ -26,6 +33,35 @@ namespace oineus {
     Real dist(const Point<Real, D>& a, const Point<Real, D>& b)
     {
         return sqrt(sq_dist(a, b));
+    }
+
+    template<class Int, class Real, std::size_t D>
+    std::pair<Simplex<Int, Real>, VREdge> vr_simplex_with_edge(const DistMatrix<Real>& dist_matrix, const std::vector<size_t>& vertices_)
+    {
+        using Simplex = Simplex<Int, Real>;
+        using IdxVector = typename Simplex::IdxVector;
+
+        assert(not vertices_.empty());
+
+        Real crit_value = 0;
+        VREdge crit_edge {vertices_[0], vertices_[0]};
+
+        for(size_t u_idx = 0; u_idx < vertices_.size(); ++u_idx) {
+            for(size_t v_idx = u_idx + 1; v_idx < vertices_.size(); ++v_idx) {
+                size_t u = vertices_[u_idx];
+                size_t v = vertices_[v_idx];
+                Real uv_dist = dist_matrix.get_distance(u, v);
+                if (uv_dist > crit_value) {
+                    crit_value = uv_dist;
+                    crit_edge = {u, v};
+                }
+            }
+        }
+
+        // convert size_t to Int, if necessary
+        IdxVector vertices {vertices_.begin(), vertices_.end()};
+
+        return {Simplex(vertices, crit_value), crit_edge};
     }
 
     template<class Int, class Real, std::size_t D>
@@ -137,11 +173,59 @@ namespace oineus {
         return std::make_pair(Filtration(std::move(simplices), negate, n_threads), std::move(edges));
     }
 
+    template<class Int, class Real>
+    std::pair<Filtration<Simplex<Int, Real>>, std::vector<VREdge>> get_vr_filtration_and_critical_edges(const DistMatrix<Real>& dist_matrix, dim_type max_dim, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
+    {
+        using Simplex = Simplex<Int, Real>;
+        using Filtration = Filtration<Simplex>;
+        using VertexContainer = std::vector<size_t>;
+
+        auto neighbor = [&](size_t u, size_t v) { return dist_matrix.get_distance(u, v) <= max_radius * max_radius; };
+
+        std::vector<Simplex> simplices;
+        std::vector<VREdge> edges;
+        bool negate {false};
+
+        size_t n_points = dist_matrix.n_points;
+
+        // vertices are added manually to preserve order (id == index)
+        for(size_t v = 0; v < n_points; ++v) {
+            auto [simplex, edge] = vr_simplex_with_edge<Int, Real>(dist_matrix, {v});
+            simplices.emplace_back(simplex);
+            edges.emplace_back(edge);
+        }
+
+        auto functor = [&](const VertexContainer& vs)
+                { if (vs.size() > 1) {
+                    auto [simplex, edge] = vr_simplex_with_edge<Int, Real>(dist_matrix, vs);
+                    simplices.emplace_back(simplex);
+                    edges.emplace_back(edge);
+                }
+                };
+
+        VertexContainer current;
+        VertexContainer candidates(n_points);
+        std::iota(candidates.begin(), candidates.end(), 0);
+        auto excluded_end {candidates.cbegin()};
+        bool check_initial {false};
+
+        bron_kerbosch(current, candidates, excluded_end, max_dim, neighbor, functor, check_initial);
+
+        return std::make_pair(Filtration(std::move(simplices), negate, n_threads), std::move(edges));
+    }
+
     template<class Int, class Real, std::size_t D>
     Filtration<Simplex<Int, Real>> get_vr_filtration(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
         return get_vr_filtration_and_critical_edges<Int, Real, D>(points, max_dim, max_radius, n_threads).first;
     }
+
+    template<class Int, class Real>
+    Filtration<Simplex<Int, Real>> get_vr_filtration(const DistMatrix<Real>& dist_matrix, dim_type max_dim, Real max_radius = std::numeric_limits<Real>::max(), int n_threads = 1)
+    {
+        return get_vr_filtration_and_critical_edges<Int, Real>(dist_matrix, max_dim, max_radius, n_threads).first;
+    }
+
 
     // stupid brute-force
     template<class Int, class Real, std::size_t D>

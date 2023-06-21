@@ -176,6 +176,11 @@ namespace oineus {
             return id_to_sorted_id_[i];
         }
 
+        int get_id_by_sorted_id(int sorted_id)
+        {
+            return sorted_id_to_id_[sorted_id];
+        }
+
         bool negate() const { return negate_; }
 
         bool cmp(Real a, Real b) const { return negate() ? (a > b) : (a < b); }
@@ -209,6 +214,7 @@ namespace oineus {
 
         std::map<IntVector, Int> vertices_to_sorted_id_;
         std::vector<Int> id_to_sorted_id_;
+        std::vector<Int> sorted_id_to_id_;
 
         std::vector<Real> sorted_id_to_value_;
 
@@ -275,6 +281,7 @@ namespace oineus {
                 auto& sigma = cells_[sorted_id];
 
                 id_to_sorted_id_[sigma.id_] = sorted_id;
+                sorted_id_to_id_[sorted_id] = sigma.id_;
                 sigma.sorted_id_ = sorted_id;
                 vertices_to_sorted_id_[sigma.vertices_] = sorted_id;
                 sorted_id_to_value_[sorted_id] = sigma.value();

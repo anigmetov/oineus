@@ -85,6 +85,7 @@ public:
     TopologyOptimizer(const Fil& fil)
             :
             decmp_hom_(fil, false),
+            decmp_coh_(fil, true),
             fil_(fil),
             negate_(fil.negate()) { }
 
@@ -94,9 +95,7 @@ public:
             fil_(fil),
             negate_(fil.negate())
     {
-        if (hints.compute_cohomology) {
-            decmp_coh_ = Decomposition(fil, true);
-        }
+        decmp_coh_ = Decomposition(fil, true);
 
         params_hom_.compute_u = hints.compute_homology_u;
         params_coh_.compute_u = hints.compute_cohomology_u;
@@ -247,6 +246,7 @@ public:
             Real death = get_cell_value(p.death);
             Real pers = abs(death - birth);
             if (pers <= epsilon) {
+                std::cerr << "point p of index_diagram: " << p << std::endl;
                 if (strategy == DenoiseStrategy::BirthBirth)
                     result.push_back(p.death, birth);
                 else if (strategy == DenoiseStrategy::DeathDeath)
@@ -435,6 +435,8 @@ private:
 
         if (!decmp_coh_.is_reduced)
             decmp_coh_.reduce(params_coh_);
+
+        std::cerr << "decm_coh_: " << decmp_coh_.dualize() << std::endl;
 
         if (cmp(target_birth, current_birth))
             return decrease_birth_x(d, positive_simplex_idx, fil_, decmp_coh_, target_birth);
