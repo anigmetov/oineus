@@ -270,6 +270,10 @@ namespace oineus {
         Diagrams<typename Cell::Real> diagram(const Filtration<Cell>& fil, bool include_inf_points) const;
 
         template<typename Cell>
+        Diagrams<typename Cell::Real> zero_persistence_diagram(const Filtration<Cell>& fil) const;
+
+
+        template<typename Cell>
         Diagrams<size_t> index_diagram(const Filtration<Cell>& fil, bool include_inf_points, bool include_zero_persistence_points) const;
 
         template<typename Int>
@@ -765,6 +769,41 @@ namespace oineus {
         }
         return result;
     }
+
+    template<class Int>
+    template<class Cell>
+    Diagrams<typename Cell::Real> VRUDecomposition<Int>::zero_persistence_diagram(const Filtration<Cell>& fil) const
+    {
+        using Real = typename Cell::Real;
+        if (not is_reduced)
+            throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
+
+        Diagrams<Real> result(fil.max_dim());
+
+        std::unordered_set<Int> rows_with_lowest_one;
+
+        for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
+            auto col = &r_data[col_idx];
+
+            auto simplex_idx = fil.index_in_filtration(col_idx, dualize());
+
+            if (not is_zero(col)) {
+                // finite point
+                Int birth_idx = fil.index_in_filtration(low(col), dualize()), death_idx = simplex_idx;
+                dim_type dim = fil.dim_by_sorted_id(birth_idx);
+                Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
+
+                //std::cerr << "simplex_idx = " << simplex_idx << ", dim = " << dim << ", bithr = " << birth << ", d = " << death << std::endl;
+
+                if (birth == death) {
+                    //std::cerr << "adding to 0-pers diagram" << std::endl;
+                    result.add_point(dim, birth, death);
+                }
+            }
+        }
+        return result;
+    }
+
 
     template<class Int>
     template<class Cell>

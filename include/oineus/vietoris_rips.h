@@ -35,7 +35,7 @@ namespace oineus {
         return sqrt(sq_dist(a, b));
     }
 
-    template<class Int, class Real, std::size_t D>
+    template<class Int, class Real>
     std::pair<Simplex<Int, Real>, VREdge> vr_simplex_with_edge(const DistMatrix<Real>& dist_matrix, const std::vector<size_t>& vertices_)
     {
         using Simplex = Simplex<Int, Real>;

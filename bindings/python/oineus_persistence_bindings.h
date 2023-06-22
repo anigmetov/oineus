@@ -216,7 +216,7 @@ get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> p
 template<class Int, class Real>
 decltype(auto) get_vr_filtration_and_critical_edges_from_pwdists(py::array_t<Real, py::array::c_style | py::array::forcecast> pw_dists, dim_type max_dim, Real max_radius, int n_threads)
 {
-    if (pw_dists.ndim() != 2 or pw_dists.shape(1) != pw_dists.shape(2))
+    if (pw_dists.ndim() != 2 or pw_dists.shape(0) != pw_dists.shape(1))
         throw std::runtime_error("Dimension mismatch");
 
     py::buffer_info pw_dists_buf = pw_dists.request();
@@ -227,8 +227,15 @@ decltype(auto) get_vr_filtration_and_critical_edges_from_pwdists(py::array_t<Rea
 
     oin::DistMatrix<Real> dist_matrix { pdata, n_points };
 
-    return oin::get_vr_filtration<Int, Real>(pw_dists, max_dim, max_radius, n_threads);
+    return oin::get_vr_filtration_and_critical_edges<Int, Real>(dist_matrix, max_dim, max_radius, n_threads);
 }
+
+template<class Int, class Real>
+decltype(auto) get_vr_filtration_from_pwdists(py::array_t<Real, py::array::c_style | py::array::forcecast> pw_dists, dim_type max_dim, Real max_radius, int n_threads)
+{
+    return get_vr_filtration_and_critical_edges_from_pwdists<Int, Real>(pw_dists, max_dim, max_radius, n_threads).first;
+}
+
 
 
 template<class Int, class Real, class L>
@@ -595,6 +602,7 @@ void init_oineus_common(py::module& m)
             .def("sanity_check", &Decomposition::sanity_check, py::call_guard<py::gil_scoped_release>())
             .def("diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, double>>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
             .def("diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, float>>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
+            .def("zero_persistence_diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, float>>& fil) { return PyOineusDiagrams<float>(self.zero_persistence_diagram(fil)); })
             .def("index_diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, double>>& fil, bool include_inf_points, bool include_zero_persistence_points) {
               return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
             })
@@ -775,6 +783,12 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "get_vr_filtration_and_critical_edges" + suffix + "_3";
     m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges<Int, Real, 3>);
+
+    func_name = "get_vr_filtration_from_pwdists" + suffix;
+    m.def(func_name.c_str(), &get_vr_filtration_from_pwdists<Int, Real>);
+
+    func_name = "get_vr_filtration_and_critical_edges_from_pwdists" + suffix;
+    m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges_from_pwdists<Int, Real>);
 
 
     // boundary matrix as vector of columns
