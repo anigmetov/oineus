@@ -140,11 +140,12 @@ namespace oineus {
         using Simplex = Simplex<Int, Real>;
         using Filtration = Filtration<Simplex>;
         using VertexContainer = std::vector<size_t>;
+        using Edges = std::vector<VREdge>;
 
         auto neighbor = [&](size_t u, size_t v) { return sq_dist(points[u], points[v]) <= max_radius * max_radius; };
 
         std::vector<Simplex> simplices;
-        std::vector<VREdge> edges;
+        Edges edges;
         bool negate {false};
 
         // vertices are added manually to preserve order (id == index)
@@ -169,8 +170,18 @@ namespace oineus {
         bool check_initial {false};
 
         bron_kerbosch(current, candidates, excluded_end, max_dim, neighbor, functor, check_initial);
+        // Filtration constructor will sort simplices and assign sorted ids
+        auto fil = Filtration(std::move(simplices), negate, n_threads);
 
-        return std::make_pair(Filtration(std::move(simplices), negate, n_threads), std::move(edges));
+        // use sorted info from fil to rearrange edges
+        Edges sorted_edges;
+        sorted_edges.reserve(edges.size());
+
+        for(size_t sorted_edge_idx = 0; sorted_edge_idx < edges.size(); ++sorted_edge_idx) {
+            sorted_edges.push_back(edges[fil.get_id_by_sorted_id(sorted_edge_idx)]);
+        }
+
+        return std::make_pair(fil, sorted_edges);
     }
 
     template<class Int, class Real>
