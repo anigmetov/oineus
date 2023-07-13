@@ -270,7 +270,7 @@ public:
     IndicesValues match(typename Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q)
     {
         // set ids in template diagram
-        for(hera::id_type i = 0 ; i < template_dgm.size() ; ++i) {
+        for(auto i = 0 ; i < template_dgm.size() ; ++i) {
             template_dgm[i].id = i;
 
             if (template_dgm[i].is_inf())
@@ -291,7 +291,7 @@ public:
         Diagram current_dgm;
         current_dgm.reserve(current_index_dgm.size());
 
-        for(hera::id_type current_dgm_id = 0 ; current_dgm_id < current_index_dgm.size() ; ++current_dgm_id) {
+        for(auto current_dgm_id = 0 ; current_dgm_id < current_index_dgm.size() ; ++current_dgm_id) {
 
             auto birth_idx = current_index_dgm[current_dgm_id].birth;
             auto death_idx = current_index_dgm[current_dgm_id].death;
@@ -306,29 +306,37 @@ public:
 
         // template_dgm: bidders, a
         // current_dgm: items, b
-        hera::wasserstein_cost<Diagram>(template_dgm, current_dgm, hera_params);
+        auto hera_res = hera::wasserstein_cost_detailed<Diagram>(template_dgm, current_dgm, hera_params);
 
-        for(auto curr_template: hera_params.matching_b_to_a_) {
+        std::cerr << "hera_res.matching_b_to_a_ : " << hera_res.matching_b_to_a_.size() << std::endl;
+
+        for(auto curr_template: hera_res.matching_b_to_a_) {
             auto current_id = curr_template.first;
             auto template_id = curr_template.second;
 
             if (current_id < 0)
                 continue;
 
+            size_t birth_idx = current_index_dgm.at(current_id).birth;
+            size_t death_idx = current_index_dgm.at(current_id).death;
+
+            Real birth_target;
+            Real death_target;
+
             if (template_id >= 0) {
                 // matched to off-diagonal point of template diagram
 
-                size_t birth_idx = current_index_dgm.at(current_id).birth;
-                size_t death_idx = current_index_dgm.at(current_id).death;
-
-                Real birth_target = template_dgm.at(template_id).birth;
-                Real death_target = template_dgm.at(template_id).death;
-
-                result.push_back(birth_idx, birth_target);
-                result.push_back(death_idx, death_target);
+                birth_target = template_dgm.at(template_id).birth;
+                death_target = template_dgm.at(template_id).death;
+            } else {
+                // matched to diagonal point of template diagram
+                auto curr_proj_id = -template_id - 1;
+                Real m = (current_dgm.at(curr_proj_id).birth + current_dgm.at(curr_proj_id).death ) / 2;
+                birth_target = death_target = m;
             }
-            // else { }
-            // TODO: should we just ignore this point, if it is matched to the diagonal? or simplify it?
+
+            result.push_back(birth_idx, birth_target);
+            result.push_back(death_idx, death_target);
         }
 
         return result;

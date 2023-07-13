@@ -133,7 +133,7 @@ namespace oineus {
     void match_diagonal_points(const typename oineus::Filtration<Cell>& current_fil,
             const typename Diagrams<size_t>::Dgm& current_index_dgm,
             typename Diagrams<typename Cell::Real>::Dgm& template_dgm,
-            typename hera::AuctionParams<typename Cell::Real>& hera_params,
+            typename hera::AuctionResult<typename Cell::Real>& hera_res,
             DiagramToValues<typename Cell::Real>& result)
     {
         using Real = typename Cell::Real;
@@ -144,7 +144,7 @@ namespace oineus {
         using VecDiagP = std::vector<DiagP>;
         VecDiagP current_diagonal_points;
 
-        for(hera::id_type current_dgm_id = 0; current_dgm_id < static_cast<hera::id_type>(current_index_dgm.size()); ++current_dgm_id) {
+        for(auto current_dgm_id = 0; current_dgm_id < current_index_dgm.size(); ++current_dgm_id) {
             if (current_index_dgm[current_dgm_id].is_inf())
                 continue;
 
@@ -160,7 +160,7 @@ namespace oineus {
 
         // get unmatched template points
         Diagram unmatched_template_points;
-        for(auto curr_template: hera_params.matching_b_to_a_) {
+        for(auto curr_template: hera_res.matching_b_to_a_) {
             auto current_id = curr_template.first;
             auto template_id = curr_template.second;
 
@@ -182,19 +182,20 @@ namespace oineus {
         for(auto p: unmatched_template_points)
             diag_unmatched_template.emplace_back((p.birth + p.death) / 2, p.id);
 
-        hera_params.clear_matching();
+        throw std::runtime_error("todo");
+        //hera_params.clear_matching();
 
-        hera::ws::get_one_dimensional_cost(diag_unmatched_template, current_diagonal_points, hera_params);
+        //hera::ws::get_one_dimensional_cost(diag_unmatched_template, current_diagonal_points, hera_params);
 
-        for(auto curr_template: hera_params.matching_b_to_a_) {
-            auto current_id = curr_template.first;
-            auto template_id = curr_template.second;
+        //for(auto curr_template: hera_res.matching_b_to_a_) {
+        //    auto current_id = curr_template.first;
+        //    auto template_id = curr_template.second;
 
-            if (current_id < 0 or template_id < 0)
-                throw std::runtime_error("negative ids in one-dimensional call");
+        //    if (current_id < 0 or template_id < 0)
+        //        throw std::runtime_error("negative ids in one-dimensional call");
 
-            result[current_index_dgm.at(current_id)] = template_dgm.at(template_id);
-        }
+        //    result[current_index_dgm.at(current_id)] = template_dgm.at(template_id);
+        //}
     }
 
     template<class Cell>
@@ -335,7 +336,7 @@ namespace oineus {
             rv.reduce(params);
         }
 
-        for(hera::id_type i = 0; i < template_dgm.size(); ++i) {
+        for(auto i = 0; i < template_dgm.size(); ++i) {
             template_dgm[i].id = i;
 
             if (template_dgm[i].is_inf())
@@ -348,6 +349,7 @@ namespace oineus {
         DiagramToValues<Real> result;
 
         hera::AuctionParams<Real> hera_params;
+        hera::AuctionResult<Real> hera_result;
         hera_params.return_matching = true;
         hera_params.match_inf_points = match_inf_points;
         hera_params.wasserstein_power = wasserstein_q;
@@ -372,7 +374,7 @@ namespace oineus {
             throw std::runtime_error("bad max/min value");
         }
 
-        for(hera::id_type current_dgm_id = 0; current_dgm_id < current_index_dgm.size(); ++current_dgm_id) {
+        for(auto current_dgm_id = 0; current_dgm_id < current_index_dgm.size(); ++current_dgm_id) {
 
             auto birth_idx = current_index_dgm[current_dgm_id].birth;
             auto death_idx = current_index_dgm[current_dgm_id].death;
@@ -387,9 +389,9 @@ namespace oineus {
 
         // template_dgm: bidders, a
         // current_dgm: items, b
-        hera::wasserstein_cost<Diagram>(template_dgm, current_dgm, hera_params);
+        auto hera_res = hera::wasserstein_cost_detailed<Diagram>(template_dgm, current_dgm, hera_params);
 
-        for(auto curr_template: hera_params.matching_b_to_a_) {
+        for(auto curr_template: hera_res.matching_b_to_a_) {
             auto current_id = curr_template.first;
             auto template_id = curr_template.second;
 
@@ -419,7 +421,7 @@ namespace oineus {
         }
 
         if (match_diag_points)
-            match_diagonal_points(current_fil, current_index_dgm, template_dgm, hera_params, result);
+            match_diagonal_points(current_fil, current_index_dgm, template_dgm, hera_res, result);
 
         return result;
     }

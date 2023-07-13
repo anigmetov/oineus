@@ -42,7 +42,9 @@ derivative works thereof, in binary and source code form.
 #endif
 
 #include "basic_defs_ws.h"
+#include "auction_oracle_base.h"
 
+namespace hera {
 namespace ws {
 
 template <typename T>
@@ -160,6 +162,7 @@ struct AuctionOracleLazyHeapRestricted : AuctionOracleBase<Real> {
     // methods
     void fill_in_losses_heap();
     void set_price(const IdxType items_idx, const Real new_price);
+    void set_prices(const std::vector<Real>& new_prices);
     IdxValPair<Real> get_optimal_bid(const IdxType bidder_idx);
     Real get_matching_weight(const std::vector<IdxType>& bidders_to_items) const;
     void adjust_prices();
@@ -185,6 +188,7 @@ struct AuctionOracleLazyHeapRestricted : AuctionOracleBase<Real> {
 };
 
 } // end of namespace ws
+} // end of namespace hera
 
 #include "auction_oracle_lazy_heap.h"
 

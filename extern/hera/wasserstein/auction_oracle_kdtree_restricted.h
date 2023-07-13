@@ -26,60 +26,65 @@ derivative works thereof, in binary and source code form.
 
   */
 
-#ifndef AUCTION_ORACLE_STUPID_SPARSE_RESTRICTED_H
-#define AUCTION_ORACLE_STUPID_SPARSE_RESTRICTED_H
+#ifndef AUCTION_ORACLE_KDTREE_RESTRICTED_H
+#define AUCTION_ORACLE_KDTREE_RESTRICTED_H
+
+
+//#define USE_BOOST_HEAP
 
 #include <map>
 #include <memory>
 #include <set>
 
+
 #include "basic_defs_ws.h"
 #include "diagonal_heap.h"
 #include "auction_oracle_base.h"
-#include "dnn/geometry/euclidean-fixed.h"
-#include "dnn/local/kd-tree.h"
-
+#include <hera/dnn/geometry/euclidean-fixed.h>
+#include <hera/dnn/local/kd-tree.h>
 
 namespace hera {
 namespace ws {
 
-template <int k_max_nn, class Real_ = double, class PointContainer_ = std::vector<DiagramPoint<Real_>>>
-struct AuctionOracleStupidSparseRestricted : AuctionOracleBase<Real_, PointContainer_> {
+template <class Real_ = double, class PointContainer_ = std::vector<DiagramPoint<Real_>>>
+struct AuctionOracleKDTreeRestricted : AuctionOracleBase<Real_, PointContainer_> {
 
     using PointContainer    = PointContainer_;
     using Real              = Real_;
 
     using LossesHeapR       = typename ws::LossesHeapOld<Real>;
     using LossesHeapRHandle = typename ws::LossesHeapOld<Real>::handle_type;
-    using DiagramPointR     = typename ws::DiagramPoint<Real>;
+    using DiagramPointR     = typename hera::DiagramPoint<Real>;
     using DebugOptimalBidR  = typename ws::DebugOptimalBid<Real>;
 
     using DnnPoint          = dnn::Point<2, Real>;
     using DnnTraits         = dnn::PointTraits<DnnPoint>;
 
-
-    AuctionOracleStupidSparseRestricted(const PointContainer& bidders, const PointContainer& items, const AuctionParams<Real>& params);
+    AuctionOracleKDTreeRestricted(const PointContainer& bidders, const PointContainer& items, const AuctionParams<Real>& params);
+    ~AuctionOracleKDTreeRestricted();
     // data members
     // temporarily make everything public
-    std::vector<std::vector<size_t>> admissible_items_;
     Real max_val_;
+    Real weight_adj_const_;
+    dnn::KDTree<DnnTraits>* kdtree_;
+    std::vector<DnnPoint> dnn_points_;
+    std::vector<DnnPoint*> dnn_point_handles_;
     LossesHeapR diag_items_heap_;
     std::vector<LossesHeapRHandle> diag_heap_handles_;
     std::vector<size_t> heap_handles_indices_;
-
-//    std::vector<size_t> kdtree_items_;
-
+    std::vector<size_t> kdtree_items_;
     std::vector<size_t> top_diag_indices_;
     std::vector<size_t> top_diag_lookup_;
     size_t top_diag_counter_ { 0 };
     bool best_diagonal_items_computed_ { false };
     Real best_diagonal_item_value_;
-    Real second_best_diagonal_item_idx_ { k_invalid_index };
+    size_t second_best_diagonal_item_idx_ { k_invalid_index };
     Real second_best_diagonal_item_value_ { std::numeric_limits<Real>::max() };
 
 
     // methods
     void set_price(const IdxType items_idx, const Real new_price, const bool update_diag = true);
+    void set_prices(const std::vector<Real>& new_prices);
     IdxValPair<Real> get_optimal_bid(const IdxType bidder_idx);
     void adjust_prices();
     void adjust_prices(const Real delta);
@@ -103,10 +108,13 @@ struct AuctionOracleStupidSparseRestricted : AuctionOracleBase<Real_, PointConta
 
 };
 
+template<class Real>
+std::ostream& operator<< (std::ostream& output, const DebugOptimalBid<Real>& db);
+
 } // ws
 } // hera
 
 
-#include "auction_oracle_stupid_sparse_restricted.hpp"
+#include "auction_oracle_kdtree_restricted.hpp"
 
 #endif

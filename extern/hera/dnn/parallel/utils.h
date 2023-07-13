@@ -1,11 +1,9 @@
-#ifndef HERA_WS_PARALLEL_UTILS_H
-#define HERA_WS_PARALLEL_UTILS_H
+#ifndef HERA_DNN_PARALLEL_UTILS_H
+#define HERA_DNN_PARALLEL_UTILS_H
 
 #include "../utils.h"
 
 namespace hera
-{
-namespace ws
 {
 namespace dnn
 {
@@ -20,12 +18,11 @@ namespace dnn
         shuffle(world, data, rng, [](T& x, T& y) { std::swap(x,y); });
     }
 } // dnn
-} // ws
 } // hera
 
 template<class DataVector, class RNGType, class SwapFunctor>
 void
-hera::ws::dnn::shuffle(mpi::communicator& world, DataVector& data, RNGType& rng, const SwapFunctor& swap, DataVector empty)
+hera::dnn::shuffle(mpi::communicator& world, DataVector& data, RNGType& rng, const SwapFunctor& swap, DataVector empty)
 {
     // This is not a perfect shuffle: it dishes out data in chunks of 1/size.
     // (It can be interpreted as generating a bistochastic matrix by taking the
@@ -48,7 +45,7 @@ hera::ws::dnn::shuffle(mpi::communicator& world, DataVector& data, RNGType& rng,
     RNGType local_rng(seed);
 
     // Shuffle local data
-    hera::ws::dnn::random_shuffle(data.begin(), data.end(), local_rng, swap);
+    hera::dnn::random_shuffle(data.begin(), data.end(), local_rng, swap);
 
     // Decide how much of our data goes to i-th processor
     std::vector<size_t>     out_counts(size);
@@ -56,7 +53,7 @@ hera::ws::dnn::shuffle(mpi::communicator& world, DataVector& data, RNGType& rng,
                                   boost::counting_iterator<int>(size));
     for (size_t i = 0; i < size; ++i)
     {
-        hera::ws::dnn::random_shuffle(ranks.begin(), ranks.end(), rng);
+        hera::dnn::random_shuffle(ranks.begin(), ranks.end(), rng);
         ++out_counts[ranks[rank]];
     }
 
@@ -93,7 +90,7 @@ hera::ws::dnn::shuffle(mpi::communicator& world, DataVector& data, RNGType& rng,
     for(const DataVector& vec : incoming)
         for (size_t i = 0; i < vec.size(); ++i)
             data.push_back(vec[i]);
-    hera::ws::dnn::random_shuffle(data.begin(), data.end(), local_rng, swap);
+    hera::dnn::random_shuffle(data.begin(), data.end(), local_rng, swap);
     // XXX: the final shuffle is irrelevant for our purposes. But it's also cheap.
 }
 

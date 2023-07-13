@@ -30,7 +30,6 @@ derivative works thereof, in binary and source code form.
 #define HERA_AUCTION_RUNNER_JAC_H
 
 #ifdef WASSERSTEIN_PURE_GEOM
-#undef LOG_AUCTION
 #undef ORDERED_BY_PERSISTENCE
 #endif
 
@@ -56,17 +55,20 @@ public:
     using DgmPoint      = typename AuctionOracle::DiagramPointR;
     using IdxValPairR   = IdxValPair<Real>;
     using PointContainer = PointContainer_;
+    using Prices         = std::vector<Real>;
+    using Params         = AuctionParams<Real>;
+    using Result         = AuctionResult<Real>;
 
     const Real k_lowest_bid_value = -1; // all bid values must be positive
 
 
     AuctionRunnerJac(const PointContainer& A,
                      const PointContainer& B,
-                     const AuctionParams<Real>& params,
-                     const std::string& _log_filename_prefix = "");
+                     const Params& params,
+                     const Prices& prices = Prices());
 
     void set_epsilon(Real new_val);
-    Real get_epsilon() const { return epsilon; }
+    Real get_epsilon() const { return oracle.get_epsilon(); }
     void run_auction();
     template<class Range>
     void run_bidding_step(const Range& r);
@@ -74,8 +76,13 @@ public:
     void decrease_epsilon();
     Real get_wasserstein_distance();
     Real get_wasserstein_cost();
-    Real get_relative_error(const bool debug_output = false) const;
-//private:
+    Real get_relative_error() const;
+    Result get_result() const { return result; }
+
+    int get_bidder_id(size_t bidder_idx) const { return bidders[bidder_idx].get_id(); }
+    int get_bidders_item_id(size_t bidder_idx) const { return items[bidders_to_items[bidder_idx]].get_id(); }
+
+private:
     // private data
     PointContainer bidders;
     PointContainer items;
@@ -83,27 +90,17 @@ public:
     const size_t num_items;
     std::vector<IdxType> items_to_bidders;
     std::vector<IdxType> bidders_to_items;
-    Real wasserstein_power;
-    Real epsilon;
-    Real delta;
-    Real internal_p;
-    Real initial_epsilon;
-    const Real epsilon_common_ratio; // next epsilon = current epsilon / epsilon_common_ratio
-    const int max_num_phases; // maximal number of phases of epsilon-scaling
-    Real weight_adj_const;
-    Real wasserstein_cost;
+    Params params;
+    Result result;
     std::vector<IdxValPairR> bid_table;
     // to get the 2 best items
     AuctionOracle oracle;
     std::unordered_set<size_t> unassigned_bidders;
     std::unordered_set<size_t> items_with_bids;
+
     // to imitate Gauss-Seidel
-    const size_t max_bids_per_round;
     Real partial_cost { 0.0 };
     bool is_distance_computed { false };
-    int num_rounds { 0 };
-    int num_phase { 0 };
-    int dimension;
 
     size_t unassigned_threshold; // for experiments
 
@@ -123,8 +120,6 @@ public:
     const Real total_bidders_persistence;
     Real unassigned_bidders_persistence;
     Real unassigned_items_persistence;
-    Real gamma_threshold;
-
 
     size_t num_diag_items { 0 };
     size_t num_normal_items { 0 };
@@ -134,13 +129,11 @@ public:
 
 #endif
 
-
-
     // private methods
     void assign_item_to_bidder(const IdxType bidder_idx, const IdxType items_idx);
     void assign_to_best_bidder(const IdxType items_idx);
     void clear_bid_table();
-    void run_auction_phases(const int max_num_phases, const Real _initial_epsilon);
+    void run_auction_phases();
     void run_auction_phase();
     void submit_bid(IdxType bidder_idx, const IdxValPairR& items_bid_value_pair);
     void flush_assignment();
@@ -156,8 +149,6 @@ public:
     void remove_unassigned_item(const size_t item_idx);
 
 #ifndef WASSERSTEIN_PURE_GEOM
-    bool is_item_diagonal(const size_t item_idx) const { return item_idx < num_diag_items; }
-    bool is_item_normal(const size_t item_idx) const { return not is_item_diagonal(item_idx); }
     bool is_bidder_diagonal(const size_t bidder_idx) const { return bidder_idx >= num_normal_bidders; }
     bool is_bidder_normal(const size_t bidder_idx) const { return not is_bidder_diagonal(bidder_idx); }
 #endif
@@ -169,54 +160,7 @@ public:
     void print_debug();
     void print_matching();
 
-    std::string log_filename_prefix;
     const Real k_max_relative_error = 2.0; // if relative error cannot be estimated or is too large, use this value
-
-#ifdef LOG_AUCTION
-
-    size_t parallel_threshold { 5000 };
-    bool is_step_parallel {false};
-    std::unordered_set<size_t> unassigned_items;
-    std::unordered_set<size_t> unassigned_normal_items;
-    std::unordered_set<size_t> unassigned_diag_items;
-    std::unordered_set<size_t> never_assigned_bidders;
-    size_t all_assigned_round { 0 };
-    size_t all_assigned_round_found { false };
-
-    int num_rounds_non_cumulative { 0 }; // set to 0 in the beginning of each phase
-    int num_diag_assignments { 0 };
-    int num_diag_assignments_non_cumulative { 0 };
-    int num_diag_bids_submitted { 0 };
-    int num_diag_stole_from_diag { 0 };
-    int num_normal_assignments { 0 };
-    int num_normal_assignments_non_cumulative { 0 };
-    int num_normal_bids_submitted { 0 };
-
-    std::vector<std::vector<size_t>> price_change_cnt_vec;
-
-
-    const char* plot_logger_name = "plot_logger";
-    const char* price_state_logger_name = "price_stat_logger";
-    std::string plot_logger_file_name;
-    std::string price_stat_logger_file_name;
-    std::shared_ptr<spdlog::logger> plot_logger;
-    std::shared_ptr<spdlog::logger> price_stat_logger;
-    std::shared_ptr<spdlog::logger> console_logger;
-
-
-    int num_parallel_bids { 0 };
-    int num_total_bids { 0 };
-
-    int num_parallel_diag_bids { 0 };
-    int num_total_diag_bids { 0 };
-
-    int num_parallel_normal_bids { 0 };
-    int num_total_normal_bids { 0 };
-
-    int num_parallel_assignments { 0 };
-    int num_total_assignments { 0 };
-#endif
-
 }; // AuctionRunnerJac
 
 

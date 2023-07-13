@@ -1,11 +1,13 @@
-#ifndef HERA_WS_PARALLEL_H
-#define HERA_WS_PARALLEL_H
+#ifndef HERA_PARALLEL_H
+#define HERA_PARALLEL_H
 
 #include <vector>
 
 #include <boost/range.hpp>
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/foreach.hpp>
+
+using namespace boost::placeholders;
 
 #ifdef TBB
 
@@ -17,9 +19,8 @@
 #include <boost/serialization/collections_load_imp.hpp>
 #include <boost/serialization/collections_save_imp.hpp>
 
+
 namespace hera
-{
-namespace ws
 {
 namespace dnn
 {
@@ -42,7 +43,7 @@ namespace dnn
     };
 
     template<class Iterator, class F>
-    void                do_foreach(Iterator begin, Iterator end, const F& f)            { tbb::parallel_do(begin, end, f); }
+    void                do_foreach(Iterator begin, Iterator end, const F& f)            { tbb::parallel_for_each(begin, end, f); }
 
     template<class Range, class F>
     void                for_each_range_(const Range& r, const F& f)
@@ -91,7 +92,6 @@ namespace dnn
         tbb::tick_count start;
     };
 } // dnn
-} // ws
 } // hera
 
 // Serialization for tbb::concurrent_vector<...>
@@ -137,8 +137,6 @@ namespace boost
 #include <map>
 
 namespace hera
-{
-namespace ws
 {
 namespace dnn
 {
@@ -215,21 +213,17 @@ namespace dnn
     };
 
 } // dnn
-} // ws
 } // hera
 
 #endif // TBB
 
 namespace hera
 {
-namespace ws
-{
 namespace dnn
 {
     template<class Range, class F>
     void                do_foreach(const Range& range, const F& f)                      { do_foreach(boost::begin(range), boost::end(range), f); }
 } // dnn
-} // ws
 } // hera
 
 #endif

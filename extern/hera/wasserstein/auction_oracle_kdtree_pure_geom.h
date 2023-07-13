@@ -26,64 +26,54 @@ derivative works thereof, in binary and source code form.
 
   */
 
-#ifndef AUCTION_ORACLE_KDTREE_RESTRICTED_H
-#define AUCTION_ORACLE_KDTREE_RESTRICTED_H
+#ifndef AUCTION_ORACLE_KDTREE_PURE_GEOM_H
+#define AUCTION_ORACLE_KDTREE_PURE_GEOM_H
 
-
-//#define USE_BOOST_HEAP
 
 #include <map>
 #include <memory>
 #include <set>
 
+#include <boost/range/adaptor/transformed.hpp>
+
+namespace ba = boost::adaptors;
 
 #include "basic_defs_ws.h"
-#include "diagonal_heap.h"
 #include "auction_oracle_base.h"
-#include "dnn/geometry/euclidean-fixed.h"
-#include "dnn/local/kd-tree.h"
+#include <hera/dnn/geometry/euclidean-dynamic.h>
+#include <hera/dnn/local/kd-tree.h>
 
-namespace hera {
-namespace ws {
+namespace hera
+{
+namespace ws
+{
 
-template <class Real_ = double, class PointContainer_ = std::vector<DiagramPoint<Real_>>>
-struct AuctionOracleKDTreeRestricted : AuctionOracleBase<Real_, PointContainer_> {
+template <class Real_ = double, class PointContainer_ = hera::ws::dnn::DynamicPointVector<Real_>>
+struct AuctionOracleKDTreePureGeom : AuctionOracleBase<Real_, PointContainer_> {
 
-    using PointContainer    = PointContainer_;
-    using Real              = Real_;
-
-    using LossesHeapR       = typename ws::LossesHeapOld<Real>;
-    using LossesHeapRHandle = typename ws::LossesHeapOld<Real>::handle_type;
-    using DiagramPointR     = typename ws::DiagramPoint<Real>;
+    using Real = Real_;
+    using DynamicPointTraitsR = typename hera::ws::dnn::DynamicPointTraits<Real>;
+    using DiagramPointR = typename DynamicPointTraitsR::PointType;
+    using PointHandleR = typename DynamicPointTraitsR::PointHandle;
+    using PointContainer = PointContainer_;
     using DebugOptimalBidR  = typename ws::DebugOptimalBid<Real>;
 
-    using DnnPoint          = dnn::Point<2, Real>;
-    using DnnTraits         = dnn::PointTraits<DnnPoint>;
+    using DynamicPointTraits = hera::ws::dnn::DynamicPointTraits<Real>;
+    using KDTreeR = hera::ws::dnn::KDTree<DynamicPointTraits>;
 
-    AuctionOracleKDTreeRestricted(const PointContainer& bidders, const PointContainer& items, const AuctionParams<Real>& params);
-    ~AuctionOracleKDTreeRestricted();
+    AuctionOracleKDTreePureGeom(const PointContainer& bidders, const PointContainer& items, const AuctionParams<Real>& params);
+    ~AuctionOracleKDTreePureGeom();
+
     // data members
     // temporarily make everything public
+    DynamicPointTraits traits;
     Real max_val_;
     Real weight_adj_const_;
-    dnn::KDTree<DnnTraits>* kdtree_;
-    std::vector<DnnPoint> dnn_points_;
-    std::vector<DnnPoint*> dnn_point_handles_;
-    LossesHeapR diag_items_heap_;
-    std::vector<LossesHeapRHandle> diag_heap_handles_;
-    std::vector<size_t> heap_handles_indices_;
+    std::unique_ptr<KDTreeR> kdtree_;
     std::vector<size_t> kdtree_items_;
-    std::vector<size_t> top_diag_indices_;
-    std::vector<size_t> top_diag_lookup_;
-    size_t top_diag_counter_ { 0 };
-    bool best_diagonal_items_computed_ { false };
-    Real best_diagonal_item_value_;
-    size_t second_best_diagonal_item_idx_ { k_invalid_index };
-    Real second_best_diagonal_item_value_ { std::numeric_limits<Real>::max() };
-
-
     // methods
-    void set_price(const IdxType items_idx, const Real new_price, const bool update_diag = true);
+    void set_price(const IdxType items_idx, const Real new_price);
+    void set_prices(const std::vector<Real>& new_prices);
     IdxValPair<Real> get_optimal_bid(const IdxType bidder_idx);
     void adjust_prices();
     void adjust_prices(const Real delta);
@@ -92,28 +82,14 @@ struct AuctionOracleKDTreeRestricted : AuctionOracleBase<Real_, PointContainer_>
     DebugOptimalBidR get_optimal_bid_debug(IdxType bidder_idx) const;
     void sanity_check();
 
-
-    // heap top vector
-    size_t get_heap_top_size() const;
-    void recompute_top_diag_items(bool hard = false);
-    void recompute_second_best_diag();
-    void reset_top_diag_counter();
-    void increment_top_diag_counter();
-    void add_top_diag_index(const size_t item_idx);
-    void remove_top_diag_index(const size_t item_idx);
-    bool is_in_top_diag_indices(const size_t item_idx) const;
-
     std::pair<Real, Real> get_minmax_price() const;
 
 };
-
-template<class Real>
-std::ostream& operator<< (std::ostream& output, const DebugOptimalBid<Real>& db);
 
 } // ws
 } // hera
 
 
-#include "auction_oracle_kdtree_restricted.hpp"
+#include "auction_oracle_kdtree_pure_geom.hpp"
 
 #endif

@@ -8,7 +8,7 @@
 #include <boost/serialization/vector.hpp>
 #include <cmath>
 
-#include "hera/hera_infinity.h"
+#include <hera/common/infinity.h>
 
 namespace hera
 {
@@ -36,6 +36,11 @@ class DynamicPointVector
                 return (static_cast<Real*>(p))[i];
             }
 
+            // TODO: fix to return matching for point clouds
+            // unreliable hack for now: traits will set static member dim here
+            size_t get_id() const { return *((size_t*) ((Real*)(p) + dim)); }
+
+            static unsigned dim;
         };
         struct iterator;
         typedef             iterator                                    const_iterator;
@@ -68,8 +73,11 @@ class DynamicPointVector
         friend  class   boost::serialization::access;
 
         template<class Archive>
-        void serialize(Archive& ar, const unsigned int)                { ar & point_capacity_ & storage_; }
+        void serialize(Archive& ar, const unsigned int version)         { ar & point_capacity_ & storage_; }
 };
+
+template<class Real_>
+unsigned DynamicPointVector<Real_>::PointType::dim = 0;
 
 template<typename Real>
 struct DynamicPointTraits
@@ -89,7 +97,7 @@ struct DynamicPointTraits
     typedef         Real                                                DistanceType;
 
                     DynamicPointTraits(unsigned dim = 0):
-                        dim_(dim)                                       {}
+                        dim_(dim)                                       { PointType::dim = dim; }
 
     DistanceType    distance(PointType p1, PointType p2) const
         {
@@ -149,7 +157,7 @@ struct DynamicPointTraits
         friend  class   boost::serialization::access;
 
         template<class Archive>
-        void serialize(Archive& ar, const unsigned int)                 { ar & dim_; }
+        void serialize(Archive& ar, const unsigned int version)         { ar & dim_; }
 };
 
 } // dnn
@@ -231,12 +239,12 @@ dnn::DynamicPointTraits<R>::container(size_t n, const PointType& p) const
 
 template<typename R>
 typename dnn::DynamicPointTraits<R>::PointContainer::iterator
-dnn::DynamicPointTraits<R>::iterator(PointContainer&, PointHandle ph) const
+dnn::DynamicPointTraits<R>::iterator(PointContainer& c, PointHandle ph) const
 { return typename PointContainer::iterator(ph.p, capacity()); }
 
 template<typename R>
 typename dnn::DynamicPointTraits<R>::PointContainer::const_iterator
-dnn::DynamicPointTraits<R>::iterator(const PointContainer&, PointHandle ph) const
+dnn::DynamicPointTraits<R>::iterator(const PointContainer& c, PointHandle ph) const
 { return typename PointContainer::const_iterator(ph.p, capacity()); }
 
 } // ws

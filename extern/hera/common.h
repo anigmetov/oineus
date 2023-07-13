@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2015, M. Kerber, D. Morozov, A. Nigmetov
+Copyright (c) 2022, M. Kerber, D. Morozov, A. Nigmetov
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
@@ -13,6 +13,7 @@ Redistribution and use in source and binary forms, with or without modification,
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+
 You are under no obligation whatsoever to provide any bug fixes, patches, or
 upgrades to the features, functionality or performance of the source code
 (Enhancements) to anyone; however, if you choose to make your Enhancements
@@ -23,22 +24,20 @@ perpetual license to install, use, modify, prepare derivative works, incorporate
 into other computer software, distribute, and sublicense such enhancements or
 derivative works thereof, in binary and source code form.
 
- */
+*/
 
-#ifndef DEF_DEBUG_WS_H
-#define DEF_DEBUG_WS_H
+#ifndef HERA_COMMON_H
+#define HERA_COMMON_H
 
-//#define DEBUG_BOUND_MATCH
-//#define DEBUG_NEIGHBOUR_ORACLE
-//#define DEBUG_MATCHING
-//#define DEBUG_AUCTION
-// This symbol should be defined only in the version
-// for R package TDA, to comply with some CRAN rules
-// like no usage of cout, cerr, cin, exit, etc.
-//#define FOR_R_TDA
-//
-//#define DEBUG_KDTREE_RESTR_ORACLE
-//#define DEBUG_STUPID_SPARSE_RESTR_ORACLE
-//#define DEBUG_FR_AUCTION
+#ifdef _WIN32
+#include <ciso646>
+#endif
+
+#include <hera/common/infinity.h>
+#include <hera/common/hash_combine.h>
+#include <hera/common/point.h>
+#include <hera/common/diagram_point.h>
+#include <hera/common/diagram_traits.h>
+#include <hera/common/diagram_reader.h>
 
 #endif

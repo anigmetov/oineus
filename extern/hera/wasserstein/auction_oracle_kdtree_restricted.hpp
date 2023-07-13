@@ -24,8 +24,8 @@ into other computer software, distribute, and sublicense such enhancements or
 derivative works thereof, in binary and source code form.
 
   */
-#ifndef AUCTION_ORACLE_STUPID_SPARSE_HPP
-#define AUCTION_ORACLE_STUPID_SPARSE_HPP
+#ifndef AUCTION_ORACLE_KDTREE_RESTRICTED_HPP
+#define AUCTION_ORACLE_KDTREE_RESTRICTED_HPP
 
 #include <assert.h>
 #include <algorithm>
@@ -33,8 +33,8 @@ derivative works thereof, in binary and source code form.
 #include <iterator>
 
 #include "def_debug_ws.h"
-#include "basic_defs_ws.h"
-#include "auction_oracle_stupid_sparse_restricted.h"
+#include "auction_oracle_kdtree_restricted.h"
+
 
 #ifdef FOR_R_TDA
 #undef DEBUG_AUCTION
@@ -45,14 +45,15 @@ namespace ws {
 
 
 // *****************************
-// AuctionOracleStupidSparseRestricted
+// AuctionOracleKDTreeRestricted
 // *****************************
 
 
-template <int k_max_nn, class Real_, class PointContainer_>
-std::ostream& operator<<(std::ostream& output, const AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>& oracle)
+
+template <class Real_, class PointContainer_>
+std::ostream& operator<<(std::ostream& output, const AuctionOracleKDTreeRestricted<Real_, PointContainer_>& oracle)
 {
-    output << "Oracle: " << &oracle << std::endl;
+    output << "Oracle " << &oracle << std::endl;
     output << "max_val_ = " << oracle.max_val_ << ", ";
     output << "best_diagonal_items_computed_ = " << oracle.best_diagonal_items_computed_ << ", ";
     output << "best_diagonal_item_value_ = " << oracle.best_diagonal_item_value_ << ", ";
@@ -68,21 +69,18 @@ std::ostream& operator<<(std::ostream& output, const AuctionOracleStupidSparseRe
 }
 
 
-template<int k_max_nn, class Real_, class PointContainer_>
-AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::AuctionOracleStupidSparseRestricted(const PointContainer_& _bidders,
+template<class Real_, class PointContainer_>
+AuctionOracleKDTreeRestricted<Real_, PointContainer_>::AuctionOracleKDTreeRestricted(const PointContainer_& _bidders,
                                                                    const PointContainer_& _items,
-                                                                   const AuctionParams<Real_>& params) :
-    AuctionOracleBase<Real_, PointContainer_>(_bidders, _items, params),
-    admissible_items_(_bidders.size(), std::vector<size_t>()),
+                                                                   const AuctionParams<Real>& params) :
+    AuctionOracleBase<Real>(_bidders, _items, params),
     heap_handles_indices_(_items.size(), k_invalid_index),
+    kdtree_items_(_items.size(), k_invalid_index),
     top_diag_lookup_(_items.size(), k_invalid_index)
 {
-    // initialize admissible edges
-    std::vector<size_t> kdtree_items_(_items.size(), k_invalid_index);
-    std::vector<DnnPoint> dnn_points_;
-    std::vector<DnnPoint*> dnn_point_handles_;
     size_t dnn_item_idx { 0 };
     size_t true_idx { 0 };
+    dnn_points_.clear();
     dnn_points_.reserve(this->items.size());
     // store normal items in kd-tree
     for(const auto& g : this->items) {
@@ -98,30 +96,14 @@ AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::AuctionOr
         }
         true_idx++;
     }
+
     assert(dnn_points_.size() < _items.size() );
     for(size_t i = 0; i < dnn_points_.size(); ++i) {
         dnn_point_handles_.push_back(&dnn_points_[i]);
     }
     DnnTraits traits;
     traits.internal_p = params.internal_p;
-    dnn::KDTree<DnnTraits> kdtree_(traits, dnn_point_handles_, params.wasserstein_power);
-
-    // loop over normal bidders, find nearest neighbours
-    size_t bidder_idx = 0;
-    for(const auto& b : this->bidders) {
-        if (b.is_normal()) {
-            admissible_items_[bidder_idx].reserve(k_max_nn);
-            DnnPoint bidder_dnn;
-            bidder_dnn[0] = b.getRealX();
-            bidder_dnn[1] = b.getRealY();
-            auto nearest_neighbours = kdtree_.findK(bidder_dnn, k_max_nn);
-            assert(nearest_neighbours.size() == k_max_nn);
-            for(const auto& x : nearest_neighbours) {
-                admissible_items_[bidder_idx].push_back(x.p->id());
-            }
-        }
-        bidder_idx++;
-    }
+    kdtree_ = new dnn::KDTree<DnnTraits>(traits, dnn_point_handles_, params.wasserstein_power);
 
     size_t handle_idx {0};
     for(size_t item_idx = 0; item_idx < _items.size(); ++item_idx) {
@@ -132,18 +114,19 @@ AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::AuctionOr
     }
     max_val_ = 3*getFurthestDistance3Approx<>(_bidders, _items, params.internal_p);
     max_val_ = std::pow(max_val_, params.wasserstein_power);
+    weight_adj_const_ = max_val_;
 }
 
 
-template<int k_max_nn, class Real_, class PointContainer_>
-bool AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::is_in_top_diag_indices(const size_t item_idx) const
+template<class Real_, class PointContainer_>
+bool AuctionOracleKDTreeRestricted<Real_, PointContainer_>::is_in_top_diag_indices(const size_t item_idx) const
 {
     return top_diag_lookup_[item_idx] != k_invalid_index;
 }
 
 
-template<int k_max_nn, class Real_, class PointContainer_>
-void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::add_top_diag_index(const size_t item_idx)
+template<class Real_, class PointContainer_>
+void AuctionOracleKDTreeRestricted<Real_, PointContainer_>::add_top_diag_index(const size_t item_idx)
 {
     assert(find(top_diag_indices_.begin(), top_diag_indices_.end(), item_idx) == top_diag_indices_.end());
     assert(this->items[item_idx].is_diagonal());
@@ -152,8 +135,8 @@ void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::add_
     top_diag_lookup_[item_idx] = top_diag_indices_.size() - 1;
 }
 
-template<int k_max_nn, class Real_, class PointContainer_>
-void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::remove_top_diag_index(const size_t item_idx)
+template<class Real_, class PointContainer_>
+void AuctionOracleKDTreeRestricted<Real_, PointContainer_>::remove_top_diag_index(const size_t item_idx)
 {
     if (top_diag_indices_.size() > 1) {
         // remove item_idx from top_diag_indices after swapping
@@ -174,28 +157,28 @@ void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::remo
 }
 
 
-template<int k_max_nn, class Real_, class PointContainer_>
-void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::increment_top_diag_counter()
+template<class Real_, class PointContainer_>
+void AuctionOracleKDTreeRestricted<Real_, PointContainer_>::increment_top_diag_counter()
 {
-    assert(top_diag_counter_ >= 0 and top_diag_counter_ < top_diag_indices_.size());
+    assert(top_diag_counter_ < top_diag_indices_.size());
 
     ++top_diag_counter_;
     if (top_diag_counter_ >= top_diag_indices_.size()) {
         top_diag_counter_ -= top_diag_indices_.size();
     }
 
-    assert(top_diag_counter_ >= 0 and top_diag_counter_ < top_diag_indices_.size());
+    assert(top_diag_counter_ < top_diag_indices_.size());
 }
 
 
-template<int k_max_nn, class Real_, class PointContainer_>
-void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::reset_top_diag_counter()
+template<class Real_, class PointContainer_>
+void AuctionOracleKDTreeRestricted<Real_, PointContainer_>::reset_top_diag_counter()
 {
     top_diag_counter_ = 0;
 }
 
-template<int k_max_nn, class Real_, class PointContainer_>
-void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::recompute_top_diag_items(bool hard)
+template<class Real_, class PointContainer_>
+void AuctionOracleKDTreeRestricted<Real_, PointContainer_>::recompute_top_diag_items(bool hard)
 {
     assert(hard or top_diag_indices_.empty());
 
@@ -226,18 +209,59 @@ void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::reco
     reset_top_diag_counter();
 }
 
-template<int k_max_nn, class Real_, class PointContainer_>
-typename AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::DebugOptimalBidR
-AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::get_optimal_bid_debug(IdxType bidder_idx) const
+template<class Real_, class PointContainer_>
+typename AuctionOracleKDTreeRestricted<Real_, PointContainer_>::DebugOptimalBidR
+AuctionOracleKDTreeRestricted<Real_, PointContainer_>::get_optimal_bid_debug(IdxType bidder_idx) const
 {
+    auto bidder = this->bidders[bidder_idx];
+
+    size_t best_item_idx = k_invalid_index;
+    size_t second_best_item_idx = k_invalid_index;
+    Real best_item_value = std::numeric_limits<Real>::max();
+    Real second_best_item_value = std::numeric_limits<Real>::max();
+
+    for(IdxType item_idx = 0; item_idx < static_cast<IdxType>(this->items.size()); ++item_idx) {
+        auto item = this->items[item_idx];
+        if (item.type != bidder.type and item_idx != bidder_idx)
+            continue;
+        auto item_value = std::pow(dist_lp(bidder, item, this->internal_p, 2), this->wasserstein_power) + this->prices[item_idx];
+        if (item_value < best_item_value) {
+            best_item_value = item_value;
+            best_item_idx = item_idx;
+        }
+    }
+
+    assert(best_item_idx != k_invalid_index);
+
+    for(size_t item_idx = 0; item_idx < this->items.size(); ++item_idx) {
+        auto item = this->items[item_idx];
+        if (item.type != bidder.type and static_cast<IdxType>(item_idx) != bidder_idx)
+            continue;
+        if (item_idx == best_item_idx)
+            continue;
+        auto item_value = std::pow(dist_lp(bidder, item, this->internal_p, 2), this->wasserstein_power) + this->prices[item_idx];
+        if (item_value < second_best_item_value) {
+            second_best_item_value = item_value;
+            second_best_item_idx = item_idx;
+        }
+    }
+
+    assert(second_best_item_idx != k_invalid_index);
+    assert(second_best_item_value >= best_item_value);
+
     DebugOptimalBidR result;
-    throw std::runtime_error("Not implemented");
+
+    result.best_item_idx = best_item_idx;
+    result.best_item_value = best_item_value;
+    result.second_best_item_idx = second_best_item_idx;
+    result.second_best_item_value = second_best_item_value;
+
     return result;
 }
 
 
-template<int k_max_nn, class Real_, class PointContainer_>
-IdxValPair<Real_> AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::get_optimal_bid(IdxType bidder_idx)
+template<class Real_, class PointContainer_>
+IdxValPair<Real_> AuctionOracleKDTreeRestricted<Real_, PointContainer_>::get_optimal_bid(IdxType bidder_idx)
 {
     auto bidder = this->bidders[bidder_idx];
 
@@ -246,14 +270,13 @@ IdxValPair<Real_> AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointCont
     // and vice versa.
 
     size_t best_item_idx { k_invalid_index };
-    size_t second_best_item_idx { k_invalid_index };
     size_t best_diagonal_item_idx { k_invalid_index };
     Real best_item_value;
     Real second_best_item_value;
 
 
     size_t proj_item_idx = bidder_idx;
-    assert( 0 <= proj_item_idx and proj_item_idx < this->items.size() );
+    assert( proj_item_idx < this->items.size() );
     assert(this->items[proj_item_idx].type != bidder.type);
     Real proj_item_value = this->get_value_for_bidder(bidder_idx, proj_item_idx);
 
@@ -273,49 +296,31 @@ IdxValPair<Real_> AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointCont
             best_item_idx = proj_item_idx;
             best_item_value = proj_item_value;
             second_best_item_value = best_diagonal_item_value_;
-            second_best_item_idx = best_diagonal_item_idx;
         } else if (proj_item_value < second_best_diagonal_item_value_) {
             best_item_idx = best_diagonal_item_idx;
             best_item_value = best_diagonal_item_value_;
             second_best_item_value = proj_item_value;
-            second_best_item_idx = proj_item_idx;
         } else {
             best_item_idx = best_diagonal_item_idx;
             best_item_value = best_diagonal_item_value_;
             second_best_item_value = second_best_diagonal_item_value_;
-            second_best_item_idx = second_best_diagonal_item_idx_;
         }
     } else {
-
-        size_t best_normal_item_idx { k_invalid_index };
-        size_t second_best_normal_item_idx { k_invalid_index };
-        Real best_normal_item_value { std::numeric_limits<Real>::max() };
-        Real second_best_normal_item_value { std::numeric_limits<Real>::max() };
-
-        // find best item
-        for(const auto curr_item_idx : admissible_items_[bidder_idx]) {
-            auto curr_item_value = this->get_value_for_bidder(bidder_idx, curr_item_idx);
-            if (curr_item_value < best_normal_item_value) {
-                best_normal_item_idx = curr_item_idx;
-                best_normal_item_value = curr_item_value;
-            }
-        }
-
-        // find second-best item
-        for(const auto curr_item_idx : admissible_items_[bidder_idx]) {
-            if (curr_item_idx == best_normal_item_idx) {
-                continue;
-            }
-            auto curr_item_value = this->get_value_for_bidder(bidder_idx, curr_item_idx);
-            if (curr_item_value < second_best_normal_item_value) {
-                second_best_normal_item_idx = curr_item_idx;
-                second_best_normal_item_value = curr_item_value;
-            }
-        }
+        // for normal bidder get 2 best items among non-diagonal points from
+        // kdtree_
+        DnnPoint bidder_dnn;
+        bidder_dnn[0] = bidder.getRealX();
+        bidder_dnn[1] = bidder.getRealY();
+        auto two_best_items = kdtree_->findK(bidder_dnn, 2);
+        size_t best_normal_item_idx { two_best_items[0].p->id() };
+        Real best_normal_item_value { two_best_items[0].d };
+        // if there is only one off-diagonal point in the second diagram,
+        // kd-tree will not return the second candidate.
+        // Set its value to inf, so it will always lose to the value of the projection
+        Real second_best_normal_item_value { two_best_items.size() == 1 ? std::numeric_limits<Real>::max() : two_best_items[1].d };
 
         if ( proj_item_value < best_normal_item_value) {
             best_item_idx = proj_item_idx;
-            increment_top_diag_counter();
             best_item_value = proj_item_value;
             second_best_item_value = best_normal_item_value;
         } else if (proj_item_value < second_best_normal_item_value) {
@@ -336,18 +341,28 @@ IdxValPair<Real_> AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointCont
     result.first = best_item_idx;
     result.second = ( second_best_item_value - best_item_value ) + this->prices[best_item_idx] + this->epsilon;
 
+#ifdef DEBUG_KDTREE_RESTR_ORACLE
+    auto db = get_optimal_bid_debug(bidder_idx);
+    assert(fabs(db.best_item_value - best_item_value) < 0.000001);
+    assert(fabs(db.second_best_item_value - second_best_item_value) < 0.000001);
+    //std::cout << "bid OK" << std::endl;
+#endif
+
     return result;
 }
-
-template<int k_max_nn, class Real_, class PointContainer_>
-void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::recompute_second_best_diag()
+/*
+a_{ij} = d_{ij}
+value_{ij} = a_{ij} + price_j
+*/
+template<class Real_, class PointContainer_>
+void AuctionOracleKDTreeRestricted<Real_, PointContainer_>::recompute_second_best_diag()
 {
     if (top_diag_indices_.size() > 1) {
         second_best_diagonal_item_value_ = best_diagonal_item_value_;
         second_best_diagonal_item_idx_ = top_diag_indices_[0];
     } else {
         if (diag_items_heap_.size() == 1) {
-            second_best_diagonal_item_value_ == std::numeric_limits<Real>::max();
+            second_best_diagonal_item_value_ = std::numeric_limits<Real>::max();
             second_best_diagonal_item_idx_ = k_invalid_index;
         } else {
             auto diag_iter = diag_items_heap_.ordered_begin();
@@ -359,8 +374,8 @@ void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::reco
 }
 
 
-template<int k_max_nn, class Real_, class PointContainer_>
-void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::set_price(IdxType item_idx,
+template<class Real_, class PointContainer_>
+void AuctionOracleKDTreeRestricted<Real_, PointContainer_>::set_price(IdxType item_idx,
                                                     Real new_price,
                                                     const bool update_diag)
 {
@@ -371,7 +386,11 @@ void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::set_
 	bool item_goes_down = new_price > this->prices[item_idx];
 
     this->prices[item_idx] = new_price;
-    if ( this->items[item_idx].is_diagonal() ) {
+    if ( this->items[item_idx].is_normal() ) {
+        assert(0 <= item_idx and item_idx < static_cast<IdxType>(kdtree_items_.size()));
+        assert(kdtree_items_[item_idx] < dnn_point_handles_.size());
+        kdtree_->change_weight( dnn_point_handles_[kdtree_items_[item_idx]], new_price);
+    } else {
         assert(diag_heap_handles_.size() > heap_handles_indices_.at(item_idx));
 		if (item_goes_down) {
 			diag_items_heap_.decrease(diag_heap_handles_[heap_handles_indices_[item_idx]], std::make_pair(item_idx, new_price));
@@ -387,16 +406,26 @@ void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::set_
                 remove_top_diag_index(item_idx);
             }
 
-            if (item_idx == second_best_diagonal_item_idx_) {
+            if (item_idx == (IdxType)second_best_diagonal_item_idx_) {
                 recompute_second_best_diag();
             }
         }
     }
 }
 
+template<class Real_, class PointContainer_>
+void AuctionOracleKDTreeRestricted<Real_, PointContainer_>::set_prices(const std::vector<Real_>& new_prices)
+{
+    if (new_prices.size() != this->items.size())
+        throw std::runtime_error("new_prices size mismatch");
 
-template<int k_max_nn, class Real_, class PointContainer_>
-void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::adjust_prices(Real delta)
+    for(IdxType item_idx = 0; item_idx < static_cast<IdxType>(this->num_items_); ++item_idx)
+        set_price(item_idx, new_prices[item_idx]);
+}
+
+
+template<class Real_, class PointContainer_>
+void AuctionOracleKDTreeRestricted<Real_, PointContainer_>::adjust_prices(Real delta)
 {
     if (delta == 0.0)
         return;
@@ -404,6 +433,8 @@ void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::adju
     for(auto& p : this->prices) {
         p -= delta;
     }
+
+    kdtree_->adjust_weights(delta);
 
     bool price_goes_up = delta < 0;
 
@@ -421,8 +452,8 @@ void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::adju
     second_best_diagonal_item_value_ -= delta;
 }
 
-template<int k_max_nn, class Real_, class PointContainer_>
-void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::adjust_prices()
+template<class Real_, class PointContainer_>
+void AuctionOracleKDTreeRestricted<Real_, PointContainer_>::adjust_prices()
 {
     auto pr_begin = this->prices.begin();
     auto pr_end = this->prices.end();
@@ -430,34 +461,31 @@ void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::adju
     adjust_prices(min_price);
 }
 
-template<int k_max_nn, class Real_, class PointContainer_>
-size_t AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::get_heap_top_size() const
+template<class Real_, class PointContainer_>
+size_t AuctionOracleKDTreeRestricted<Real_, PointContainer_>::get_heap_top_size() const
 {
     return top_diag_indices_.size();
 }
 
-template<int k_max_nn, class Real_, class PointContainer_>
-std::pair<Real_, Real_> AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::get_minmax_price() const
+template<class Real_, class PointContainer_>
+std::pair<Real_, Real_> AuctionOracleKDTreeRestricted<Real_, PointContainer_>::get_minmax_price() const
 {
     auto r = std::minmax_element(this->prices.begin(), this->prices.end());
     return std::make_pair(*r.first, *r.second);
 }
 
-template<int k_max_nn, class Real_, class PointContainer_>
-void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::sanity_check()
+
+
+template<class Real_, class PointContainer_>
+AuctionOracleKDTreeRestricted<Real_, PointContainer_>::~AuctionOracleKDTreeRestricted()
 {
-#ifdef DEBUG_STUPID_SPARSE_RESTR_ORACLE
+    delete kdtree_;
+}
 
-    assert(admissible_items_.size() == this->bidders.size());
-
-    for(size_t bidder_idx = 0; bidder_idx < this->bidders.size(); ++bidder_idx) {
-        if (this->bidders[bidder_idx].is_normal()) {
-            assert(admissible_items_[bidder_idx].size() == k_max_nn);
-        } else {
-            assert(admissible_items_[bidder_idx].size() == 0);
-        }
-    }
-
+template<class Real_, class PointContainer_>
+void AuctionOracleKDTreeRestricted<Real_, PointContainer_>::sanity_check()
+{
+#ifdef DEBUG_KDTREE_RESTR_ORACLE
     if (best_diagonal_items_computed_) {
         std::vector<Real> diag_items_price_vec;
         diag_items_price_vec.reserve(this->items.size());
@@ -502,12 +530,7 @@ void AuctionOracleStupidSparseRestricted<k_max_nn, Real_, PointContainer_>::sani
             }
         }
 
-        if (true_best_diag_value != best_diagonal_item_value_) {
-            std::cerr << *this;
-        }
-
         assert(true_best_diag_value == best_diagonal_item_value_);
-
         assert(true_second_best_diag_idx != k_invalid_index);
         assert(true_second_best_diag_value == second_best_diagonal_item_value_);
     }

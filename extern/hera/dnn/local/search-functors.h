@@ -1,11 +1,9 @@
-#ifndef HERA_WS_DNN_LOCAL_SEARCH_FUNCTORS_H
-#define HERA_WS_DNN_LOCAL_SEARCH_FUNCTORS_H
+#ifndef HERA_DNN_LOCAL_SEARCH_FUNCTORS_H
+#define HERA_DNN_LOCAL_SEARCH_FUNCTORS_H
 
 #include <boost/range/algorithm/heap_algorithm.hpp>
 
 namespace hera
-{
-namespace ws
 {
 namespace dnn
 {
@@ -57,6 +55,30 @@ struct rNNRecord
 };
 
 template<class HandleDistance>
+struct firstrNNRecord
+{
+    typedef         typename HandleDistance::PointHandle                            PointHandle;
+    typedef         typename HandleDistance::DistanceType                           DistanceType;
+    typedef         typename HandleDistance::HDContainer                            HDContainer;
+
+    firstrNNRecord(DistanceType r_): r(r_)                               {}
+
+    DistanceType    operator()(PointHandle p, DistanceType d)
+    {
+        if (d <= r) {
+            result.push_back(HandleDistance(p,d));
+            return -100000000.0;
+        } else {
+            return r;
+        }
+    }
+
+    DistanceType    r;
+    HDContainer     result;
+};
+
+
+template<class HandleDistance>
 struct kNNRecord
 {
     typedef         typename HandleDistance::PointHandle                            PointHandle;
@@ -87,9 +109,7 @@ struct kNNRecord
     unsigned        k;
     HDContainer     result;
 };
-
 } // dnn
-} // ws
 } // hera
 
 #endif // DNN_LOCAL_SEARCH_FUNCTORS_H

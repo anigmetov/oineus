@@ -79,8 +79,6 @@ Real AuctionOracleBase<Real, PointContainer>::get_cost_for_diagonal_bidder(size_
     return std::pow(items[item_idx].persistence_lp(internal_p), wasserstein_power);
 }
 
-
-
 template<class Real>
 std::ostream& operator<< (std::ostream& output, const DebugOptimalBid<Real>& db)
 {

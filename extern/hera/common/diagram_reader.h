@@ -42,20 +42,41 @@ derivative works thereof, in binary and source code form.
 #include <cctype>
 #include <algorithm>
 #include <map>
+#include <cmath>
 #include <limits>
 
-#include "basic_defs_ws.hpp"
+#include "diagram_point.h"
+#include "infinity.h"
 
 #ifdef WASSERSTEIN_PURE_GEOM
-#include "dnn/geometry/euclidean-dynamic.h"
+#include <hera/dnn/geometry/euclidean-dynamic.h>
 #endif
 
 namespace hera {
 
+static const int64_t DIPHA_MAGIC = 8067171840;
+static const int64_t DIPHA_PERSISTENCE_DIAGRAM = 2;
+
+template <typename T> inline void reverse_endianness(T & x)
+{
+    uint8_t * p = reinterpret_cast<uint8_t *>(&x);
+    std::reverse(p, p + sizeof(T));
+}
+
+template <typename T> inline T read_le(std::istream & s)
+{
+    T result;
+    s.read(reinterpret_cast<char *>(&result), sizeof(T));
+#ifdef BIGENDIAN
+    reverse_endianness(result);
+#endif
+    return result;
+}
+
 // cannot choose stod, stof or stold based on RealType,
 // lazy solution: partial specialization
 template<class RealType = double>
-inline RealType parse_real_from_str(const std::string&);
+inline RealType parse_real_from_str(const std::string& s);
 
 template <>
 inline double parse_real_from_str<double>(const std::string& s)
@@ -79,9 +100,17 @@ inline float parse_real_from_str<float>(const std::string& s)
 
 
 template<class RealType>
-inline RealType parse_real_from_str(const std::string&)
+inline RealType parse_real_from_str(const std::string& s)
 {
     static_assert(sizeof(RealType) != sizeof(RealType), "Must be specialized for each type you want to use, see above");
+}
+
+// when included in some external projects,
+// got an error with std::isspace used directly in find_if_not,
+// so added this to disambiguate
+inline bool is_space_helper(char x)
+{
+    return std::isspace(x);
 }
 
 // fill in result with points from file fname
@@ -92,6 +121,7 @@ inline RealType parse_real_from_str(const std::string&)
 template<class RealType = double, class ContType_ = std::vector<std::pair<RealType, RealType>>>
 inline bool read_diagram_point_set(const char* fname, ContType_& result, int& decPrecision)
 {
+    bool zero_pers_warning_printed = false;
     size_t lineNumber { 0 };
     result.clear();
     std::ifstream f(fname);
@@ -114,8 +144,8 @@ inline bool read_diagram_point_set(const char* fname, ContType_& result, int& de
             continue;
         }
          // trim whitespaces
-        auto whiteSpaceFront = std::find_if_not(line.begin(),line.end(),isspace);
-        auto whiteSpaceBack = std::find_if_not(line.rbegin(),line.rend(),isspace).base();
+        auto whiteSpaceFront = std::find_if_not(line.begin(), line.end(), is_space_helper);
+        auto whiteSpaceBack = std::find_if_not(line.rbegin(), line.rend(), is_space_helper).base();
         if (whiteSpaceBack <= whiteSpaceFront) {
             // line consists of spaces only - move to the next line
             continue;
@@ -157,9 +187,10 @@ inline bool read_diagram_point_set(const char* fname, ContType_& result, int& de
             if (x != y) {
                 result.push_back(std::make_pair(x, y));
             } else {
-#ifndef FOR_R_TDA
-                std::cerr << "Warning: point with 0 persistence ignored in " << fname << ":" << lineNumber << "\n";
-#endif
+                if (!zero_pers_warning_printed) {
+                    std::cerr << "Warning: point with 0 persistence ignored in " << fname << ":" << lineNumber << "\n";
+                    zero_pers_warning_printed = true;
+                }
             }
         }
         catch (const std::invalid_argument& e) {
@@ -206,6 +237,8 @@ inline bool read_diagram_point_set(const std::string& fname, ContType_& result)
 template<class RealType = double, class ContType_ = std::vector<std::pair<RealType, RealType> > >
 inline bool read_diagram_dipha(const std::string& fname, unsigned int dim, ContType_& result)
 {
+    bool zero_pers_warning_printed = false;
+
     std::ifstream file;
     file.open(fname, std::ios::in | std::ios::binary);
 
@@ -257,10 +290,9 @@ inline bool read_diagram_dipha(const std::string& fname, unsigned int dim, ContT
             d = tmp_d;
 
         if ((unsigned int)d == dim) {
-            if (death == birth) {
-#ifndef FOR_R_TDA
+            if (death == birth && !zero_pers_warning_printed) {
                 std::cerr << "Warning: point with 0 persistence ignored in " << fname << "." << std::endl;
-#endif
+                zero_pers_warning_printed = true;
             } else {
                 result.push_back(std::make_pair(birth, death));
             }

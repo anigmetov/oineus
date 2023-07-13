@@ -4,10 +4,10 @@
 #define WASSERSTEIN_PURE_GEOM
 
 
-#include "diagram_reader.h"
-#include "auction_oracle_kdtree_pure_geom.h"
-#include "auction_runner_gs.h"
-#include "auction_runner_jac.h"
+#include "common/diagram_reader.h"
+#include "wasserstein/auction_oracle_kdtree_pure_geom.h"
+#include "wasserstein/auction_runner_gs.h"
+#include "wasserstein/auction_runner_jac.h"
 
 namespace hera
 {
@@ -30,8 +30,11 @@ namespace ws
     using AuctionRunnerJacR = typename hera::ws::AuctionRunnerJac<Real, hera::ws::AuctionOracleKDTreePureGeom<Real>, hera::ws::dnn::DynamicPointVector<Real>>;
 
 
-inline double wasserstein_cost(const DynamicPointVector<double>& set_A, const DynamicPointVector<double>& set_B, const AuctionParams<double>& params)
+
+inline AuctionResult<double> wasserstein_cost_detailed(const DynamicPointVector<double>& set_A, const DynamicPointVector<double>& set_B, const AuctionParams<double>& params, const std::vector<double>& prices=std::vector<double>())
 {
+    using Real = double;
+
     if (params.wasserstein_power < 1.0) {
         throw std::runtime_error("Bad q in Wasserstein " + std::to_string(params.wasserstein_power));
     }
@@ -52,27 +55,72 @@ inline double wasserstein_cost(const DynamicPointVector<double>& set_A, const Dy
         throw std::runtime_error("Different cardinalities of point clouds: " + std::to_string(set_A.size()) + " != " +  std::to_string(set_B.size()));
     }
 
-    DynamicTraits<double> traits(params.dim);
+    DynamicTraits<Real> traits(params.dim);
 
-    DynamicPointVector<double> set_A_copy(set_A);
-    DynamicPointVector<double> set_B_copy(set_B);
+    if (params.dim == 1) {
+        AuctionResult<Real> result;
 
-    // set point id to the index in vector
-    for(size_t i = 0; i < set_A.size(); ++i) {
-        traits.id(set_A_copy[i]) = i;
-        traits.id(set_B_copy[i]) = i;
-    }
+        std::vector<std::pair<Real, size_t>> set_A_copy, set_B_copy;
+        set_A_copy.reserve(set_A.size());
+        set_B_copy.reserve(set_B.size());
 
-    if (params.max_bids_per_round == 1) {
-        hera::ws::AuctionRunnerGSR<double> auction(set_A_copy, set_B_copy, params);
-        auction.run_auction();
-        return auction.get_wasserstein_cost();
+        for(size_t i = 0; i < set_A.size(); ++i) {
+            set_A_copy.emplace_back(set_A[i][0], i);
+        }
+
+        for(size_t i = 0; i < set_B.size(); ++i) {
+            set_B_copy.emplace_back(set_B[i][0], i);
+        }
+
+        std::sort(set_A_copy.begin(), set_A_copy.end());
+        std::sort(set_B_copy.begin(), set_B_copy.end());
+
+        for(size_t i = 0; i < set_A_copy.size(); ++i) {
+            auto a = std::get<0>(set_A_copy[i]);
+            auto b = std::get<0>(set_B_copy[i]);
+
+            if (params.return_matching) {
+                int id_a = std::get<1>(set_A_copy[i]);
+                int id_b = std::get<1>(set_B_copy[i]);
+                result.add_to_matching(id_a, id_b);
+            }
+
+            result.cost += std::pow(std::fabs(a - b), params.wasserstein_power);
+        }
+        result.distance = std::pow(result.cost, Real(1) / params.wasserstein_power);
+        return result;
     } else {
-        hera::ws::AuctionRunnerJacR<double> auction(set_A_copy, set_B_copy, params);
-        auction.run_auction();
-        return auction.get_wasserstein_cost();
+
+        DynamicPointVector<Real> set_A_copy(set_A);
+        DynamicPointVector<Real> set_B_copy(set_B);
+
+        // set point id to the index in vector
+        for(size_t i = 0; i < set_A_copy.size(); ++i) {
+            traits.id(set_A_copy[i]) = i;
+            traits.id(set_B_copy[i]) = i;
+        }
+
+        if (params.max_bids_per_round == 1) {
+            hera::ws::AuctionRunnerGSR<Real> auction(set_A_copy, set_B_copy, params, prices);
+            auction.run_auction();
+            return auction.get_result();
+        } else {
+            hera::ws::AuctionRunnerJacR<Real> auction(set_A_copy, set_B_copy, params, prices);
+            auction.run_auction();
+            return auction.get_result();
+        }
     }
+
+
+
 }
+
+
+inline double wasserstein_cost(const DynamicPointVector<double>& set_A, const DynamicPointVector<double>& set_B, const AuctionParams<double>& params, const std::vector<double>& prices=std::vector<double>())
+{
+    return wasserstein_cost_detailed(set_A, set_B, params, prices).cost;
+}
+
 
 inline double wasserstein_dist(const DynamicPointVector<double>& set_A, const DynamicPointVector<double>& set_B, const AuctionParams<double>& params)
 {
