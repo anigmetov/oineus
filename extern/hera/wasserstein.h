@@ -199,7 +199,6 @@ namespace ws
             const std::vector<DiagramPoint<RealType>>& B,
             const AuctionParams<RealType> params)
     {
-        std::cerr << "wasserstein_cost_vec_detailed begin " << std::endl;
         if (params.wasserstein_power < 1.0) {
             throw std::runtime_error("Bad q in Wasserstein " + std::to_string(params.wasserstein_power));
         }
@@ -283,10 +282,8 @@ wasserstein_cost_detailed(const PairContainer& A,
 
     constexpr RealType plus_inf = std::numeric_limits<RealType>::infinity();
     constexpr RealType minus_inf = -std::numeric_limits<RealType>::infinity();
-    std::cerr << "wasserstein_cost_detailed enter" << std::endl;
     // TODO: return matching here too?
     if (hera::ws::are_equal(A, B)) {
-        std::cerr << "wasserstein_cost_detailed equal" << std::endl;
         return AuctionResult<RealType>();
     }
 
@@ -365,13 +362,11 @@ wasserstein_cost_detailed(const PairContainer& A,
         }
     }
 
-    std::cerr << "wasserstein_cost_detailed inf points collected" << std::endl;
     AuctionResult<RealType> infinity_result;
 
     if (n_plus_inf_minus_inf_A != n_plus_inf_minus_inf_B || n_minus_inf_plus_inf_A != n_minus_inf_plus_inf_B) {
         infinity_result.cost = plus_inf;
         infinity_result.distance = plus_inf;
-        std::cerr << "wasserstein_cost_detailed inf inf" << std::endl;
         return infinity_result;
     } else {
         ws::get_one_dimensional_cost(x_plus_A, x_plus_B, params, infinity_result);
