@@ -148,6 +148,40 @@ public:
         return result;
     }
 
+    ComputeFlags get_flags(const Indices& indices, const Values& values)
+    {
+        bool increase_birth = false;
+        bool increase_death = false;
+        bool decrease_birth = false;
+        bool decrease_death = false;
+
+        for(size_t i = 0; i < indices.size(); ++i) {
+            auto simplex_idx = indices[i];
+            Real current_value = fil_.get_cell_value(simplex_idx);
+            Real target_value = values[i];
+            bool is_positive = decmp_hom_.is_positive(simplex_idx);
+
+            if (is_positive and current_value < target_value) {
+                increase_birth = true;
+            } else if (is_positive and current_value > target_value) {
+                decrease_birth = true;
+            } else if (not is_positive and current_value < target_value) {
+                increase_death = true;
+            } else if (not is_positive and current_value > target_value) {
+                decrease_death = true;
+            }
+        }
+
+        ComputeFlags result;
+
+        result.compute_cohomology = decrease_birth or increase_death;
+        result.compute_homology_u = increase_birth;
+        result.compute_cohomology_u = decrease_death;
+
+        return result;
+    }
+
+
     dim_type get_dimension(size_t simplex_index) const
     {
         if (fil_.size())
@@ -160,7 +194,7 @@ public:
     {
         auto d = get_dimension(index);
 
-        if (!decmp_hom_.is_reduced)
+        if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u()))
             decmp_hom_.reduce(params_hom_);
 
         if (decmp_hom_.is_negative(index)) {
@@ -176,6 +210,10 @@ public:
     {
         if (indices.size() != values.size())
             throw std::runtime_error("indices and values must have the same size");
+
+        auto flags = get_flags(indices, values);
+        params_coh_.compute_u = flags.compute_cohomology_u;
+        params_hom_.compute_u = flags.compute_homology_u;
 
         CriticalSets result;
         result.reserve(indices.size());
@@ -308,8 +346,6 @@ public:
         // current_dgm: items, b
         auto hera_res = hera::wasserstein_cost_detailed<Diagram>(template_dgm, current_dgm, hera_params);
 
-        std::cerr << "hera_res.matching_b_to_a_ : " << hera_res.matching_b_to_a_.size() << std::endl;
-
         for(auto curr_template: hera_res.matching_b_to_a_) {
             auto current_id = curr_template.first;
             auto template_id = curr_template.second;
@@ -440,10 +476,8 @@ private:
         CALI_CXX_MARK_FUNCTION;
         Real current_birth = get_cell_value(positive_simplex_idx);
 
-        if (!decmp_coh_.is_reduced)
+        if (!decmp_coh_.is_reduced or (params_coh_.compute_u and not decmp_coh_.has_matrix_u()))
             decmp_coh_.reduce(params_coh_);
-
-        std::cerr << "decm_coh_: " << decmp_coh_.dualize() << std::endl;
 
         if (cmp(target_birth, current_birth))
             return decrease_birth_x(d, positive_simplex_idx, fil_, decmp_coh_, target_birth);

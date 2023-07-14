@@ -25,6 +25,27 @@ namespace oineus {
         bool verbose{false};
     };
 
+    std::ostream& operator<<(std::ostream& out, const Params& p)
+    {
+        out << "Params(n_threads = " << p.n_threads;
+        out << ", chunk_size = " << p.chunk_size;
+        out << ", write_dgms = " << p.write_dgms;
+        out << ", sort_dgms = " << p.sort_dgms;
+        out << ", clearing_opt = " << p.clearing_opt;
+        out << ", acq_rel = " << p.acq_rel;
+        out << ", print_time = " << p.print_time;
+        out << ", compute_v = " << p.compute_v;
+        out << ", compute_u = " << p.compute_u;
+        out << ", do_sanity_check = " << p.do_sanity_check;
+        out << ", elapsed = " << p.elapsed;
+        out << ", kernel = " << p.kernel;
+        out << ", image = " << p.image;
+        out << ", cokernel = " << p.cokernel;
+        out << ", verbose = " << p.verbose;
+        out << ")";
+        return out;
+    }
+
     struct ThreadStats {
         const int thread_id;
         long int n_right_pivots {0};

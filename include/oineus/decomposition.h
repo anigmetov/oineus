@@ -266,6 +266,9 @@ namespace oineus {
             return is_zero(r_data[simplex]);
         }
 
+        bool has_matrix_u() const { return u_data_t.size() > 0; }
+        bool has_matrix_v() const { return v_data.size() > 0; }
+
         template<typename Cell>
         Diagrams<typename Cell::Real> diagram(const Filtration<Cell>& fil, bool include_inf_points) const;
 
