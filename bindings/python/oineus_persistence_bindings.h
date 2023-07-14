@@ -775,6 +775,9 @@ void init_oineus(py::module& m, std::string suffix)
     func_name = "get_vr_filtration" + suffix + "_3";
     m.def(func_name.c_str(), &get_vr_filtration<Int, Real, 3>);
 
+    func_name = "get_vr_filtration" + suffix + "_4";
+    m.def(func_name.c_str(), &get_vr_filtration<Int, Real, 4>);
+
     func_name = "get_vr_filtration_and_critical_edges" + suffix + "_1";
     m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges<Int, Real, 1>);
 
@@ -783,6 +786,9 @@ void init_oineus(py::module& m, std::string suffix)
 
     func_name = "get_vr_filtration_and_critical_edges" + suffix + "_3";
     m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges<Int, Real, 3>);
+
+    func_name = "get_vr_filtration_and_critical_edges" + suffix + "_4";
+    m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges<Int, Real, 4>);
 
     func_name = "get_vr_filtration_from_pwdists" + suffix;
     m.def(func_name.c_str(), &get_vr_filtration_from_pwdists<Int, Real>);

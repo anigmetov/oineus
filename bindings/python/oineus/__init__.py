@@ -48,7 +48,7 @@ def get_type_dim(data: np.ndarray, points=False):
         raise RuntimeError(f"Type not supported: {data.dtype}")
 
     if points:
-        if data.ndim == 2 and data.shape[1] in [1, 2, 3]:
+        if data.ndim == 2 and data.shape[1] in [1, 2, 3, 4]:
             dim_part = str(data.shape[1])
         else:
             raise RuntimeError(f"Dimension not supported: shape = {data.shape}")
