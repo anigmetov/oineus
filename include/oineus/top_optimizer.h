@@ -444,12 +444,12 @@ public:
         return decmp_hom_.diagram(fil_, include_inf_points);
     }
 
-    IndexDgms compute_index_diagram(bool include_inf_points)
+    IndexDgms compute_index_diagram(bool include_inf_points, bool include_zero_persistence_points)
     {
         if (!decmp_hom_.is_reduced)
             decmp_hom_.reduce(params_hom_);
 
-        return decmp_hom_.index_diagram(fil_, include_inf_points, false);
+        return decmp_hom_.index_diagram(fil_, include_inf_points, include_zero_persistence_points);
     }
 
 
