@@ -531,12 +531,17 @@ namespace oineus {
         if (not decmp.dualize())
             throw std::runtime_error("expected cohomology");
 
+        //IC(positive_simplex_idx);
+
         if (not fil.cmp(target_birth, fil.cells()[positive_simplex_idx].value()))
             throw std::runtime_error("target_birth cannot preceed current value");
 
         using Int = typename Cell::Int;
 
         std::vector<Int> result;
+        //IC(fil.index_in_matrix(positive_simplex_idx, decmp.dualize()));
+        //IC(decmp.u_data_t.size());
+        //IC(decmp.u_data_t[fil.index_in_matrix(positive_simplex_idx, decmp.dualize())]);
 
         for(auto index_in_matrix: decmp.u_data_t.at(fil.index_in_matrix(positive_simplex_idx, decmp.dualize()))) {
             auto fil_idx = fil.index_in_filtration(index_in_matrix, decmp.dualize());
@@ -607,10 +612,14 @@ namespace oineus {
 
         assert(sigma >= 0 and sigma < r_cols.size());
 
+
         auto& v_col = decmp.v_data[negative_simplex_idx];
+        //IC(negative_simplex_idx);
+        //IC(v_col);
 
         for(auto tau_idx_it = v_col.rbegin(); tau_idx_it != v_col.rend(); ++tau_idx_it) {
             auto tau_idx = *tau_idx_it;
+            //IC(tau_idx);
             const auto& tau = fil.cells()[tau_idx];
             assert(tau.dim() == d + 1);
 

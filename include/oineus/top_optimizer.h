@@ -15,6 +15,14 @@ struct ComputeFlags {
     bool compute_cohomology_u {false};
 };
 
+std::ostream& operator<<(std::ostream& out, const ComputeFlags& f)
+{
+    out << "ComputeFlags(compute_cohomology = " << f.compute_cohomology ? "True" : "False";
+    out << ", compute_homology_u = " << f.compute_homology_u ? "True" : "False";
+    out << ", compute_cohomology_u = " << f.compute_cohomology_u  ? "True)" : "False)";
+    return out;
+}
+
 
 template<class Cell_>
 class TopologyOptimizer {
@@ -41,10 +49,45 @@ public:
         Real target_value;
         bool is_positive;
 
-        bool increase_birth() const { return is_positive and target_value > current_value; }
-        bool decrease_birth() const { return is_positive and target_value < current_value; }
-        bool increase_death() const { return not is_positive and target_value > current_value; }
-        bool decrease_death() const { return not is_positive and target_value < current_value; }
+        bool increase_birth(bool negate) const
+        {
+            if (not is_positive)
+                return false;
+            if (negate)
+                return target_value < current_value;
+            else
+                return target_value > current_value;
+        }
+
+        bool decrease_birth(bool negate) const
+        {
+            if (not is_positive)
+                return false;
+            if (negate)
+                return target_value > current_value;
+            else
+                return target_value < current_value;
+        }
+
+        bool increase_death(bool negate) const
+        {
+            if (is_positive)
+                return false;
+            if (negate)
+                return target_value < current_value;
+            else
+                return target_value > current_value;
+        }
+
+        bool decrease_death(bool negate) const
+        {
+            if (is_positive)
+                return false;
+            if (negate)
+                return target_value > current_value;
+            else
+                return target_value < current_value;
+        }
     };
 
     using Target = std::unordered_map<size_t, SimplexTarget>;
@@ -101,18 +144,32 @@ public:
         params_coh_.compute_u = hints.compute_cohomology_u;
     }
 
+    bool cmp(Real a, Real b) const
+    {
+        if (negate_)
+            return a > b;
+        else
+            return a < b;
+    }
+
     ComputeFlags get_flags(const Target& target)
     {
-        bool increase_birth = std::accumulate(target.begin(), target.end(), false, [](bool x, auto kv) { return x or kv.second.increase_birth(); });
-        bool decrease_birth = std::accumulate(target.begin(), target.end(), false, [](bool x, auto kv) { return x or kv.second.decrease_birth(); });
-        bool increase_death = std::accumulate(target.begin(), target.end(), false, [](bool x, auto kv) { return x or kv.second.increase_death(); });
-        bool decrease_death = std::accumulate(target.begin(), target.end(), false, [](bool x, auto kv) { return x or kv.second.decrease_death(); });
+        bool increase_birth = std::accumulate(target.begin(), target.end(), false,
+                [this](bool x, auto kv) { return x or kv.second.increase_birth(negate_); });
+        bool decrease_birth = std::accumulate(target.begin(), target.end(), false,
+                [this](bool x, auto kv) { return x or kv.second.decrease_birth(negate_); });
+        bool increase_death = std::accumulate(target.begin(), target.end(), false,
+                [this](bool x, auto kv) { return x or kv.second.increase_death(negate_); });
+        bool decrease_death = std::accumulate(target.begin(), target.end(), false,
+                [this](bool x, auto kv) { return x or kv.second.decrease_death(negate_); });
+
+        //IC(increase_birth, decrease_birth, increase_death, decrease_death);
 
         ComputeFlags result;
 
-        result.compute_cohomology = decrease_birth or increase_death;
-        result.compute_homology_u = increase_birth;
-        result.compute_cohomology_u = decrease_death;
+        result.compute_cohomology = decrease_birth or increase_birth;
+        result.compute_homology_u = increase_death;
+        result.compute_cohomology_u = decrease_birth;
 
         return result;
     }
@@ -126,24 +183,26 @@ public:
 
         for(const auto& [idx_point, target_point]: target) {
 
-            if (get_cell_value(idx_point.birth) < target_point.birth) {
+            if (cmp(get_cell_value(idx_point.birth), target_point.birth)) {
                 increase_birth = true;
-            } else if (get_cell_value(idx_point.birth) > target_point.birth) {
+            } else if (cmp(target_point.birth, get_cell_value(idx_point.birth))) {
                 decrease_birth = true;
             }
 
-            if (get_cell_value(idx_point.death) < target_point.death) {
+            if (cmp(get_cell_value(idx_point.death), target_point.death)) {
                 increase_death = true;
-            } else if (get_cell_value(idx_point.death) > target_point.death) {
+            } else if (cmp(target_point.death, get_cell_value(idx_point.death))) {
                 decrease_death = true;
             }
         }
 
         ComputeFlags result;
 
-        result.compute_cohomology = decrease_birth or increase_death;
-        result.compute_homology_u = increase_birth;
-        result.compute_cohomology_u = decrease_death;
+        result.compute_cohomology = decrease_birth or increase_birth;
+        result.compute_homology_u = increase_death;
+        result.compute_cohomology_u = decrease_birth;
+
+        //IC(increase_birth, decrease_death, increase_death, decrease_death, result);
 
         return result;
     }
@@ -161,22 +220,24 @@ public:
             Real target_value = values[i];
             bool is_positive = decmp_hom_.is_positive(simplex_idx);
 
-            if (is_positive and current_value < target_value) {
+            if (is_positive and cmp(current_value, target_value)) {
                 increase_birth = true;
-            } else if (is_positive and current_value > target_value) {
+            } else if (is_positive and cmp(target_value, current_value)) {
                 decrease_birth = true;
-            } else if (not is_positive and current_value < target_value) {
+            } else if (not is_positive and cmp(current_value, target_value)) {
                 increase_death = true;
-            } else if (not is_positive and current_value > target_value) {
+            } else if (not is_positive and cmp(target_value, current_value)) {
                 decrease_death = true;
             }
         }
 
         ComputeFlags result;
 
-        result.compute_cohomology = decrease_birth or increase_death;
-        result.compute_homology_u = increase_birth;
-        result.compute_cohomology_u = decrease_death;
+        result.compute_cohomology = decrease_birth or increase_birth;
+        result.compute_homology_u = increase_death;
+        result.compute_cohomology_u = decrease_birth;
+
+        //IC(increase_birth, decrease_death, increase_death, decrease_death, result);
 
         return result;
     }
@@ -212,6 +273,7 @@ public:
             throw std::runtime_error("indices and values must have the same size");
 
         auto flags = get_flags(indices, values);
+        //IC(flags);
         params_coh_.compute_u = flags.compute_cohomology_u;
         params_hom_.compute_u = flags.compute_homology_u;
 
