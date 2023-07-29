@@ -45,34 +45,41 @@ namespace oineus {
         Filtration() = default;
 
         // use move constructor to move cells
-        Filtration(CellVector&& _simplices, bool _negate, int n_threads = 1)
+        Filtration(CellVector&& _simplices, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false, bool _set_ids=true)
                 :
                 negate_(_negate),
                 cells_(_simplices)
         {
+            init(n_threads, _sort_only_by_dim, _set_ids);
+        }
+
+        void init(int n_threads, bool sort_only_by_dim, bool _set_ids)
+        {
             CALI_CXX_MARK_FUNCTION;
 
-            set_ids();
-            sort(n_threads);
+            if (_set_ids) {
+                set_ids();
+            }
+
+            if (sort_only_by_dim) {
+                sort_dim_only();
+            } else {
+                sort(n_threads);
+            }
+
             set_dim_info();
+
             assert(std::all_of(cells_.begin(), cells_.end(),
                     [](const Cell& sigma) { return sigma.is_valid_filtration_simplex(); }));
         }
 
         // copy cells
-        Filtration(const CellVector& cells, bool _negate, int n_threads = 1)
+        Filtration(const CellVector& cells, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false, bool _set_ids=true)
                 :
                 negate_(_negate),
                 cells_(cells)
         {
-            CALI_CXX_MARK_FUNCTION;
-
-            set_ids();
-            sort(n_threads);
-            set_dim_info();
-            assert(std::all_of(cells_.begin(), cells_.end(),
-                    [](const Cell& sigma) { return sigma.is_valid_filtration_simplex(); }));
-
+            init(n_threads, _sort_only_by_dim, _set_ids);
         }
 
         size_t size() const { return cells_.size(); }
@@ -94,6 +101,8 @@ namespace oineus {
                 throw std::runtime_error("dim_last less than dim_first");
             return static_cast<size_t>(result);
         }
+
+        size_t n_vertices() const { return size_in_dimension(0); }
 
         dim_type max_dim() const { return dim_last_.size() - 1; }
 
@@ -153,6 +162,12 @@ namespace oineus {
         {
             return sorted_id_to_value_[sorted_id];
         }
+
+        Real value_by_vertices(const IntVector& vs) const
+        {
+            return sorted_id_to_value_.at(vertices_to_sorted_id_.at(vs));
+        }
+
 
         Real min_value() const
         {
@@ -254,6 +269,44 @@ namespace oineus {
         }
 
         // sort cells and assign sorted_ids
+        void sort_dim_only()
+        {
+            CALI_CXX_MARK_FUNCTION;
+
+            std::map<dim_type, CellVector> dim_to_cells;
+
+            for(auto cell : cells_) {
+                dim_to_cells[cell.dim()].push_back(cell);
+            }
+
+            id_to_sorted_id_ = std::vector<Int>(size(), Int(-1));
+            sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
+            vertices_to_sorted_id_.clear();
+            sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
+
+            size_t sorted_id = 0;
+
+            cells_.clear();
+
+            for(auto& [dim, cells_in_dim] : dim_to_cells) {
+                for(auto& cell : cells_in_dim) {
+                    id_to_sorted_id_.at(cell.id_) = sorted_id;
+                    sorted_id_to_id_.at(sorted_id) = cell.id_;
+                    cell.sorted_id_ = sorted_id;
+                    vertices_to_sorted_id_[cell.vertices_] = sorted_id;
+                    sorted_id_to_value_.at(sorted_id) = cell.value();
+
+                    cells_.push_back(cell);
+
+                    sorted_id++;
+                }
+            }
+        }
+
+
+
+
+        // sort cells and assign sorted_ids
         void sort([[maybe_unused]] int n_threads = 1)
         {
             CALI_CXX_MARK_FUNCTION;
@@ -296,16 +349,25 @@ namespace oineus {
     template<typename C>
     std::ostream& operator<<(std::ostream& out, const Filtration<C>& fil)
     {
-        out << "Filtration(size = " << fil.size() << ")[" << "\n";
+        out << "Filtration(size = " << fil.size() << ", " << "\ncells = [";
         dim_type d = 0;
-        for(size_t idx = 0; idx < fil.size(); ++idx) {
-            if (idx == fil.dim_last(d))
-                d++;
-            if (idx == fil.dim_first(d))
-                out << "Dimension: " << d << "\n";
-            out << fil.cells()[idx] << "\n";
+        for(const auto& sigma : fil.cells()) {
+            if (sigma.dim() == d) {
+                out << "\n# Dimension: " << d++ << "\n";
+            }
+            out << sigma << ",\n";
         }
-        out << "]";
+        if (fil.size() == 0)
+            out << "\n";
+        out << ", dim_first = [";
+        for(auto x : fil.dim_first())
+            out << x << ",";
+        out << "]\n";
+        out << ", dim_last = [";
+        for(auto x : fil.dim_last())
+            out << x << ",";
+        out << "]\n";
+        out << ");";
         return out;
     }
 

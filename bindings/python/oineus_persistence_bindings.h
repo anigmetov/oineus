@@ -688,13 +688,20 @@ void init_oineus(py::module& m, std::string suffix)
             .def("__getitem__", &Diagram::get_diagram_in_dimension);
 
     py::class_<Simplex>(m, simplex_class_name.c_str())
-            .def(py::init<typename Simplex::IdxVector, Real>())
-            .def_readonly("id", &Simplex::id_)
-            .def_readonly("sorted_id", &Simplex::sorted_id_)
-            .def_readonly("vertices", &Simplex::vertices_)
-            .def_readonly("value", &Simplex::value_)
+            .def(py::init<typename Simplex::IdxVector, Real>(), py::arg("vertices"), py::arg("value"))
+            .def(py::init<typename Simplex::Int, typename Simplex::IdxVector, Real>(), py::arg("id"), py::arg("vertices"), py::arg("value"))
+            .def_readwrite("id", &Simplex::id_)
+            .def_readwrite("sorted_id", &Simplex::sorted_id_)
+            .def_readwrite("vertices", &Simplex::vertices_)
+            .def_readwrite("value", &Simplex::value_)
             .def("dim", &Simplex::dim)
             .def("boundary", &Simplex::boundary)
+            .def("join", [](const Simplex& sigma, Int new_vertex, Real value, Int new_id) {
+                    return sigma.join(new_id, new_vertex, value);
+                },
+                py::arg("new_vertex"),
+                py::arg("value"),
+                py::arg("new_id") = Simplex::k_invalid_id)
             .def("__repr__", [](const Simplex& sigma) {
               std::stringstream ss;
               ss << sigma;
@@ -702,13 +709,27 @@ void init_oineus(py::module& m, std::string suffix)
             });
 
     py::class_<Filtration>(m, filtration_class_name.c_str())
-            .def(py::init<typename Filtration::CellVector, bool, int>())
+            .def(py::init<typename Filtration::CellVector, bool, int, bool, bool>(),
+                    py::arg("cells"),
+                    py::arg("negate")=false,
+                    py::arg("n_threads")=1,
+                    py::arg("sort_only_by_dimension")=false,
+                    py::arg("set_ids")=true)
             .def("max_dim", &Filtration::max_dim)
             .def("cells", &Filtration::cells_copy)
             .def("simplices", &Filtration::cells_copy)
+            .def("size", &Filtration::size)
+            .def("__len__", &Filtration::size)
             .def("size_in_dimension", &Filtration::size_in_dimension)
-            .def("simplex_value", &Filtration::value_by_sorted_id)
-            .def("boundary_matrix", &Filtration::boundary_matrix_full);
+            .def("n_vertices", &Filtration::n_vertices)
+            .def("simplex_value_by_id", &Filtration::value_by_sorted_id, py::arg("sorted_id"))
+            .def("simplex_value_by_vertices", &Filtration::value_by_vertices, py::arg("vertices"))
+            .def("boundary_matrix", &Filtration::boundary_matrix_full)
+            .def("__repr__", [](const Filtration& fil) {
+              std::stringstream ss;
+              ss << fil;
+              return ss.str();
+            });
 
     py::class_<KerImCokRed>(m, ker_im_cok_reduced_class_name.c_str())
             .def(py::init<Filtration, Filtration, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>, oin::Params>());

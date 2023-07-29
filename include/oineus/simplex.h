@@ -94,6 +94,23 @@ namespace oineus {
             return bdry;
         }
 
+        // create a new simplex by joining with vertex and assign value to it
+        Simplex join(Int new_id, Int vertex, Real value) const
+        {
+            // new vertex must not be present in this->vertices
+            assert(std::find(vertices_.begin(), vertices_.end(),vertex) == vertices_.end());
+
+            IdxVector vs = vertices_;
+            vs.push_back(vertex);
+            return Simplex(new_id, vs, value);
+        }
+
+        Simplex join(Int vertex, Real value)
+        {
+            return join(k_invalid_id, vertex, value);
+        }
+
+
         bool is_valid_filtration_simplex() const
         {
             return id_ != k_invalid_id and sorted_id_ != k_invalid_id;
