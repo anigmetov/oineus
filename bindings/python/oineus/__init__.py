@@ -74,13 +74,12 @@ def get_freudenthal_filtration_and_critical_vertices(data, negate, wrap, max_dim
 
 
 def get_vr_filtration_from_pwdists(pwdists, max_dim, max_radius, n_threads):
-    type_part, _ = get_type_dim(pwdists, False)
     func = getattr(_oineus, f"get_vr_filtration_from_pwdists_{type_part}")
     return func(pwdists, max_dim, max_radius, n_threads)
 
 def get_vr_filtration_and_critical_edges_from_pwdists(pwdists, max_dim, max_radius, n_threads):
-    type_part, dim_part = get_type_dim(pwdists, True)
-    func = getattr(_oineus, f"get_vr_filtration_and_critical_edges_{type_part}_{dim_part}")
+    type_part, _ = get_type_dim(pwdists, False)
+    func = getattr(_oineus, f"get_vr_filtration_and_critical_edges_from_pwdists_{type_part}")
     fil, edges = func(pwdists, max_dim, max_radius, n_threads)
     edges = np.array([[e.x, e.y] for e in edges])
     return fil, edges
