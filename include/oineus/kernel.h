@@ -135,9 +135,9 @@ namespace oineus {
 								}
                                 if (!cycle_g) {
                                     int birth_id = new_order_to_old[Ker.get_R()[new_cols[i]].back()];
-                                    int dim = K.dim_by_sorted_id(i)-1;
-                                    if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-                                        KerDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i));//[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //add point to the diagram
+                                    int dim = K.get_cell_dim(i)-1;
+                                    if (K.get_cell_value(birth_id) != K.get_cell_value(i)) {
+                                        KerDiagrams.add_point(dim, K.get_cell_value(birth_id), K.get_cell_value(i));//[dim].push_back(Point(K.get_cell_value(birth_id), K.get_cell_value(i))); //add point to the diagram
                                         open_points_ker[birth_id] = false; //close the point which gave birth to the cycle that was just killed, so we don't add an point at inifity to the diagram
                                     }
                                 }
@@ -148,8 +148,8 @@ namespace oineus {
 
 				for (int i = 0; i < open_points_ker.size(); i++) {//check if there are any cycles with infinite life times
 					if (open_points_ker[i]) {
-						int dim = K.dim_by_sorted_id(i)-1;
-						KerDiagrams.add_point(dim,K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()); //add point to the diagram
+						int dim = K.get_cell_dim(i)-1;
+						KerDiagrams.add_point(dim,K.get_cell_dim(i), std::numeric_limits<double>::infinity()); //add point to the diagram
 					}
 				}
 
@@ -218,9 +218,9 @@ namespace oineus {
                         if (!cycle_f) {
 							int birth_id = new_order_to_old[Im.get_R()[i].back()];
 							if (sorted_K_to_sorted_L[birth_id] != -1) {
-								int dim = K.dim_by_sorted_id(i)-1;
-								if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-									ImDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i));//add the point to the diaram
+								int dim = K.get_cell_dim(i)-1;
+								if (K.get_cell_value(birth_id) != K.get_cell_value(i)) {
+									ImDiagrams.add_point(dim, K.get_cell_value(birth_id), K.get_cell_value(i));//add the point to the diaram
 								}
 								open_points_im[birth_id] = false;
 							}
@@ -230,8 +230,8 @@ namespace oineus {
 				//for any cycle with infinite life, add the point to the diagram
 				for (int i = 0; i < open_points_im.size(); i++) {
 					if (open_points_im[i]) {
-						int dim = K.dim_by_sorted_id(i);
-						ImDiagrams.add_point(dim, K.value_by_sorted_id(i), std::numeric_limits<double>::infinity());
+						int dim = K.get_cell_dim(i);
+						ImDiagrams.add_point(dim, K.get_cell_value(i), std::numeric_limits<double>::infinity());
 					}
 				}
 
@@ -319,9 +319,9 @@ namespace oineus {
 						}
 						if (!cycle_im && sorted_K_to_sorted_L[new_order_to_old[Im.get_R()[i].back()]] == -1) {
 							int birth_id = new_order_to_old[Cok.get_R()[i].back()];
-							if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-								int dim = K.dim_by_sorted_id(birth_id);
-								CokDiagrams.add_point(dim, K.value_by_sorted_id(birth_id) ,K.value_by_sorted_id(i));//add point to the diagram
+							if (K.get_cell_value(birth_id) != K.get_cell_value(i)) {
+								int dim = K.get_cell_dim(birth_id);
+								CokDiagrams.add_point(dim, K.get_cell_value(birth_id) ,K.get_cell_value(i));//add point to the diagram
 							}
 							open_points_cok[birth_id] = false;
 						}
@@ -331,8 +331,8 @@ namespace oineus {
 				//for any open cycles add a point with infinite lifetime to the diagram
 				for (int i = 0; i < open_points_cok.size(); i++) {
 					if (open_points_cok[i]) {
-						int dim = K.dim_by_sorted_id(i);
-						CokDiagrams.add_point(dim, K.value_by_sorted_id(i), std::numeric_limits<double>::infinity());
+						int dim = K.get_cell_dim(i);
+						CokDiagrams.add_point(dim, K.get_cell_value(i), std::numeric_limits<double>::infinity());
 					}
 				}
 
@@ -478,11 +478,11 @@ namespace oineus {
 			if (sorted_K_to_sorted_L[i] != -1 && sorted_K_to_sorted_L[j] != -1) {//if both are in L, sort by dimension and then value under G
 				int i_dim, j_dim;
 				double i_val, j_val;
-				i_dim = L.dim_by_sorted_id(sorted_K_to_sorted_L[i]);
-				j_dim = L.dim_by_sorted_id(sorted_K_to_sorted_L[j]);
+				i_dim = L.get_cell_dim(sorted_K_to_sorted_L[i]);
+				j_dim = L.get_cell_dim(sorted_K_to_sorted_L[j]);
 				if (i_dim == j_dim) {
-					i_val = L.value_by_sorted_id(sorted_K_to_sorted_L[i]);
-					j_val = L.value_by_sorted_id(sorted_K_to_sorted_L[j]);
+					i_val = L.get_cell_value(sorted_K_to_sorted_L[i]);
+					j_val = L.get_cell_value(sorted_K_to_sorted_L[j]);
 					if (i_val == j_val) {
 						if ( i < j) {
 							return true;
@@ -508,11 +508,11 @@ namespace oineus {
 			} else {
 				int i_dim, j_dim;
 				double i_val, j_val;
-				i_dim = K.dim_by_sorted_id(i);
-				j_dim = K.dim_by_sorted_id(j);
+				i_dim = K.get_cell_dim(i);
+				j_dim = K.get_cell_dim(j);
 				if (i_dim == j_dim) {
-					i_val = K.value_by_sorted_id(i);
-					j_val = K.value_by_sorted_id(j);
+					i_val = K.get_cell_value(i);
+					j_val = K.get_cell_value(j);
 					if (i_val == j_val) {
 						if ( i < j) {
 							return true;

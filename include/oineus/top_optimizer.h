@@ -246,7 +246,7 @@ public:
     dim_type get_dimension(size_t simplex_index) const
     {
         if (fil_.size())
-            return fil_.dim_by_sorted_id(simplex_index);
+            return fil_.get_cell_dim(simplex_index);
         else
             return 0;
     }
@@ -309,7 +309,7 @@ public:
 
     Real get_cell_value(size_t simplex_idx) const
     {
-        return fil_.value_by_sorted_id(simplex_idx);
+        return fil_.get_cell_value(simplex_idx);
     }
 
     Target dgm_target_to_target(const DgmTarget& dgm_target) const

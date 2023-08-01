@@ -437,6 +437,8 @@ namespace oineus {
 
         using Real = typename Cell::Real;
 
+        IC(fil.dim_last(), d);
+
         auto index_diagram = rv_matrix.index_diagram(fil, false, false).get_diagram_in_dimension(d);
         std::vector<Real> ps;
         ps.reserve(index_diagram.size());

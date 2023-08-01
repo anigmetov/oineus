@@ -34,10 +34,8 @@ namespace oineus {
         using Real = Real_;
         using IdxVector = std::vector<Int>;
 
-        static constexpr Int k_invalid_id = Int(-1);
+        Int user_data;
 
-        Int id_ {k_invalid_id};
-        Int sorted_id_ {k_invalid_id};
         IdxVector vertices_;
         Real value_ {std::numeric_limits<Real>::max()};
 
@@ -50,28 +48,12 @@ namespace oineus {
             if (vertices_.empty())
                 throw std::runtime_error("Empty simplex not allowed");
 
-            if (vertices_.size() == 1)
-                id_ = vertices_[0];
-            else
+            if (vertices_.size() > 1)
                 std::sort(vertices_.begin(), vertices_.end());
         }
 
         Int dim() const { return static_cast<Int>(vertices_.size()) - 1; }
         Real value() const { return value_; }
-
-        Simplex(const int _id, const IdxVector& _vertices, Real _value)
-                :
-                vertices_(_vertices), value_(_value), id_(_id)
-        {
-            if (vertices_.empty())
-                throw std::runtime_error("Empty simplex not allowed");
-
-            if (vertices_.size() == 1)
-                id_ = vertices_[0];
-            else
-                std::sort(vertices_.begin(), vertices_.end());
-        }
-
 
         std::vector<IdxVector> boundary() const
         {
@@ -95,51 +77,36 @@ namespace oineus {
         }
 
         // create a new simplex by joining with vertex and assign value to it
-        Simplex join(Int new_id, Int vertex, Real value) const
+        Simplex join(Int vertex, Real value) const
         {
             // new vertex must not be present in this->vertices
-            assert(std::find(vertices_.begin(), vertices_.end(),vertex) == vertices_.end());
+            if (std::find(vertices_.begin(), vertices_.end(),vertex) != vertices_.end())
+                throw std::runtime_error("Duplicate vertex in join");
 
             IdxVector vs = vertices_;
             vs.push_back(vertex);
-            return Simplex(new_id, vs, value);
+            return Simplex(vs, value);
         }
 
-        Simplex join(Int vertex, Real value)
-        {
-            return join(k_invalid_id, vertex, value);
-        }
-
-
-        bool is_valid_filtration_simplex() const
-        {
-            return id_ != k_invalid_id and sorted_id_ != k_invalid_id;
-        }
 
         bool operator==(const Simplex& other) const
         {
-            // ignore id_ ?
-            return sorted_id_ == other.sorted_id_ and vertices_ == other.vertices_ and value_ == other.value_;
+            return vertices_ == other.vertices_ and value_ == other.value_;
         }
 
         template<typename I, typename R, typename L>
         friend std::ostream& operator<<(std::ostream&, const Simplex<I, R>&);
-
-        Int get_sorted_id()
-        {
-            return sorted_id_;
-        }
     };
 
     template<typename I, typename R>
     std::ostream& operator<<(std::ostream& out, const Simplex<I, R>& s)
     {
-        out << "Simplex(id_=" << s.id_ << ", sorted_id_ = " << s.sorted_id_ << ", vertices_=(";
+        out << "Simplex(vertices_=(";
 
         for(size_t i = 0; i < s.vertices_.size() - 1; ++i)
             out << s.vertices_[i] << ", ";
 
-        out << s.vertices_[s.vertices_.size() - 1] << "), value_=" << s.value_ << ")";
+        out << s.vertices_[s.vertices_.size() - 1] << "), value_=" << s.value_ << ", user_data = " << s.user_data << ")";
 
         return out;
     }

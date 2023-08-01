@@ -149,7 +149,7 @@ list_to_filtration(py::list data, oin::Params& params) //take a list of cells an
             count++;
         }
         if (params.verbose) std::cout << "parsed the following data. id: " << id << " val: " << val << std::endl;
-        Simplex simp_i(id, vertices, val);
+        Simplex simp_i(vertices, val);
         FSV.push_back(simp_i);
     }
 
@@ -652,6 +652,7 @@ void init_oineus(py::module& m, std::string suffix)
     using Diagram = PyOineusDiagrams<Real>;
 
     using Filtration = oin::Filtration<oin::Simplex<Int, Real>>;
+    using IntVector = typename Filtration::IntVector;
     using Simplex = typename Filtration::Cell;
 
     using oin::VREdge;
@@ -689,19 +690,12 @@ void init_oineus(py::module& m, std::string suffix)
 
     py::class_<Simplex>(m, simplex_class_name.c_str())
             .def(py::init<typename Simplex::IdxVector, Real>(), py::arg("vertices"), py::arg("value"))
-            .def(py::init<typename Simplex::Int, typename Simplex::IdxVector, Real>(), py::arg("id"), py::arg("vertices"), py::arg("value"))
-            .def_readwrite("id", &Simplex::id_)
-            .def_readwrite("sorted_id", &Simplex::sorted_id_)
+            .def_readwrite("user_data", &Simplex::user_data)
             .def_readwrite("vertices", &Simplex::vertices_)
             .def_readwrite("value", &Simplex::value_)
             .def("dim", &Simplex::dim)
             .def("boundary", &Simplex::boundary)
-            .def("join", [](const Simplex& sigma, Int new_vertex, Real value, Int new_id) {
-                    return sigma.join(new_id, new_vertex, value);
-                },
-                py::arg("new_vertex"),
-                py::arg("value"),
-                py::arg("new_id") = Simplex::k_invalid_id)
+            .def("join", &Simplex::join, py::arg("new_vertex"), py::arg("value"))
             .def("__repr__", [](const Simplex& sigma) {
               std::stringstream ss;
               ss << sigma;
@@ -713,8 +707,7 @@ void init_oineus(py::module& m, std::string suffix)
                     py::arg("cells"),
                     py::arg("negate")=false,
                     py::arg("n_threads")=1,
-                    py::arg("sort_only_by_dimension")=false,
-                    py::arg("set_ids")=true)
+                    py::arg("sort_only_by_dimension")=false)
             .def("max_dim", &Filtration::max_dim)
             .def("cells", &Filtration::cells_copy)
             .def("simplices", &Filtration::cells_copy)
@@ -722,9 +715,8 @@ void init_oineus(py::module& m, std::string suffix)
             .def("__len__", &Filtration::size)
             .def("size_in_dimension", &Filtration::size_in_dimension)
             .def("n_vertices", &Filtration::n_vertices)
-            .def("simplex_value_by_sorted_id", &Filtration::value_by_sorted_id, py::arg("sorted_id"))
-            .def("id_by_sorted_id", &Filtration::get_id_by_sorted_id, py::arg("sorted_id"))
-            .def("simplex_value_by_vertices", &Filtration::value_by_vertices, py::arg("vertices"))
+            .def("simplex_value", py::overload_cast<const IntVector&>(&Filtration::get_cell_value, py::const_), py::arg("vertices"))
+//            .def("cell_value", static_cast<Real (Filtration::*)(const typename Filtration::IntVector&)>(Filtration::get_cell_value), py::arg("vertices"))
             .def("boundary_matrix", &Filtration::boundary_matrix_full)
             .def("__repr__", [](const Filtration& fil) {
               std::stringstream ss;

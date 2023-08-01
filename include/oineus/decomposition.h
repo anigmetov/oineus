@@ -755,16 +755,16 @@ namespace oineus {
                     continue;
 
                 // point at infinity
-                dim_type dim = fil.dim_by_sorted_id(simplex_idx);
-                Real birth = fil.value_by_sorted_id(simplex_idx);
+                dim_type dim = fil.get_cell_dim(simplex_idx);
+                Real birth = fil.get_cell_value(simplex_idx);
                 Real death = fil.infinity();
 
                 result.add_point(dim, birth, death);
             } else {
                 // finite point
                 Int birth_idx = fil.index_in_filtration(low(col), dualize()), death_idx = simplex_idx;
-                dim_type dim = fil.dim_by_sorted_id(birth_idx);
-                Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
+                dim_type dim = fil.get_cell_dim(birth_idx);
+                Real birth = fil.get_cell_value(birth_idx), death = fil.get_cell_value(death_idx);
 
                 if (birth != death)
                     result.add_point(dim, birth, death);
@@ -793,8 +793,8 @@ namespace oineus {
             if (not is_zero(col)) {
                 // finite point
                 Int birth_idx = fil.index_in_filtration(low(col), dualize()), death_idx = simplex_idx;
-                dim_type dim = fil.dim_by_sorted_id(birth_idx);
-                Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
+                dim_type dim = fil.get_cell_dim(birth_idx);
+                Real birth = fil.get_cell_value(birth_idx), death = fil.get_cell_value(death_idx);
 
                 //std::cerr << "simplex_idx = " << simplex_idx << ", dim = " << dim << ", bithr = " << birth << ", d = " << death << std::endl;
 
@@ -833,7 +833,7 @@ namespace oineus {
                 if (!include_inf_points or rows_with_lowest_one.count(col_idx) != 0)
                     continue;
 
-                dim_type dim = fil.dim_by_sorted_id(col_idx);
+                dim_type dim = fil.get_cell_dim(col_idx);
 
                 result.add_point(dim, col_idx, plus_inf);
             } else {
@@ -841,9 +841,9 @@ namespace oineus {
                 size_t birth_idx = static_cast<size_t>(low(col));
                 size_t death_idx = col_idx;
 
-                dim_type dim = fil.dim_by_sorted_id(birth_idx);
+                dim_type dim = fil.get_cell_dim(birth_idx);
 
-                if (include_zero_persistence_points or fil.value_by_sorted_id(birth_idx) != fil.value_by_sorted_id(death_idx))
+                if (include_zero_persistence_points or fil.get_cell_value(birth_idx) != fil.get_cell_value(death_idx))
                     result.add_point(dim, birth_idx, death_idx);
             }
         }

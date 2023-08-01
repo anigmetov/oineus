@@ -45,21 +45,17 @@ namespace oineus {
         Filtration() = default;
 
         // use move constructor to move cells
-        Filtration(CellVector&& _simplices, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false, bool _set_ids=true)
+        Filtration(CellVector&& _simplices, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false)
                 :
                 negate_(_negate),
                 cells_(_simplices)
         {
-            init(n_threads, _sort_only_by_dim, _set_ids);
+            init(n_threads, _sort_only_by_dim);
         }
 
-        void init(int n_threads, bool sort_only_by_dim, bool _set_ids)
+        void init(int n_threads, bool sort_only_by_dim)
         {
             CALI_CXX_MARK_FUNCTION;
-
-            if (_set_ids) {
-                set_ids();
-            }
 
             if (sort_only_by_dim) {
                 sort_dim_only();
@@ -68,18 +64,15 @@ namespace oineus {
             }
 
             set_dim_info();
-
-            assert(std::all_of(cells_.begin(), cells_.end(),
-                    [](const Cell& sigma) { return sigma.is_valid_filtration_simplex(); }));
         }
 
         // copy cells
-        Filtration(const CellVector& cells, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false, bool _set_ids=true)
+        Filtration(const CellVector& cells, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false)
                 :
                 negate_(_negate),
                 cells_(cells)
         {
-            init(n_threads, _sort_only_by_dim, _set_ids);
+            init(n_threads, _sort_only_by_dim);
         }
 
         size_t size() const { return cells_.size(); }
@@ -90,7 +83,11 @@ namespace oineus {
         auto dim_first() const { return dim_first_; }
         auto dim_last() const { return dim_last_; }
 
-        Real get_cell_value(size_t i) { return cells_[i].value(); }
+        Real get_cell_value(size_t i) const { return cells_.at(i).value(); }
+        Real get_cell_value(const IntVector& vs) const { return get_cell_value(vertices_to_sorted_id_.at(vs)); }
+
+        dim_type get_cell_dim(size_t i) const { return cells_.at(i).dim(); }
+        dim_type get_cell_dim(const IntVector& vs) const { return get_cell_dim(vertices_to_sorted_id_.at(vs)); }
 
         size_t size_in_dimension(dim_type d) const
         {
@@ -109,6 +106,7 @@ namespace oineus {
         BoundaryMatrix boundary_matrix_full() const
         {
             CALI_CXX_MARK_FUNCTION;
+            std::cerr << "enter boundary_matrix_full" << std::endl;
 
             BoundaryMatrix result;
             result.reserve(size());
@@ -155,20 +153,6 @@ namespace oineus {
             throw std::runtime_error("Error in dim_by_id");
         }
 
-        // ranges of id and sorted id are the same, since dimension is preserved in sorting
-        dim_type dim_by_sorted_id(Int sorted_id) const { return dim_by_id(sorted_id); }
-
-        Real value_by_sorted_id(Int sorted_id) const
-        {
-            return sorted_id_to_value_[sorted_id];
-        }
-
-        Real value_by_vertices(const IntVector& vs) const
-        {
-            return sorted_id_to_value_.at(vertices_to_sorted_id_.at(vs));
-        }
-
-
         Real min_value() const
         {
             if (cells_.empty())
@@ -186,15 +170,6 @@ namespace oineus {
         CellVector& cells() { return cells_; }
         CellVector cells_copy() const { return cells_; }
 
-        int get_sorted_id(int i)
-        {
-            return id_to_sorted_id_[i];
-        }
-
-        int get_id_by_sorted_id(int sorted_id)
-        {
-            return sorted_id_to_id_[sorted_id];
-        }
 
         bool negate() const { return negate_; }
 
@@ -219,7 +194,7 @@ namespace oineus {
             for(size_t i = 0; i < new_values.size(); ++i)
                 cells_[i].value_ = new_values[i];
 
-            sort(n_threads);
+            sort_dim_only();
         }
 
     private:
@@ -227,31 +202,12 @@ namespace oineus {
         bool negate_;
         CellVector cells_;
 
-        std::map<IntVector, Int> vertices_to_sorted_id_;
-        std::vector<Int> id_to_sorted_id_;
-        std::vector<Int> sorted_id_to_id_;
-
-        std::vector<Real> sorted_id_to_value_;
+        std::map<IntVector, size_t> vertices_to_sorted_id_;
 
         std::vector<size_t> dim_first_;
         std::vector<size_t> dim_last_;
 
         // private methods
-        void set_ids()
-        {
-            // all vertices have ids already, 0..#vertices-1
-            // set ids only on higher-dimensional cells
-            for(size_t id = 0; id < cells_.size(); ++id) {
-
-                auto& sigma = cells_[id];
-
-                if (sigma.dim() == 0 and sigma.id_ != static_cast<Int>(id))
-                    throw std::runtime_error("Vertex id and order of vertices do not match");
-                else
-                    sigma.id_ = static_cast<Int>(id);
-            }
-        }
-
         void set_dim_info()
         {
             Int curr_dim = 0;
@@ -279,10 +235,7 @@ namespace oineus {
                 dim_to_cells[cell.dim()].push_back(cell);
             }
 
-            id_to_sorted_id_ = std::vector<Int>(size(), Int(-1));
-            sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
             vertices_to_sorted_id_.clear();
-            sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
 
             size_t sorted_id = 0;
 
@@ -290,31 +243,19 @@ namespace oineus {
 
             for(auto& [dim, cells_in_dim] : dim_to_cells) {
                 for(auto& cell : cells_in_dim) {
-                    id_to_sorted_id_.at(cell.id_) = sorted_id;
-                    sorted_id_to_id_.at(sorted_id) = cell.id_;
-                    cell.sorted_id_ = sorted_id;
                     vertices_to_sorted_id_[cell.vertices_] = sorted_id;
-                    sorted_id_to_value_.at(sorted_id) = cell.value();
-
                     cells_.push_back(cell);
-
                     sorted_id++;
                 }
             }
         }
-
-
-
 
         // sort cells and assign sorted_ids
         void sort([[maybe_unused]] int n_threads = 1)
         {
             CALI_CXX_MARK_FUNCTION;
 
-            id_to_sorted_id_ = std::vector<Int>(size(), Int(-1));
-            sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
             vertices_to_sorted_id_.clear();
-            sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
 
             // sort by dimension first, then by value, then by id
             auto cmp = [this](const Cell& sigma, const Cell& tau) {
@@ -333,12 +274,7 @@ namespace oineus {
 
             for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
                 auto& sigma = cells_[sorted_id];
-
-                id_to_sorted_id_[sigma.id_] = sorted_id;
-                sorted_id_to_id_[sorted_id] = sigma.id_;
-                sigma.sorted_id_ = sorted_id;
                 vertices_to_sorted_id_[sigma.vertices_] = sorted_id;
-                sorted_id_to_value_[sorted_id] = sigma.value();
             }
         }
 
