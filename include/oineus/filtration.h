@@ -106,7 +106,6 @@ namespace oineus {
         BoundaryMatrix boundary_matrix_full() const
         {
             CALI_CXX_MARK_FUNCTION;
-            std::cerr << "enter boundary_matrix_full" << std::endl;
 
             BoundaryMatrix result;
             result.reserve(size());
