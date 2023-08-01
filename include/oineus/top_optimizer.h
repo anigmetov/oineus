@@ -335,8 +335,11 @@ public:
         return target;
     }
 
-    IndicesValues simplify(Real epsilon, DenoiseStrategy strategy, dim_type dim) const
+    IndicesValues simplify(Real epsilon, DenoiseStrategy strategy, dim_type dim)
     {
+        if (not decmp_hom_.is_reduced)
+            decmp_hom_.reduce_serial(params_hom_);
+
         IndicesValues result;
 
         auto index_diagram = decmp_hom_.index_diagram(fil_, false, false)[dim];
