@@ -452,9 +452,10 @@ namespace oineus {
 		std::vector<int> sorted_K_to_sorted_L(number_cells_K, -1); //need a map from sorted K to sorted L, for any cell not in L, we set the value to -1, which is convenient for getting the diagrams.
 
 
-		for (int i = 0; i < number_cells_L; i++) {//getting sorted L to sorted K is relatively easy
-			sorted_L_to_sorted_K[L.get_sorted_id(i)] = K.get_sorted_id(L_to_K[i]);
-		}
+        throw std::runtime_error("fix this");
+//		for (int i = 0; i < number_cells_L; i++) {//getting sorted L to sorted K is relatively easy
+//			sorted_L_to_sorted_K[L.get_sorted_id(i)] = K.get_sorted_id(L_to_K[i]);
+//		}
 
 		for (int i = 0; i < number_cells_L; i++) {//for cells in K which are also in L, set the sorted id, which we can get from sorted L to sorted K
 			sorted_K_to_sorted_L[sorted_L_to_sorted_K[i]] = i;

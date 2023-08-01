@@ -703,7 +703,7 @@ void init_oineus(py::module& m, std::string suffix)
             });
 
     py::class_<Filtration>(m, filtration_class_name.c_str())
-            .def(py::init<typename Filtration::CellVector, bool, int, bool, bool>(),
+            .def(py::init<const typename Filtration::CellVector&, bool, int, bool>(),
                     py::arg("cells"),
                     py::arg("negate")=false,
                     py::arg("n_threads")=1,
@@ -716,7 +716,9 @@ void init_oineus(py::module& m, std::string suffix)
             .def("size_in_dimension", &Filtration::size_in_dimension)
             .def("n_vertices", &Filtration::n_vertices)
             .def("simplex_value", py::overload_cast<const IntVector&>(&Filtration::get_cell_value, py::const_), py::arg("vertices"))
-//            .def("cell_value", static_cast<Real (Filtration::*)(const typename Filtration::IntVector&)>(Filtration::get_cell_value), py::arg("vertices"))
+            .def("simplex_value", py::overload_cast<size_t>(&Filtration::get_cell_value, py::const_), py::arg("vertices"))
+            .def("cell_value", py::overload_cast<const IntVector&>(&Filtration::get_cell_value, py::const_), py::arg("vertices"))
+            .def("cell_value", py::overload_cast<size_t>(&Filtration::get_cell_value, py::const_), py::arg("vertices"))
             .def("boundary_matrix", &Filtration::boundary_matrix_full)
             .def("__repr__", [](const Filtration& fil) {
               std::stringstream ss;

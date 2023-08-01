@@ -171,6 +171,10 @@ namespace oineus {
 
         bron_kerbosch(current, candidates, excluded_end, max_dim, neighbor, functor, check_initial);
         // Filtration constructor will sort simplices and assign sorted ids
+
+        for(Int i = 0; i < static_cast<Int>(simplices.size()); ++i)
+            simplices[i].user_data = i;
+
         auto fil = Filtration(std::move(simplices), negate, n_threads);
 
         // use sorted info from fil to rearrange edges
@@ -178,7 +182,7 @@ namespace oineus {
         sorted_edges.reserve(edges.size());
 
         for(size_t sorted_edge_idx = 0; sorted_edge_idx < edges.size(); ++sorted_edge_idx) {
-            sorted_edges.push_back(edges[fil.get_id_by_sorted_id(sorted_edge_idx)]);
+            sorted_edges.push_back(edges[fil.cells()[sorted_edge_idx].user_data]);
         }
 
         return std::make_pair(fil, sorted_edges);

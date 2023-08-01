@@ -262,7 +262,7 @@ namespace oineus {
               Real v_sigma = this->negate_ ? -sigma.value() : sigma.value();
               Real v_tau = this->negate_ ? -tau.value() : tau.value();
               Int d_sigma = sigma.dim(), d_tau = tau.dim();
-              return std::tie(d_sigma, v_sigma, sigma.id_) < std::tie(d_tau, v_tau, tau.id_);
+              return std::tie(d_sigma, v_sigma) < std::tie(d_tau, v_tau);
             };
 
             if (n_threads > 1) {

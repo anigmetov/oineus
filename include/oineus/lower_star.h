@@ -275,7 +275,7 @@ public:
         CriticalVertices sorted_vertices;
 
         for(const auto& cell: fil.cells()) {
-            sorted_vertices.push_back(vertices[cell.id_]);
+            sorted_vertices.push_back(vertices[cell.user_data]);
         }
 
         return {fil, sorted_vertices};
@@ -342,6 +342,7 @@ private:
             if (is_valid_simplex) {
                 ValueVertex vv = simplex_value_and_vertex(v_ids, negate);
                 simplices.emplace_back(v_ids, vv.value);
+                simplices.back().user_data = simplices.size() - 1;
                 critical_vertices.emplace_back(vv.vertex);
             }
         }

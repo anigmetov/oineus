@@ -151,8 +151,8 @@ namespace oineus {
             size_t birth_idx = current_index_dgm[current_dgm_id].birth;
             size_t death_idx = current_index_dgm[current_dgm_id].death;
 
-            Real birth_val = current_fil.value_by_sorted_id(birth_idx);
-            Real death_val = current_fil.value_by_sorted_id(death_idx);
+            Real birth_val = current_fil.get_cell_value(birth_idx);
+            Real death_val = current_fil.get_cell_value(death_idx);
 
             if (birth_val == death_val)
                 current_diagonal_points.emplace_back(birth_val, current_dgm_id);
@@ -212,7 +212,7 @@ namespace oineus {
             Real avg_death = std::accumulate(dgm.begin(), dgm.end(), static_cast<Real>(0), [&](auto x, auto p) { return x + p.death; }) / dgm.size();
 
             for(auto p: index_dgm)
-                if (fil.value_by_sorted_id(p.birth) != fil.value_by_sorted_id(p.death))
+                if (fil.get_cell_value(p.birth) != fil.get_cell_value(p.death))
                     result[p] = {avg_birth, avg_death};
         }
 
@@ -256,8 +256,8 @@ namespace oineus {
         auto index_dgm = rv.index_diagram(current_fil, false, false).get_diagram_in_dimension(d);
 
         for(auto p: index_dgm) {
-            Real birth_val = current_fil.value_by_sorted_id(p.birth);
-            Real death_val = current_fil.value_by_sorted_id(p.death);
+            Real birth_val = current_fil.get_cell_value(p.birth);
+            Real death_val = current_fil.get_cell_value(p.death);
             if (abs(death_val - birth_val) <= epsilon) {
                 result[p] = minimize ? denoise_point(birth_val, death_val, DenoiseStrategy::Midway) : enhance_point(birth_val, death_val, min_birth, max_death);
             }
@@ -282,8 +282,8 @@ namespace oineus {
         auto index_dgm = rv.index_diagram(current_fil, false, false).get_diagram_in_dimension(d);
 
         for(auto p: index_dgm) {
-            Real birth_val = current_fil.value_by_sorted_id(p.birth);
-            Real death_val = current_fil.value_by_sorted_id(p.death);
+            Real birth_val = current_fil.get_cell_value(p.birth);
+            Real death_val = current_fil.get_cell_value(p.death);
 
             // check if in quadrant
             if (current_fil.negate() and (birth_val <= t or death_val >= t))
@@ -379,8 +379,8 @@ namespace oineus {
             auto birth_idx = current_index_dgm[current_dgm_id].birth;
             auto death_idx = current_index_dgm[current_dgm_id].death;
 
-            auto birth_val = current_fil.value_by_sorted_id(birth_idx);
-            auto death_val = current_fil.value_by_sorted_id(death_idx);
+            auto birth_val = current_fil.get_cell_value(birth_idx);
+            auto death_val = current_fil.get_cell_value(death_idx);
 
             // do not include diagonal points, save them in a separate vector
             if (birth_val != death_val)
@@ -469,8 +469,8 @@ namespace oineus {
         auto index_diagram = rv_matrix.index_diagram(fil, false, false)[d];
 
         for(auto p: index_diagram) {
-            Real birth = fil.value_by_sorted_id(p.birth);
-            Real death = fil.value_by_sorted_id(p.death);
+            Real birth = fil.get_cell_value(p.birth);
+            Real death = fil.get_cell_value(p.death);
             Real pers = abs(death - birth);
             if (pers <= eps)
                 result[p] = denoise_point(birth, death, strategy);
@@ -692,7 +692,7 @@ namespace oineus {
             size_t death_idx = dgm_to_target.first.death;
             Real target_death = dgm_to_target.second.death;
 
-            if (target_death != fil.value_by_sorted_id(death_idx)) {
+            if (target_death != fil.get_cell_value(death_idx)) {
                 for(auto d_idx: change_death_x(d, death_idx, fil, decmp_hom, target_death)) {
                     result[d_idx].push_back(target_death);
                 }
@@ -707,7 +707,7 @@ namespace oineus {
             size_t birth_idx = dgm_to_target.first.birth;
             Real target_birth = dgm_to_target.second.birth;
 
-            if (target_birth != fil.value_by_sorted_id(birth_idx)) {
+            if (target_birth != fil.get_cell_value(birth_idx)) {
 
                 for(auto b_idx: change_birth_x(d, birth_idx, fil, decmp_coh, target_birth)) {
                     result[b_idx].push_back(target_birth);
@@ -722,7 +722,7 @@ namespace oineus {
 
         if (conflict_strategy == ConflictStrategy::Max) {
             for(auto&&[simplex_idx, values]: result) {
-                Real current_value = fil.value_by_sorted_id(simplex_idx);
+                Real current_value = fil.get_cell_value(simplex_idx);
                 // compare by displacement from current value
                 Real target_value = *std::max_element(values.begin(), values.end(), [current_value](Real a, Real b) { return abs(a - current_value) < abs(b - current_value); });
                 final_result.emplace_back(simplex_idx, target_value);
