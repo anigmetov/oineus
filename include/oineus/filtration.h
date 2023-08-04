@@ -239,16 +239,8 @@ namespace oineus {
         // private methods
         void set_ids()
         {
-            // all vertices have ids already, 0..#vertices-1
-            // set ids only on higher-dimensional cells
             for(size_t id = 0; id < cells_.size(); ++id) {
-
-                auto& sigma = cells_[id];
-
-                if (sigma.dim() == 0 and sigma.id_ != static_cast<Int>(id))
-                    throw std::runtime_error("Vertex id and order of vertices do not match");
-                else
-                    sigma.id_ = static_cast<Int>(id);
+                cells_[id].id_ = static_cast<Int>(id);
             }
         }
 
