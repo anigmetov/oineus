@@ -389,6 +389,9 @@ public:
         hera_params.match_inf_points = false;
         hera_params.wasserstein_power = wasserstein_q;
 
+        if (not decmp_hom_.is_reduced)
+            decmp_hom_.reduce(params_hom_);
+
         auto current_index_dgm = decmp_hom_.index_diagram(fil_, false, false).get_diagram_in_dimension(d);
 
         Diagram current_dgm;

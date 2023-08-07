@@ -30,10 +30,8 @@ public:
     PyOineusDiagrams(oin::Diagrams<Real>&& _diagrams)
             :diagrams_(_diagrams) { }
 
-    py::array_t<Real> get_diagram_in_dimension(dim_type d)
+    py::array_t<Real> diagram_to_numpy(const typename oin::Diagrams<Real>::Dgm& dgm) const
     {
-        auto dgm = diagrams_.get_diagram_in_dimension(d);
-
         size_t arr_sz = dgm.size() * 2;
         Real* ptr = new Real[arr_sz];
         for(size_t i = 0 ; i < dgm.size() ; ++i) {
@@ -51,6 +49,17 @@ public:
                                              static_cast<long int>(sizeof(Real))};
 
         return py::array_t<Real>(shape, strides, ptr, free_when_done);
+    }
+
+    py::array_t<Real> get_diagram_in_dimension_as_numpy(dim_type d) const
+    {
+        auto dgm = diagrams_.get_diagram_in_dimension(d);
+        return diagram_to_numpy(dgm);
+    }
+
+    auto get_diagram_in_dimension(dim_type d) const
+    {
+        return diagrams_.get_diagram_in_dimension(d);
     }
 
 private:
@@ -648,7 +657,8 @@ void init_oineus(py::module& m, std::string suffix)
 {
     using namespace pybind11::literals;
 
-    using DgmPoint = oin::DgmPoint<Real>;
+    using DgmPoint = typename oin::Diagrams<Real>::Point;
+    using DgmPtVec = typename oin::Diagrams<Real>::Dgm;
     using Diagram = PyOineusDiagrams<Real>;
 
     using Filtration = oin::Filtration<oin::Simplex<Int, Real>>;
@@ -671,7 +681,7 @@ void init_oineus(py::module& m, std::string suffix)
     std::string py_ker_im_cok_reduced_class_name = "PyKerImCokRed" + suffix;
 
     py::class_<DgmPoint>(m, dgm_point_name.c_str())
-            .def(py::init<Real, Real>())
+            .def(py::init<Real, Real>(), py::arg("birth"), py::arg("death"))
             .def_readwrite("birth", &DgmPoint::birth)
             .def_readwrite("death", &DgmPoint::death)
             .def("__getitem__", [](const DgmPoint& p, int i) { return p[i]; })
@@ -684,8 +694,14 @@ void init_oineus(py::module& m, std::string suffix)
 
     py::class_<Diagram>(m, dgm_class_name.c_str())
             .def(py::init<dim_type>())
-            .def("in_dimension", &Diagram::get_diagram_in_dimension)
-            .def("__getitem__", &Diagram::get_diagram_in_dimension);
+            .def("in_dimension", [](const Diagram& self, dim_type dim, bool as_numpy) -> std::variant<pybind11::array_t<Real>, DgmPtVec> {
+                if (as_numpy)
+                    return self.get_diagram_in_dimension_as_numpy(dim);
+                else
+                    return self.get_diagram_in_dimension(dim);
+                }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
+                        py::arg("dim"), py::arg("as_numpy")=true)
+            .def("__getitem__", &Diagram::get_diagram_in_dimension_as_numpy);
 
     py::class_<Simplex>(m, simplex_class_name.c_str())
             .def(py::init<typename Simplex::IdxVector, Real>(), py::arg("vertices"), py::arg("value"))
