@@ -914,6 +914,7 @@ inline void init_oineus_top_optimizer(py::module& m)
     using Values = typename TopologyOptimizer::Values;
     using CriticalSets = typename TopologyOptimizer::CriticalSets;
     using ConflictStrategy = oin::ConflictStrategy;
+    using Diagram = typename oin::Diagrams<Real>::Dgm;
 
     py::class_<IndicesValues>(m, "IndicesValues")
             .def("__getitem__", [](const IndicesValues& iv, int i) -> std::variant<Indices, Values> {
@@ -929,10 +930,6 @@ inline void init_oineus_top_optimizer(py::module& m)
               ss << iv;
               return ss.str();
             });
-
-    using Simplex = oineus::Simplex<Int, Real>;
-    using Filtration = oineus::Filtration<Simplex>;
-
 
     // optimization
     py::class_<TopologyOptimizer>(m, "TopologyOptimizer")
@@ -950,7 +947,19 @@ inline void init_oineus_top_optimizer(py::module& m)
                     py::arg("dim"), "make points with persistence less than epsilon go to the diagonal")
             .def("get_nth_persistence", &TopologyOptimizer::get_nth_persistence,
                     py::arg("dim"), py::arg("n"), "return n-th persistence value in d-dimensional persistence diagram")
-            .def("match", &TopologyOptimizer::match)
+            .def("match", [](TopologyOptimizer& opt, Diagram& template_dgm, dim_type d, Real wasserstein_q, bool return_wasserstein_distance) -> std::variant<IndicesValues, std::pair<IndicesValues, Real>>
+                    {
+                      if (return_wasserstein_distance)
+                          return opt.match_and_distance(template_dgm, d, wasserstein_q);
+                      else
+                          return opt.match(template_dgm, d, wasserstein_q);
+                    },
+                    py::arg("template_dgm"),
+                    py::arg("dim"),
+                    py::arg("wasserstein_q")=1.0,
+                    py::arg("return_wasserstein_distance")=false,
+                    "return target from Wasserstein matching"
+                    )
             .def("singleton", &TopologyOptimizer::singleton)
             .def("singletons", &TopologyOptimizer::singletons)
             .def("combine_loss", static_cast<IndicesValues (TopologyOptimizer::*)(const CriticalSets&, ConflictStrategy)>(&TopologyOptimizer::combine_loss),

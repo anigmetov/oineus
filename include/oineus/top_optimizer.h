@@ -370,7 +370,7 @@ public:
         return oineus::get_nth_persistence(fil_, decmp_hom_, d, n);
     }
 
-    IndicesValues match(typename Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q)
+    std::pair<IndicesValues, Real> match_and_distance(typename Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q)
     {
         // set ids in template diagram
         for(auto i = 0 ; i < template_dgm.size() ; ++i) {
@@ -443,7 +443,12 @@ public:
             result.push_back(death_idx, death_target);
         }
 
-        return result;
+        return {result, hera_res.distance};
+    }
+
+    IndicesValues match(typename Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q)
+    {
+        return match_and_distance(template_dgm, d, wasserstein_q).first;
     }
 
     IndicesValues combine_loss(const CriticalSets& critical_sets, ConflictStrategy strategy)

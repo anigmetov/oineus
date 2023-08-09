@@ -53,7 +53,10 @@ ic(template_dgm)
 
 wass_q = 1.0
 
-indices, values = top_opt.match(template_dgm, dim, wass_q)
+# if we only want to know where to move the points
+indices, values = top_opt.match(template_dgm, dim, wass_q, False)
+# if we want to get Wasserstein distance as well
+(indices, values), distance = top_opt.match(template_dgm, dim, wass_q, True)
 critical_sets = top_opt.singletons(indices, values)
 crit_indices, crit_values = top_opt.combine_loss(critical_sets, oin.ConflictStrategy.Max)
 
