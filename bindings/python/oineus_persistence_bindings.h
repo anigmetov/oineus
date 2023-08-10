@@ -739,9 +739,14 @@ void init_oineus(py::module& m, std::string suffix)
             .def("size_in_dimension", &Filtration::size_in_dimension)
             .def("n_vertices", &Filtration::n_vertices)
             .def("simplex_value_by_sorted_id", &Filtration::value_by_sorted_id, py::arg("sorted_id"))
-            .def("id_by_sorted_id", &Filtration::get_id_by_sorted_id, py::arg("sorted_id"))
+            .def("get_id_by_sorted_id", &Filtration::get_id_by_sorted_id, py::arg("sorted_id"))
+            .def("get_sorted_id_by_id", &Filtration::get_sorted_id, py::arg("id"))
+            .def("get_sorting_permutation", &Filtration::get_sorting_permutation)
+            .def("get_inv_sorting_permutation", &Filtration::get_inv_sorting_permutation)
             .def("simplex_value_by_vertices", &Filtration::value_by_vertices, py::arg("vertices"))
+            .def("get_sorted_id_by_vertices", &Filtration::get_sorted_id_by_vertices, py::arg("vertices"))
             .def("boundary_matrix", &Filtration::boundary_matrix_full)
+            .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids)
             .def("__repr__", [](const Filtration& fil) {
               std::stringstream ss;
               ss << fil;

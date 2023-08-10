@@ -73,6 +73,17 @@ namespace oineus {
                     [](const Cell& sigma) { return sigma.is_valid_filtration_simplex(); }));
         }
 
+        void reset_ids_to_sorted_ids()
+        {
+            for(auto& sigma : cells_) {
+                sigma.id_ = sigma.sorted_id_;
+            }
+            for(Int i = 0; i < id_to_sorted_id_.size(); ++i) {
+                id_to_sorted_id_[i] = i;
+                sorted_id_to_id_[i] = i;
+            }
+        }
+
         // copy cells
         Filtration(const CellVector& cells, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false, bool _set_ids=true)
                 :
@@ -168,6 +179,10 @@ namespace oineus {
             return sorted_id_to_value_.at(vertices_to_sorted_id_.at(vs));
         }
 
+        auto get_sorted_id_by_vertices(const IntVector& vs) const
+        {
+            return vertices_to_sorted_id_.at(vs);
+        }
 
         Real min_value() const
         {
@@ -194,6 +209,16 @@ namespace oineus {
         int get_id_by_sorted_id(int sorted_id)
         {
             return sorted_id_to_id_[sorted_id];
+        }
+
+        std::vector<Int> get_sorting_permutation() const
+        {
+            return id_to_sorted_id_;
+        }
+
+        std::vector<Int> get_inv_sorting_permutation() const
+        {
+            return sorted_id_to_id_;
         }
 
         bool negate() const { return negate_; }
