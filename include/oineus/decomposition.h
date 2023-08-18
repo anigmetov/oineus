@@ -270,6 +270,9 @@ namespace oineus {
         bool has_matrix_v() const { return v_data.size() > 0; }
 
         template<typename Cell>
+        Diagrams<typename Cell::Real> diagram_general(const Filtration<Cell>& fil, bool include_inf_points, bool only_zero_persistence) const;
+
+        template<typename Cell>
         Diagrams<typename Cell::Real> diagram(const Filtration<Cell>& fil, bool include_inf_points) const;
 
         template<typename Cell>
@@ -729,7 +732,7 @@ namespace oineus {
 
     template<class Int>
     template<class Cell>
-    Diagrams<typename Cell::Real> VRUDecomposition<Int>::diagram(const Filtration<Cell>& fil, bool include_inf_points) const
+    Diagrams<typename Cell::Real> VRUDecomposition<Int>::diagram_general(const Filtration<Cell>& fil, bool include_inf_points, bool only_zero_persistence) const
     {
         using Real = typename Cell::Real;
         if (not is_reduced)
@@ -738,6 +741,9 @@ namespace oineus {
         Diagrams<Real> result(fil.max_dim());
 
         std::unordered_set<Int> rows_with_lowest_one;
+
+        if (only_zero_persistence)
+            include_inf_points = false;
 
         if (include_inf_points)
             for(size_t i = 0; i < r_data.size(); ++i)
@@ -766,8 +772,15 @@ namespace oineus {
                 dim_type dim = fil.dim_by_sorted_id(birth_idx);
                 Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
 
-                if (birth != death)
-                    result.add_point(dim, birth, death);
+
+                bool include_point = only_zero_persistence ? birth == death : birth != death;
+                if (include_point) {
+                    if (dualize()) {
+                        result.add_point(dim-1, death, birth);
+                    } else {
+                        result.add_point(dim, birth, death);
+                    }
+                }
             }
         }
         return result;
@@ -775,38 +788,17 @@ namespace oineus {
 
     template<class Int>
     template<class Cell>
-    Diagrams<typename Cell::Real> VRUDecomposition<Int>::zero_persistence_diagram(const Filtration<Cell>& fil) const
+    Diagrams<typename Cell::Real> VRUDecomposition<Int>::diagram(const Filtration<Cell>& fil, bool include_inf_points) const
     {
-        using Real = typename Cell::Real;
-        if (not is_reduced)
-            throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
-
-        Diagrams<Real> result(fil.max_dim());
-
-        std::unordered_set<Int> rows_with_lowest_one;
-
-        for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
-            auto col = &r_data[col_idx];
-
-            auto simplex_idx = fil.index_in_filtration(col_idx, dualize());
-
-            if (not is_zero(col)) {
-                // finite point
-                Int birth_idx = fil.index_in_filtration(low(col), dualize()), death_idx = simplex_idx;
-                dim_type dim = fil.dim_by_sorted_id(birth_idx);
-                Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
-
-                //std::cerr << "simplex_idx = " << simplex_idx << ", dim = " << dim << ", bithr = " << birth << ", d = " << death << std::endl;
-
-                if (birth == death) {
-                    //std::cerr << "adding to 0-pers diagram" << std::endl;
-                    result.add_point(dim, birth, death);
-                }
-            }
-        }
-        return result;
+        return diagram_general(fil, include_inf_points, false);
     }
 
+    template<class Int>
+    template<class Cell>
+    Diagrams<typename Cell::Real> VRUDecomposition<Int>::zero_persistence_diagram(const Filtration<Cell>& fil) const
+    {
+        return diagram_general(fil, false, true);
+    }
 
     template<class Int>
     template<class Cell>
@@ -843,8 +835,13 @@ namespace oineus {
 
                 dim_type dim = fil.dim_by_sorted_id(birth_idx);
 
-                if (include_zero_persistence_points or fil.value_by_sorted_id(birth_idx) != fil.value_by_sorted_id(death_idx))
-                    result.add_point(dim, birth_idx, death_idx);
+                if (include_zero_persistence_points or fil.value_by_sorted_id(birth_idx) != fil.value_by_sorted_id(death_idx)) {
+                    if (dualize()) {
+                        result.add_point(dim-1, death_idx, birth_idx);
+                    } else {
+                        result.add_point(dim, birth_idx, death_idx);
+                    }
+                }
             }
         }
 

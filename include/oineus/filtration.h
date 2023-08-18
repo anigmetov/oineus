@@ -201,22 +201,22 @@ namespace oineus {
         CellVector& cells() { return cells_; }
         CellVector cells_copy() const { return cells_; }
 
-        int get_sorted_id(int i)
+        auto get_sorted_id(int i) const
         {
-            return id_to_sorted_id_[i];
+            return id_to_sorted_id_.at(i);
         }
 
-        int get_id_by_sorted_id(int sorted_id)
+        auto get_id_by_sorted_id(int sorted_id) const
         {
-            return sorted_id_to_id_[sorted_id];
+            return sorted_id_to_id_.at(sorted_id);
         }
 
-        std::vector<Int> get_sorting_permutation() const
+        auto get_sorting_permutation() const
         {
             return id_to_sorted_id_;
         }
 
-        std::vector<Int> get_inv_sorting_permutation() const
+        auto get_inv_sorting_permutation() const
         {
             return sorted_id_to_id_;
         }
@@ -253,7 +253,7 @@ namespace oineus {
         CellVector cells_;
 
         std::map<IntVector, Int> vertices_to_sorted_id_;
-        std::vector<Int> id_to_sorted_id_;
+        std::unordered_map<Int, Int> id_to_sorted_id_;
         std::vector<Int> sorted_id_to_id_;
 
         std::vector<Real> sorted_id_to_value_;
@@ -296,7 +296,6 @@ namespace oineus {
                 dim_to_cells[cell.dim()].push_back(cell);
             }
 
-            id_to_sorted_id_ = std::vector<Int>(size(), Int(-1));
             sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
             vertices_to_sorted_id_.clear();
             sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
@@ -307,7 +306,7 @@ namespace oineus {
 
             for(auto& [dim, cells_in_dim] : dim_to_cells) {
                 for(auto& cell : cells_in_dim) {
-                    id_to_sorted_id_.at(cell.id_) = sorted_id;
+                    id_to_sorted_id_[cell.id_] = sorted_id;
                     sorted_id_to_id_.at(sorted_id) = cell.id_;
                     cell.sorted_id_ = sorted_id;
                     vertices_to_sorted_id_[cell.vertices_] = sorted_id;
@@ -328,7 +327,6 @@ namespace oineus {
         {
             CALI_CXX_MARK_FUNCTION;
 
-            id_to_sorted_id_ = std::vector<Int>(size(), Int(-1));
             sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
             vertices_to_sorted_id_.clear();
             sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());

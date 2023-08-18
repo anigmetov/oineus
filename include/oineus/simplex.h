@@ -50,7 +50,7 @@ namespace oineus {
             if (vertices_.empty())
                 throw std::runtime_error("Empty simplex not allowed");
 
-            if (vertices_.size() == 1)
+            if (vertices_.size() > 1)
                 id_ = vertices_[0];
             else
                 std::sort(vertices_.begin(), vertices_.end());
@@ -66,9 +66,7 @@ namespace oineus {
             if (vertices_.empty())
                 throw std::runtime_error("Empty simplex not allowed");
 
-            if (vertices_.size() == 1)
-                id_ = vertices_[0];
-            else
+            if (vertices_.size() > 1)
                 std::sort(vertices_.begin(), vertices_.end());
         }
 

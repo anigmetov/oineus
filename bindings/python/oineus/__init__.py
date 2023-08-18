@@ -105,10 +105,10 @@ def get_boundary_matrix(data, negate, wrap, max_dim, n_threads):
     return to_scipy_matrix(bm)
 
 
-def compute_diagrams_ls(data, negate, wrap, max_dim, params, include_inf_points):
+def compute_diagrams_ls(data, negate, wrap, max_dim, params, include_inf_points, dualize):
     type_part, dim_part = get_type_dim(data)
     func = getattr(_oineus, f"compute_diagrams_ls_{type_part}_{dim_part}")
-    return func(data, negate, wrap, max_dim, params, include_inf_points)
+    return func(data, negate, wrap, max_dim, params, include_inf_points, dualize)
 
 
 def get_denoise_target(d, fil, rv, eps, strat):

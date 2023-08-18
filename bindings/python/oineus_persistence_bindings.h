@@ -291,13 +291,13 @@ get_coboundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecas
 
 template<class Int, class Real, size_t D>
 PyOineusDiagrams<Real>
-compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, oin::Params& params, bool include_inf_points)
+compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, oin::Params& params, bool include_inf_points, bool dualize)
 {
     // for diagram in dimension d, we need (d+1)-cells
     Timer timer;
     auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim + 1, params.n_threads);
     auto elapsed_fil = timer.elapsed_reset();
-    oin::VRUDecomposition<Int> decmp {fil, false};
+    oin::VRUDecomposition<Int> decmp {fil, dualize};
     auto elapsed_decmp_ctor = timer.elapsed_reset();
 
     if (params.print_time)

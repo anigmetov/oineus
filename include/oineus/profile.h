@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef LOWFIVE_USE_CALIPER
+#ifdef OINEUS_USE_CALIPER
 #include <caliper/cali.h>
 #else
 #define CALI_CXX_MARK_FUNCTION

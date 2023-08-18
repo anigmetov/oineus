@@ -18,14 +18,39 @@ execute_process(COMMAND python3 -m pytest --version
                 ERROR_VARIABLE  PYTEST_error
                 RESULT_VARIABLE PYTEST_result)
 
+
+execute_process(COMMAND python3 -c "import dionysus"
+        OUTPUT_VARIABLE DION_output
+        ERROR_VARIABLE  DION_error
+        RESULT_VARIABLE DION_result)
+
+
 if(NOT ${PYTEST_result} EQUAL 0)
     message(WARNING "Pytest package not available: ${PYTEST_error}, Python tests will be ignored. Use pip install [--user] pytest to run them.")
 else()
-    # run python tests
-    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/kernel-pytest.py"
-            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+#    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/test_oin_vertebra.py"
+#            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+
+    file(GLOB VERTEBRA_NPY_FILES "${CMAKE_CURRENT_SOURCE_DIR}/*vertebra*.npy")
+    file(GLOB TEST_PY_FILES "${CMAKE_CURRENT_SOURCE_DIR}/*.py")
+
+    file(COPY ${VERTEBRA_NPY_FILES} DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+    file(COPY ${TEST_PY_FILES} DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+
+#    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/test_oin_random.py"
+#            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+#
+#    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/kernel-pytest.py"
+#            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_test(NAME kernel-pytest
             COMMAND ${PYTHON_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-pytest.py" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-endif()
 
+    add_test(NAME oin-vertebra-pytest
+            COMMAND ${PYTHON_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_oin_vertebra.py" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
+    if(${DION_result} EQUAL 0)
+        add_test(NAME oin-random-pytest
+                COMMAND ${PYTHON_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_oin_random.py" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    endif()
+endif()
