@@ -22,7 +22,7 @@ namespace oineus {
         // rel_ops takes care of other comparison operators are
     };
 
-    std::ostream& operator<<(std::ostream& out, const VREdge& e)
+    inline std::ostream& operator<<(std::ostream& out, const VREdge& e)
     {
         out << "edge(x=" << e.x << ", y=" << e.y << ")";
         return out;

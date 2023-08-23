@@ -22,6 +22,8 @@ using dim_type = oin::dim_type;
 template<class Real>
 class PyOineusDiagrams {
 public:
+    using Coordinate = Real;
+
     PyOineusDiagrams() = default;
 
     PyOineusDiagrams(const oin::Diagrams<Real>& _diagrams)
@@ -495,6 +497,7 @@ decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_,
     return KICR;
 }
 
+
 template<class Int>
 void init_oineus_common(py::module& m)
 {
@@ -510,6 +513,7 @@ void init_oineus_common(py::module& m)
     using ReductionParams = oin::Params;
 
     using IndexDiagram = PyOineusDiagrams<size_t>;
+    using IndexDgmPtVec = typename oin::Diagrams<size_t>::Dgm;
 
     std::string vr_edge_name = "VREdge";
 
@@ -599,6 +603,30 @@ void init_oineus_common(py::module& m)
             .value("Sum", ConflictStrategy::Sum, "sum gradients")
             .value("FixCritAvg", ConflictStrategy::FixCritAvg, "use matching on critical, average gradients on other cells")
             .def("as_str", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); });
+}
+
+void init_oineus_common_int(py::module& m);
+
+template<class Int>
+void init_oineus_common_decomposition(py::module& m)
+{
+    using namespace pybind11::literals;
+
+    using oin::VREdge;
+
+    using oin::DenoiseStrategy;
+    using oin::ConflictStrategy;
+
+    using Decomposition = oin::VRUDecomposition<Int>;
+
+    using ReductionParams = oin::Params;
+
+    using IndexDiagram = PyOineusDiagrams<size_t>;
+    using IndexDgmPtVec = typename oin::Diagrams<size_t>::Dgm;
+
+    std::string vr_edge_name = "VREdge";
+
+    std::string index_dgm_class_name = "IndexDiagrams";
 
     py::class_<Decomposition>(m, "Decomposition")
             .def(py::init<const oin::Filtration<oin::Simplex<Int, double>>&, bool>())
@@ -618,6 +646,23 @@ void init_oineus_common(py::module& m)
             .def("index_diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, float>>& fil, bool include_inf_points, bool include_zero_persistence_points) {
               return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
             });
+}
+
+void init_oineus_common_decomposition_int(py::module& m);
+
+template<class Int>
+void init_oineus_common_diagram(py::module& m)
+{
+    using namespace pybind11::literals;
+
+    using oin::VREdge;
+    using oin::DenoiseStrategy;
+    using oin::ConflictStrategy;
+
+    using IndexDiagram = PyOineusDiagrams<size_t>;
+    using IndexDgmPtVec = typename oin::Diagrams<size_t>::Dgm;
+
+    std::string index_dgm_class_name = "IndexDiagrams";
 
     using DgmPointInt = typename oin::DgmPoint<Int>;
     using DgmPointSizet = typename oin::DgmPoint<size_t>;
@@ -648,134 +693,27 @@ void init_oineus_common(py::module& m)
 
     py::class_<IndexDiagram>(m, index_dgm_class_name.c_str())
             .def(py::init<dim_type>())
-            .def("in_dimension", &IndexDiagram::get_diagram_in_dimension)
+            .def("in_dimension", [](const IndexDiagram& self, dim_type dim, bool as_numpy) -> std::variant<pybind11::array_t<typename IndexDiagram::Coordinate>, IndexDgmPtVec> {
+                      if (as_numpy)
+                          return self.get_diagram_in_dimension_as_numpy(dim);
+                      else
+                          return self.get_diagram_in_dimension(dim);
+                    }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
+                    py::arg("dim"), py::arg("as_numpy")=true)
             .def("__getitem__", &IndexDiagram::get_diagram_in_dimension);
 }
 
+void init_oineus_common_diagram_int(py::module& m);
+
 template<class Int, class Real>
-void init_oineus(py::module& m, std::string suffix)
+void init_oineus_functions(py::module& m, std::string suffix)
 {
     using namespace pybind11::literals;
-
-    using DgmPoint = typename oin::Diagrams<Real>::Point;
-    using DgmPtVec = typename oin::Diagrams<Real>::Dgm;
-    using Diagram = PyOineusDiagrams<Real>;
 
     using Filtration = oin::Filtration<oin::Simplex<Int, Real>>;
     using Simplex = typename Filtration::Cell;
 
     using oin::VREdge;
-
-    using VRUDecomp = oin::VRUDecomposition<Int>;
-    using KerImCokRed = oin::KerImCokReduced<Int, Real>;
-    using PyKerImCokRed = PyKerImCokRed<Int, Real>;
-    //using CokRed =  oin::CokReduced<Int, Real>;
-
-    std::string filtration_class_name = "Filtration" + suffix;
-    std::string simplex_class_name = "Simplex" + suffix;
-
-    std::string dgm_point_name = "DiagramPoint" + suffix;
-    std::string dgm_class_name = "Diagrams" + suffix;
-
-    std::string ker_im_cok_reduced_class_name = "KerImCokReduced" + suffix;
-    std::string py_ker_im_cok_reduced_class_name = "PyKerImCokRed" + suffix;
-
-    py::class_<DgmPoint>(m, dgm_point_name.c_str())
-            .def(py::init<Real, Real>(), py::arg("birth"), py::arg("death"))
-            .def_readwrite("birth", &DgmPoint::birth)
-            .def_readwrite("death", &DgmPoint::death)
-            .def("__getitem__", [](const DgmPoint& p, int i) { return p[i]; })
-            .def("__hash__", [](const DgmPoint& p) { return std::hash<DgmPoint>()(p); })
-            .def("__repr__", [](const DgmPoint& p) {
-              std::stringstream ss;
-              ss << p;
-              return ss.str();
-            });
-
-    py::class_<Diagram>(m, dgm_class_name.c_str())
-            .def(py::init<dim_type>())
-            .def("in_dimension", [](const Diagram& self, dim_type dim, bool as_numpy) -> std::variant<pybind11::array_t<Real>, DgmPtVec> {
-                if (as_numpy)
-                    return self.get_diagram_in_dimension_as_numpy(dim);
-                else
-                    return self.get_diagram_in_dimension(dim);
-                }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
-                        py::arg("dim"), py::arg("as_numpy")=true)
-            .def("__getitem__", &Diagram::get_diagram_in_dimension_as_numpy);
-
-    py::class_<Simplex>(m, simplex_class_name.c_str())
-            .def(py::init<typename Simplex::IdxVector, Real>(), py::arg("vertices"), py::arg("value"))
-            .def(py::init<typename Simplex::Int, typename Simplex::IdxVector, Real>(), py::arg("id"), py::arg("vertices"), py::arg("value"))
-            .def_readwrite("id", &Simplex::id_)
-            .def_readwrite("sorted_id", &Simplex::sorted_id_)
-            .def_readwrite("vertices", &Simplex::vertices_)
-            .def_readwrite("value", &Simplex::value_)
-            .def("dim", &Simplex::dim)
-            .def("boundary", &Simplex::boundary)
-            .def("join", [](const Simplex& sigma, Int new_vertex, Real value, Int new_id) {
-                    return sigma.join(new_id, new_vertex, value);
-                },
-                py::arg("new_vertex"),
-                py::arg("value"),
-                py::arg("new_id") = Simplex::k_invalid_id)
-            .def("__repr__", [](const Simplex& sigma) {
-              std::stringstream ss;
-              ss << sigma;
-              return ss.str();
-            });
-
-    py::class_<Filtration>(m, filtration_class_name.c_str())
-            .def(py::init<typename Filtration::CellVector, bool, int, bool, bool>(),
-                    py::arg("cells"),
-                    py::arg("negate")=false,
-                    py::arg("n_threads")=1,
-                    py::arg("sort_only_by_dimension")=false,
-                    py::arg("set_ids")=true)
-            .def("max_dim", &Filtration::max_dim)
-            .def("cells", &Filtration::cells_copy)
-            .def("simplices", &Filtration::cells_copy)
-            .def("size", &Filtration::size)
-            .def("__len__", &Filtration::size)
-            .def("size_in_dimension", &Filtration::size_in_dimension)
-            .def("n_vertices", &Filtration::n_vertices)
-            .def("simplex_value_by_sorted_id", &Filtration::value_by_sorted_id, py::arg("sorted_id"))
-            .def("get_id_by_sorted_id", &Filtration::get_id_by_sorted_id, py::arg("sorted_id"))
-            .def("get_sorted_id_by_id", &Filtration::get_sorted_id, py::arg("id"))
-            .def("get_sorting_permutation", &Filtration::get_sorting_permutation)
-            .def("get_inv_sorting_permutation", &Filtration::get_inv_sorting_permutation)
-            .def("simplex_value_by_vertices", &Filtration::value_by_vertices, py::arg("vertices"))
-            .def("get_sorted_id_by_vertices", &Filtration::get_sorted_id_by_vertices, py::arg("vertices"))
-            .def("boundary_matrix", &Filtration::boundary_matrix_full)
-            .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids)
-            .def("__repr__", [](const Filtration& fil) {
-              std::stringstream ss;
-              ss << fil;
-              return ss.str();
-            });
-
-    py::class_<KerImCokRed>(m, ker_im_cok_reduced_class_name.c_str())
-            .def(py::init<Filtration, Filtration, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>, oin::Params>());
-
-	  py::class_<PyKerImCokRed>(m, py_ker_im_cok_reduced_class_name.c_str())
-            .def(py::init<KerImCokRed>())
-            .def("kernel_diagrams", &PyKerImCokRed::kernel_diagrams)
-            .def("image_diagrams", &PyKerImCokRed::image_diagrams)
-            .def("cokernel_diagrams", &PyKerImCokRed::cokernel_diagrams)
-            .def("D_F", &PyKerImCokRed::D_F)
-            .def("D_G", &PyKerImCokRed::D_G)
-            .def("D_Ker", &PyKerImCokRed::D_Ker)
-            .def("D_Im", &PyKerImCokRed::D_Im)
-            .def("D_Cok", &PyKerImCokRed::D_Cok)
-            .def("R_F", &PyKerImCokRed::R_F)
-            .def("R_G", &PyKerImCokRed::R_G)
-            .def("R_Ker", &PyKerImCokRed::R_Ker)
-            .def("R_Im", &PyKerImCokRed::R_Im)
-            .def("R_Cok", &PyKerImCokRed::R_Cok)
-            .def("V_F", &PyKerImCokRed::V_F)
-            .def("V_G", &PyKerImCokRed::V_G)
-            .def("V_Ker", &PyKerImCokRed::V_Ker)
-            .def("V_Im", &PyKerImCokRed::V_Im)
-            .def("V_Cok", &PyKerImCokRed::V_Cok);
 
     std::string func_name;
 
@@ -901,79 +839,140 @@ void init_oineus(py::module& m, std::string suffix)
     m.def(func_name.c_str(), &get_ls_filtration<Int, Real>);
 }
 
-inline void init_oineus_top_optimizer(py::module& m)
+void init_oineus_functions_double(py::module& m, std::string suffix);
+void init_oineus_functions_float(py::module& m, std::string suffix);
+
+template<class Int, class Real>
+void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
 {
+    using namespace pybind11::literals;
 
-    using Real = double;
-    using Int = int;
+    using DgmPoint = typename oin::Diagrams<Real>::Point;
+    using DgmPtVec = typename oin::Diagrams<Real>::Dgm;
+    using Diagram = PyOineusDiagrams<Real>;
 
-    using Simplex = oin::Simplex<Int, Real>;
-    using Filtration = oin::Filtration<Simplex>;
-    using TopologyOptimizer = oin::TopologyOptimizer<Simplex>;
-    using Indices = typename TopologyOptimizer::Indices;
-    using Values = typename TopologyOptimizer::Values;
-    using IndicesValues = typename TopologyOptimizer::IndicesValues;
-    using CrititcalSet = typename TopologyOptimizer::CriticalSet;
-    using Target = typename TopologyOptimizer::Target;
-    using Indices = typename TopologyOptimizer::Indices;
-    using Values = typename TopologyOptimizer::Values;
-    using CriticalSets = typename TopologyOptimizer::CriticalSets;
-    using ConflictStrategy = oin::ConflictStrategy;
-    using Diagram = typename oin::Diagrams<Real>::Dgm;
 
-    py::class_<IndicesValues>(m, "IndicesValues")
-            .def("__getitem__", [](const IndicesValues& iv, int i) -> std::variant<Indices, Values> {
-              if (i == 0)
-                  return {iv.indices};
-              else if (i == 1)
-                  return {iv.values};
-              else
-                  throw std::out_of_range("IndicesValues: i must be  0 or 1");
-            })
-            .def("__repr__", [](const IndicesValues& iv) {
+    using Filtration = oin::Filtration<oin::Simplex<Int, Real>>;
+    using Simplex = typename Filtration::Cell;
+
+    using oin::VREdge;
+
+    using VRUDecomp = oin::VRUDecomposition<Int>;
+    using KerImCokRed = oin::KerImCokReduced<Int, Real>;
+    using PyKerImCokRed = PyKerImCokRed<Int, Real>;
+    //using CokRed =  oin::CokReduced<Int, Real>;
+
+    std::string filtration_class_name = "Filtration" + suffix;
+    std::string simplex_class_name = "Simplex" + suffix;
+
+    std::string dgm_point_name = "DiagramPoint" + suffix;
+    std::string dgm_class_name = "Diagrams" + suffix;
+
+    std::string ker_im_cok_reduced_class_name = "KerImCokReduced" + suffix;
+    std::string py_ker_im_cok_reduced_class_name = "PyKerImCokRed" + suffix;
+
+    py::class_<DgmPoint>(m, dgm_point_name.c_str())
+            .def(py::init<Real, Real>(), py::arg("birth"), py::arg("death"))
+            .def_readwrite("birth", &DgmPoint::birth)
+            .def_readwrite("death", &DgmPoint::death)
+            .def("__getitem__", [](const DgmPoint& p, int i) { return p[i]; })
+            .def("__hash__", [](const DgmPoint& p) { return std::hash<DgmPoint>()(p); })
+            .def("__repr__", [](const DgmPoint& p) {
               std::stringstream ss;
-              ss << iv;
+              ss << p;
               return ss.str();
             });
 
-    // optimization
-    py::class_<TopologyOptimizer>(m, "TopologyOptimizer")
-            .def(py::init<const Filtration&>())
-            .def("compute_diagram", [](TopologyOptimizer& opt, bool include_inf_points) { return PyOineusDiagrams<Real>(opt.compute_diagram(include_inf_points)); },
-                    py::arg("include_inf_points"),
-                    "compute diagrams in all dimensions")
-            .def("compute_index_diagram", [](TopologyOptimizer& opt, bool include_inf_points, bool include_zero_persistence_points=false) { return PyOineusDiagrams<size_t>(opt.compute_index_diagram(include_inf_points, include_zero_persistence_points)); },
-                    py::arg("include_inf_points") = true,
-                    py::arg("include_zero_persistence_points") = false,
-                    "compute persistence pairing (index diagram) in all dimensions")
-            .def("simplify", &TopologyOptimizer::simplify,
-                    py::arg("epsilon"),
-                    py::arg("strategy"),
-                    py::arg("dim"), "make points with persistence less than epsilon go to the diagonal")
-            .def("get_nth_persistence", &TopologyOptimizer::get_nth_persistence,
-                    py::arg("dim"), py::arg("n"), "return n-th persistence value in d-dimensional persistence diagram")
-            .def("match", [](TopologyOptimizer& opt, Diagram& template_dgm, dim_type d, Real wasserstein_q, bool return_wasserstein_distance) -> std::variant<IndicesValues, std::pair<IndicesValues, Real>>
-                    {
-                      if (return_wasserstein_distance)
-                          return opt.match_and_distance(template_dgm, d, wasserstein_q);
-                      else
-                          return opt.match(template_dgm, d, wasserstein_q);
-                    },
-                    py::arg("template_dgm"),
-                    py::arg("dim"),
-                    py::arg("wasserstein_q")=1.0,
-                    py::arg("return_wasserstein_distance")=false,
-                    "return target from Wasserstein matching"
-                    )
-            .def("singleton", &TopologyOptimizer::singleton)
-            .def("singletons", &TopologyOptimizer::singletons)
-            .def("combine_loss", static_cast<IndicesValues (TopologyOptimizer::*)(const CriticalSets&, ConflictStrategy)>(&TopologyOptimizer::combine_loss),
-                    py::arg("critical_sets"),
-                    py::arg("strategy"),
-                    "combine critical sets into well-defined assignment of new values to indices")
-            .def("update", &TopologyOptimizer::update);
+    py::class_<Diagram>(m, dgm_class_name.c_str())
+            .def(py::init<dim_type>())
+            .def("in_dimension", [](const Diagram& self, dim_type dim, bool as_numpy) -> std::variant<pybind11::array_t<Real>, DgmPtVec> {
+                if (as_numpy)
+                    return self.get_diagram_in_dimension_as_numpy(dim);
+                else
+                    return self.get_diagram_in_dimension(dim);
+                }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
+                        py::arg("dim"), py::arg("as_numpy")=true)
+            .def("__getitem__", &Diagram::get_diagram_in_dimension_as_numpy);
 
-//    IndicesValues combine_loss(const CriticalSets& critical_sets, ConflictStrategy strategy)
+    py::class_<Simplex>(m, simplex_class_name.c_str())
+            .def(py::init<typename Simplex::IdxVector, Real>(), py::arg("vertices"), py::arg("value"))
+            .def(py::init<typename Simplex::Int, typename Simplex::IdxVector, Real>(), py::arg("id"), py::arg("vertices"), py::arg("value"))
+            .def_readwrite("id", &Simplex::id_)
+            .def_readwrite("sorted_id", &Simplex::sorted_id_)
+            .def_readwrite("vertices", &Simplex::vertices_)
+            .def_readwrite("value", &Simplex::value_)
+            .def("dim", &Simplex::dim)
+            .def("boundary", &Simplex::boundary)
+            .def("join", [](const Simplex& sigma, Int new_vertex, Real value, Int new_id) {
+                    return sigma.join(new_id, new_vertex, value);
+                },
+                py::arg("new_vertex"),
+                py::arg("value"),
+                py::arg("new_id") = Simplex::k_invalid_id)
+            .def("__repr__", [](const Simplex& sigma) {
+              std::stringstream ss;
+              ss << sigma;
+              return ss.str();
+            });
+
+    py::class_<Filtration>(m, filtration_class_name.c_str())
+            .def(py::init<typename Filtration::CellVector, bool, int, bool, bool>(),
+                    py::arg("cells"),
+                    py::arg("negate")=false,
+                    py::arg("n_threads")=1,
+                    py::arg("sort_only_by_dimension")=false,
+                    py::arg("set_ids")=true)
+            .def("max_dim", &Filtration::max_dim)
+            .def("cells", &Filtration::cells_copy)
+            .def("simplices", &Filtration::cells_copy)
+            .def("size", &Filtration::size)
+            .def("__len__", &Filtration::size)
+            .def("size_in_dimension", &Filtration::size_in_dimension)
+            .def("n_vertices", &Filtration::n_vertices)
+            .def("simplex_value_by_sorted_id", &Filtration::value_by_sorted_id, py::arg("sorted_id"))
+            .def("get_id_by_sorted_id", &Filtration::get_id_by_sorted_id, py::arg("sorted_id"))
+            .def("get_sorted_id_by_id", &Filtration::get_sorted_id, py::arg("id"))
+            .def("get_sorting_permutation", &Filtration::get_sorting_permutation)
+            .def("get_inv_sorting_permutation", &Filtration::get_inv_sorting_permutation)
+            .def("simplex_value_by_vertices", &Filtration::value_by_vertices, py::arg("vertices"))
+            .def("get_sorted_id_by_vertices", &Filtration::get_sorted_id_by_vertices, py::arg("vertices"))
+            .def("boundary_matrix", &Filtration::boundary_matrix_full)
+            .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids)
+            .def("__repr__", [](const Filtration& fil) {
+              std::stringstream ss;
+              ss << fil;
+              return ss.str();
+            });
+
+    py::class_<KerImCokRed>(m, ker_im_cok_reduced_class_name.c_str())
+            .def(py::init<Filtration, Filtration, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>, oin::Params>());
+
+	  py::class_<PyKerImCokRed>(m, py_ker_im_cok_reduced_class_name.c_str())
+            .def(py::init<KerImCokRed>())
+            .def("kernel_diagrams", &PyKerImCokRed::kernel_diagrams)
+            .def("image_diagrams", &PyKerImCokRed::image_diagrams)
+            .def("cokernel_diagrams", &PyKerImCokRed::cokernel_diagrams)
+            .def("D_F", &PyKerImCokRed::D_F)
+            .def("D_G", &PyKerImCokRed::D_G)
+            .def("D_Ker", &PyKerImCokRed::D_Ker)
+            .def("D_Im", &PyKerImCokRed::D_Im)
+            .def("D_Cok", &PyKerImCokRed::D_Cok)
+            .def("R_F", &PyKerImCokRed::R_F)
+            .def("R_G", &PyKerImCokRed::R_G)
+            .def("R_Ker", &PyKerImCokRed::R_Ker)
+            .def("R_Im", &PyKerImCokRed::R_Im)
+            .def("R_Cok", &PyKerImCokRed::R_Cok)
+            .def("V_F", &PyKerImCokRed::V_F)
+            .def("V_G", &PyKerImCokRed::V_G)
+            .def("V_Ker", &PyKerImCokRed::V_Ker)
+            .def("V_Im", &PyKerImCokRed::V_Im)
+            .def("V_Cok", &PyKerImCokRed::V_Cok);
 }
+
+void init_oineus_fil_dgm_simplex_float(py::module& m, std::string suffix);
+void init_oineus_fil_dgm_simplex_double(py::module& m, std::string suffix);
+
+void init_oineus_top_optimizer(py::module& m);
+
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

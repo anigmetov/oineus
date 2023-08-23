@@ -45,7 +45,7 @@ namespace oineus {
         Midway
     };
 
-    std::ostream& operator<<(std::ostream& out, const DenoiseStrategy& s)
+    inline std::ostream& operator<<(std::ostream& out, const DenoiseStrategy& s)
     {
         if (s == DenoiseStrategy::BirthBirth)
             out << "bb";
@@ -56,7 +56,7 @@ namespace oineus {
         return out;
     }
 
-    std::string denoise_strategy_to_string(const DenoiseStrategy& s)
+    inline std::string denoise_strategy_to_string(const DenoiseStrategy& s)
     {
         std::stringstream ss;
         ss << s;
@@ -70,7 +70,7 @@ namespace oineus {
         FixCritAvg
     };
 
-    std::ostream& operator<<(std::ostream& out, const ConflictStrategy& s)
+    inline std::ostream& operator<<(std::ostream& out, const ConflictStrategy& s)
     {
         if (s == ConflictStrategy::Max)
             out << "max";
@@ -84,7 +84,7 @@ namespace oineus {
         return out;
     }
 
-    std::string conflict_strategy_to_string(const ConflictStrategy& s)
+    inline std::string conflict_strategy_to_string(const ConflictStrategy& s)
     {
         std::stringstream ss;
         ss << s;

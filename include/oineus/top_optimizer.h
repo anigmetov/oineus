@@ -15,7 +15,7 @@ struct ComputeFlags {
     bool compute_cohomology_u {false};
 };
 
-std::ostream& operator<<(std::ostream& out, const ComputeFlags& f)
+inline std::ostream& operator<<(std::ostream& out, const ComputeFlags& f)
 {
     out << "ComputeFlags(compute_cohomology = " << f.compute_cohomology ? "True" : "False";
     out << ", compute_homology_u = " << f.compute_homology_u ? "True" : "False";

@@ -3,14 +3,23 @@
 namespace py = pybind11;
 
 #include "oineus_persistence_bindings.h"
-#include <oineus/oineus.h>
 
 PYBIND11_MODULE(_oineus, m)
 {
     m.doc() = "Oineus python bindings";
 
-    init_oineus_common<int>(m);
-    init_oineus<int, float>(m, "_float");
-    init_oineus<int, double>(m, "_double");
+    std::string float_suffix = "_float";
+    std::string double_suffix = "_double";
+
+    init_oineus_common_int(m);
+    init_oineus_common_diagram_int(m);
+    init_oineus_common_decomposition_int(m);
+
+    init_oineus_functions_float(m, float_suffix);
+    init_oineus_fil_dgm_simplex_float(m, float_suffix);
+
+    init_oineus_functions_double(m, double_suffix);
+    init_oineus_fil_dgm_simplex_double(m, double_suffix);
+
     init_oineus_top_optimizer(m);
 }

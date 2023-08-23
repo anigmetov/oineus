@@ -25,7 +25,7 @@ namespace oineus {
         bool verbose{false};
     };
 
-    std::ostream& operator<<(std::ostream& out, const Params& p)
+    inline std::ostream& operator<<(std::ostream& out, const Params& p)
     {
         out << "Params(n_threads = " << p.n_threads;
         out << ", chunk_size = " << p.chunk_size;
@@ -66,7 +66,7 @@ namespace oineus {
     };
 
 #ifdef OINEUS_GATHER_ADD_STATS
-    void write_add_stats_file(const std::vector<ThreadStats>& stats)
+    inline void write_add_stats_file(const std::vector<ThreadStats>& stats)
     {
         ThreadStats::AddStats total_r_stats, total_v_stats;
         for(const auto& s: stats) {

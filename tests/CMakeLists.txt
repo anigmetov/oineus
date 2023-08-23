@@ -13,20 +13,20 @@ file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/a_6.txt"
 
 
 # check if pytest module is installed
-execute_process(COMMAND python3 -m pytest --version
+execute_process(COMMAND ${Python3_EXECUTABLE} -m pytest --version
                 OUTPUT_VARIABLE PYTEST_output
                 ERROR_VARIABLE  PYTEST_error
                 RESULT_VARIABLE PYTEST_result)
 
 
-execute_process(COMMAND python3 -c "import dionysus"
+execute_process(COMMAND ${Python3_EXECUTABLE} -c "import dionysus"
         OUTPUT_VARIABLE DION_output
         ERROR_VARIABLE  DION_error
         RESULT_VARIABLE DION_result)
 
 
 if(NOT ${PYTEST_result} EQUAL 0)
-    message(WARNING "Pytest package not available: ${PYTEST_error}, Python tests will be ignored. Use pip install [--user] pytest to run them.")
+    message(WARNING "Pytest package not available: executable ${Python3_EXECUTABLE}, ${PYTEST_error}, Python tests will be ignored. Use pip install [--user] pytest to run them.")
 else()
 #    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/test_oin_vertebra.py"
 #            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
@@ -44,13 +44,13 @@ else()
 #            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_test(NAME kernel-pytest
-            COMMAND ${PYTHON_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-pytest.py" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+            COMMAND ${Python3_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-pytest.py" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_test(NAME oin-vertebra-pytest
-            COMMAND ${PYTHON_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_oin_vertebra.py" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+            COMMAND ${Python3_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_oin_vertebra.py" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     if(${DION_result} EQUAL 0)
         add_test(NAME oin-random-pytest
-                COMMAND ${PYTHON_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_oin_random.py" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+                COMMAND ${Python3_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_oin_random.py" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     endif()
 endif()

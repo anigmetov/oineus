@@ -13,7 +13,16 @@ add_custom_target           (oineus ALL ${CMAKE_COMMAND} -E copy_directory
                                        DEPENDS ${OINEUS_PYTHON})
 
 
-pybind11_add_module         (_oineus oineus.cpp)
+pybind11_add_module         (_oineus oineus.cpp
+                                     oineus_common.cpp
+                                     oineus_decomposition.cpp
+                                     oineus_index_diagram.cpp
+                                     oineus_fil_dgm_simplex_double.cpp
+                                     oineus_fil_dgm_simplex_float.cpp
+                                     oineus_functions_double.cpp
+                                     oineus_functions_float.cpp
+                                     oineus_top_optimizer.cpp
+                            )
 target_link_libraries       (_oineus PRIVATE ${libraries})
 target_include_directories  (_oineus PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include"
                                               "${CMAKE_CURRENT_SOURCE_DIR}/../../extern")
