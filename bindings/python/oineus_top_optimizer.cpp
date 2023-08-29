@@ -41,10 +41,6 @@ void init_oineus_top_optimizer(py::module& m)
             .def("compute_diagram", [](TopologyOptimizer& opt, bool include_inf_points) { return PyOineusDiagrams<Real>(opt.compute_diagram(include_inf_points)); },
                     py::arg("include_inf_points"),
                     "compute diagrams in all dimensions")
-            .def("compute_index_diagram", [](TopologyOptimizer& opt, bool include_inf_points, bool include_zero_persistence_points=false) { return PyOineusDiagrams<size_t>(opt.compute_index_diagram(include_inf_points, include_zero_persistence_points)); },
-                    py::arg("include_inf_points") = true,
-                    py::arg("include_zero_persistence_points") = false,
-                    "compute persistence pairing (index diagram) in all dimensions")
             .def("simplify", &TopologyOptimizer::simplify,
                     py::arg("epsilon"),
                     py::arg("strategy"),
@@ -71,6 +67,13 @@ void init_oineus_top_optimizer(py::module& m)
                     py::arg("strategy"),
                     "combine critical sets into well-defined assignment of new values to indices")
             .def("update", &TopologyOptimizer::update);
+
+    // induced matching
+    m.def("get_induced_matching", &oin::get_induced_matching<Simplex>,
+            "Compute induced matching for two filtrations of the same complex",
+            py::arg("included_filtration"),
+            py::arg("containing_filtration"),
+            py::arg("n_threads")=1);
 
 //    IndicesValues combine_loss(const CriticalSets& critical_sets, ConflictStrategy strategy)
 }

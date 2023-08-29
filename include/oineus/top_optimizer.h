@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "filtration.h"
+#include "inclusion_filtration.h"
 #include "decomposition.h"
 #include "loss.h"
 
@@ -33,15 +34,13 @@ public:
     using BoundaryMatrix = typename VRUDecomposition<Int>::MatrixData;
     using Indices = std::vector<Int>;
     using Values = std::vector<Real>;
-    using DgmTarget = std::unordered_map<DgmPoint<size_t>, DgmPoint<Real>>;
+    using DgmTarget = std::unordered_map<DgmPoint<Real>, DgmPoint<Real>>;
     using CriticalSet = std::pair<Real, Indices>;
     using CriticalSets = std::vector<CriticalSet>;
 
     using Decomposition = VRUDecomposition<Int>;
     using Dgms = Diagrams<Real>;
     using Dgm = typename Dgms::Dgm;
-    using IndexDgms = Diagrams<size_t>;
-    using IndexDgm = typename IndexDgms::Dgm;
     using Fil = Filtration<Cell>;
 
     struct SimplexTarget {
@@ -181,17 +180,17 @@ public:
         bool decrease_birth = false;
         bool decrease_death = false;
 
-        for(const auto& [idx_point, target_point]: target) {
+        for(const auto& [point, target_point]: target) {
 
-            if (cmp(get_cell_value(idx_point.birth), target_point.birth)) {
+            if (cmp(point.birth, target_point.birth)) {
                 increase_birth = true;
-            } else if (cmp(target_point.birth, get_cell_value(idx_point.birth))) {
+            } else if (cmp(target_point.birth, point.birth)) {
                 decrease_birth = true;
             }
 
-            if (cmp(get_cell_value(idx_point.death), target_point.death)) {
+            if (cmp(point.death, target_point.death)) {
                 increase_death = true;
-            } else if (cmp(target_point.death, get_cell_value(idx_point.death))) {
+            } else if (cmp(target_point.death, point.death)) {
                 decrease_death = true;
             }
         }
@@ -312,28 +311,28 @@ public:
         return fil_.value_by_sorted_id(simplex_idx);
     }
 
-    Target dgm_target_to_target(const DgmTarget& dgm_target) const
-    {
-        Target target;
-
-        for(auto&& [idx_point, target_point]: dgm_target) {
-            size_t birth_simplex = idx_point.birth;
-            Real current_birth_value = get_cell_value(birth_simplex);
-            Real target_birth_value = target_point.birth;
-
-            if (current_birth_value != target_birth_value)
-                target.emplace(birth_simplex, {current_birth_value, target_birth_value, true});
-
-            size_t death_simplex = idx_point.death;
-            Real current_death_value = get_cell_value(death_simplex);
-            Real target_death_value = target_point.death;
-
-            if (current_death_value != target_death_value)
-                target.emplace(death_simplex, {current_death_value, target_death_value, false});
-        }
-
-        return target;
-    }
+//    Target dgm_target_to_target(const DgmTarget& dgm_target) const
+//    {
+//        Target target;
+//
+//        for(auto&& [point, target_point]: dgm_target) {
+//            size_t birth_simplex = point.birth;
+//            Real current_birth_value = get_cell_value(birth_simplex);
+//            Real target_birth_value = target_point.birth;
+//
+//            if (point.birth != target_point.birth)
+//                target.emplace(point.birth_index, {current_birth_value, target_birth_value, true});
+//
+//            size_t death_simplex = point.death;
+//            Real current_death_value = get_cell_value(death_simplex);
+//            Real target_death_value = target_point.death;
+//
+//            if (current_death_value != target_death_value)
+//                target.emplace(death_simplex, {current_death_value, target_death_value, false});
+//        }
+//
+//        return target;
+//    }
 
     IndicesValues simplify(Real epsilon, DenoiseStrategy strategy, dim_type dim)
     {
@@ -342,23 +341,19 @@ public:
 
         IndicesValues result;
 
-        auto index_diagram = decmp_hom_.index_diagram(fil_, false, false)[dim];
-
-        for(auto p: index_diagram) {
-            Real birth = get_cell_value(p.birth);
-            Real death = get_cell_value(p.death);
-            Real pers = abs(death - birth);
-            if (pers <= epsilon) {
+        for(auto&& p: decmp_hom_.diagram(fil_, false)[dim]) {
+            if (p.persistence() <= epsilon) {
                 if (strategy == DenoiseStrategy::BirthBirth)
-                    result.push_back(p.death, birth);
+                    result.push_back(p.death_index, p.birth);
                 else if (strategy == DenoiseStrategy::DeathDeath)
-                    result.push_back(p.birth, death);
+                    result.push_back(p.birth_index, p.death);
                 else if (strategy == DenoiseStrategy::Midway) {
-                    result.push_back(p.birth, (birth + death) / 2);
-                    result.push_back(p.death, (birth + death) / 2);
+                    result.push_back(p.birth_index, (p.birth + p.death) / 2);
+                    result.push_back(p.death_index, (p.birth + p.death) / 2);
                 }
             }
         }
+
         return result;
     }
 
@@ -392,22 +387,10 @@ public:
         if (not decmp_hom_.is_reduced)
             decmp_hom_.reduce(params_hom_);
 
-        auto current_index_dgm = decmp_hom_.index_diagram(fil_, false, false).get_diagram_in_dimension(d);
+        Diagram current_dgm = decmp_hom_.diagram(fil_, false).get_diagram_in_dimension(d);
 
-        Diagram current_dgm;
-        current_dgm.reserve(current_index_dgm.size());
-
-        for(auto current_dgm_id = 0 ; current_dgm_id < current_index_dgm.size() ; ++current_dgm_id) {
-
-            auto birth_idx = current_index_dgm[current_dgm_id].birth;
-            auto death_idx = current_index_dgm[current_dgm_id].death;
-
-            auto birth_val = get_cell_value(birth_idx);
-            auto death_val = get_cell_value(death_idx);
-
-            // do not include diagonal points
-            if (birth_val != death_val)
-                current_dgm.emplace_back(birth_val, death_val, current_dgm_id);
+        for(auto i = 0; i < current_dgm.size(); ++i) {
+            current_dgm[i].id = i;
         }
 
         // template_dgm: bidders, a
@@ -421,8 +404,8 @@ public:
             if (current_id < 0)
                 continue;
 
-            size_t birth_idx = current_index_dgm.at(current_id).birth;
-            size_t death_idx = current_index_dgm.at(current_id).death;
+            size_t birth_idx = current_dgm.at(current_id).birth_index;
+            size_t death_idx = current_dgm.at(current_id).death_index;
 
             Real birth_target;
             Real death_target;
@@ -516,15 +499,6 @@ public:
 
         return decmp_hom_.diagram(fil_, include_inf_points);
     }
-
-    IndexDgms compute_index_diagram(bool include_inf_points, bool include_zero_persistence_points)
-    {
-        if (!decmp_hom_.is_reduced)
-            decmp_hom_.reduce(params_hom_);
-
-        return decmp_hom_.index_diagram(fil_, include_inf_points, include_zero_persistence_points);
-    }
-
 
 private:
     // data

@@ -9,12 +9,17 @@
 #include <fstream>
 #include <stdexcept>
 
+#include "common_defs.h"
+
 namespace oineus {
 
     template<typename T>
     struct DgmPoint {
         T birth;
         T death;
+
+        size_t birth_index {k_invalid_index};
+        size_t death_index {k_invalid_index};
 
         id_type id {0};
 
@@ -24,10 +29,11 @@ namespace oineus {
         DgmPoint(T b, T d)
                 :birth(b), death(d) { };
 
-        DgmPoint(T b, T d, id_type i)
-                :birth(b), death(d), id(i) { };
+        DgmPoint(T b, T d, size_t b_i, size_t d_i)
+                :birth(b), death(d), birth_index(b_i), death_index(d_i) { };
 
         T persistence() const { return std::abs(death - birth); }
+        size_t index_persistence() const { return std::abs(static_cast<long>(death_index) - static_cast<long>(birth_index)); }
 
         T& operator[](int index)
         {
@@ -72,12 +78,18 @@ namespace oineus {
         {
             return is_plus_inf(birth) or is_plus_inf(death) or is_minus_inf(birth) or is_minus_inf(death);
         }
+
+        bool is_diagonal() const
+        {
+            return birth == death;
+        }
+
     };
 
     template<class R>
     bool operator==(const DgmPoint<R>& a, const DgmPoint<R>& b)
     {
-        return a.birth == b.birth and a.death == b.death;
+        return a.birth == b.birth and a.death == b.death and a.birth_index == b.birth_index and a.death_index == b.death_index;
     }
 
     template<class R>
@@ -92,7 +104,7 @@ namespace oineus {
     {
         R pers = a.persistence();
         R other_pers = b.persistence();
-        return std::tie(pers, a.birth, a.death) < std::tie(other_pers, b.birth, b.death);
+        return std::tie(pers, a.birth, a.death, a.birth_index, a.death_index) < std::tie(other_pers, b.birth, b.death, b.birth_index, b.death_index);
     }
 
     template<class R>
@@ -106,7 +118,7 @@ namespace oineus {
     {
         R pers = a.persistence();
         R other_pers = b.persistence();
-        return std::tie(pers, a.birth, a.death) > std::tie(other_pers, b.birth, b.death);
+        return std::tie(pers, a.birth, a.death, a.birth_index, a.death_index) > std::tie(other_pers, b.birth, b.death, b.birth_index, b.death_index);
     }
 
     template<class R>
@@ -119,9 +131,9 @@ namespace oineus {
     std::string to_string_possible_inf(const T& a)
     {
         if (DgmPoint<T>::is_minus_inf(a))
-            return "-inf, ";
+            return "-inf";
         else if (DgmPoint<T>::is_plus_inf(a))
-            return "inf, ";
+            return "inf";
         else
             return std::to_string(a);
     }
@@ -129,7 +141,7 @@ namespace oineus {
     template<typename T>
     std::ostream& operator<<(std::ostream& out, const DgmPoint<T>& p)
     {
-        out << "(" << to_string_possible_inf<T>(p.birth) << ", " << to_string_possible_inf<T>(p.death) << ", id = " << p.id << ")";
+        out << "(" << to_string_possible_inf<T>(p.birth) << ", " << to_string_possible_inf<T>(p.death) << ", birth_index=" << p.birth_index << ", death_index=" << p.death_index << ")";
         return out;
     }
 
@@ -139,6 +151,7 @@ namespace oineus {
 
         using Point = DgmPoint<Real>;
         using Dgm = std::vector<Point>;
+        using IndexDgm = std::vector<DgmPoint<size_t>>;
 
         dim_type max_dim_;
 
@@ -165,13 +178,24 @@ namespace oineus {
             return diagram_in_dimension_.at(d);
         }
 
+        IndexDgm get_index_diagram_in_dimension(dim_type d) const
+        {
+            IndexDgm index_dgm;
+
+            // just duplicate information for now: birth and death are also indices
+            for(Point p : diagram_in_dimension_.at(d))
+                index_dgm.emplace_back(p.birth_index, p.death_index, p.birth_index, p.death_index);
+
+            return index_dgm;
+        }
+
         Dgm& extract(int i) { return diagram_in_dimension_[i]; }
         Dgm& operator[](size_t d) { return diagram_in_dimension_.at(d); }
         const Dgm& operator[](size_t d) const { return diagram_in_dimension_.at(d); }
 
-        void add_point(dim_type dim, Real b, Real d)
+        void add_point(dim_type dim, Real birth_value, Real death_value, size_t birth_index, size_t death_index)
         {
-            diagram_in_dimension_[dim].emplace_back(b, d);
+            diagram_in_dimension_[dim].emplace_back(birth_value, death_value, birth_index, death_index);
         }
 
         void sort()
@@ -222,7 +246,9 @@ namespace std {
             std::size_t seed = 0;
             oineus::hash_combine(seed, p.birth);
             oineus::hash_combine(seed, p.death);
-            oineus::hash_combine(seed, p.id);
+            oineus::hash_combine(seed, p.birth_index);
+            oineus::hash_combine(seed, p.death_index);
+//            oineus::hash_combine(seed, p.id);
             return seed;
         }
     };

@@ -56,7 +56,11 @@ namespace oineus {
     using dim_type = size_t;
     using id_type = int;
 
-    template<typename Real>
+    constexpr size_t plus_inf = std::numeric_limits<size_t>::max();
+
+    constexpr size_t k_invalid_index = std::numeric_limits<size_t>::max();
+
+template<typename Real>
     struct RPoint {
         Real x {0};
         Real y {0};

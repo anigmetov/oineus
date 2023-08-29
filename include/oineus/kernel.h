@@ -23,6 +23,7 @@ namespace oineus {
 		using Point = DgmPoint<Real>;
     	//using Dgm = oineus::Diagram;
 		using Dgms = oineus::Diagrams<Real>;
+        using IndexDgms = oineus::Diagrams<size_t>;
 
 		private:
 			Filtration<FiltrationSimplex> K; //Full complex with the function values for F
@@ -35,6 +36,7 @@ namespace oineus {
 			Dgms KerDiagrams; //vector of image diagrams, one in each dimension poissble (these may be empty)
 			Dgms ImDiagrams; //vector of kernel diagrams, one in each dimension poissble (these may be empty)
 			Dgms CokDiagrams; //vector of kernel diagramsm, one in each possible dimension (these may be empty)
+            IndexDgms IndexImDiagrams; // simplex pairing for image persistence
 			int max_dim; //the maximum dimension of a cell
 			std::vector<int> sorted_K_to_sorted_L;
 			std::vector<int> sorted_L_to_sorted_K;
@@ -137,7 +139,7 @@ namespace oineus {
                                     int birth_id = new_order_to_old[Ker.get_R()[new_cols[i]].back()];
                                     int dim = K.dim_by_sorted_id(i)-1;
                                     if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-                                        KerDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i));//[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //add point to the diagram
+                                        KerDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i), birth_id, i);//[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //add point to the diagram
                                         open_points_ker[birth_id] = false; //close the point which gave birth to the cycle that was just killed, so we don't add an point at inifity to the diagram
                                     }
                                 }
@@ -149,7 +151,7 @@ namespace oineus {
 				for (int i = 0; i < open_points_ker.size(); i++) {//check if there are any cycles with infinite life times
 					if (open_points_ker[i]) {
 						int dim = K.dim_by_sorted_id(i)-1;
-						KerDiagrams.add_point(dim,K.value_by_sorted_id(i), std::numeric_limits<double>::infinity()); //add point to the diagram
+						KerDiagrams.add_point(dim,K.value_by_sorted_id(i), std::numeric_limits<double>::infinity(), i, plus_inf); //add point to the diagram
 					}
 				}
 
@@ -220,7 +222,8 @@ namespace oineus {
 							if (sorted_K_to_sorted_L[birth_id] != -1) {
 								int dim = K.dim_by_sorted_id(i)-1;
 								if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-									ImDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i));//add the point to the diaram
+									ImDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i), birth_id, i);// add the point to the diaram
+//                                    IndexImDiagrams.add_point(dim, birth_id, i);                                       // record cell indices in index_diagram
 								}
 								open_points_im[birth_id] = false;
 							}
@@ -231,7 +234,8 @@ namespace oineus {
 				for (int i = 0; i < open_points_im.size(); i++) {
 					if (open_points_im[i]) {
 						int dim = K.dim_by_sorted_id(i);
-						ImDiagrams.add_point(dim, K.value_by_sorted_id(i), std::numeric_limits<double>::infinity());
+						ImDiagrams.add_point(dim, K.value_by_sorted_id(i), std::numeric_limits<double>::infinity(), i, plus_inf);
+//                        IndexImDiagrams.add_point(dim, i, plus_inf);
 					}
 				}
 
@@ -321,7 +325,7 @@ namespace oineus {
 							int birth_id = new_order_to_old[Cok.get_R()[i].back()];
 							if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
 								int dim = K.dim_by_sorted_id(birth_id);
-								CokDiagrams.add_point(dim, K.value_by_sorted_id(birth_id) ,K.value_by_sorted_id(i));//add point to the diagram
+								CokDiagrams.add_point(dim, K.value_by_sorted_id(birth_id) ,K.value_by_sorted_id(i), birth_id, i);//add point to the diagram
 							}
 							open_points_cok[birth_id] = false;
 						}
@@ -332,7 +336,7 @@ namespace oineus {
 				for (int i = 0; i < open_points_cok.size(); i++) {
 					if (open_points_cok[i]) {
 						int dim = K.dim_by_sorted_id(i);
-						CokDiagrams.add_point(dim, K.value_by_sorted_id(i), std::numeric_limits<double>::infinity());
+						CokDiagrams.add_point(dim, K.value_by_sorted_id(i), std::numeric_limits<double>::infinity(), i, plus_inf);
 					}
 				}
 
@@ -417,6 +421,10 @@ namespace oineus {
 			Dgms get_image_diagrams(){
 				return ImDiagrams;
 			}
+
+            IndexDgms get_image_index_diagrams(){
+                return IndexImDiagrams;
+            }
 
 			Dgms get_cokernel_diagrams(){
 				return CokDiagrams;

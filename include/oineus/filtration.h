@@ -319,9 +319,6 @@ namespace oineus {
             }
         }
 
-
-
-
         // sort cells and assign sorted_ids
         void sort([[maybe_unused]] int n_threads = 1)
         {

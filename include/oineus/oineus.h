@@ -4,6 +4,7 @@
 #include "params.h"
 #include "simplex.h"
 #include "filtration.h"
+#include "inclusion_filtration.h"
 #include "diagram.h"
 #include "lower_star.h"
 #include "vietoris_rips.h"

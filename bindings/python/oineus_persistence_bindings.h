@@ -32,31 +32,32 @@ public:
     PyOineusDiagrams(oin::Diagrams<Real>&& _diagrams)
             :diagrams_(_diagrams) { }
 
-    py::array_t<Real> diagram_to_numpy(const typename oin::Diagrams<Real>::Dgm& dgm) const
+    template<class R>
+    py::array_t<R> diagram_to_numpy(const typename oin::Diagrams<R>::Dgm& dgm) const
     {
         size_t arr_sz = dgm.size() * 2;
-        Real* ptr = new Real[arr_sz];
+        R* ptr = new R[arr_sz];
         for(size_t i = 0 ; i < dgm.size() ; ++i) {
             ptr[2 * i] = dgm[i].birth;
             ptr[2 * i + 1] = dgm[i].death;
         }
 
         py::capsule free_when_done(ptr, [](void* p) {
-          Real* pp = reinterpret_cast<Real*>(p);
+          R* pp = reinterpret_cast<R*>(p);
           delete[] pp;
         });
 
         py::array::ShapeContainer shape {static_cast<long int>(dgm.size()), 2L};
-        py::array::StridesContainer strides {static_cast<long int>(2 * sizeof(Real)),
-                                             static_cast<long int>(sizeof(Real))};
+        py::array::StridesContainer strides {static_cast<long int>(2 * sizeof(R)),
+                                             static_cast<long int>(sizeof(R))};
 
-        return py::array_t<Real>(shape, strides, ptr, free_when_done);
+        return py::array_t<R>(shape, strides, ptr, free_when_done);
     }
 
     py::array_t<Real> get_diagram_in_dimension_as_numpy(dim_type d) const
     {
         auto dgm = diagrams_.get_diagram_in_dimension(d);
-        return diagram_to_numpy(dgm);
+        return diagram_to_numpy<Real>(dgm);
     }
 
     auto get_diagram_in_dimension(dim_type d) const
@@ -64,9 +65,22 @@ public:
         return diagrams_.get_diagram_in_dimension(d);
     }
 
+    auto get_index_diagram_in_dimension(dim_type d) const
+    {
+        return diagrams_.get_index_diagram_in_dimension(d);
+    }
+
+    py::array_t<size_t> get_index_diagram_in_dimension_as_numpy(dim_type d) const
+    {
+        auto index_dgm = diagrams_.get_index_diagram_in_dimension(d);
+        return diagram_to_numpy<size_t>(index_dgm);
+    }
+
 private:
     oin::Diagrams<Real> diagrams_;
 };
+
+
 
 template<class Int, class Real>
 using DiagramV = std::pair<PyOineusDiagrams<Real>, typename oin::VRUDecomposition<Int>::MatrixData>;
@@ -385,7 +399,6 @@ public:
         return PyOineusDiagrams(KICR.get_cokernel_diagrams());
     }
 
-
 	decltype(auto) D_F() {
 		return py::cast(KICR.get_D_f());
 	}
@@ -507,17 +520,9 @@ void init_oineus_common(py::module& m)
 
     using oin::DenoiseStrategy;
     using oin::ConflictStrategy;
-
     using Decomposition = oin::VRUDecomposition<Int>;
-
     using ReductionParams = oin::Params;
-
-    using IndexDiagram = PyOineusDiagrams<size_t>;
-    using IndexDgmPtVec = typename oin::Diagrams<size_t>::Dgm;
-
     std::string vr_edge_name = "VREdge";
-
-    std::string index_dgm_class_name = "IndexDiagrams";
 
     py::class_<VREdge>(m, vr_edge_name.c_str())
             .def(py::init<Int>())
@@ -613,20 +618,11 @@ void init_oineus_common_decomposition(py::module& m)
     using namespace pybind11::literals;
 
     using oin::VREdge;
-
     using oin::DenoiseStrategy;
     using oin::ConflictStrategy;
-
     using Decomposition = oin::VRUDecomposition<Int>;
-
     using ReductionParams = oin::Params;
-
-    using IndexDiagram = PyOineusDiagrams<size_t>;
-    using IndexDgmPtVec = typename oin::Diagrams<size_t>::Dgm;
-
     std::string vr_edge_name = "VREdge";
-
-    std::string index_dgm_class_name = "IndexDiagrams";
 
     py::class_<Decomposition>(m, "Decomposition")
             .def(py::init<const oin::Filtration<oin::Simplex<Int, double>>&, bool>())
@@ -640,12 +636,7 @@ void init_oineus_common_decomposition(py::module& m)
             .def("diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, double>>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
             .def("diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, float>>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
             .def("zero_persistence_diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, float>>& fil) { return PyOineusDiagrams<float>(self.zero_persistence_diagram(fil)); })
-            .def("index_diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, double>>& fil, bool include_inf_points, bool include_zero_persistence_points) {
-              return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
-            })
-            .def("index_diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, float>>& fil, bool include_inf_points, bool include_zero_persistence_points) {
-              return PyOineusDiagrams<size_t>(self.index_diagram(fil, include_inf_points, include_zero_persistence_points));
-            });
+            ;
 }
 
 void init_oineus_common_decomposition_int(py::module& m);
@@ -658,11 +649,6 @@ void init_oineus_common_diagram(py::module& m)
     using oin::VREdge;
     using oin::DenoiseStrategy;
     using oin::ConflictStrategy;
-
-    using IndexDiagram = PyOineusDiagrams<size_t>;
-    using IndexDgmPtVec = typename oin::Diagrams<size_t>::Dgm;
-
-    std::string index_dgm_class_name = "IndexDiagrams";
 
     using DgmPointInt = typename oin::DgmPoint<Int>;
     using DgmPointSizet = typename oin::DgmPoint<size_t>;
@@ -690,17 +676,6 @@ void init_oineus_common_diagram(py::module& m)
               ss << p;
               return ss.str();
             });
-
-    py::class_<IndexDiagram>(m, index_dgm_class_name.c_str())
-            .def(py::init<dim_type>())
-            .def("in_dimension", [](const IndexDiagram& self, dim_type dim, bool as_numpy) -> std::variant<pybind11::array_t<typename IndexDiagram::Coordinate>, IndexDgmPtVec> {
-                      if (as_numpy)
-                          return self.get_diagram_in_dimension_as_numpy(dim);
-                      else
-                          return self.get_diagram_in_dimension(dim);
-                    }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
-                    py::arg("dim"), py::arg("as_numpy")=true)
-            .def("__getitem__", &IndexDiagram::get_diagram_in_dimension);
 }
 
 void init_oineus_common_diagram_int(py::module& m);
@@ -792,9 +767,6 @@ void init_oineus_functions(py::module& m, std::string suffix)
     func_name = "get_denoise_target" + suffix;
     m.def(func_name.c_str(), &oin::get_denoise_target<Simplex>);
 
-    func_name = "get_wasserstein_matching_target_values" + suffix;
-    m.def(func_name.c_str(), &oin::get_target_from_matching<Simplex>);
-
     // target values -- diagram loss
     func_name = "get_target_values_diagram_loss" + suffix;
     m.def(func_name.c_str(), &oin::get_prescribed_simplex_values_diagram_loss<Real>);
@@ -803,20 +775,12 @@ void init_oineus_functions(py::module& m, std::string suffix)
     func_name = "get_target_values_x" + suffix;
     m.def(func_name.c_str(), &oin::get_prescribed_simplex_values_set_x<Simplex>);
 
-    // to reproduce "Topology layer for ML" experiments
-    func_name = "get_bruelle_target" + suffix;
-    m.def(func_name.c_str(), &oin::get_bruelle_target<Simplex>);
-
     // to reproduce "Well group loss" experiments
     func_name = "get_well_group_target" + suffix;
     m.def(func_name.c_str(), &oin::get_well_group_target<Simplex>);
 
     func_name = "get_nth_persistence" + suffix;
     m.def(func_name.c_str(), &oin::get_nth_persistence<Simplex>);
-
-    // to equidistribute points
-    func_name = "get_barycenter_target" + suffix;
-    m.def(func_name.c_str(), &oin::get_barycenter_target<Simplex>);
 
     // to get permutation for Warm Starts
     func_name = "get_permutation" + suffix;
@@ -849,6 +813,7 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
 
     using DgmPoint = typename oin::Diagrams<Real>::Point;
     using DgmPtVec = typename oin::Diagrams<Real>::Dgm;
+    using IndexDgmPtVec = typename oin::Diagrams<Real>::IndexDgm;
     using Diagram = PyOineusDiagrams<Real>;
 
 
@@ -875,6 +840,8 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
             .def(py::init<Real, Real>(), py::arg("birth"), py::arg("death"))
             .def_readwrite("birth", &DgmPoint::birth)
             .def_readwrite("death", &DgmPoint::death)
+            .def_readwrite("birth_index", &DgmPoint::birth_index)
+            .def_readwrite("death_index", &DgmPoint::death_index)
             .def("__getitem__", [](const DgmPoint& p, int i) { return p[i]; })
             .def("__hash__", [](const DgmPoint& p) { return std::hash<DgmPoint>()(p); })
             .def("__repr__", [](const DgmPoint& p) {
@@ -892,7 +859,15 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
                     return self.get_diagram_in_dimension(dim);
                 }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
                         py::arg("dim"), py::arg("as_numpy")=true)
+            .def("index_diagram_in_dimension", [](const Diagram& self, dim_type dim, bool as_numpy) -> std::variant<pybind11::array_t<size_t>, IndexDgmPtVec> {
+                      if (as_numpy)
+                          return self.get_index_diagram_in_dimension_as_numpy(dim);
+                      else
+                          return self.get_index_diagram_in_dimension(dim);
+                    }, "return persistence pairing (index diagram) in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
+                    py::arg("dim"), py::arg("as_numpy")=true)
             .def("__getitem__", &Diagram::get_diagram_in_dimension_as_numpy);
+
 
     py::class_<Simplex>(m, simplex_class_name.c_str())
             .def(py::init<typename Simplex::IdxVector, Real>(), py::arg("vertices"), py::arg("value"))
@@ -951,6 +926,7 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
             .def(py::init<KerImCokRed>())
             .def("kernel_diagrams", &PyKerImCokRed::kernel_diagrams)
             .def("image_diagrams", &PyKerImCokRed::image_diagrams)
+//            .def("image_index_diagrams", &PyKerImCokRed::image_index_diagrams)
             .def("cokernel_diagrams", &PyKerImCokRed::cokernel_diagrams)
             .def("D_F", &PyKerImCokRed::D_F)
             .def("D_G", &PyKerImCokRed::D_G)

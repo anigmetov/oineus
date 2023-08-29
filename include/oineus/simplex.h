@@ -56,8 +56,10 @@ namespace oineus {
                 std::sort(vertices_.begin(), vertices_.end());
         }
 
-        Int dim() const { return static_cast<Int>(vertices_.size()) - 1; }
+        dim_type dim() const { return static_cast<Int>(vertices_.size()) - 1; }
         Real value() const { return value_; }
+
+        Int id() const { return id_; }
 
         Simplex(const int _id, const IdxVector& _vertices, Real _value)
                 :

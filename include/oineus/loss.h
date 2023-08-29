@@ -122,7 +122,7 @@ namespace oineus {
     }
 
     template<class Real>
-    using DiagramToValues = std::unordered_map<DgmPoint < size_t>, DgmPoint<Real>>;
+    using DiagramToValues = std::unordered_map<DgmPoint<Real>, DgmPoint<Real>>;
 
     template<class ValueLocation, class Real>
     using TargetMatching = std::vector<std::pair<ValueLocation, Real>>;
@@ -131,7 +131,7 @@ namespace oineus {
 
     template<class Cell>
     void match_diagonal_points(const typename oineus::Filtration<Cell>& current_fil,
-            const typename Diagrams<size_t>::Dgm& current_index_dgm,
+            const typename Diagrams<typename Cell::Real>::Dgm& current_dgm,
             typename Diagrams<typename Cell::Real>::Dgm& template_dgm,
             typename hera::AuctionResult<typename Cell::Real>& hera_res,
             DiagramToValues<typename Cell::Real>& result)
@@ -139,23 +139,17 @@ namespace oineus {
         using Real = typename Cell::Real;
         using Int = typename Cell::Int;
         using Diagram = typename Diagrams<Real>::Dgm;
+        using DgmPt = typename Diagrams<Real>::DgmPoint;
         // diagonal point with id
         using DiagP = std::tuple<Real, size_t>;
         using VecDiagP = std::vector<DiagP>;
         VecDiagP current_diagonal_points;
 
-        for(auto current_dgm_id = 0; current_dgm_id < current_index_dgm.size(); ++current_dgm_id) {
-            if (current_index_dgm[current_dgm_id].is_inf())
-                continue;
+        for(size_t current_dgm_id = 0; current_dgm_id < current_dgm.size(); ++current_dgm_id) {
+            const DgmPt& current_point = current_dgm[current_dgm.id];
 
-            size_t birth_idx = current_index_dgm[current_dgm_id].birth;
-            size_t death_idx = current_index_dgm[current_dgm_id].death;
-
-            Real birth_val = current_fil.value_by_sorted_id(birth_idx);
-            Real death_val = current_fil.value_by_sorted_id(death_idx);
-
-            if (birth_val == death_val)
-                current_diagonal_points.emplace_back(birth_val, current_dgm_id);
+            if (current_point.is_diagonal() and not current_point.is_inf())
+                current_diagonal_points.emplace_back(current_point.birth, current_dgm_id);
         }
 
         // get unmatched template points
@@ -198,75 +192,75 @@ namespace oineus {
         //}
     }
 
-    template<class Cell>
-    DiagramToValues<typename Cell::Real> get_barycenter_target(const Filtration<Cell>& fil, VRUDecomposition<typename Cell::Int>& rv, dim_type d, bool is_vr)
-    {
-        using Real = typename Cell::Real;
-        DiagramToValues<typename Cell::Real> result;
+//    template<class Cell>
+//    DiagramToValues<typename Cell::Real> get_barycenter_target(const Filtration<Cell>& fil, VRUDecomposition<typename Cell::Int>& rv, dim_type d, bool is_vr)
+//    {
+//        using Real = typename Cell::Real;
+//        DiagramToValues<typename Cell::Real> result;
+//
+//        auto index_dgm = rv.index_diagram(fil, false, false).get_diagram_in_dimension(d);
+//        auto dgm = rv.diagram(fil, false).get_diagram_in_dimension(d);
+//
+//        if (dgm.size()) {
+//            Real avg_birth = (is_vr ? 0 : std::accumulate(dgm.begin(), dgm.end(), static_cast<Real>(0), [&](auto x, auto p) { return x + p.birth; })) / dgm.size();
+//            Real avg_death = std::accumulate(dgm.begin(), dgm.end(), static_cast<Real>(0), [&](auto x, auto p) { return x + p.death; }) / dgm.size();
+//
+//            for(auto p: index_dgm)
+//                if (fil.value_by_sorted_id(p.birth) != fil.value_by_sorted_id(p.death))
+//                    result[p] = {avg_birth, avg_death};
+//        }
+//
+//        return result;
+//    }
+//
+//    template<class Cell>
+//    DiagramToValues<typename Cell::Real> get_bruelle_target(const Filtration<Cell>& current_fil,
+//            VRUDecomposition<typename Cell::Int>& rv,
+//            int p,
+//            int q,
+//            int i_0,
+//            dim_type d,
+//            bool minimize,
+//            bool is_vr,
+//            typename Cell::Real min_birth = -std::numeric_limits<typename Cell::Real>::infinity(),
+//            typename Cell::Real max_death = std::numeric_limits<typename Cell::Real>::infinity())
+//    {
+//        if (q == 0 and p == 2)
+//            return get_bruelle_target_2_0(current_fil, rv, i_0, d, minimize, min_birth, max_death, is_vr);
+//        else
+//            throw std::runtime_error("Not implemented");
+//    }
 
-        auto index_dgm = rv.index_diagram(fil, false, false).get_diagram_in_dimension(d);
-        auto dgm = rv.diagram(fil, false).get_diagram_in_dimension(d);
-
-        if (dgm.size()) {
-            Real avg_birth = (is_vr ? 0 : std::accumulate(dgm.begin(), dgm.end(), static_cast<Real>(0), [&](auto x, auto p) { return x + p.birth; })) / dgm.size();
-            Real avg_death = std::accumulate(dgm.begin(), dgm.end(), static_cast<Real>(0), [&](auto x, auto p) { return x + p.death; }) / dgm.size();
-
-            for(auto p: index_dgm)
-                if (fil.value_by_sorted_id(p.birth) != fil.value_by_sorted_id(p.death))
-                    result[p] = {avg_birth, avg_death};
-        }
-
-        return result;
-    }
-
-    template<class Cell>
-    DiagramToValues<typename Cell::Real> get_bruelle_target(const Filtration<Cell>& current_fil,
-            VRUDecomposition<typename Cell::Int>& rv,
-            int p,
-            int q,
-            int i_0,
-            dim_type d,
-            bool minimize,
-            bool is_vr,
-            typename Cell::Real min_birth = -std::numeric_limits<typename Cell::Real>::infinity(),
-            typename Cell::Real max_death = std::numeric_limits<typename Cell::Real>::infinity())
-    {
-        if (q == 0 and p == 2)
-            return get_bruelle_target_2_0(current_fil, rv, i_0, d, minimize, min_birth, max_death, is_vr);
-        else
-            throw std::runtime_error("Not implemented");
-    }
-
-    template<class Cell>
-    DiagramToValues<typename Cell::Real> get_bruelle_target_2_0(const Filtration<Cell>& current_fil,
-            VRUDecomposition<typename Cell::Int>& rv,
-            int n_keep,
-            dim_type d,
-            bool minimize,
-            typename Cell::Real min_birth,
-            typename Cell::Real max_death,
-            bool is_vr)
-    {
-        using Real = typename Cell::Real;
-        DiagramToValues<Real> result;
-
-        Real epsilon = get_nth_persistence(current_fil, rv, d, n_keep);
-
-        // false flags: no infinite points, no points with zero persistence
-        auto index_dgm = rv.index_diagram(current_fil, false, false).get_diagram_in_dimension(d);
-
-        for(auto p: index_dgm) {
-            Real birth_val = current_fil.value_by_sorted_id(p.birth);
-            Real death_val = current_fil.value_by_sorted_id(p.death);
-            if (abs(death_val - birth_val) <= epsilon) {
-                result[p] = minimize ? denoise_point(birth_val, death_val, DenoiseStrategy::Midway) : enhance_point(birth_val, death_val, min_birth, max_death);
-            }
-        }
-
-        return result;
-    }
-
-// if point is in quadrant defined by (t, t),
+//    template<class Cell>
+//    DiagramToValues<typename Cell::Real> get_bruelle_target_2_0(const Filtration<Cell>& current_fil,
+//            VRUDecomposition<typename Cell::Int>& rv,
+//            int n_keep,
+//            dim_type d,
+//            bool minimize,
+//            typename Cell::Real min_birth,
+//            typename Cell::Real max_death,
+//            bool is_vr)
+//    {
+//        using Real = typename Cell::Real;
+//        DiagramToValues<Real> result;
+//
+//        Real epsilon = get_nth_persistence(current_fil, rv, d, n_keep);
+//
+//        // false flags: no infinite points, no points with zero persistence
+//        auto index_dgm = rv.index_diagram(current_fil, false, false).get_diagram_in_dimension(d);
+//
+//        for(auto p: index_dgm) {
+//            Real birth_val = current_fil.value_by_sorted_id(p.birth);
+//            Real death_val = current_fil.value_by_sorted_id(p.death);
+//            if (abs(death_val - birth_val) <= epsilon) {
+//                result[p] = minimize ? denoise_point(birth_val, death_val, DenoiseStrategy::Midway) : enhance_point(birth_val, death_val, min_birth, max_death);
+//            }
+//        }
+//
+//        return result;
+//    }
+//
+//// if point is in quadrant defined by (t, t),
 // move it to horizontal or vertical quadrant border, whichever is closer
     template<class Cell>
     DiagramToValues<typename Cell::Real> get_well_group_target(dim_type d,
@@ -279,25 +273,22 @@ namespace oineus {
 
         DiagramToValues<Real> result;
 
-        auto index_dgm = rv.index_diagram(current_fil, false, false).get_diagram_in_dimension(d);
+        auto dgm = rv.diagram(current_fil, false).get_diagram_in_dimension(d);
 
-        for(auto p: index_dgm) {
-            Real birth_val = current_fil.value_by_sorted_id(p.birth);
-            Real death_val = current_fil.value_by_sorted_id(p.death);
-
+        for(auto p: dgm) {
             // check if in quadrant
-            if (current_fil.negate() and (birth_val <= t or death_val >= t))
+            if (current_fil.negate() and (p.birth <= t or p.death >= t))
                 continue;
-            if (not current_fil.negate() and (birth_val >= t or death_val <= t))
+            if (not current_fil.negate() and (p.birth >= t or p.death <= t))
                 continue;
 
             Real target_birth, target_death;
 
-            if (abs(birth_val - t) < abs(death_val - t)) {
+            if (abs(p.birth - t) < abs(p.death - t)) {
                 target_birth = t;
-                target_death = death_val;
+                target_death = p.death;
             } else {
-                target_birth = birth_val;
+                target_birth = p.birth;
                 target_death = t;
             }
 
@@ -321,110 +312,6 @@ namespace oineus {
             return a;
     }
 
-    template<class Cell>
-    DiagramToValues<typename Cell::Real> get_target_from_matching(typename Diagrams<typename Cell::Real>::Dgm& template_dgm,
-            const Filtration<Cell>& current_fil,
-            VRUDecomposition<typename Cell::Int>& rv,
-            dim_type d,
-            typename Cell::Real wasserstein_q,
-            bool match_inf_points,
-            bool match_diag_points)
-    {
-        if (not rv.is_reduced) {
-            std::cerr << "Warning: get_current_from_matching expects reduced matrix; reducing with default reduction parameters" << std::endl;
-            Params params;
-            rv.reduce(params);
-        }
-
-        for(auto i = 0; i < template_dgm.size(); ++i) {
-            template_dgm[i].id = i;
-
-            if (template_dgm[i].is_inf())
-                throw std::runtime_error("infinite point in template diagram");
-        }
-
-        using Real = typename Cell::Real;
-        using Diagram = typename Diagrams<Real>::Dgm;
-
-        DiagramToValues<Real> result;
-
-        hera::AuctionParams<Real> hera_params;
-        hera::AuctionResult<Real> hera_result;
-        hera_params.return_matching = true;
-        hera_params.match_inf_points = match_inf_points;
-        hera_params.wasserstein_power = wasserstein_q;
-
-        auto current_index_dgm = rv.index_diagram(current_fil, false, false).get_diagram_in_dimension(d);
-
-        Diagram current_dgm;
-        current_dgm.reserve(current_index_dgm.size());
-
-        Real min_val = std::numeric_limits<Real>::max();
-        Real max_val = std::numeric_limits<Real>::lowest();
-
-        for(auto&& p: template_dgm) {
-            min_val = std::min(min_val, p.birth);
-            min_val = std::min(min_val, p.death);
-            max_val = std::max(max_val, p.birth);
-            max_val = std::max(max_val, p.death);
-        }
-
-        if (min_val > max_val or min_val == std::numeric_limits<Real>::max() or min_val == std::numeric_limits<Real>::infinity()
-                or max_val == std::numeric_limits<Real>::lowest() or max_val == std::numeric_limits<Real>::infinity()) {
-            throw std::runtime_error("bad max/min value");
-        }
-
-        for(auto current_dgm_id = 0; current_dgm_id < current_index_dgm.size(); ++current_dgm_id) {
-
-            auto birth_idx = current_index_dgm[current_dgm_id].birth;
-            auto death_idx = current_index_dgm[current_dgm_id].death;
-
-            auto birth_val = current_fil.value_by_sorted_id(birth_idx);
-            auto death_val = current_fil.value_by_sorted_id(death_idx);
-
-            // do not include diagonal points, save them in a separate vector
-            if (birth_val != death_val)
-                current_dgm.emplace_back(birth_val, death_val, current_dgm_id);
-        }
-
-        // template_dgm: bidders, a
-        // current_dgm: items, b
-        auto hera_res = hera::wasserstein_cost_detailed<Diagram>(template_dgm, current_dgm, hera_params);
-
-        for(auto curr_template: hera_res.matching_b_to_a_) {
-            auto current_id = curr_template.first;
-            auto template_id = curr_template.second;
-
-            if (current_id < 0)
-                continue;
-
-            if (template_id >= 0)
-                // matched to off-diagonal point of template diagram
-                result[current_index_dgm.at(current_id)] = template_dgm.at(template_id);
-            else {
-                // point must disappear, move to (birth, birth), clamp, if necessary
-                auto target_point = current_dgm.at(current_id);
-                target_point.death = target_point.birth;
-                if (current_fil.negate()) {
-                    if (target_point.death > max_val)
-                        target_point.birth = target_point.death = max_val;
-                    else if (target_point.birth < min_val)
-                        target_point.birth = target_point.death = min_val;
-                } else {
-                    if (target_point.birth > max_val)
-                        target_point.birth = target_point.death = max_val;
-                    else if (target_point.death < min_val)
-                        target_point.birth = target_point.death = min_val;
-                }
-                result[current_index_dgm.at(current_id)] = target_point;
-            }
-        }
-
-        if (match_diag_points)
-            match_diagonal_points(current_fil, current_index_dgm, template_dgm, hera_res, result);
-
-        return result;
-    }
 
     // return the n-th (finite) persistence value in dimension d
     // points at infinity are ignored
@@ -435,26 +322,16 @@ namespace oineus {
             throw std::runtime_error("get_nth_persistence: n must be at least 1");
         }
 
-        using Real = typename Cell::Real;
+        using DPoint = typename Diagrams<typename Cell::Real>::Point;
 
-        auto index_diagram = rv_matrix.index_diagram(fil, false, false).get_diagram_in_dimension(d);
-        std::vector<Real> ps;
-        ps.reserve(index_diagram.size());
+        auto diagram = rv_matrix.diagram(fil, false).get_diagram_in_dimension(d);
 
-        for(auto p: index_diagram) {
-            Real birth = fil.cells()[p.birth].value();
-            Real death = fil.cells()[p.death].value();
-            Real pers = abs(death - birth);
-            ps.push_back(pers);
+        if (diagram.size() >= n) {
+            std::nth_element(diagram.begin(), diagram.begin() + n - 1, diagram.end(), std::greater<DPoint>());
+            return diagram[n - 1].persistence();
+        } else {
+            return 0;
         }
-
-        Real result {0};
-        if (ps.size() >= n) {
-            std::nth_element(ps.begin(), ps.begin() + n - 1, ps.end(), std::greater<Real>());
-            result = ps[n - 1];
-        }
-
-        return result;
     }
 
     // points (b, d) with persistence | b - d| <= eps should go to (b, b)
@@ -464,14 +341,11 @@ namespace oineus {
         using Real = typename Cell::Real;
 
         DiagramToValues<Real> result;
-        auto index_diagram = rv_matrix.index_diagram(fil, false, false)[d];
+        auto diagram = rv_matrix.diagram(fil, false)[d];
 
-        for(auto p: index_diagram) {
-            Real birth = fil.value_by_sorted_id(p.birth);
-            Real death = fil.value_by_sorted_id(p.death);
-            Real pers = abs(death - birth);
-            if (pers <= eps)
-                result[p] = denoise_point(birth, death, strategy);
+        for(auto p: diagram) {
+            if (p.persistence() <= eps)
+                result[p] = denoise_point(p.birth, p.death, strategy);
         }
 
         return result;

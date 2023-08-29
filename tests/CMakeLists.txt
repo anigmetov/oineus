@@ -41,7 +41,9 @@ else()
 #            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 #
 #    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/kernel-pytest.py"
-#            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+
+    add_test(NAME induced-matching-pytest
+            COMMAND ${Python3_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/induced-matching-pytest.py" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_test(NAME kernel-pytest
             COMMAND ${Python3_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-pytest.py" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
