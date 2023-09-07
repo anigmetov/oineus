@@ -18,9 +18,9 @@ struct ComputeFlags {
 
 inline std::ostream& operator<<(std::ostream& out, const ComputeFlags& f)
 {
-    out << "ComputeFlags(compute_cohomology = " << f.compute_cohomology ? "True" : "False";
-    out << ", compute_homology_u = " << f.compute_homology_u ? "True" : "False";
-    out << ", compute_cohomology_u = " << f.compute_cohomology_u  ? "True)" : "False)";
+    out << "ComputeFlags(compute_cohomology = " << (f.compute_cohomology ? "True" : "False");
+    out << ", compute_homology_u = " << (f.compute_homology_u ? "True" : "False");
+    out << ", compute_cohomology_u = " << (f.compute_cohomology_u  ? "True)" : "False)");
     return out;
 }
 
@@ -162,8 +162,6 @@ public:
         bool decrease_death = std::accumulate(target.begin(), target.end(), false,
                 [this](bool x, auto kv) { return x or kv.second.decrease_death(negate_); });
 
-        //IC(increase_birth, decrease_birth, increase_death, decrease_death);
-
         ComputeFlags result;
 
         result.compute_cohomology = decrease_birth or increase_birth;
@@ -201,8 +199,6 @@ public:
         result.compute_homology_u = increase_death;
         result.compute_cohomology_u = decrease_birth;
 
-        //IC(increase_birth, decrease_death, increase_death, decrease_death, result);
-
         return result;
     }
 
@@ -236,8 +232,6 @@ public:
         result.compute_homology_u = increase_death;
         result.compute_cohomology_u = decrease_birth;
 
-        //IC(increase_birth, decrease_death, increase_death, decrease_death, result);
-
         return result;
     }
 
@@ -254,8 +248,9 @@ public:
     {
         auto d = get_dimension(index);
 
-        if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u()))
-            decmp_hom_.reduce(params_hom_);
+        if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u())) {
+            decmp_hom_.reduce_serial(params_hom_);
+        }
 
         if (decmp_hom_.is_negative(index)) {
             // change_death_x expects d to be the dimension of the persistence
@@ -341,11 +336,17 @@ public:
 
         IndicesValues result;
 
-        for(auto&& p: decmp_hom_.diagram(fil_, false)[dim]) {
+        auto dgm = decmp_hom_.diagram(fil_, false)[dim];
+
+//        causes bugs: spurious points in diagram, need to materialize the diagram
+//        for(auto p: decmp_hom_.diagram(fil_, false)[dim]) {
+        for(auto p: dgm) {
+            if (p.birth_index == p.death_index)
+                throw std::runtime_error("bad p in simplify");
             if (p.persistence() <= epsilon) {
-                if (strategy == DenoiseStrategy::BirthBirth)
+                if (strategy == DenoiseStrategy::BirthBirth) {
                     result.push_back(p.death_index, p.birth);
-                else if (strategy == DenoiseStrategy::DeathDeath)
+                } else if (strategy == DenoiseStrategy::DeathDeath)
                     result.push_back(p.birth_index, p.death);
                 else if (strategy == DenoiseStrategy::Midway) {
                     result.push_back(p.birth_index, (p.birth + p.death) / 2);
@@ -523,8 +524,9 @@ private:
         CALI_CXX_MARK_FUNCTION;
         Real current_birth = get_cell_value(positive_simplex_idx);
 
-        if (!decmp_coh_.is_reduced or (params_coh_.compute_u and not decmp_coh_.has_matrix_u()))
+        if (!decmp_coh_.is_reduced or (params_coh_.compute_u and not decmp_coh_.has_matrix_u())) {
             decmp_coh_.reduce(params_coh_);
+        }
 
         if (cmp(target_birth, current_birth))
             return decrease_birth_x(d, positive_simplex_idx, fil_, decmp_coh_, target_birth);

@@ -25,6 +25,9 @@ namespace oineus {
 
         DgmPoint() = default;
         DgmPoint(const DgmPoint&) = default;
+        DgmPoint(DgmPoint&&) noexcept = default;
+        DgmPoint& operator=(const DgmPoint&) = default;
+        DgmPoint& operator=(DgmPoint&&) noexcept = default;
 
         DgmPoint(T b, T d)
                 :birth(b), death(d) { };
@@ -167,6 +170,11 @@ namespace oineus {
                 diagram_in_dimension_[d];
             }
         }
+
+        Diagrams(const Diagrams&) = default;
+        Diagrams(Diagrams&&) noexcept = default;
+        Diagrams& operator=(const Diagrams&) = default;
+        Diagrams& operator=(Diagrams&&) noexcept = default;
 
         std::map<dim_type, Dgm> diagram_in_dimension_;
 
