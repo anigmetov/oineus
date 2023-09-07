@@ -278,10 +278,6 @@ namespace oineus {
         template<typename Cell>
         Diagrams<typename Cell::Real> zero_persistence_diagram(const Filtration<Cell>& fil) const;
 
-
-//        template<typename Cell>
-//        Diagrams<size_t> index_diagram(const Filtration<Cell>& fil, bool include_inf_points, bool include_zero_persistence_points) const;
-
         template<typename Int>
         friend std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m);
 
@@ -805,52 +801,6 @@ namespace oineus {
     {
         return diagram_general(fil, false, false, true);
     }
-
-//    template<class Int>
-//    template<class Cell>
-//    Diagrams<size_t> VRUDecomposition<Int>::index_diagram(const Filtration<Cell>& fil, bool include_inf_points, bool include_zero_persistence_points) const
-//    {
-//        if (not is_reduced)
-//            throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
-//
-//        Diagrams<size_t> result(fil.max_dim());
-//
-//        std::unordered_set<size_t> rows_with_lowest_one;
-//
-//        if (include_inf_points)
-//            for(size_t i = 0; i < r_data.size(); ++i)
-//                if (!is_zero(&r_data[i]))
-//                    rows_with_lowest_one.insert(low(&r_data[i]));
-//
-//        for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
-//            auto col = &r_data[col_idx];
-//
-//            if (is_zero(col)) {
-//                if (!include_inf_points or rows_with_lowest_one.count(col_idx) != 0)
-//                    continue;
-//
-//                dim_type dim = fil.dim_by_sorted_id(col_idx);
-//
-//                result.add_point(dim, col_idx, plus_inf);
-//            } else {
-//                // finite point
-//                size_t birth_idx = static_cast<size_t>(low(col));
-//                size_t death_idx = col_idx;
-//
-//                dim_type dim = fil.dim_by_sorted_id(birth_idx);
-//
-//                if (include_zero_persistence_points or fil.value_by_sorted_id(birth_idx) != fil.value_by_sorted_id(death_idx)) {
-//                    if (dualize()) {
-//                        result.add_point(dim-1, death_idx, birth_idx);
-//                    } else {
-//                        result.add_point(dim, birth_idx, death_idx);
-//                    }
-//                }
-//            }
-//        }
-//
-//        return result;
-//    }
 
     template<typename Int>
     std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m)

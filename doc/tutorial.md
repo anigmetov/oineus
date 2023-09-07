@@ -9,41 +9,36 @@ import torch
 ```
 
 First, let us do everything by hand. If we want to create a filtration,
-we need to create simplices first. We have a filtration of a triangle:
-
+we need to create simplices first. We have a filtration of a triangle,
+and we use `double` to store filtration values (second argument to the constructor):
 ```python
 # vertices
-v0 = oin.Simplex([0])
-v1 = oin.Simplex([1])
-v2 = oin.Simplex([2])
+v0 = oin.Simplex_double([0], 0.1)
+v1 = oin.Simplex_double([1], 0.2)
+v2 = oin.Simplex_double([2], 0.3)
 
 # edges
-e1 = oin.Simplex([0, 1])
-e2 = oin.Simplex([0, 2])
-e3 = oin.Simplex([1, 2])
+e1 = oin.Simplex_double([0, 1], 1.2)
+e2 = oin.Simplex_double([0, 2], 1.4)
+e3 = oin.Simplex_double([1, 2], 2.1)
 
 # triangle
-t1 = oin.Simplex([0, 1, 2])
+t1 = oin.Simplex_double([0, 1, 2], 4.0)
 ```
 
-Note that we did not specify values.
 We now put simplices into a list and create a parallel list
 of values, so that simplex `simplices[i]` enters filtration at time `values[i]`.
 ```python
 simplices = [v0,  v1,  v2,  e1,  t1,  e2,  e3]
-values =    [0.1, 0.2, 0.3, 1.2, 4.0, 1.4, 2.1]
 ```
 We put simplices of positive dimension in arbitrary order here. 
 **Vertices must always appear in the list first, and in the order prescribed by their index**.
 
 Now we create a filtration.
-Parameter `keep_ids` is set to `False`, because we did not set ids
-of a simplex manually. Parameter `sort` is set to `True`, because
-the list `simplices` is not sorted.
 
 ```python
 # constructor will sort simplices and assign sorted_ids
-fil = oin.Filtration(simplices, values)
+fil = oin.Filtration_double(simplices)
 
 print(fil)
 ```
@@ -58,10 +53,12 @@ When we ask `fil` for simplices, they will appear in the order determined
 by the `sorted_id`.
 
 The constructor of a filtration has some additional arguments:
-* `keep_ids` is `False` by default, that is why `id`s are overwritten. Set it to `True` to preserve original `id`s.
-Caveat: vertex `i` must still have `id == i` and the `id`s are unique.
-* `sort` is `True` by default. If you know that your simplices are already in the correct
-order, you can set it to `False`.
+* `set_ids` is `True` by default, that is why `id`s are overwritten. Set it to `False` to preserve original `id`s.
+Caveat: vertex `i` must still have `id == i` and the `id`s must be unique. You can specify
+the `id` as the first argument to constructor: `oin.Simplex_double(3, [0, 1], 0.5)` or assign to it: `sigma.id = 3`.
+* `sort_only_by_dimension` is `False` by default. If you know that your simplices are already in the correct
+order, you can set it to `True`: the simplices will be arranged by dimension, but the order
+of simplices of same dimension will be preserved.
 
 ## Common filtrations
 
@@ -77,6 +74,7 @@ in a matrix.
 
 ```python
 import numpy as np
+import oineus as oin
 
 # create 20 random points in space
 np.random.seed(1)
@@ -84,7 +82,7 @@ n_points = 20
 dim = 3
 points = np.random.uniform(size=(n_points, dim))
 
-fil = oin.get_vr_filtration(points=points, max_dim=3, max_radius=2)
+fil = oin.get_vr_filtration(points, max_dim=3, max_radius=2)
 print(fil)
 ```
 
@@ -98,6 +96,10 @@ For distance matrix:
 
 ```python
 import numpy as np
+import scipy.spatial
+
+import oineus as oin
+
 
 # create 20 random points in space
 np.random.seed(1)
@@ -105,15 +107,11 @@ n_points = 20
 dim = 6
 points = np.random.uniform(size=(n_points, dim))
 
-fil = oin.get_vr_filtration(distances=distances, max_dim=3, max_radius=2)
+distances = scipy.spatial.distance.cdist(points, points, 'euclidean')
+
+fil = oin.get_vr_filtration_from_pwdists(distances, max_dim=3, max_radius=2)
 print(fil)
 ```
-
-All arguments to `get_vr_filtration` are keyword-only, to avoid confusion.
-In other words, you cannot say 
-`oin.get_vr_filtration(x, max_dim=3, max_radius=2)`, because it is unclear whether `x` is a point cloud
-or a distance matrix.
-Supplying both `points` and `distances` will raise an error.
 
 ### Lower-star filtration.
 
@@ -169,7 +167,7 @@ This cannot be done in multi-threaded mode, so the reduction will return an erro
 and this option is set.
 
 ```python
-rp.compute_u = rp.compute_v = False
+rp.compute_u = rp.compute_v = True
 rp.n_threads = 16
 # perform reduction
 dcmp.reduce(rp)
@@ -190,7 +188,7 @@ the values of simplices and returns diagrams in all dimensions. By default,
 diagrams include points at infinity. If we only want the finite part,
 we can specify that by `include_inf_points`.
 ```python
-dgms = dcmp.diagram(include_inf_points=False)
+dgms = dcmp.diagram(fil, include_inf_points=False)
 ```
 To get diagram in one specific dimension, we can subscript
 the object or call the `in_dimension` method.
@@ -198,9 +196,9 @@ Diagram will be returned as a NumPy array of shape `(n, 2)`
 
 ```python
 dim=2
-dgm_2 = dcmp.diagram().in_dimension(dim)
+dgm_2 = dcmp.diagram(fil).in_dimension(dim)
 # or
-dgm_2 = dcmp.diagram()[2]
+dgm_2 = dcmp.diagram(fil)[dim]
 
 assert type(dgm_2) is np.ndarray
 ```
@@ -208,22 +206,32 @@ Now, e.g. the birth coordinates are simply `dgm_2[:, 0]`.
 
 If we want to know the peristence pairing, that is, which 
 birth and death simplex gave us this particular point,
-we can use `index_diagram`.
+we can use `index_diagram_in_dimension`.
 ```python
 dim=2
-dgm_2 = dcmp.index_diagram().in_dimension(dim)
+ind_dgm_2 = dcmp.diagram(fil).index_diagram_in_dimension(dim)
 ```
 It is also a NymPy array (of integral type).
-If needed, we can get all paired simplices, including those
-with zero-persistence:
+We can get the zero persistence diagram:
 ```
-dgm_2 = dcmp.index_diagram(include_zero_persistence_points=True, include_inf_points=True).in_dimension(dim)
+z_dgm_2 = dcmp.zero_pers_diagram(fil).in_dimension(dim)
+```
+Finally, sometimes it can be more convenient to have not a NumPy
+array, but as `list` of diagram points that have birth/death values
+and birth/death indices as members. For this, the `in_dimension`
+method has the second argument, `as_numpy`, which is `True` by default,
+but we can set it to `False`:
+
+```python
+dgm = dcmp.diagram(fil).in_dimension(dim, False)
+for p in dgm:
+    print(p.birth, p.death, p.birth_index, p.death_index)
 ```
 
 How to map this back to filtration? Let us take a look
 at a single point in the index diagram:
 ```python
-sigma_sorted_idx, tau_sorted_idx = dgm_2[0, :]
+sigma_sorted_idx, tau_sorted_idx = ind_dgm_2[0, :]
 ```
 `sigma_sorted_idx` is the index of the birth simplex (triangle) in filtration order.
 `tau_sorted_idx` is the index of the death simplex (tetrahedron) in filtration order.
@@ -301,7 +309,7 @@ def topological_loss(pts: torch.Tensor, dim: int=1, n: int=2):
     return top_loss
 ```
 First, we need to convert `pts` to a NumPy array, because that is the type
-that `oin.get_vr_filtration_and_critical_edges` expects first argument.
+that `oin.get_vr_filtration_and_critical_edges` expects as the first argument.
 Then we create the `TopologyOptimizer` object that provides access to all
 optimization-related functions.
 ```python
@@ -312,7 +320,7 @@ we compute the persistence of the `n`-th point in the diagram. All points
 with persistence at most `eps` will be driven to the diagonal.
 There are 3 natural choices: a point `(b, d)` can be moved to 
 `(b, b)`, `(d, d)` or `((b+d)/2, (b+d)/2)`.
-They correspond to 3 members of the enum `oin.DenoiseStrategy`: `BirthBirth, DeathDeath, Midway`.
+They correspond to 3 members of the enum `oin.DenoiseStrategy`: `BirthBirth`, `DeathDeath`, `Midway`.
 
 ```python
     indices, values = top_opt.simplify(eps, oin.DenoiseStrategy.BirthBirth, dim)
@@ -326,7 +334,7 @@ say, `sigma_1`. Similarly, `d_1` corresponds to `sigma_2`, `b_2` corresponds
 to `sigma_3` and `d_2` corresponds to `sigma_4`.
 In this case, `indices = [i_1, i_2, i_3, i_4]` and 
 `values = [target_b_1, target_d_1, target_b_2, target_d_2]`,
-where `i_1` is the index of `sigma_1` in the filtration, `i_2` is
+where `i_1` is the index (`sorted_id`) of `sigma_1` in the filtration, `i_2` is
 the index of `sigma_2`, etc.
 
 
@@ -414,4 +422,31 @@ to compute your distances in the differentiable way.
 
 
 
+## Kernel, image and cokernel persistence
+Oineus can compute the kernel, image and cokernel persistence diagrams as in ["Persistent Homology for Kernels, Images, and Cokernels"](https://doi.org/10.1137/1.9781611973068.110) by D. Cohen-Steiner, H. Edelsbrunner, D. Morozov. We first perform the required reductions using `compute_kernel_image_cokernel_diagrams`, which has arguments:
+* `K` the simplicial complex with function values, as a list with an element per simplex in the format `[simplex_id, vertices, value]`, where `vertices` is a list containing the ids of the vertices, and value is the value under the function f.
+* `L` the simplicial sub-complex with function values, as a list with an element per simplex in the format `[simplex_id, vertices, value]`, where `vertices` is a list containing the ids of the vertices, and value is the value under the function g.
+* `L_to_K` a list which maps the cells in L to their corresponding cells in K,
+* `n_threads` the number of threads you want to use,
+* `return` an object which contains the kernel, image and cokernel diagrams, as well as the reduced matrices.
 
+To obtain the different diagrams, we use `kernel()`, `image()`, `cokernel()`, and then we can use `in_dimension` to get the sepcific diagram in a specific dimension.
+
+**Note:** aside from the number of threads, all other parameters are set already. 
+
+#### Example
+Suppose we have a simplicial complex $K$ with a function $f$ on it, and a subcomplex $L \subset K$ with a function $g$ on it. In this example, $g = f|_L$. We then perform the 5 necessary reductions and compute the persistence diagrams using `compute_kernel_image_cokernel_diagrams`, and then access the 3 sets of diagrams using `kernel()`, `image()`, `cokernel()` respectively. After which we can obtain a diagram in a specific dimension $i$ using `in_dimension(i)`.
+
+```python
+>>> import oineus as oin
+>>> n_threads = 4
+>>> K = [[0, [0], 10], [1,[1],50], [2,[2], 10], [3, [3], 10], [4,[0,1], 50], [5, [1,2], 50], [6,[0,3], 10], [7, [2,3], 10]]
+>>> L = [[0, [0], 10], [1,[1],50], [2,[2], 10], [3, [0,1], 50], [4,[1,2],50]]
+>>> L_to_K = [0,1,2,4,5]
+>>> ker_im_cok_dgms = oin.compute_kernel_image_cokernel_diagrams(K, L, L_to_K, n_threads)
+>>> ker_dgms = ker_im_cok_dgms.kernel()
+>>> im_dgms = ker_im_cok_dgms.image()
+>>> cok_dgms = ker_im_cok_dgms.cokernel()
+>>> ker_dgms.in_dimension(0)
+```
+ 
