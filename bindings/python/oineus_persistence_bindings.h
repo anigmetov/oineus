@@ -633,9 +633,18 @@ void init_oineus_common_decomposition(py::module& m)
             .def_readwrite("d_data", &Decomposition::d_data)
             .def("reduce", &Decomposition::reduce, py::call_guard<py::gil_scoped_release>())
             .def("sanity_check", &Decomposition::sanity_check, py::call_guard<py::gil_scoped_release>())
-            .def("diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, double>>& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); })
-            .def("diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, float>>& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); })
-            .def("zero_persistence_diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, float>>& fil) { return PyOineusDiagrams<float>(self.zero_persistence_diagram(fil)); })
+            .def("diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, double>>& fil, bool include_inf_points)
+                            { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); },
+                            py::arg("fil"), py::arg("include_inf_points")=true)
+            .def("diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, float>>& fil, bool include_inf_points)
+                            { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); },
+                            py::arg("fil"), py::arg("include_inf_points")=true)
+            .def("zero_pers_diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, float>>& fil)
+                                      { return PyOineusDiagrams<float>(self.zero_persistence_diagram(fil)); },
+                                      py::arg("fil"))
+            .def("zero_pers_diagram", [](const Decomposition& self, const oin::Filtration<oin::Simplex<Int, double>>& fil)
+                    { return PyOineusDiagrams<double>(self.zero_persistence_diagram(fil)); },
+                    py::arg("fil"))
             ;
 }
 
@@ -897,16 +906,18 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
                     py::arg("n_threads")=1,
                     py::arg("sort_only_by_dimension")=false,
                     py::arg("set_ids")=true)
-            .def("max_dim", &Filtration::max_dim)
-            .def("cells", &Filtration::cells_copy)
-            .def("simplices", &Filtration::cells_copy)
-            .def("size", &Filtration::size)
+            .def("max_dim", &Filtration::max_dim, "maximal dimension of a cell in filtration")
+            .def("cells", &Filtration::cells_copy, "copy of all cells in filtration order")
+            .def("simplices", &Filtration::cells_copy, "copy of all simplices (cells) in filtration order")
+            .def("size", &Filtration::size, "number of cells in filtration")
             .def("__len__", &Filtration::size)
-            .def("size_in_dimension", &Filtration::size_in_dimension)
+            .def("size_in_dimension", &Filtration::size_in_dimension, py::arg("dim"), "number of cells of dimension dim")
             .def("n_vertices", &Filtration::n_vertices)
             .def("simplex_value_by_sorted_id", &Filtration::value_by_sorted_id, py::arg("sorted_id"))
             .def("get_id_by_sorted_id", &Filtration::get_id_by_sorted_id, py::arg("sorted_id"))
             .def("get_sorted_id_by_id", &Filtration::get_sorted_id, py::arg("id"))
+            .def("get_cell", &Filtration::get_cell, py::arg("i"))
+            .def("get_simplex", &Filtration::get_cell, py::arg("i"))
             .def("get_sorting_permutation", &Filtration::get_sorting_permutation)
             .def("get_inv_sorting_permutation", &Filtration::get_inv_sorting_permutation)
             .def("simplex_value_by_vertices", &Filtration::value_by_vertices, py::arg("vertices"))

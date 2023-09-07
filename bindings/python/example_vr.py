@@ -45,6 +45,8 @@ for sigma_idx in V[-1]:
 # get diagram, including points at infinity
 include_inf_points=True
 dgm = dcmp.diagram(fil, include_inf_points)
+# get only points of zero persistence
+zero_dgm = dcmp.zero_pers_diagram(fil)
 
 # diagram in dimension d is numpy array dgm[d], shape = (number of diagram points, 2)
 

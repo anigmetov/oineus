@@ -10,6 +10,7 @@ PYBIND11_MODULE(_oineus, m)
 
     std::string float_suffix = "_float";
     std::string double_suffix = "_double";
+//    std::string double_suffix = "";
 
     init_oineus_common_int(m);
     init_oineus_common_diagram_int(m);
