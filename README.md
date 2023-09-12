@@ -21,7 +21,16 @@ It is written in C++ with python bindings (pybind11).
 
 Oineus requires C++17 standard and python3.
 `Pybind11` is included as a submodule.
-Compilation is standard:
+Other dependencies are Boost and TBB,
+install them before compiling Oineus.
+E.g., on Ubuntu
+```shell
+$ sudo apt-get install libtbb-dev
+$ sudo apt-get install libboost-all-dev
+```
+
+
+After that compilation is standard:
 
 ```shell
 $ git clone --recurse-submodules git@github.com:anigmetov/oineus.git
@@ -43,7 +52,24 @@ Traceback (most recent call last):
 ImportError: cannot import name '_oineus' from partially initialized module 'oineus' (most likely due to a circular import) (/home/narn/code/oineus/bindings/python/oineus/__init__.py)
 ```
 you are most probably trying to import Oineus from the source directory `oineus/bindings/python`,
-which contains only the `__init__.py`. Make sure that `PYTHONPATH` contains the `oineus/build/bindings/python`.
+which contains only the `__init__.py`. Make sure that `PYTHONPATH` contains the directory `oineus/build/bindings/python`.
+
+Another possibility can be that Pybind11 did not pick up the correct Python
+executable. Suppose that you have system-wide Python, version 3.11,
+but you want to compile for your virtual environment, `venv` or `conda`,
+in which you have Python 3.9. Sometimes, even you activated your Python
+virtual environment, pybind11 chooses a different Python (you can see which one
+in the output of `cmake ..`; also, the name of the binary
+`_oineus.cpython-311-x86_64-linux-gnu.so` contains the version).
+In this case, remove CMakeCache.txt and run
+```shell
+$ cmake .. -DPYTHON_EXECUTABLE=path_to_correct_python
+```
+If the command `which python` shows you the right Python,
+   the easiest is
+```shell
+$ cmake .. -DPYTHON_EXECUTABLE=$(which python)
+```
 
 
 ## Usage
