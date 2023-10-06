@@ -668,6 +668,7 @@ void init_oineus_common_diagram(py::module& m)
             .def_readwrite("death", &DgmPointInt::death)
             .def("__getitem__", [](const DgmPointInt& p, int i) { return p[i]; })
             .def("__hash__", [](const DgmPointInt& p) { return std::hash<DgmPointInt>()(p); })
+            .def("__eq__", [](const DgmPointInt& p, const DgmPointInt& q) { return p == q; })
             .def("__repr__", [](const DgmPointInt& p) {
               std::stringstream ss;
               ss << p;
@@ -680,6 +681,7 @@ void init_oineus_common_diagram(py::module& m)
             .def_readwrite("death", &DgmPointSizet::death)
             .def("__getitem__", [](const DgmPointSizet& p, int i) { return p[i]; })
             .def("__hash__", [](const DgmPointSizet& p) { return std::hash<DgmPointSizet>()(p); })
+            .def("__eq__", [](const DgmPointSizet& p, const DgmPointSizet& q) { return p == q; })
             .def("__repr__", [](const DgmPointSizet& p) {
               std::stringstream ss;
               ss << p;
