@@ -613,6 +613,7 @@ namespace oineus {
         for(size_t i = 0; i < n_cols; ++i) {
             auto p = ar_matrix[i].load(std::memory_order_relaxed);
             r_data[i] = std::move(*p);
+            delete p;
         }
 
         is_reduced = true;
