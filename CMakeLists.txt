@@ -21,7 +21,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package (Threads REQUIRED)
 find_package (TBB REQUIRED)
 find_package (Boost REQUIRED)
-find_package (Python3 COMPONENTS Interpreter Development)
 
 include_directories(${Boost_INCLUDE_DIRS})
 
