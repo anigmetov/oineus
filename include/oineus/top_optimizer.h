@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <utility>
+#include <type_traits>
 
 #include "filtration.h"
 #include "inclusion_filtration.h"
@@ -24,10 +25,14 @@ inline std::ostream& operator<<(std::ostream& out, const ComputeFlags& f)
     return out;
 }
 
-template<class Cell_>
+template<class Cell_, class Real_>
 class TopologyOptimizer {
 public:
-    using Cell = Cell_;
+
+    static_assert(std::is_floating_point_v<Real_>, "Real_ must be floating point type");
+
+    using Fil = Filtration<Cell_, Real_>;
+    using Cell = CellWithValue<Cell_, Real_>;
     using Real = typename Cell::Real;
     using Int = typename Cell::Int;
     using BoundaryMatrix = typename VRUDecomposition<Int>::MatrixData;
@@ -40,7 +45,6 @@ public:
     using Decomposition = VRUDecomposition<Int>;
     using Dgms = Diagrams<Real>;
     using Dgm = typename Dgms::Dgm;
-    using Fil = Filtration<Cell>;
 
     struct SimplexTarget {
         Real current_value;
@@ -688,7 +692,7 @@ private:
         Real current_death = get_cell_value(negative_simplex_idx);
         if (cmp(target_death, current_death))
             return decrease_death(negative_simplex_idx, target_death);
-        else if (fil_.cmp(current_death, target_death))
+        else if (cmp(current_death, target_death))
             return increase_death(negative_simplex_idx, target_death);
         else
             return {};

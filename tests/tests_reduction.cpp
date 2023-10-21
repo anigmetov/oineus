@@ -163,5 +163,7 @@ TEST_CASE("Vietoris--Rips")
     auto fil_1 = oineus::get_vr_filtration<Int, Real, 2>(points, max_dim, max_radius);
     auto fil_2 = oineus::get_vr_filtration_naive<Int, Real, 2>(points, max_dim, max_radius);
 
-    REQUIRE(fil_1.cells() == fil_2.cells());
+    for(size_t i = 0; i < fil_1.size(); ++i) {
+        REQUIRE(fil_1.get_cell(i).get_uid() == fil_2.get_cell(i).get_uid());
+    }
 }

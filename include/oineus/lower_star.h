@@ -135,15 +135,15 @@ class Grid {
 public:
     using Int = Int_;
     using Real = Real_;
-    using GridSimplex = Simplex<Int, Real>;
+    using GridSimplex = CellWithValue<Simplex<Int>, Real>;
     using GridPoint = std::array<Int, D>;
     using GridPointVec = std::vector<GridPoint>;
     using GridPointVecVec = std::vector<GridPointVec>;
     using SimplexVec = std::vector<GridSimplex>;
     using CriticalVertices = std::vector<Int>;
-    using IdxVector = typename GridSimplex::IdxVector;
+    using IdxVector = typename Simplex<Int>::IdxVector;
 
-    using GridFiltration = Filtration<GridSimplex>;
+    using GridFiltration = Filtration<Simplex<Int>, Real>;
 
     static constexpr size_t dim {D};
 
@@ -275,7 +275,7 @@ public:
         CriticalVertices sorted_vertices;
 
         for(const auto& cell: fil.cells()) {
-            sorted_vertices.push_back(vertices[cell.id_]);
+            sorted_vertices.push_back(vertices[cell.get_id()]);
         }
 
         return {fil, sorted_vertices};

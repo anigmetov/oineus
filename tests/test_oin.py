@@ -16,8 +16,11 @@ def compare_diagrams(n=16, negate=False, n_threads=1, seed=1, top_dim=2):
     np.random.seed(seed)
     a = np.random.randn(n ** 3).reshape((n, n, n))
 
+    params = oin.ReductionParams()
+    params.n_threads = n_threads
+
     # compute diagrams with Oineus
-    oin_dgms = oin.compute_diagrams_ls(a, negate, wrap, top_dim, n_threads, True)
+    oin_dgms = oin.compute_diagrams_ls(a, negate, wrap, top_dim, params, include_inf_points=True, dualize=False)
 
     # compute diagrams with Dionysis
     fil_us = dion.fill_freudenthal(a, reverse=negate)

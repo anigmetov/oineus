@@ -129,14 +129,13 @@ namespace oineus {
 
     using Permutation = std::map<size_t, size_t>;
 
-    template<class Cell>
-    void match_diagonal_points(const typename oineus::Filtration<Cell>& current_fil,
-            const typename Diagrams<typename Cell::Real>::Dgm& current_dgm,
-            typename Diagrams<typename Cell::Real>::Dgm& template_dgm,
-            typename hera::AuctionResult<typename Cell::Real>& hera_res,
-            DiagramToValues<typename Cell::Real>& result)
+    template<class Cell, class Real>
+    void match_diagonal_points(const typename oineus::Filtration<Cell, Real>& current_fil,
+            const typename Diagrams<Real>::Dgm& current_dgm,
+            typename Diagrams<Real>::Dgm& template_dgm,
+            typename hera::AuctionResult<Real>& hera_res,
+            DiagramToValues<Real>& result)
     {
-        using Real = typename Cell::Real;
         using Int = typename Cell::Int;
         using Diagram = typename Diagrams<Real>::Dgm;
         using DgmPt = typename Diagrams<Real>::DgmPoint;
@@ -193,10 +192,10 @@ namespace oineus {
     }
 
 //    template<class Cell>
-//    DiagramToValues<typename Cell::Real> get_barycenter_target(const Filtration<Cell>& fil, VRUDecomposition<typename Cell::Int>& rv, dim_type d, bool is_vr)
+//    DiagramToValues<Real> get_barycenter_target(const Filtration<Cell, Real>& fil, VRUDecomposition<typename Cell::Int>& rv, dim_type d, bool is_vr)
 //    {
-//        using Real = typename Cell::Real;
-//        DiagramToValues<typename Cell::Real> result;
+//        using Real = Real;
+//        DiagramToValues<Real> result;
 //
 //        auto index_dgm = rv.index_diagram(fil, false, false).get_diagram_in_dimension(d);
 //        auto dgm = rv.diagram(fil, false).get_diagram_in_dimension(d);
@@ -214,7 +213,7 @@ namespace oineus {
 //    }
 //
 //    template<class Cell>
-//    DiagramToValues<typename Cell::Real> get_bruelle_target(const Filtration<Cell>& current_fil,
+//    DiagramToValues<Real> get_bruelle_target(const Filtration<Cell, Real>& current_fil,
 //            VRUDecomposition<typename Cell::Int>& rv,
 //            int p,
 //            int q,
@@ -222,8 +221,8 @@ namespace oineus {
 //            dim_type d,
 //            bool minimize,
 //            bool is_vr,
-//            typename Cell::Real min_birth = -std::numeric_limits<typename Cell::Real>::infinity(),
-//            typename Cell::Real max_death = std::numeric_limits<typename Cell::Real>::infinity())
+//            Real min_birth = -std::numeric_limits<Real>::infinity(),
+//            Real max_death = std::numeric_limits<Real>::infinity())
 //    {
 //        if (q == 0 and p == 2)
 //            return get_bruelle_target_2_0(current_fil, rv, i_0, d, minimize, min_birth, max_death, is_vr);
@@ -232,16 +231,16 @@ namespace oineus {
 //    }
 
 //    template<class Cell>
-//    DiagramToValues<typename Cell::Real> get_bruelle_target_2_0(const Filtration<Cell>& current_fil,
+//    DiagramToValues<Real> get_bruelle_target_2_0(const Filtration<Cell, Real>& current_fil,
 //            VRUDecomposition<typename Cell::Int>& rv,
 //            int n_keep,
 //            dim_type d,
 //            bool minimize,
-//            typename Cell::Real min_birth,
-//            typename Cell::Real max_death,
+//            Real min_birth,
+//            Real max_death,
 //            bool is_vr)
 //    {
-//        using Real = typename Cell::Real;
+//        using Real = Real;
 //        DiagramToValues<Real> result;
 //
 //        Real epsilon = get_nth_persistence(current_fil, rv, d, n_keep);
@@ -262,15 +261,13 @@ namespace oineus {
 //
 //// if point is in quadrant defined by (t, t),
 // move it to horizontal or vertical quadrant border, whichever is closer
-    template<class Cell>
-    DiagramToValues<typename Cell::Real> get_well_group_target(dim_type d,
-            const Filtration<Cell>& current_fil,
+    template<class Cell, class Real>
+    DiagramToValues<Real> get_well_group_target(dim_type d,
+            const Filtration<Cell, Real>& current_fil,
             VRUDecomposition<typename Cell::Int>& rv,
-            typename Cell::Real t,
+            Real t,
             bool is_vr)
     {
-        using Real = typename Cell::Real;
-
         DiagramToValues<Real> result;
 
         auto dgm = rv.diagram(current_fil, false).get_diagram_in_dimension(d);
@@ -315,14 +312,14 @@ namespace oineus {
 
     // return the n-th (finite) persistence value in dimension d
     // points at infinity are ignored
-    template<class Cell>
-    typename Cell::Real get_nth_persistence(const Filtration<Cell>& fil, const VRUDecomposition<typename Cell::Int>& rv_matrix, dim_type d, int n)
+    template<class Cell, class Real>
+    Real get_nth_persistence(const Filtration<Cell, Real>& fil, const VRUDecomposition<typename Cell::Int>& rv_matrix, dim_type d, int n)
     {
         if (n < 1) {
             throw std::runtime_error("get_nth_persistence: n must be at least 1");
         }
 
-        using DPoint = typename Diagrams<typename Cell::Real>::Point;
+        using DPoint = typename Diagrams<Real>::Point;
 
         auto diagram = rv_matrix.diagram(fil, false).get_diagram_in_dimension(d);
 
@@ -335,11 +332,9 @@ namespace oineus {
     }
 
     // points (b, d) with persistence | b - d| <= eps should go to (b, b)
-    template<class Cell>
-    DiagramToValues<typename Cell::Real> get_denoise_target(dim_type d, const Filtration<Cell>& fil, const VRUDecomposition<typename Cell::Int>& rv_matrix, typename Cell::Real eps, DenoiseStrategy strategy)
+    template<class Cell, class Real>
+    DiagramToValues<Real> get_denoise_target(dim_type d, const Filtration<Cell, Real>& fil, const VRUDecomposition<typename Cell::Int>& rv_matrix, Real eps, DenoiseStrategy strategy)
     {
-        using Real = typename Cell::Real;
-
         DiagramToValues<Real> result;
         auto diagram = rv_matrix.diagram(fil, false)[d];
 
@@ -368,13 +363,13 @@ namespace oineus {
         return result;
     }
 
-    template<class Cell>
-    std::vector<typename Cell::Int> increase_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Cell>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, typename Cell::Real target_birth)
+    template<class Cell, class Real>
+    std::vector<typename Cell::Int> increase_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_birth)
     {
         if (not decmp.dualize())
             throw std::runtime_error("increase_birth_x: expected cohomology");
 
-        if (not fil.cmp(fil.cells()[positive_simplex_idx].value(), target_birth))
+        if (not fil.cmp(fil.cells()[positive_simplex_idx].get_value(), target_birth))
             throw std::runtime_error("target_birth cannot preceed current value");
 
         using Int = typename Cell::Int;
@@ -387,7 +382,7 @@ namespace oineus {
             auto fil_idx = fil.index_in_filtration(*index_in_matrix, decmp.dualize());
             const auto& sigma = fil.cells().at(fil_idx);
 
-            if (fil.cmp(target_birth, sigma.value()))
+            if (fil.cmp(target_birth, sigma.get_value()))
                 break;
 
             result.push_back(fil_idx);
@@ -399,15 +394,15 @@ namespace oineus {
         return result;
     }
 
-    template<class Cell>
-    std::vector<typename Cell::Int> decrease_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Cell>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, typename Cell::Real target_birth)
+    template<class Cell, class Real>
+    std::vector<typename Cell::Int> decrease_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_birth)
     {
         if (not decmp.dualize())
             throw std::runtime_error("expected cohomology");
 
         //IC(positive_simplex_idx);
 
-        if (not fil.cmp(target_birth, fil.cells()[positive_simplex_idx].value()))
+        if (not fil.cmp(target_birth, fil.cells()[positive_simplex_idx].get_value()))
             throw std::runtime_error("target_birth cannot preceed current value");
 
         using Int = typename Cell::Int;
@@ -421,7 +416,7 @@ namespace oineus {
             auto fil_idx = fil.index_in_filtration(index_in_matrix, decmp.dualize());
             const auto& sigma = fil.cells()[fil_idx];
 
-            if (fil.cmp(sigma.value(), target_birth)) {
+            if (fil.cmp(sigma.get_value(), target_birth)) {
                 break;
             }
 
@@ -434,8 +429,8 @@ namespace oineus {
         return result;
     }
 
-    template<class Cell>
-    std::vector<typename Cell::Int> increase_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Cell>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, typename Cell::Real target_death)
+    template<class Cell, class Real>
+    std::vector<typename Cell::Int> increase_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_death)
     {
         if (decmp.dualize())
             throw std::runtime_error("increase_death_x: expected homology, got cohomology");
@@ -457,7 +452,7 @@ namespace oineus {
         for(auto tau_idx: u_rows.at(negative_simplex_idx)) {
             const auto& tau = simplices.at(tau_idx);
             assert(tau.dim() == d);
-            if (fil.cmp(target_death, tau.value())) {
+            if (fil.cmp(target_death, tau.get_value())) {
                 break;
             }
 
@@ -471,8 +466,8 @@ namespace oineus {
         return result;
     }
 
-    template<class Cell>
-    std::vector<typename Cell::Int> decrease_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Cell>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, typename Cell::Real target_death)
+    template<class Cell, class Real>
+    std::vector<typename Cell::Int> decrease_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_death)
     {
         if (decmp.dualize())
             throw std::runtime_error("decrease_death_x: expected homology, got cohomology");
@@ -497,7 +492,7 @@ namespace oineus {
             const auto& tau = fil.cells()[tau_idx];
             assert(tau.dim() == d + 1);
 
-            if (fil.cmp(tau.value(), target_death))
+            if (fil.cmp(tau.get_value(), target_death))
                 break;
 
             // explicit check for is_zero is not necessary for signed Int, low returns -1 for empty columns
@@ -514,10 +509,10 @@ namespace oineus {
         return result;
     }
 
-    template<class Cell>
-    std::vector<typename Cell::Int> change_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Cell>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, typename Cell::Real target_death)
+    template<class Cell, class Real>
+    std::vector<typename Cell::Int> change_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_death)
     {
-        auto current_death = fil.cells()[negative_simplex_idx].value();
+        auto current_death = fil.cells()[negative_simplex_idx].get_value();
         if (fil.cmp(target_death, current_death))
             return decrease_death_x(d, negative_simplex_idx, fil, decmp, target_death);
         else if (fil.cmp(current_death, target_death))
@@ -526,10 +521,10 @@ namespace oineus {
             return {};
     }
 
-    template<class Cell>
-    std::vector<typename Cell::Int> change_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Cell>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp_coh, typename Cell::Real target_birth)
+    template<class Cell, class Real>
+    std::vector<typename Cell::Int> change_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp_coh, Real target_birth)
     {
-        auto current_birth = fil.cells()[positive_simplex_idx].value();
+        auto current_birth = fil.cells()[positive_simplex_idx].get_value();
         if (fil.cmp(target_birth, current_birth))
             return decrease_birth_x(d, positive_simplex_idx, fil, decmp_coh, target_birth);
         else if (fil.cmp(current_birth, target_birth))
@@ -538,10 +533,10 @@ namespace oineus {
             return {};
     }
 
-    template<class Cell>
-    TargetMatching<size_t, typename Cell::Real> get_prescribed_simplex_values_set_x(dim_type d,
-            const DiagramToValues<typename Cell::Real>& diagram_to_values,
-            const oineus::Filtration<Cell>& fil,
+    template<class Cell, class Real>
+    TargetMatching<size_t, Real> get_prescribed_simplex_values_set_x(dim_type d,
+            const DiagramToValues<Real>& diagram_to_values,
+            const oineus::Filtration<Cell, Real>& fil,
             const oineus::VRUDecomposition<typename Cell::Int>& decmp_hom,
             const oineus::VRUDecomposition<typename Cell::Int>& decmp_coh,
             ConflictStrategy conflict_strategy,
@@ -553,7 +548,6 @@ namespace oineus {
         if (not decmp_coh.dualize())
             throw std::runtime_error("this parameter must be cohomology");
 
-        using Real = typename Cell::Real;
         using Int = typename Cell::Int;
 
         std::unordered_map<size_t, std::vector<Real>> result;
@@ -632,12 +626,10 @@ namespace oineus {
         return final_result;
     }
 
-    template<class Cell>
-    Permutation targets_to_permutation_naive(const TargetMatching<size_t, typename Cell::Real>& simplex_to_values, const Filtration<Cell>& fil)
+    template<class Cell, class Real>
+    Permutation targets_to_permutation_naive(const TargetMatching<size_t, Real>& simplex_to_values, const Filtration<Cell,Real>& fil)
     {
         Permutation result;
-
-        using Real = typename Cell::Real;
 
         using DimValueIndex = std::tuple<dim_type, Real, size_t>;
 
@@ -650,9 +642,9 @@ namespace oineus {
         // copy current values from filtration
         for(const auto& sigma: fil.cells()) {
             if (negate)
-                new_vals.emplace_back(sigma.dim(), -sigma.value(), idx++);
+                new_vals.emplace_back(sigma.dim(), -sigma.get_value(), idx++);
             else
-                new_vals.emplace_back(sigma.dim(), sigma.value(), idx++);
+                new_vals.emplace_back(sigma.dim(), sigma.get_value(), idx++);
         }
 
         // update according to diagram_to_values
@@ -683,15 +675,15 @@ namespace oineus {
         return result;
     }
 
-    template<class Cell>
-    Permutation targets_to_permutation_dtv(const DiagramToValues<typename Cell::Real>& diagram_to_values, const Filtration<Cell>& fil)
+    template<class Cell, class Real>
+    Permutation targets_to_permutation_dtv(const DiagramToValues<Real>& diagram_to_values, const Filtration<Cell, Real>& fil)
     {
         auto tm = get_prescribed_simplex_values_diagram_loss(diagram_to_values, false);
         return targets_to_permutation_naive(tm, fil);
     }
 
-    template<class Cell>
-    Permutation targets_to_permutation(const TargetMatching<size_t, typename Cell::Real>& simplex_to_values, const Filtration<Cell>& fil)
+    template<class Cell, class Real>
+    Permutation targets_to_permutation(const TargetMatching<size_t, Real>& simplex_to_values, const Filtration<Cell, Real>& fil)
     {
         // TODO: find a better solution
         return targets_to_permutation_naive(simplex_to_values, fil);
