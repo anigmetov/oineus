@@ -6,7 +6,7 @@
 #include "filtration.h"
 #include "inclusion_filtration.h"
 #include "decomposition.h"
-#include "loss.h"
+//#include "loss.h"
 
 namespace oineus {
 
@@ -20,10 +20,9 @@ inline std::ostream& operator<<(std::ostream& out, const ComputeFlags& f)
 {
     out << "ComputeFlags(compute_cohomology = " << (f.compute_cohomology ? "True" : "False");
     out << ", compute_homology_u = " << (f.compute_homology_u ? "True" : "False");
-    out << ", compute_cohomology_u = " << (f.compute_cohomology_u  ? "True)" : "False)");
+    out << ", compute_cohomology_u = " << (f.compute_cohomology_u ? "True)" : "False)");
     return out;
 }
-
 
 template<class Cell_>
 class TopologyOptimizer {
@@ -209,7 +208,7 @@ public:
         bool decrease_birth = false;
         bool decrease_death = false;
 
-        for(size_t i = 0; i < indices.size(); ++i) {
+        for(size_t i = 0 ; i < indices.size() ; ++i) {
             auto simplex_idx = indices[i];
             Real current_value = fil_.get_cell_value(simplex_idx);
             Real target_value = values[i];
@@ -235,7 +234,6 @@ public:
         return result;
     }
 
-
     dim_type get_dimension(size_t simplex_index) const
     {
         if (fil_.size())
@@ -246,18 +244,14 @@ public:
 
     CriticalSet singleton(size_t index, Real value)
     {
-        auto d = get_dimension(index);
-
         if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u())) {
             decmp_hom_.reduce_serial(params_hom_);
         }
 
         if (decmp_hom_.is_negative(index)) {
-            // change_death_x expects d to be the dimension of the persistence
-            // diagram, not the dimension of the simplex
-            return {value, change_death_x(d-1, index, value)};
+            return {value, change_death(index, value)};
         } else {
-            return {value, change_birth_x(d, index, value)};
+            return {value, change_birth(index, value)};
         }
     }
 
@@ -281,7 +275,7 @@ public:
         return result;
     }
 
-    void update(const Values& new_values, int n_threads=1)
+    void update(const Values& new_values, int n_threads = 1)
     {
         fil_.update(new_values);
 
@@ -390,7 +384,7 @@ public:
 
         Diagram current_dgm = decmp_hom_.diagram(fil_, false).get_diagram_in_dimension(d);
 
-        for(auto i = 0; i < current_dgm.size(); ++i) {
+        for(auto i = 0 ; i < current_dgm.size() ; ++i) {
             current_dgm[i].id = i;
         }
 
@@ -419,7 +413,7 @@ public:
             } else {
                 // matched to diagonal point of template diagram
                 auto curr_proj_id = -template_id - 1;
-                Real m = (current_dgm.at(curr_proj_id).birth + current_dgm.at(curr_proj_id).death ) / 2;
+                Real m = (current_dgm.at(curr_proj_id).birth + current_dgm.at(curr_proj_id).death) / 2;
                 birth_target = death_target = m;
             }
 
@@ -501,6 +495,146 @@ public:
         return decmp_hom_.diagram(fil_, include_inf_points);
     }
 
+    void reduce_all()
+    {
+        params_hom_.compute_u = params_hom_.compute_v = true;
+        if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u())) {
+            decmp_hom_.reduce_serial(params_hom_);
+        }
+
+        params_coh_.compute_u = params_coh_.compute_v = true;
+        if (!decmp_coh_.is_reduced or (params_coh_.compute_u and not decmp_coh_.has_matrix_u())) {
+            decmp_coh_.reduce_serial(params_coh_);
+        }
+    }
+
+    Indices increase_birth(size_t positive_simplex_idx, Real target_birth) const
+    {
+
+        if (not fil_.cmp(fil_.get_cell_value(positive_simplex_idx), target_birth))
+            throw std::runtime_error("target_birth cannot precede current value");
+
+        Indices result;
+
+        auto& v_col = decmp_coh_.v_data.at(fil_.index_in_matrix(positive_simplex_idx, true));
+
+        for(auto index_in_matrix = v_col.rbegin() ; index_in_matrix != v_col.rend() ; ++index_in_matrix) {
+            auto fil_idx = fil_.index_in_filtration(*index_in_matrix, true);
+            if (fil_.cmp(target_birth, fil_.get_cell_value(fil_idx)))
+                break;
+
+            result.push_back(fil_idx);
+        }
+
+        if (result.empty())
+            throw std::runtime_error("increase_birth: empty");
+
+        return result;
+    }
+
+    Indices increase_birth(size_t positive_simplex_idx) const
+    {
+        return increase_birth(positive_simplex_idx, fil_.infinity());
+    }
+
+    Indices decrease_birth(size_t positive_simplex_idx, Real target_birth) const
+    {
+        if (not fil_.cmp(target_birth, fil_.get_cell_value(positive_simplex_idx)))
+            throw std::runtime_error("target_birth cannot preceed current value");
+
+        Indices result;
+
+        for(auto index_in_matrix: decmp_coh_.u_data_t.at(fil_.index_in_matrix(positive_simplex_idx, true))) {
+            auto fil_idx = fil_.index_in_filtration(index_in_matrix, true);
+
+            if (fil_.cmp(fil_.get_cell_value(fil_idx), target_birth)) {
+                break;
+            }
+
+            result.push_back(fil_idx);
+        }
+
+        if (result.empty())
+            throw std::runtime_error("decrease_birth: empty");
+
+        return result;
+    }
+
+    Indices decrease_birth(size_t positive_simplex_idx) const
+    {
+        return decrease_birth(positive_simplex_idx, -fil_.infinity());
+    }
+
+    Indices increase_death(size_t negative_simplex_idx, Real target_death) const
+    {
+        Indices result;
+
+        const auto& u_rows = decmp_hom_.u_data_t;
+        const auto& r_cols = decmp_hom_.r_data;
+
+        size_t n_cols = decmp_hom_.v_data.size();
+        Int sigma = low(r_cols[negative_simplex_idx]);
+
+        if (not(sigma >= 0 and sigma < r_cols.size()))
+            throw std::runtime_error("expected negative simplex");
+
+        for(auto tau_idx: u_rows.at(negative_simplex_idx)) {
+            if (fil_.cmp(target_death, fil_.get_cell_value(tau_idx))) {
+                break;
+            }
+
+            if (low(decmp_hom_.r_data[tau_idx]) <= sigma) {
+                result.push_back(tau_idx);
+            }
+        }
+
+        if (result.empty())
+            throw std::runtime_error("increase_death: empty");
+
+        return result;
+    }
+
+    Indices increase_death(size_t negative_simplex_idx) const
+    {
+        return increase_death(negative_simplex_idx, fil_.infinity());
+    }
+
+    Indices decrease_death(size_t negative_simplex_idx, Real target_death) const
+    {
+        Indices result;
+
+        auto& r_cols = decmp_hom_.r_data;
+        Int sigma = low(r_cols[negative_simplex_idx]);
+
+        if (not(sigma >= 0 and sigma < r_cols.size()))
+            throw std::runtime_error("expected negative simplex");
+
+        auto& v_col = decmp_hom_.v_data[negative_simplex_idx];
+
+        for(auto tau_idx_it = v_col.rbegin() ; tau_idx_it != v_col.rend() ; ++tau_idx_it) {
+            auto tau_idx = *tau_idx_it;
+
+            if (fil_.cmp(fil_.get_cell_value(tau_idx), target_death))
+                break;
+
+            // explicit check for is_zero is not necessary for signed Int, low returns -1 for empty columns
+            if (low(decmp_hom_.r_data[tau_idx]) < sigma or is_zero(decmp_hom_.r_data[tau_idx]))
+                continue;
+
+            result.push_back(tau_idx);
+        }
+
+        if (result.empty())
+            throw std::runtime_error("decrease_death: empty");
+
+        return result;
+    }
+
+    Indices decrease_death(size_t negative_simplex_idx) const
+    {
+        return decrease_death(negative_simplex_idx, -fil_.infinity());
+    }
+
 private:
     // data
     bool negate_;
@@ -519,7 +653,7 @@ private:
         return negate_ ? a > b : a < b;
     }
 
-    Indices change_birth_x(dim_type d, size_t positive_simplex_idx, Real target_birth)
+    Indices change_birth(size_t positive_simplex_idx, Real target_birth)
     {
         CALI_CXX_MARK_FUNCTION;
         Real current_birth = get_cell_value(positive_simplex_idx);
@@ -529,21 +663,21 @@ private:
         }
 
         if (cmp(target_birth, current_birth))
-            return decrease_birth_x(d, positive_simplex_idx, fil_, decmp_coh_, target_birth);
+            return decrease_birth(positive_simplex_idx, target_birth);
         else if (fil_.cmp(current_birth, target_birth))
-            return increase_birth_x(d, positive_simplex_idx, fil_, decmp_coh_, target_birth);
+            return increase_birth(positive_simplex_idx, target_birth);
         else
             return {};
     }
 
-    Indices change_death_x(dim_type d, size_t negative_simplex_idx, Real target_death)
+    Indices change_death(size_t negative_simplex_idx, Real target_death)
     {
         CALI_CXX_MARK_FUNCTION;
         Real current_death = get_cell_value(negative_simplex_idx);
         if (cmp(target_death, current_death))
-            return decrease_death_x(d, negative_simplex_idx, fil_, decmp_hom_, target_death);
+            return decrease_death(negative_simplex_idx, target_death);
         else if (fil_.cmp(current_death, target_death))
-            return increase_death_x(d, negative_simplex_idx, fil_, decmp_hom_, target_death);
+            return increase_death(negative_simplex_idx, target_death);
         else
             return {};
     }

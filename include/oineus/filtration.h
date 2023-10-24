@@ -101,7 +101,7 @@ namespace oineus {
         auto dim_first() const { return dim_first_; }
         auto dim_last() const { return dim_last_; }
 
-        Real get_cell_value(size_t i) { return cells_[i].value(); }
+        Real get_cell_value(size_t i) const { return cells_[i].value(); }
 
         size_t size_in_dimension(dim_type d) const
         {

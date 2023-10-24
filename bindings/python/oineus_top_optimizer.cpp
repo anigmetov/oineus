@@ -62,6 +62,11 @@ void init_oineus_top_optimizer(py::module& m)
             )
             .def("singleton", &TopologyOptimizer::singleton)
             .def("singletons", &TopologyOptimizer::singletons)
+            .def("reduce_all", &TopologyOptimizer::reduce_all)
+            .def("increase_death", py::overload_cast<size_t>(&TopologyOptimizer::increase_death, py::const_), py::arg("negative_simplex_idx"), "return critical set for increasing death to inf")
+            .def("decrease_death", py::overload_cast<size_t>(&TopologyOptimizer::decrease_death, py::const_), py::arg("negative_simplex_idx"), "return critical set for decreasing death to -inf")
+            .def("increase_birth", py::overload_cast<size_t>(&TopologyOptimizer::increase_birth, py::const_), py::arg("negative_simplex_idx"), "return critical set for increasing birth to inf")
+            .def("decrease_birth", py::overload_cast<size_t>(&TopologyOptimizer::decrease_birth, py::const_), py::arg("negative_simplex_idx"), "return critical set for decreasing birth to -inf")
             .def("combine_loss", static_cast<IndicesValues (TopologyOptimizer::*)(const CriticalSets&, ConflictStrategy)>(&TopologyOptimizer::combine_loss),
                     py::arg("critical_sets"),
                     py::arg("strategy"),
