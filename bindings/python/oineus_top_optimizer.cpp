@@ -60,6 +60,8 @@ void init_oineus_top_optimizer(py::module& m)
                     py::arg("return_wasserstein_distance")=false,
                     "return target from Wasserstein matching"
             )
+            .def_property_readonly("homology_decomposition", &TopologyOptimizer::get_homology_decompostion)
+            .def_property_readonly("cohomology_decomposition", &TopologyOptimizer::get_cohomology_decompostion)
             .def("singleton", &TopologyOptimizer::singleton)
             .def("singletons", &TopologyOptimizer::singletons)
             .def("reduce_all", &TopologyOptimizer::reduce_all)

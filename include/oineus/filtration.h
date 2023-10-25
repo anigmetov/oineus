@@ -201,8 +201,8 @@ namespace oineus {
         CellVector& cells() { return cells_; }
         CellVector cells_copy() const { return cells_; }
 
-        Cell get_cell(size_t i)    { return cells_.at(i); }
-        Cell get_simplex(size_t i) { return cells_.at(i); }
+        Cell get_cell(size_t i)  const { return cells_.at(i); }
+        Cell get_simplex(size_t i) const { return cells_.at(i); }
 
         auto get_sorted_id(int i) const
         {

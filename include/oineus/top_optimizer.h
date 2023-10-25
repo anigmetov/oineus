@@ -128,18 +128,26 @@ public:
             decmp_hom_(fil, false),
             decmp_coh_(fil, true),
             fil_(fil),
-            negate_(fil.negate()) { }
+            negate_(fil.negate())
+    {
+        params_hom_.clearing_opt = false;
+        params_coh_.clearing_opt = false;
+    }
 
     TopologyOptimizer(const Fil& fil, const ComputeFlags& hints)
             :
             decmp_hom_(fil, false),
+            decmp_coh_(fil, true),
             fil_(fil),
             negate_(fil.negate())
     {
-        decmp_coh_ = Decomposition(fil, true);
-
         params_hom_.compute_u = hints.compute_homology_u;
         params_coh_.compute_u = hints.compute_cohomology_u;
+
+        if (hints.compute_homology_u)
+            params_hom_.clearing_opt = false;
+        if (hints.compute_cohomology_u)
+            params_coh_.clearing_opt = false;
     }
 
     bool cmp(Real a, Real b) const
@@ -497,11 +505,13 @@ public:
 
     void reduce_all()
     {
+        params_hom_.clearing_opt = false;
         params_hom_.compute_u = params_hom_.compute_v = true;
         if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u())) {
             decmp_hom_.reduce_serial(params_hom_);
         }
 
+        params_coh_.clearing_opt = false;
         params_coh_.compute_u = params_coh_.compute_v = true;
         if (!decmp_coh_.is_reduced or (params_coh_.compute_u and not decmp_coh_.has_matrix_u())) {
             decmp_coh_.reduce_serial(params_coh_);
@@ -510,7 +520,6 @@ public:
 
     Indices increase_birth(size_t positive_simplex_idx, Real target_birth) const
     {
-
         if (not fil_.cmp(fil_.get_cell_value(positive_simplex_idx), target_birth))
             throw std::runtime_error("target_birth cannot precede current value");
 
@@ -540,7 +549,7 @@ public:
     Indices decrease_birth(size_t positive_simplex_idx, Real target_birth) const
     {
         if (not fil_.cmp(target_birth, fil_.get_cell_value(positive_simplex_idx)))
-            throw std::runtime_error("target_birth cannot preceed current value");
+            throw std::runtime_error("target_birth cannot precede current value");
 
         Indices result;
 
@@ -634,6 +643,9 @@ public:
     {
         return decrease_death(negative_simplex_idx, -fil_.infinity());
     }
+
+    Decomposition get_homology_decompostion() const { return decmp_hom_; }
+    Decomposition get_cohomology_decompostion() const { return decmp_coh_; }
 
 private:
     // data
