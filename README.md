@@ -72,6 +72,13 @@ $ cmake .. -DPYTHON_EXECUTABLE=$(which python)
 ```
 
 
+Python packages needed by Oineus are `numpy` and `scipy`. Some of the examples
+require `torch` for optimization and `matplotlib`, `plotly` and `dash` for
+visualization. File `requirements.txt` contains all of these; if you do not
+need to run examples, it is simpler to just `pip install numpy scipy` in your virtual
+environment.
+
+
 ## Usage
 
 See [Tutorial](doc/tutorial.md).
