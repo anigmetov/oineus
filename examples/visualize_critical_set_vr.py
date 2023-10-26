@@ -15,8 +15,8 @@ low_r = avg_r - 0.2
 high_r = avg_r + 0.2
 # Generate input points sampled from a circle
 theta = np.linspace(0, 2*np.pi, num_input_points)
-r = np.random.uniform(low=low_r, high=high_r, size=num_input_points)  # Uniform distribution within the circle
-# r = avg_r
+# r = np.random.uniform(low=low_r, high=high_r, size=num_input_points)  # Uniform distribution within the circle
+r = avg_r
 input_points = np.column_stack((r * np.cos(theta), r * np.sin(theta)))
 
 print(f"{input_points.shape = }")
@@ -34,6 +34,7 @@ print(f"{fil.size() = }")
 top_opt = oin.TopologyOptimizer(fil)
 top_opt.reduce_all()
 dgms = top_opt.compute_diagram(False)
+
 
 diagram_points = dgms[init_dim]
 
@@ -172,20 +173,22 @@ app.layout = html.Div([
             ),
         ], style={'display': 'inline-block'}),
     ], style={'margin-bottom': '20px'}),
-    dcc.Graph(
-        id='point-cloud',
-        figure={
-            'data': [go.Scatter(x=input_points[:, 0], y=input_points[:, 1], mode='markers', marker=dict(color='black', size=5))],
-            'layout': go.Layout(title='Input Points', xaxis=dict(range=[-2, 2]), yaxis=dict(range=[-2, 2]))
-        }
-    ),
-    dcc.Graph(
-        id='diagram-plot',
-        figure={
-            'data': [go.Scatter(x=diagram_points[:, 0], y=diagram_points[:, 1], mode='markers', marker=dict(color='red', size=10))],
-            'layout': go.Layout(title='Diagram Points', xaxis=dict(range=[0, 5]), yaxis=dict(range=[0, 5]))
-        }
-    ),
+    html.Div([
+        dcc.Graph(
+            id='point-cloud',
+            figure={
+                'data': [go.Scatter(x=input_points[:, 0], y=input_points[:, 1], mode='markers', marker=dict(color='black', size=5))],
+                'layout': go.Layout(title='Input Points', xaxis=dict(range=[-2, 2]), yaxis=dict(range=[-2, 2], scaleanchor="x", scaleratio=1))
+            }
+            )], style={"width": "49%", "display": "inline-block"}),
+    html.Div([
+        dcc.Graph(
+            id='diagram-plot',
+            figure={
+                'data': [go.Scatter(x=diagram_points[:, 0], y=diagram_points[:, 1], mode='markers', marker=dict(color='red', size=10))],
+                'layout': go.Layout(title='Diagram Points', xaxis=dict(range=[0, 5]), yaxis=dict(range=[0, 5], scaleanchor="x", scaleratio=1))
+            }
+        )], style={"width": "49%", "display": "inline-block"}),
 ])
 
 
@@ -205,12 +208,13 @@ def update_diagram_points(dimension_value):
         x=diagram_points[:, 0],
         y=diagram_points[:, 1],
         mode='markers',
-        marker=dict(color='red', size=8)
+        marker=dict(color='red', size=8),
+        showlegend=False,
     )
     # Update the figure
     return {
         'data': [trace],
-        'layout': go.Layout(title='Diagram Points', xaxis=dict(range=[-0.1, 2 * high_r]), yaxis=dict(range=[-0.1, 2 * high_r]))
+        'layout': go.Layout(title='Diagram Points', xaxis=dict(range=[-0.1, 2 * high_r]), yaxis=dict(range=[-0.1, 2 * high_r], scaleanchor="x", scaleratio=1))
     }
 
 
@@ -256,7 +260,7 @@ def display_edges(hoverData, change_coord, dimension, crit_or_dgm, plot_chains, 
                     line_y.extend([triangle[i][1], triangle[(i+1)%3][1], None])
 
             # Add triangles to the input plot
-            figure['data'].append(go.Scatter(x=line_x, y=line_y, mode='lines', line=dict(color='blue')))
+            figure['data'].append(go.Scatter(x=line_x, y=line_y, mode='lines', line=dict(color='blue'), showlegend=False))
 
         else:
             if crit_or_dgm == "crit-set":
@@ -266,7 +270,7 @@ def display_edges(hoverData, change_coord, dimension, crit_or_dgm, plot_chains, 
 
             for edge in edges:
                 edge_x, edge_y = zip(*edge)
-                edge_trace = go.Scatter(x=edge_x, y=edge_y, mode='lines', line=dict(color='blue', width=2))
+                edge_trace = go.Scatter(x=edge_x, y=edge_y, mode='lines', line=dict(color='blue', width=2), showlegend=False)
                 figure['data'].append(edge_trace)
 
     return figure
