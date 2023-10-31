@@ -31,10 +31,11 @@ def sample_epycycles(R=5.0, r_min=0.6, r_max=0.8, num_small_circles=6, num_point
     return all_points
 
 
-num_input_points = 40
-avg_r = 1.0
-low_r = avg_r - 0.2
-high_r = avg_r + 0.2
+# uncomment for one circle
+# num_input_points = 40
+# avg_r = 1.0
+# low_r = avg_r - 0.2
+# high_r = avg_r + 0.2
 
 # input_points = sample_circle_random([0.0, 0.0], low_r, high_r, num_input_points)
 # point_cloud_xmin = -2
@@ -42,19 +43,12 @@ high_r = avg_r + 0.2
 # dgm_xmin = -0.2
 # dgm_xmax = 2*avg_r
 
-
+# uncomment for small circles
 input_points = sample_epycycles()
 point_cloud_xmin = -6
 point_cloud_xmax = 6
 dgm_xmin = -0.2
 dgm_xmax = 8
-
-
-print(f"{input_points.shape = }")
-
-max_dim = 2
-max_radius = 20.0 * high_r
-n_threads = 1
 
 init_dim = 1
 
@@ -75,8 +69,6 @@ top_opt.reduce_all()
 dgms = top_opt.compute_diagram(False)
 
 diagram_points = dgms[init_dim]
-
-print(diagram_points)
 
 
 def get_simplices(x, y, change_coord, dim, use_critical_sets):
@@ -156,18 +148,6 @@ app.layout = html.Div([
                 labelStyle={'display': 'inline-block'}
             ),
         ], style={'display': 'inline-block', 'margin-right': '20px'}),
-        html.Div([
-            html.Label('For death/dim 1: triangles or longest edges:'),
-            dcc.RadioItems(
-                id='plot-chains',
-                options=[
-                    {'label': 'Triangles', 'value': 'chains'},
-                    {'label': 'Edges', 'value': 'edges'},
-                ],
-                value='chains',
-                labelStyle={'display': 'inline-block'}
-            ),
-        ], style={'display': 'inline-block'}),
     ], style={'margin-bottom': '20px'}),
     html.Div([
         dcc.Graph(
@@ -220,12 +200,11 @@ def update_diagram_points(dimension_value):
     [Input('diagram-plot', 'hoverData'),
      Input('change-coord', 'value'),
      Input('dimension', 'value'),
-     Input('critical-set', 'value'),
-     Input('plot-chains', 'value')],
+     Input('critical-set', 'value')],
     [State('point-cloud', 'figure')],
     prevent_initial_call=True
 )
-def display_edges(hoverData, change_coord, dimension, crit_or_dgm, plot_chains, existing_figure):
+def display_edges(hoverData, change_coord, dimension, crit_or_dgm, existing_figure):
     global dgms
     # Copy the existing figure
     figure = dict(existing_figure)
