@@ -4,6 +4,7 @@ import plotly.graph_objs as go
 import dash
 from dash import html, dcc
 from dash.dependencies import Input, Output, State
+import diode
 
 import oineus as oin
 
@@ -36,10 +37,10 @@ low_r = avg_r - 0.2
 high_r = avg_r + 0.2
 
 # input_points = sample_circle_random([0.0, 0.0], low_r, high_r, num_input_points)
-point_cloud_xmin = -2
-point_cloud_xmax = 2
-dgm_xmin = -0.2
-dgm_xmax = 2*avg_r
+# point_cloud_xmin = -2
+# point_cloud_xmax = 2
+# dgm_xmin = -0.2
+# dgm_xmax = 2*avg_r
 
 
 input_points = sample_epycycles()
@@ -57,94 +58,59 @@ n_threads = 1
 
 init_dim = 1
 
-fil, crit_edges = oin.get_vr_filtration_and_critical_edges(input_points, max_dim, max_radius, n_threads)
+d_simplices = diode.fill_alpha_shapes(input_points)
+oin_simplices = []
 
-print(f"{fil.size() = }")
+
+for s in d_simplices:
+    if len(s[0]) == 1:
+        oin_simplices.append(oin.Simplex_double(s[0][0], s[0], s[1]))
+    else:
+        oin_simplices.append(oin.Simplex_double(s[0], s[1]))
+
+fil = oin.Filtration_double(oin_simplices, negate=False)
 
 top_opt = oin.TopologyOptimizer(fil)
 top_opt.reduce_all()
 dgms = top_opt.compute_diagram(False)
 
-
 diagram_points = dgms[init_dim]
 
-# Rule to map a diagram point to a set of edges between input points
-def get_edges_crit(x, y, change_coord, dim):
+print(diagram_points)
+
+
+def get_simplices(x, y, change_coord, dim, use_critical_sets):
     for pt in dgms.in_dimension(dim, False):
         if np.abs(pt.birth - x) + np.abs(pt.death - y) < 0.0001:
             birth_idx = pt.birth_index
             death_idx = pt.death_index
             break
 
-    if change_coord == "inc-birth":
-        simplex_inds = top_opt.increase_birth(birth_idx)
-    elif change_coord == "dec-birth":
-        simplex_inds = top_opt.decrease_birth(birth_idx)
-    elif change_coord == "inc-death":
-        simplex_inds = top_opt.increase_death(death_idx)
-    elif change_coord == "dec-death":
-        simplex_inds = top_opt.decrease_death(death_idx)
+    if use_critical_sets:
+        if change_coord == "inc-death":
+            simplex_inds = top_opt.increase_death(death_idx)
+        elif change_coord == "dec-death":
+            simplex_inds = top_opt.decrease_death(death_idx)
+        elif change_coord == "inc-birth":
+            simplex_inds = top_opt.increase_birth(birth_idx)
+        elif change_coord == "dec-birth":
+            simplex_inds = top_opt.decrease_birth(birth_idx)
+    else:
+        if change_coord in ["inc-death", "dec-death"]:
+            simplex_inds = [death_idx]
+        elif change_coord in ["inc-birth", "dec-birth"]:
+            simplex_inds = [birth_idx]
 
-    edges = [(input_points[e[0]], input_points[e[1]]) for e in crit_edges[simplex_inds]]
-    return edges
+    simplices = []
 
+    for sigma_idx in simplex_inds:
+        sigma_vertices = fil.get_cell(sigma_idx).vertices
+        if len(sigma_vertices) == 2:
+            simplices.append((input_points[sigma_vertices[0]], input_points[sigma_vertices[1]]))
+        elif len(sigma_vertices) == 3:
+            simplices.append((input_points[sigma_vertices[0]], input_points[sigma_vertices[1]], input_points[sigma_vertices[2]]))
 
-def get_edges_dgm(x, y, change_coord, dim):
-    for pt in dgms.in_dimension(dim, False):
-        if np.abs(pt.birth - x) + np.abs(pt.death - y) < 0.0001:
-            birth_idx = pt.birth_index
-            death_idx = pt.death_index
-            break
-
-    if change_coord in ["inc-birth", "dec-birth"]:
-        simplex_inds = [birth_idx]
-    elif change_coord in ["inc-death", "dec-death"]:
-        simplex_inds = [death_idx]
-
-    edges = [(input_points[e[0]], input_points[e[1]]) for e in crit_edges[simplex_inds]]
-    return edges
-
-
-def get_triangles_crit(x, y, change_coord, dim):
-    if dim != 1 or change_coord not in ["inc-death", "dec-death"]:
-        raise RuntimeError("wrong arguments")
-
-    for pt in dgms.in_dimension(dim, False):
-        if np.abs(pt.birth - x) + np.abs(pt.death - y) < 0.0001:
-            birth_idx = pt.birth_index
-            death_idx = pt.death_index
-            break
-
-    if change_coord == "inc-death":
-        simplex_inds = top_opt.increase_death(death_idx)
-    elif change_coord == "dec-death":
-        simplex_inds = top_opt.decrease_death(death_idx)
-
-    triangles = []
-    for t_idx in simplex_inds:
-        t_vertices = fil.get_cell(t_idx).vertices
-        triangles.append((input_points[t_vertices[0]], input_points[t_vertices[1]], input_points[t_vertices[2]]))
-
-    return triangles
-
-
-def get_triangles_dgm(x, y, change_coord, dim):
-    if dim != 1 or change_coord not in ["inc-death", "dec-death"]:
-        raise RuntimeError("wrong arguments")
-
-    for pt in dgms.in_dimension(dim, False):
-        if np.abs(pt.birth - x) + np.abs(pt.death - y) < 0.0001:
-            birth_idx = pt.birth_index
-            death_idx = pt.death_index
-            break
-
-    triangles = []
-
-    for t_idx in [death_idx]:
-        t_vertices = fil.get_cell(t_idx).vertices
-        triangles.append((input_points[t_vertices[0]], input_points[t_vertices[1]], input_points[t_vertices[2]]))
-
-    return triangles
+    return simplices
 
 
 app = dash.Dash(__name__)
@@ -276,33 +242,27 @@ def display_edges(hoverData, change_coord, dimension, crit_or_dgm, plot_chains, 
 
         # for 2D data we only need triangles if we modify death value in 1D diagram
         # in all other cases we draw longest edges
-        if dim == 1 and change_coord in ["dec-death", "inc-death"] and plot_chains == "chains":
-            if crit_or_dgm == "crit-set":
-                triangles = get_triangles_crit(x, y, change_coord, dim)
-            elif crit_or_dgm == "dgm-method":
-                triangles = get_triangles_dgm(x, y, change_coord, dim)
+        use_critical_sets = crit_or_dgm == "crit-set"
+        simplices = get_simplices(x, y, change_coord, dim, use_critical_sets)
+        simplex_dim = len(simplices[0])
 
-            # Create line segments for the triangles
-            line_x = []
-            line_y = []
-            for triangle in triangles:
-                for i in range(3):  # 3 vertices in a triangle
-                    line_x.extend([triangle[i][0], triangle[(i+1)%3][0], None])  # %3 to ensure we cycle back to the first vertex
-                    line_y.extend([triangle[i][1], triangle[(i+1)%3][1], None])
+        if simplices:
+            if simplex_dim == 3:
+                # Create line segments for the triangles
+                line_x = []
+                line_y = []
+                for triangle in simplices:
+                    for i in range(3):  # 3 vertices in a triangle
+                        line_x.extend([triangle[i][0], triangle[(i+1)%3][0], None])  # %3 to ensure we cycle back to the first vertex
+                        line_y.extend([triangle[i][1], triangle[(i+1)%3][1], None])
 
-            # Add triangles to the input plot
-            figure['data'].append(go.Scatter(x=line_x, y=line_y, mode='lines', line=dict(color='blue'), showlegend=False))
-
-        else:
-            if crit_or_dgm == "crit-set":
-                edges = get_edges_crit(x, y, change_coord, dim)
-            elif crit_or_dgm == "dgm-method":
-                edges = get_edges_dgm(x, y, change_coord, dim)
-
-            for edge in edges:
-                edge_x, edge_y = zip(*edge)
-                edge_trace = go.Scatter(x=edge_x, y=edge_y, mode='lines', line=dict(color='blue', width=2), showlegend=False)
-                figure['data'].append(edge_trace)
+                # Add triangles to the input plot
+                figure['data'].append(go.Scatter(x=line_x, y=line_y, mode='lines', line=dict(color='blue'), showlegend=False))
+            elif simplex_dim == 2:
+                for edge in simplices:
+                    edge_x, edge_y = zip(*edge)
+                    edge_trace = go.Scatter(x=edge_x, y=edge_y, mode='lines', line=dict(color='blue', width=2), showlegend=False)
+                    figure['data'].append(edge_trace)
 
     return figure
 
