@@ -134,13 +134,16 @@ multiply_filtration(const Filtration<Cell, Real>& fil, const Simplex<typename Ce
 
 template<class Cell, class Real>
 Filtration<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>
-build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtration<Cell, Real>& fil_target, typename Cell::Int id_v_domain, typename Cell::Int id_v_codomain)
+build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtration<Cell, Real>& fil_target, const Simplex<typename Cell::Int>& v_domain, const Simplex<typename Cell::Int>& v_codomain)
 {
     using Int = typename Cell::Int;
     using CWV = CellWithValue<Cell, Real>;
     using ProdCell = ProductCell<Cell, Simplex<Int>>;
     using ResultCell = CellWithValue<ProdCell, Real>;
     using UidSet = typename Cell::UidSet;
+
+    Int id_v_domain = v_domain.get_id();
+    Int id_v_codomain = v_codomain.get_id();
 
     if (fil_domain.negate() != fil_target.negate()) {
         throw std::runtime_error("different negate values not supported");
@@ -150,13 +153,22 @@ build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtratio
         throw std::runtime_error("cannot use same vertices for top and bottom of the cylinder");
     }
 
+    if (v_domain.dim() != 0) {
+        throw std::runtime_error("v_domain must be a vertex");
+    }
+
+    if (v_codomain.dim() != 0) {
+        throw std::runtime_error("v_codomain must be a vertex");
+    }
+
     auto f = get_inclusion_mapping<Cell, Real>(fil_domain, fil_target);
 
     bool is_surjective = fil_domain.size() == fil_target.size();
 
-    Simplex<Int> v0 {id_v_domain, {id_v_domain}};
-    Simplex<Int> v1 {id_v_domain, {id_v_codomain}};
-    Simplex<Int> e01 {std::max(id_v_domain, id_v_codomain) + 1, {id_v_domain, id_v_codomain}};
+    Simplex<Int> v0 = v_domain;
+    Simplex<Int> v1 = v_codomain;
+
+    Simplex<Int> e01 {std::max(id_v_domain, id_v_codomain) + 1, {v0.vertices_[0], v1.vertices_[0]}};
 
     std::vector<ResultCell> cyl_simplices;
     cyl_simplices.reserve(2 * fil_domain.size() + fil_target.size());

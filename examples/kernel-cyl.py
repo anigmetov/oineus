@@ -49,22 +49,28 @@ id_codomain = id_domain + 1
 # id_codomain: id of vertex at the bottom of the cylinder
 # i.e, we multiply fil_min with id_codomain
 
-fil_cyl = oin.mapping_cylinder(fil_3, fil_min, id_domain, id_codomain)
+v0 = oin.Simplex(id_domain, [id_domain])
+v1 = oin.Simplex(id_codomain, [id_codomain])
+fil_cyl = oin.mapping_cylinder(fil_3, fil_min, v0, v1)
 
 # to get a subcomplex, we multiply each fil_3 with id_domain
-fil_3_prod = oin.multiply_filtration(fil_3, oin.Simplex(id_domain, [id_domain]))
+fil_3_prod = oin.multiply_filtration(fil_3, v0)
 
 hdim = 1
-dgms = oin.kernel_diagrams(fil_3_prod, fil_cyl)
+# ker_dgms, coker_dgms = oin.kernel_cokernel_diagrams(fil_3_prod, fil_cyl)
+ker_dgms = oin.kernel_diagrams(fil_3_prod, fil_cyl)
 
-for pt in dgms.in_dimension(hdim, as_numpy=False):
+for pt in ker_dgms.in_dimension(hdim, as_numpy=False):
     b, d = pt.birth_index, pt.death_index
 
     # birth: comes from codomain (cylinder) complex
     # can be either in fil_3 or in fil_cyl
     c_birth = fil_cyl.get_cell(b)
     birth_simplex = c_birth.cell_1
-    true_birth_simplex = fil_min.cell_by_uid(birth_simplex.get_uid())
+    if c_birth.cell_2 == v1:
+        true_birth_simplex = fil_min.cell_by_uid(birth_simplex.get_uid())
+    else:
+        true_birth_simplex = fil_3.cell_by_uid(birth_simplex.get_uid())
 
     # death: comes from included complex L, i.e., fil_3
     if d < fil_cyl.size():

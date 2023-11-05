@@ -1083,7 +1083,7 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
               return ss.str();
             });
 
-    m.def("mapping_cylinder", &oin::build_mapping_cylinder<Simplex, Real>, py::arg("fil_domain"), py::arg("fil_codomain"), py::arg("id_v_domain"), py::arg("id_v_codomain"));
+    m.def("mapping_cylinder", &oin::build_mapping_cylinder<Simplex, Real>, py::arg("fil_domain"), py::arg("fil_codomain"), py::arg("v_domain"), py::arg("v_codomain"));
     m.def("multiply_filtration", &oin::multiply_filtration<Simplex, Real>, py::arg("fil"), py::arg("sigma"), "return a filtration with each simplex in fil multiplied by simplex sigma");
     m.def("kernel_diagrams", &compute_kernel_diagrams<ProdSimplex, Real>, py::arg("fil_L"), py::arg("fil_K"), "return kernel persistence diagrams of inclusion fil_L -> fil_K");
 
