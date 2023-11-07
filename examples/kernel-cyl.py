@@ -27,6 +27,7 @@ def sample_data(num_points, noise_std_dev=0.1):
 
     # Step 2: Extract the first two rows to get a 2x3 matrix
     B = Q[:2, :]
+    B = A[:2, :]
     print(B.shape, pts_2.shape)
     pts_3 =  pts_2 @ B
 
@@ -38,8 +39,10 @@ pts_2, pts_3, B = sample_data(10)
 max_radius = 3.0
 fil_2, edges_2 = oin.get_vr_filtration_and_critical_edges(pts_2, max_dim = 2, max_radius=max_radius, n_threads=1)
 fil_3, edges_3 = oin.get_vr_filtration_and_critical_edges(pts_3, max_dim = 2, max_radius = max_radius, n_threads=1)
+print("fils ok")
 
 fil_min = oin.min_filtration(fil_2, fil_3)
+print("min fil ok")
 
 id_domain = fil_3.size() + fil_min.size() + 1
 id_codomain = id_domain + 1
@@ -49,22 +52,43 @@ id_codomain = id_domain + 1
 # id_codomain: id of vertex at the bottom of the cylinder
 # i.e, we multiply fil_min with id_codomain
 
-fil_cyl = oin.mapping_cylinder(fil_3, fil_min, id_domain, id_codomain)
+v0 = oin.Simplex(id_domain, [id_domain])
+v1 = oin.Simplex(id_codomain, [id_codomain])
+fil_cyl = oin.mapping_cylinder(fil_3, fil_min, v0, v1)
 
+print("cyl ok")
 # to get a subcomplex, we multiply each fil_3 with id_domain
-fil_3_prod = oin.multiply_filtration(fil_3, oin.Simplex(id_domain, [id_domain]))
+fil_3_prod = oin.multiply_filtration(fil_3, v0)
+
+print("prod ok")
+params = oin.ReductionParams()
+params.kernel = params.cokernel = True
+params.image = False
+params.verbose = True
+
+print(f"{fil_cyl.max_dim() = }")
+print(f"{fil_cyl.size() = }")
+print(f"{fil_3_prod.max_dim() = }")
+print(f"{fil_3_prod.size() = }")
 
 hdim = 1
-dgms = oin.kernel_diagrams(fil_3_prod, fil_cyl)
+kicr_reduction = oin.KerImCokReducedProd_double(fil_cyl, fil_3_prod, params)
+print("kicr ok")
+ker_dgms = kicr_reduction.kernel_diagrams()
+coker_dgms = kicr_reduction.cokernel_diagrams()
 
-for pt in dgms.in_dimension(hdim, as_numpy=False):
+for pt in ker_dgms.in_dimension(hdim, as_numpy=False):
+    print(pt)
     b, d = pt.birth_index, pt.death_index
 
     # birth: comes from codomain (cylinder) complex
     # can be either in fil_3 or in fil_cyl
     c_birth = fil_cyl.get_cell(b)
     birth_simplex = c_birth.cell_1
-    true_birth_simplex = fil_min.cell_by_uid(birth_simplex.get_uid())
+    if c_birth.cell_2 == v1:
+        true_birth_simplex = fil_min.cell_by_uid(birth_simplex.get_uid())
+    else:
+        true_birth_simplex = fil_3.cell_by_uid(birth_simplex.get_uid())
 
     # death: comes from included complex L, i.e., fil_3
     if d < fil_cyl.size():
@@ -73,6 +97,37 @@ for pt in dgms.in_dimension(hdim, as_numpy=False):
         death_simplex = c_death.cell_1
         true_death_simplex = fil_3.cell_by_uid(death_simplex.get_uid())
         print(f"{true_birth_simplex = }, {true_death_simplex = }")
+
+    # true_birth_simplex.sorted_id and true_death_simplex.sorted_id are indices
+    # in the tensors of critical values for fil_min and fil_3, resp.
+    # so we can differentiate them
+
+print("cokernel")
+for pt in coker_dgms.in_dimension(hdim, as_numpy=False):
+    print(pt)
+    b, d = pt.birth_index, pt.death_index
+
+    # birth: comes from codomain (cylinder) complex
+    # can be either in fil_3 or in fil_cyl
+    c_birth = fil_cyl.get_cell(b)
+    birth_simplex = c_birth.cell_1
+    if c_birth.cell_2 == v1:
+        true_birth_simplex = fil_min.cell_by_uid(birth_simplex.get_uid())
+    else:
+        true_birth_simplex = fil_3.cell_by_uid(birth_simplex.get_uid())
+
+    # death: comes from included complex L, i.e., fil_3
+    if d < fil_cyl.size():
+        # point is finite
+        c_death = fil_cyl.get_cell(d)
+        death_simplex = c_death.cell_1
+        if c_death.cell_2 == v1:
+            true_death_simplex = fil_min.cell_by_uid(death_simplex.get_uid())
+        else:
+            true_death_simplex = fil_3.cell_by_uid(death_simplex.get_uid())
+        print(f"{true_birth_simplex = }, {true_death_simplex = }")
+    else:
+        print(f"{true_birth_simplex = }, infinity")
 
     # true_birth_simplex.sorted_id and true_death_simplex.sorted_id are indices
     # in the tensors of critical values for fil_min and fil_3, resp.

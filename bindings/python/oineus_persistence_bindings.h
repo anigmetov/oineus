@@ -80,8 +80,6 @@ private:
     oin::Diagrams<Real> diagrams_;
 };
 
-
-
 template<class Int, class Real>
 using DiagramV = std::pair<PyOineusDiagrams<Real>, typename oin::VRUDecomposition<Int>::MatrixData>;
 
@@ -249,7 +247,7 @@ decltype(auto) get_vr_filtration_and_critical_edges_from_pwdists(py::array_t<Rea
 
     size_t n_points = pw_dists.shape(1);
 
-    oin::DistMatrix<Real> dist_matrix { pdata, n_points };
+    oin::DistMatrix<Real> dist_matrix {pdata, n_points};
 
     return oin::get_vr_filtration_and_critical_edges<Int, Real>(dist_matrix, max_dim, max_radius, n_threads);
 }
@@ -259,8 +257,6 @@ decltype(auto) get_vr_filtration_from_pwdists(py::array_t<Real, py::array::c_sty
 {
     return get_vr_filtration_and_critical_edges_from_pwdists<Int, Real>(pw_dists, max_dim, max_radius, n_threads).first;
 }
-
-
 
 template<class Cell, class Real>
 PyOineusDiagrams<Real>
@@ -286,7 +282,6 @@ get_vr_filtration_and_critical_edges(py::array_t<Real, py::array::c_style | py::
 {
     return oin::get_vr_filtration_and_critical_edges<Int, Real, D>(numpy_to_point_vector<Real, D>(points), max_dim, max_radius, n_threads);
 }
-
 
 template<class Int, class Real, size_t D>
 typename oin::VRUDecomposition<Int>::MatrixData
@@ -327,153 +322,14 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
 }
 
 
-
-template<class Cell, class Real>
-class PyKerImCokDgms {
-public:
-    using KICRType = typename oin::KerImCokReduced<Cell, Real>;
-private:
-    KICRType KICR;
-public:
-    PyKerImCokDgms(KICRType KICR_)
-            :
-            KICR(KICR_)
-    {
-
-    }
-
-    decltype(auto) kernel()
-    {
-        return PyOineusDiagrams<Real>(KICR.get_kernel_diagrams());
-    }
-
-    decltype(auto) image()
-    {
-        return PyOineusDiagrams(KICR.get_image_diagrams());
-    }
-
-    decltype(auto) cokernel()
-    {
-        return PyOineusDiagrams(KICR.get_cokernel_diagrams());
-    }
-
-};
-
-template<typename Cell_, typename Real_>
-class PyKerImCokRed {
-public:
-    using KICRType = typename oin::KerImCokReduced<Cell_, Real_>;
-private:
-    KICRType KICR;
-
-public:
-    using Real = Real_;
-    bool kernel {false};
-    bool image {false};
-    bool cokernel {false};
-
-    PyKerImCokRed(KICRType KICR_)
-            :
-            KICR(KICR_)
-    {
-    }
-
-    decltype(auto) kernel_diagrams()
-    {
-        if (!kernel) {
-            KICR.GenerateKerDiagrams();
-            kernel = true;
-        }
-        return PyOineusDiagrams<Real>(KICR.get_kernel_diagrams());
-    }
-
-    decltype(auto) image_diagrams()
-    {
-        if (!image) {
-            KICR.GenerateImDiagrams();
-            image = true;
-        }
-        return PyOineusDiagrams(KICR.get_image_diagrams());
-    }
-
-    decltype(auto) cokernel_diagrams()
-    {
-        if (!cokernel) {
-            KICR.GenerateCokDiagrams();
-            cokernel = true;
-        }
-        return PyOineusDiagrams(KICR.get_cokernel_diagrams());
-    }
-
-	decltype(auto) D_F() {
-		return py::cast(KICR.get_D_f());
-	}
-
-	decltype(auto) D_G() {
-		return py::cast(KICR.get_D_g());
-	}
-
-	decltype(auto) D_Ker() {
-		return py::cast(KICR.get_D_ker());
-	}
-
-	decltype(auto) D_Im() {
-		return py::cast(KICR.get_D_im());
-	}
-
-	decltype(auto) D_Cok() {
-		return py::cast(KICR.get_D_cok());
-	}
-
-	decltype(auto) R_F() {
-		return py::cast(KICR.get_R_f());
-	}
-
-	decltype(auto) R_G() {
-		return py::cast(KICR.get_R_g());
-	}
-
-	decltype(auto) R_Ker() {
-		return py::cast(KICR.get_R_ker());
-	}
-
-	decltype(auto) R_Im() {
-		return py::cast(KICR.get_R_im());
-	}
-
-	decltype(auto) R_Cok() {
-		return py::cast(KICR.get_V_cok());
-	}
-
-	decltype(auto) V_F() {
-		return py::cast(KICR.get_V_f());
-	}
-
-	decltype(auto) V_G() {
-		return py::cast(KICR.get_V_g());
-	}
-
-	decltype(auto) V_Ker() {
-		return py::cast(KICR.get_V_ker());
-	}
-
-	decltype(auto) V_Im() {
-		return py::cast(KICR.get_V_im());
-	}
-
-	decltype(auto) V_Cok() {
-		return py::cast(KICR.get_V_cok());
-	}
-};
-
 template<typename C, typename Real>
 decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_, py::list IdMap_,
         oin::Params& params) //take a list of cells and turn it into a filtration for oineus. The list should contain cells in the form '[id, [boundary], filtration value].
 {
-    using CWV = oin::CellWithValue<C, Real>;
     using Int = typename C::Int;
     using Filtration = oin::Filtration<C, Real>;
-    using FiltrationSimplex = typename Filtration::Cell;
+    using KICR = oin::KerImCokReduced<C, Real, 2>;
+
     std::cout << "======================================" << std::endl;
     std::cout << std::endl;
     std::cout << "You have called \'compute_kernel_image_cokernel_reduction\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
@@ -502,40 +358,15 @@ decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_,
             std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
         }
     }
-    params.sort_dgms = false;
-    params.clearing_opt = false;
-
-    PyKerImCokRed KICR(oin::reduce_ker_im_cok<C, Real>(K, L, IdMapping, params));
-    if (params.kernel) KICR.kernel = true;
-    if (params.image) KICR.image = true;
-    if (params.cokernel) KICR.cokernel = true;
-
-    return KICR;
-}
-
-template<class Cell, class Real>
-PyOineusDiagrams<Real>
-compute_kernel_diagrams(const oin::Filtration<Cell, Real>& fil_L, const oin::Filtration<Cell, Real>& fil_K)
-{
-    std::vector<int> id_mapping;
-    id_mapping.reserve(fil_L.size());
-
-    for(const auto& cell_L : fil_L.cells()) {
-        int fil_K_idx = static_cast<int>(fil_K.get_sorted_id_by_uid(cell_L.get_uid()));
-        id_mapping.push_back(fil_K_idx);
-    }
-
-    oin::Params params;
 
     params.sort_dgms = false;
     params.clearing_opt = false;
-    params.kernel = true;
-    params.image = params.cokernel = false;
-//    params.verbose = true;
 
-    PyKerImCokRed KICR(oin::reduce_ker_im_cok<Cell, Real>(fil_K, fil_L, id_mapping, params));
+    params.kernel = params.image = params.cokernel = true;
 
-    return KICR.kernel_diagrams();
+    KICR result { K, L, params };
+
+    return result;
 }
 
 
@@ -637,29 +468,26 @@ void init_oineus_common(py::module& m)
             .value("FixCritAvg", ConflictStrategy::FixCritAvg, "use matching on critical, average gradients on other cells")
             .def("as_str", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); });
 
-
     using Simp = oin::Simplex<Int>;
 
     py::class_<Simp>(m, "Simplex")
-            .def(py::init([](typename Simp::IdxVector vs) -> Simp
-                    {
-                        return Simp({vs});
+            .def(py::init([](typename Simp::IdxVector vs) -> Simp {
+                      return Simp({vs});
                     }),
                     py::arg("vertices"))
-            .def(py::init([](Int id, typename Simp::IdxVector vs) -> Simp
-                    {
-                         return Simp(id, vs);
-                    }), py::arg("id"), py::arg("vertices"))
+            .def(py::init([](Int id, typename Simp::IdxVector vs) -> Simp {
+              return Simp(id, vs);
+            }), py::arg("id"), py::arg("vertices"))
             .def_property("id", &Simp::get_id, &Simp::set_id)
             .def_property("vertices", &Simp::get_uid, &Simp::set_uid)
             .def("get_uid", &Simp::get_uid)
             .def("dim", &Simp::dim)
             .def("boundary", &Simp::boundary)
             .def("join", [](const Simp& sigma, Int new_vertex, Int new_id) {
-                    return sigma.join(new_id, new_vertex);
-                },
-                py::arg("new_vertex"),
-                py::arg("new_id") = Simp::k_invalid_id)
+                      return sigma.join(new_id, new_vertex);
+                    },
+                    py::arg("new_vertex"),
+                    py::arg("new_id") = Simp::k_invalid_id)
             .def("__repr__", [](const Simp& sigma) {
               std::stringstream ss;
               ss << sigma;
@@ -669,9 +497,8 @@ void init_oineus_common(py::module& m)
     using ProdSimplex = oin::ProductCell<Simp, Simp>;
 
     py::class_<ProdSimplex>(m, "SimplexProduct")
-            .def(py::init([](const Simp& s1, const Simp& s2) -> ProdSimplex
-                    {
-                        return {s1, s2};
+            .def(py::init([](const Simp& s1, const Simp& s2) -> ProdSimplex {
+                      return {s1, s2};
                     }),
                     py::arg("simplex_1"), py::arg("simplex_2"))
             .def_property("id", &ProdSimplex::get_id, &ProdSimplex::set_id)
@@ -711,19 +538,14 @@ void init_oineus_common_decomposition(py::module& m)
             .def_readwrite("d_data", &Decomposition::d_data)
             .def("reduce", &Decomposition::reduce, py::call_guard<py::gil_scoped_release>())
             .def("sanity_check", &Decomposition::sanity_check, py::call_guard<py::gil_scoped_release>())
-            .def("diagram", [](const Decomposition& self, const SimplexFiltrationDouble& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); },
-                            py::arg("fil"), py::arg("include_inf_points")=true)
-            .def("diagram", [](const Decomposition& self, const SimplexFiltrationFloat& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); },
-                            py::arg("fil"), py::arg("include_inf_points")=true)
-            .def("zero_pers_diagram", [](const Decomposition& self, const SimplexFiltrationFloat& fil)
-                                      { return PyOineusDiagrams<float>(self.zero_persistence_diagram(fil)); },
-                                      py::arg("fil"))
-            .def("zero_pers_diagram", [](const Decomposition& self, const SimplexFiltrationDouble& fil)
-                    { return PyOineusDiagrams<double>(self.zero_persistence_diagram(fil)); },
+            .def("diagram", [](const Decomposition& self, const SimplexFiltrationDouble& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); },
+                    py::arg("fil"), py::arg("include_inf_points") = true)
+            .def("diagram", [](const Decomposition& self, const SimplexFiltrationFloat& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); },
+                    py::arg("fil"), py::arg("include_inf_points") = true)
+            .def("zero_pers_diagram", [](const Decomposition& self, const SimplexFiltrationFloat& fil) { return PyOineusDiagrams<float>(self.zero_persistence_diagram(fil)); },
                     py::arg("fil"))
-            ;
+            .def("zero_pers_diagram", [](const Decomposition& self, const SimplexFiltrationDouble& fil) { return PyOineusDiagrams<double>(self.zero_persistence_diagram(fil)); },
+                    py::arg("fil"));
 }
 
 void init_oineus_common_decomposition_int(py::module& m);
@@ -878,15 +700,11 @@ void init_oineus_functions(py::module& m, std::string suffix)
     func_name = "get_permutation_dtv" + suffix;
     m.def(func_name.c_str(), &oin::targets_to_permutation_dtv<Simp, Real>);
 
-    // reduce to create an ImKerReduced object
-    func_name = "reduce_ker_im_cok" + suffix;
-    m.def(func_name.c_str(), &oin::reduce_ker_im_cok<Simp, Real>);
-
     func_name = "list_to_filtration" + suffix;
     m.def(func_name.c_str(), &list_to_filtration<Int, Real>);
 
-    func_name = "compute_kernel_image_cokernel_reduction" + suffix;
-    m.def(func_name.c_str(), &compute_kernel_image_cokernel_reduction<Simp, Real>);
+//    func_name = "compute_kernel_image_cokernel_reduction" + suffix;
+//    m.def(func_name.c_str(), &compute_kernel_image_cokernel_reduction<Simp, Real>);
 
     func_name = "get_ls_filtration" + suffix;
     m.def(func_name.c_str(), &get_ls_filtration<Int, Real>);
@@ -905,7 +723,6 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
     using IndexDgmPtVec = typename oin::Diagrams<Real>::IndexDgm;
     using Diagram = PyOineusDiagrams<Real>;
 
-
     using Simplex = oin::Simplex<Int>;
     using SimplexValue = oin::CellWithValue<oin::Simplex<Int>, Real>;
     using Filtration = oin::Filtration<Simplex, Real>;
@@ -917,11 +734,8 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
     using oin::VREdge;
 
     using VRUDecomp = oin::VRUDecomposition<Int>;
-    using KerImCokRed = oin::KerImCokReduced<Simplex, Real>;
-    using PyKerImCokRedSimplex = PyKerImCokRed<Simplex, Real>;
-
-    using KerImCokRedProd = oin::KerImCokReduced<ProdSimplex, Real>;
-    using PyKerImCokRedProd = PyKerImCokRed<ProdSimplex, Real>;
+    using KerImCokRedSimplex = oin::KerImCokReduced<Simplex, Real>;
+    using KerImCokRedProdSimplex = oin::KerImCokReduced<ProdSimplex, Real>;
 
     std::string filtration_class_name = "Filtration" + suffix;
     std::string prod_filtration_class_name = "ProdFiltration" + suffix;
@@ -932,10 +746,7 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
     std::string dgm_class_name = "Diagrams" + suffix;
 
     std::string ker_im_cok_reduced_class_name = "KerImCokReduced" + suffix;
-    std::string py_ker_im_cok_reduced_class_name = "PyKerImCokRed" + suffix;
-
     std::string ker_im_cok_reduced_prod_class_name = "KerImCokReducedProd" + suffix;
-    std::string py_ker_im_cok_reduced_prod_class_name = "PyKerImCokRedProd" + suffix;
 
     py::class_<DgmPoint>(m, dgm_point_name.c_str())
             .def(py::init<Real, Real>(), py::arg("birth"), py::arg("death"))
@@ -954,26 +765,24 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
     py::class_<Diagram>(m, dgm_class_name.c_str())
             .def(py::init<dim_type>())
             .def("in_dimension", [](Diagram& self, dim_type dim, bool as_numpy) -> std::variant<pybind11::array_t<Real>, DgmPtVec> {
-                if (as_numpy)
-                    return self.get_diagram_in_dimension_as_numpy(dim);
-                else
-                    return self.get_diagram_in_dimension(dim);
-                }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
-                        py::arg("dim"), py::arg("as_numpy")=true)
+                      if (as_numpy)
+                          return self.get_diagram_in_dimension_as_numpy(dim);
+                      else
+                          return self.get_diagram_in_dimension(dim);
+                    }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
+                    py::arg("dim"), py::arg("as_numpy") = true)
             .def("index_diagram_in_dimension", [](Diagram& self, dim_type dim, bool as_numpy) -> std::variant<pybind11::array_t<size_t>, IndexDgmPtVec> {
                       if (as_numpy)
                           return self.get_index_diagram_in_dimension_as_numpy(dim);
                       else
                           return self.get_index_diagram_in_dimension(dim);
                     }, "return persistence pairing (index diagram) in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
-                    py::arg("dim"), py::arg("as_numpy")=true)
+                    py::arg("dim"), py::arg("as_numpy") = true)
             .def("__getitem__", &Diagram::get_diagram_in_dimension_as_numpy);
 
-
     py::class_<SimplexValue>(m, simplex_class_name.c_str())
-            .def(py::init([](typename Simplex::IdxVector vs, Real value) -> SimplexValue
-                    {
-                        return SimplexValue({vs}, value);
+            .def(py::init([](typename Simplex::IdxVector vs, Real value) -> SimplexValue {
+                      return SimplexValue({vs}, value);
                     }),
                     py::arg("vertices"),
                     py::arg("value"))
@@ -985,11 +794,11 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
             .def("dim", &SimplexValue::dim)
             .def("boundary", &SimplexValue::boundary)
             .def("join", [](const SimplexValue& sigma, Int new_vertex, Real value, Int new_id) {
-                    return sigma.join(new_id, new_vertex, value);
-                },
-                py::arg("new_vertex"),
-                py::arg("value"),
-                py::arg("new_id") = SimplexValue::k_invalid_id)
+                      return sigma.join(new_id, new_vertex, value);
+                    },
+                    py::arg("new_vertex"),
+                    py::arg("value"),
+                    py::arg("new_id") = SimplexValue::k_invalid_id)
             .def("__repr__", [](const SimplexValue& sigma) {
               std::stringstream ss;
               ss << sigma;
@@ -997,16 +806,14 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
             });
 
     py::class_<ProdSimplexValue>(m, prod_simplex_class_name.c_str())
-            .def(py::init([](const SimplexValue& sigma, const SimplexValue& tau, Real value) -> ProdSimplexValue
-                    {
-                        return ProdSimplexValue(ProdSimplex(sigma.get_cell(), tau.get_cell()), value);
+            .def(py::init([](const SimplexValue& sigma, const SimplexValue& tau, Real value) -> ProdSimplexValue {
+                      return ProdSimplexValue(ProdSimplex(sigma.get_cell(), tau.get_cell()), value);
                     }),
                     py::arg("cell_1"),
                     py::arg("cell_2"),
                     py::arg("value"))
-             .def(py::init([](const Simplex& sigma, const Simplex& tau, Real value) -> ProdSimplexValue
-                    {
-                        return ProdSimplexValue(ProdSimplex(sigma, tau), value);
+            .def(py::init([](const Simplex& sigma, const Simplex& tau, Real value) -> ProdSimplexValue {
+                      return ProdSimplexValue(ProdSimplex(sigma, tau), value);
                     }),
                     py::arg("cell_1"),
                     py::arg("cell_2"),
@@ -1028,10 +835,10 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
     py::class_<Filtration>(m, filtration_class_name.c_str())
             .def(py::init<typename Filtration::CellVector, bool, int, bool, bool>(),
                     py::arg("cells"),
-                    py::arg("negate")=false,
-                    py::arg("n_threads")=1,
-                    py::arg("sort_only_by_dimension")=false,
-                    py::arg("set_ids")=true)
+                    py::arg("negate") = false,
+                    py::arg("n_threads") = 1,
+                    py::arg("sort_only_by_dimension") = false,
+                    py::arg("set_ids") = true)
             .def("max_dim", &Filtration::max_dim, "maximal dimension of a cell in filtration")
             .def("cells", &Filtration::cells_copy, "copy of all cells in filtration order")
             .def("simplices", &Filtration::cells_copy, "copy of all simplices (cells) in filtration order")
@@ -1060,10 +867,10 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
     py::class_<ProdFiltration>(m, prod_filtration_class_name.c_str())
             .def(py::init<typename ProdFiltration::CellVector, bool, int, bool, bool>(),
                     py::arg("cells"),
-                    py::arg("negate")=false,
-                    py::arg("n_threads")=1,
-                    py::arg("sort_only_by_dimension")=false,
-                    py::arg("set_ids")=true)
+                    py::arg("negate") = false,
+                    py::arg("n_threads") = 1,
+                    py::arg("sort_only_by_dimension") = false,
+                    py::arg("set_ids") = true)
             .def("max_dim", &ProdFiltration::max_dim, "maximal dimension of a cell in filtration")
             .def("cells", &ProdFiltration::cells_copy, "copy of all cells in filtration order")
             .def("size", &ProdFiltration::size, "number of cells in filtration")
@@ -1083,43 +890,44 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
               return ss.str();
             });
 
-    m.def("mapping_cylinder", &oin::build_mapping_cylinder<Simplex, Real>, py::arg("fil_domain"), py::arg("fil_codomain"), py::arg("id_v_domain"), py::arg("id_v_codomain"));
+    m.def("mapping_cylinder", &oin::build_mapping_cylinder<Simplex, Real>, py::arg("fil_domain"), py::arg("fil_codomain"), py::arg("v_domain"), py::arg("v_codomain"), "return mapping cylinder filtration of inclusion fil_domain -> fil_codomain, fil_domain is multiplied by v_domain and fil_codomain is multiplied by v_codomain");
     m.def("multiply_filtration", &oin::multiply_filtration<Simplex, Real>, py::arg("fil"), py::arg("sigma"), "return a filtration with each simplex in fil multiplied by simplex sigma");
-    m.def("kernel_diagrams", &compute_kernel_diagrams<ProdSimplex, Real>, py::arg("fil_L"), py::arg("fil_K"), "return kernel persistence diagrams of inclusion fil_L -> fil_K");
+//    m.def("kernel_diagrams", &compute_kernel_diagrams<ProdSimplex, Real>, py::arg("fil_L"), py::arg("fil_K"), "return kernel persistence diagrams of inclusion fil_L -> fil_K");
+//    m.def("kernel_cokernel_diagrams", &compute_kernel_cokernel_diagrams<ProdSimplex, Real>, py::arg("fil_L"), py::arg("fil_K"), "return kernel and cokernel persistence diagrams of inclusion fil_L -> fil_K");
 
-    m.def("min_filtration", &oin::min_filtration<Simplex, Real>, py::arg("fil_1"), py::arg("fil_2"), "return a filtration with each simplex has minimal value from fil_1, fil_2");
-    m.def("min_filtration", &oin::min_filtration<ProdSimplex, Real>, py::arg("fil_1"), py::arg("fil_2"), "return a filtration with each simplex has minimal value from fil_1, fil_2");
+    m.def("min_filtration", &oin::min_filtration<Simplex, Real>, py::arg("fil_1"), py::arg("fil_2"), "return a filtration where each simplex has minimal value from fil_1, fil_2");
+    m.def("min_filtration", &oin::min_filtration<ProdSimplex, Real>, py::arg("fil_1"), py::arg("fil_2"), "return a filtration where each cell has minimal value from fil_1, fil_2");
 
-    py::class_<KerImCokRed>(m, ker_im_cok_reduced_class_name.c_str())
-            .def(py::init<Filtration, Filtration, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, VRUDecomp, std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>, oin::Params>());
+    py::class_<KerImCokRedSimplex>(m, ker_im_cok_reduced_class_name.c_str())
+            .def(py::init<const Filtration&, const Filtration&, oin::Params&>())
+            .def("kernel_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<Real>(self.get_kernel_diagrams()); })
+            .def("cokernel_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<Real>(self.get_cokernel_diagrams()); })
+            .def("image_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<Real>(self.get_image_diagrams()); })
+            // decomposition objects provide access to their R/V/U matrices
+            .def_readonly("decomposition_f", &KerImCokRedSimplex::dcmp_F_)
+            .def_readonly("decomposition_g", &KerImCokRedSimplex::dcmp_G_)
+            .def_readonly("decomposition_im", &KerImCokRedSimplex::dcmp_im_)
+            .def_readonly("decomposition_ker", &KerImCokRedSimplex::dcmp_ker_)
+            .def_readonly("decomposition_cok", &KerImCokRedSimplex::dcmp_cok_)
+            ;
 
-    py::class_<PyKerImCokRedSimplex>(m, py_ker_im_cok_reduced_class_name.c_str())
-            .def(py::init<KerImCokRed>())
-            .def("kernel_diagrams", &PyKerImCokRedSimplex::kernel_diagrams)
-            .def("image_diagrams", &PyKerImCokRedSimplex::image_diagrams)
-//            .def("image_index_diagrams", &PyKerImCokRed::image_index_diagrams)
-            .def("cokernel_diagrams", &PyKerImCokRedSimplex::cokernel_diagrams)
-            .def("D_F", &PyKerImCokRedSimplex::D_F)
-            .def("D_G", &PyKerImCokRedSimplex::D_G)
-            .def("D_Ker", &PyKerImCokRedSimplex::D_Ker)
-            .def("D_Im", &PyKerImCokRedSimplex::D_Im)
-            .def("D_Cok", &PyKerImCokRedSimplex::D_Cok)
-            .def("R_F", &PyKerImCokRedSimplex::R_F)
-            .def("R_G", &PyKerImCokRedSimplex::R_G)
-            .def("R_Ker", &PyKerImCokRedSimplex::R_Ker)
-            .def("R_Im", &PyKerImCokRedSimplex::R_Im)
-            .def("R_Cok", &PyKerImCokRedSimplex::R_Cok)
-            .def("V_F", &PyKerImCokRedSimplex::V_F)
-            .def("V_G", &PyKerImCokRedSimplex::V_G)
-            .def("V_Ker", &PyKerImCokRedSimplex::V_Ker)
-            .def("V_Im", &PyKerImCokRedSimplex::V_Im)
-            .def("V_Cok", &PyKerImCokRedSimplex::V_Cok);
+     py::class_<KerImCokRedProdSimplex>(m, ker_im_cok_reduced_prod_class_name.c_str())
+            .def(py::init<const ProdFiltration&, const ProdFiltration&, oin::Params&>())
+            .def("kernel_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<Real>(self.get_kernel_diagrams()); })
+            .def("cokernel_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<Real>(self.get_cokernel_diagrams()); })
+            .def("image_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<Real>(self.get_image_diagrams()); })
+            // decomposition objects provide access to their R/V/U matrices
+            .def_readonly("decomposition_f", &KerImCokRedProdSimplex::dcmp_F_)
+            .def_readonly("decomposition_g", &KerImCokRedProdSimplex::dcmp_G_)
+            .def_readonly("decomposition_im", &KerImCokRedProdSimplex::dcmp_im_)
+            .def_readonly("decomposition_ker", &KerImCokRedProdSimplex::dcmp_ker_)
+            .def_readonly("decomposition_cok", &KerImCokRedProdSimplex::dcmp_cok_)
+            ;
 }
 
 void init_oineus_fil_dgm_simplex_float(py::module& m, std::string suffix);
 void init_oineus_fil_dgm_simplex_double(py::module& m, std::string suffix);
 
 void init_oineus_top_optimizer(py::module& m);
-
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

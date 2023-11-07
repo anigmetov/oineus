@@ -219,6 +219,34 @@ def get_ls_filtration(simplices: typing.List[typing.List[int]], vertex_values: n
         func = getattr(_oineus, f"get_ls_filtration_double")
     return func(simplices, vertex_values, negate, n_threads)
 
+
+def compute_ker_im_cok_reduction_cyl(fil_2, fil_3):
+    fil_min = _oineus.min_filtration(fil_2, fil_3)
+
+    id_domain = fil_3.size() + fil_min.size() + 1
+    id_codomain = id_domain + 1
+
+    # id_domain: id of vertex at the top of the cylinder,
+    # i.e., we multiply fil_3 with id_domain
+    # id_codomain: id of vertex at the bottom of the cylinder
+    # i.e, we multiply fil_min with id_codomain
+
+    v0 = _oineus.Simplex(id_domain, [id_domain])
+    v1 = _oineus.Simplex(id_codomain, [id_codomain])
+
+    fil_cyl = _oineus.mapping_cylinder(fil_3, fil_min, v0, v1)
+
+    # to get a subcomplex, we multiply each fil_3 with id_domain
+    fil_3_prod = _oineus.multiply_filtration(fil_3, v0)
+
+    params = _oineus.ReductionParams()
+    params.kernel = params.cokernel = True
+    params.image = False
+
+    kicr_reduction = _oineus.KerImCokReducedProd_double(fil_cyl, fil_3_prod, params)
+    return kicr_reduction
+
+
 #def compute_cokernel_diagrams(K_, L_, IdMap, n_threads): #
 #    string_type = str(type(K_[0][2]))
 #    func = getattr(_oineus, f"compute_cokernel_diagrams_float")
