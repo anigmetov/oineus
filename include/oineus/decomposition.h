@@ -283,17 +283,17 @@ namespace oineus {
 
         bool sanity_check();
 
-        const MatrixData& get_D()
+        const MatrixData& get_D() const
         {
             return d_data;
         }
 
-        const MatrixData& get_V()
+        const MatrixData& get_V() const
         {
             return v_data;
         }
 
-        const MatrixData& get_R()
+        const MatrixData& get_R() const
         {
             return r_data;
         }
@@ -460,14 +460,16 @@ namespace oineus {
 
         Int n_cols = d_data.size();
 
+        std::cerr << "reduce_serial, n_cols = " << n_cols << std::endl;
+
         if (params.compute_v)
             v_data = MatrixTraits::eye(d_data.size());
 
         if (params.compute_u)
             u_data_t = MatrixTraits::eye(d_data.size());
 
-        std::vector<Int> pivots(d_data.size(), -1);
-        assert(pivots.size() == d_data.size() and pivots.size() > 0);
+
+        std::vector<Int> pivots(n_rows, -1);
 
         // homology: go from top dimension to 0, to make clearing possible
         // cohomology:
@@ -515,7 +517,7 @@ namespace oineus {
 
         params.elapsed = timer_total.elapsed_reset();
 
-        if (params.print_time)
+        if (params.print_time or params.verbose)
             std::cerr << "reduce_serial, matrix_size = " << r_data.size() << ", clearing_opt = " << params.clearing_opt << ", n_cleared = " << n_cleared << ", total elapsed: " << params.elapsed << std::endl;
 
         is_reduced = true;

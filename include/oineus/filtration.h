@@ -45,6 +45,10 @@ namespace oineus {
         using UidHasher = typename Cell::UidHasher;
 
         Filtration() = default;
+        Filtration(const Filtration&) = default;
+        Filtration(Filtration&&) = default;
+        Filtration& operator=(const Filtration&) = default;
+        Filtration& operator=(Filtration&&) = default;
 
         // use move constructor to move cells
         Filtration(CellVector&& _simplices, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false, bool _set_ids=true)

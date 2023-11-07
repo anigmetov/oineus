@@ -134,65 +134,64 @@ multiply_filtration(const Filtration<Cell, Real>& fil, const Simplex<typename Ce
 
 template<class Cell, class Real>
 Filtration<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>
-build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtration<Cell, Real>& fil_target, const Simplex<typename Cell::Int>& v_domain, const Simplex<typename Cell::Int>& v_codomain)
+build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtration<Cell, Real>& fil_codomain, const Simplex<typename Cell::Int>& v_domain, const Simplex<typename Cell::Int>& v_codomain)
+/**
+ *
+ * @tparam Cell class of cells in filtrations
+ * @tparam Real double or float
+ * @param fil_domain filtration of space L
+ * @param fil_codomain filtration of space K, L \subset K
+ * @param v_domain vertex by which cells of fil_domain are multiplied to get the top of the mapping cylinder
+ * @param v_codomain vertex by which cells of fil_domain are multiplied to get the top of the mapping cylinder
+ * @return Filtration of a mapping cylinder of the inclusion L \to K. Type of cells in the returned filtration is Cell \times Simplex.
+ */
 {
     using Int = typename Cell::Int;
-    using CWV = CellWithValue<Cell, Real>;
     using ProdCell = ProductCell<Cell, Simplex<Int>>;
     using ResultCell = CellWithValue<ProdCell, Real>;
     using UidSet = typename Cell::UidSet;
 
-    Int id_v_domain = v_domain.get_id();
-    Int id_v_codomain = v_codomain.get_id();
-
-    if (fil_domain.negate() != fil_target.negate()) {
+    if (fil_domain.negate() != fil_codomain.negate()) {
         throw std::runtime_error("different negate values not supported");
     }
 
-    if (id_v_domain == id_v_codomain) {
+    if (v_domain.get_uid() == v_codomain.get_uid()) {
         throw std::runtime_error("cannot use same vertices for top and bottom of the cylinder");
     }
 
-    if (v_domain.dim() != 0) {
-        throw std::runtime_error("v_domain must be a vertex");
+    if (v_domain.dim() != 0 or v_codomain.dim() != 0) {
+        throw std::runtime_error("v_domain and v_codomain must be vertices (zero-dimensional simplices)");
     }
 
-    if (v_codomain.dim() != 0) {
-        throw std::runtime_error("v_codomain must be a vertex");
-    }
+    auto f = get_inclusion_mapping<Cell, Real>(fil_domain, fil_codomain);
 
-    auto f = get_inclusion_mapping<Cell, Real>(fil_domain, fil_target);
+    bool is_surjective = fil_domain.size() == fil_codomain.size();
 
-    bool is_surjective = fil_domain.size() == fil_target.size();
-
-    Simplex<Int> v0 = v_domain;
-    Simplex<Int> v1 = v_codomain;
-
-    Simplex<Int> e01 {std::max(id_v_domain, id_v_codomain) + 1, {v0.vertices_[0], v1.vertices_[0]}};
+    Simplex<Int> edge {std::max(v_domain.get_id(), v_codomain.get_id()) + 1, {v_domain.vertices_[0], v_codomain.vertices_[0]}};
 
     std::vector<ResultCell> cyl_simplices;
-    cyl_simplices.reserve(2 * fil_domain.size() + fil_target.size());
+    cyl_simplices.reserve(2 * fil_domain.size() + fil_codomain.size());
 
     // get top simplices
-    append_products(fil_domain.cells(), v0, cyl_simplices);
+    append_products(fil_domain.cells(), v_domain, cyl_simplices);
     // get bottom simplices
-    append_products(fil_target.cells(), v1, cyl_simplices);
+    append_products(fil_codomain.cells(), v_codomain, cyl_simplices);
     // get cylinder interior simplices
-    append_products(fil_domain.cells(), e01, cyl_simplices);
+    append_products(fil_domain.cells(), edge, cyl_simplices);
 
     if (not is_surjective) {
         // append codomain simplices not included in the domain
         UidSet image_uids;
 
         for(size_t sigma_idx = 0 ; sigma_idx < fil_domain.size() ; ++sigma_idx) {
-            const auto& f_sigma = fil_target.get_cell(f[sigma_idx]);
+            const auto& f_sigma = fil_codomain.get_cell(f[sigma_idx]);
             image_uids.insert(f_sigma.get_uid());
         }
 
-        for(const auto& tau: fil_target.cells()) {
+        for(const auto& tau: fil_codomain.cells()) {
             if (image_uids.count(tau.get_uid()))
                 continue;
-            cyl_simplices.emplace_back(ProdCell(tau.get_cell(), v1), tau.get_value());
+            cyl_simplices.emplace_back(ProdCell(tau.get_cell(), v_codomain), tau.get_value());
         }
     }
 

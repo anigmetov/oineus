@@ -104,6 +104,12 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
         add_column(&col_a, &col_b, &sum);
     }
 
+    // sort by index
+    static void sort(Column& col)
+    {
+        std::sort(col.begin(), col.end());
+    }
+
     static void add_column(const Column* col_a, const Column* col_b, Column* sum)
     {
         // add_column cannot work as +=

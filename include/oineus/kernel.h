@@ -1,781 +1,460 @@
+#pragma once
+
 #include <vector>
 #include <unordered_map>
 #include <cmath>
+#include <numeric>
+
 #include "simplex.h"
 #include "sparse_matrix.h"
-#include <numeric>
+#include "decomposition.h"
+#include "filtration.h"
+#include "diagram.h"
 
 // suppress pragma message from boost
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
-#pragma once
 
 namespace oineus {
-	template<typename Cell, typename Real_>
-	struct KerImCokReduced {
-		using Int = typename Cell::Int;
-		using Real = Real_;
-        using IntSparseColumn = SparseColumn<Int>;
-        using MatrixData = std::vector<IntSparseColumn>;
-        using Fil = Filtration<Cell, Real>;
-		using FiltrationSimplex = CellWithValue<Cell, Real>;
-    	using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
-		using VRUDecomp = VRUDecomposition<Int>;
-		using Point = DgmPoint<Real>;
-    	//using Dgm = oineus::Diagram;
-		using Dgms = oineus::Diagrams<Real>;
-        using IndexDgms = oineus::Diagrams<size_t>;
 
-		private:
-			Fil K; //Full complex with the function values for F
-			Fil L; //Sub complex with the function values for G
-			VRUDecomp F; //the reduced triple for F0
-			VRUDecomp G; //reduced triple for G
-			VRUDecomp Im; //reduced image triple
-			VRUDecomp Ker; //reduced kernel triple
-			VRUDecomp Cok; //reduced cokernel triple
-			Dgms KerDiagrams; //vector of image diagrams, one in each dimension poissble (these may be empty)
-			Dgms ImDiagrams; //vector of kernel diagrams, one in each dimension poissble (these may be empty)
-			Dgms CokDiagrams; //vector of kernel diagramsm, one in each possible dimension (these may be empty)
-            IndexDgms IndexImDiagrams; // simplex pairing for image persistence
-			int max_dim; //the maximum dimension of a cell
-			std::vector<int> sorted_K_to_sorted_L;
-			std::vector<int> sorted_L_to_sorted_K;
-			int number_cells_K; //number of cells in K
-			int number_cells_L; //number of cells in L
-			std::vector<int> new_order_to_old; //new_order_to_old[i] is the (unsorted) id in K of the ith cell in the filtration.
-			std::vector<int> new_cols; //the id of the columns we retain
-			Params params;
+template<typename Cell, typename Real_, int P = 2>
+struct KerImCokReduced {
+    using Int = typename Cell::Int;
+    using Real = Real_;
+    using MatrixTraits = SimpleSparseMatrixTraits<Int, P>;
+    using Column = typename MatrixTraits::Column;
+    using Matrix = typename MatrixTraits::Matrix;
+    using Fil = Filtration<Cell, Real>;
 
-		public:
-			//Constructor which takes as input the complex K, subcomplex L, and the decompositionfs for F, G, Im, Ker, Cok, as well as the map from sorted L to sorted K and sorted K to sorted L, as well as the change in ordering to have L before K.
-			KerImCokReduced(const Fil& K_, const Fil& L_, const VRUDecomp& F_, const VRUDecomp& G_, const VRUDecomp& Im_, const VRUDecomp& Ker_, const VRUDecomp& Cok_,
-                    const std::vector<int>& sorted_L_to_sorted_K_, const std::vector<int>& sorted_K_to_sorted_L_, const std::vector<int>& new_order_to_old_,
-                    const std::vector<int>& new_cols_, Params params_) :
-				K (K_),
-				L (L_),
-				F (F_),
-				G (G_),
-				Im (Im_),
-				Ker (Ker_),
-				Cok (Cok_),
-				sorted_L_to_sorted_K (sorted_L_to_sorted_K_),
-				sorted_K_to_sorted_L (sorted_K_to_sorted_L_),
-				new_order_to_old (new_order_to_old_),
-				new_cols (new_cols_),
-				params (params_) {
-					number_cells_K = K.boundary_matrix_full().size(); //set the number of cells in K
-					number_cells_L = L.boundary_matrix_full().size(); //set the number of cells in L
-					max_dim = K.max_dim(); //set the maximal dimension we can have cycles in.
-					Dgms KerDiagrams(max_dim+1);
-					Dgms ImDiagrams(max_dim+1);
-					Dgms CokDiagrams(max_dim+1);
-				}
+    using VRUDecomp = VRUDecomposition<Int>;
+    using Point = DgmPoint<Real>;
+    using Dgms = oineus::Diagrams<Real>;
 
+public:
+    Fil fil_K_; //Full complex with the function values for F
+    Fil fil_L_; //Sub complex with the function values for G
+    VRUDecomp dcmp_F_; //the reduced triple for F0
+    VRUDecomp dcmp_G_; //reduced triple for G
+    VRUDecomp dcmp_im_; //reduced image triple
+    VRUDecomp dcmp_ker_; //reduced kernel triple
+    VRUDecomp dcmp_cok_; //reduced cokernel triple
+    int max_dim_; //the maximum dimension of a cell
+    Dgms ker_diagrams_; //vector of image diagrams, one in each dimension poissble (these may be empty)
+    Dgms im_diagrams_; //vector of kernel diagrams, one in each dimension poissble (these may be empty)
+    Dgms cok_diagrams_; //vector of kernel diagramsm, one in each possible dimension (these may be empty)
+private:
+    std::vector<size_t> sorted_K_to_sorted_L_;
+    std::vector<size_t> sorted_L_to_sorted_K_;
+    std::vector<size_t> new_order_to_old_; //new_order_to_old[i] is the (unsorted) id in K of the ith cell in the filtration.
+    std::vector<size_t> old_order_to_new_; //new_order_to_old[i] is the (unsorted) id in K of the ith cell in the filtration.
+    std::vector<size_t> K_to_ker_column_index_;
+    Params params_;
 
-        void GenerateKerDiagrams() {//Extract the points in the image diagrams.
-            std::vector<bool> open_points_ker (number_cells_K); //keep track of points which give birth to a cycle
+    // entries (rows) in col are indexed w.r.t. K filtration order
+    // return col reindexed by the new order: L first, K-L second
+    Column reindex_to_new_order(const Column& col) const
+    {
+        Column new_col = col;
 
-            for (int i = 0; i < number_cells_K; i++) {
-                if (sorted_K_to_sorted_L[i] == -1) {//To give birth the cell must be is in K-L
-                    if (!F.get_R()[i].empty()) {//Now check negativitiy in F, which requires the column to be non-zero, which given we are working with column sparse binary matrices is equivalent to the column being non-empty
-                        bool cycle_f = false; //V[i] can only store a cycle if it is non-zero
-                        if (!F.get_V()[i].empty()) {
-                            cycle_f = true; //easier to check if something is not a cycle than if it is, so we assume it is and then check
-                            std::vector<int> quasi_sum_f(number_cells_K, 0);
-                            for (int j = 0; j < F.get_V()[i].size(); j++){
-                                for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++) {
-                                    quasi_sum_f[F.get_D()[F.get_V()[i][j]][k]]++;
-                                }
-                            }
-                            for (int j = 0; j < quasi_sum_f.size(); j++) {
-                                if (quasi_sum_f[j] %2 != 0) {//if one entry is not 0 mod 2, then V[i] does not store a cycle
-                                    cycle_f = false;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!cycle_f) {
-                            if (sorted_K_to_sorted_L[Im.get_R()[i].back()] != -1) {//Check lowest 1 in R_im is in L
-                                open_points_ker[i] = true;
-                            }
-                        }
-                    }
-                } else if (F.get_R()[i].empty()) {//to kill something, i needs to be positive in f and negative in g, and so we begin with testing positive in f
-                    bool cycle_f = false; //if V[i] is empty, cannot store a cycle, so we start with cycle as false, and then change to true if V[i] is not zero
-                    if (!F.get_V()[i].empty()) {//same as previous cycle check
-                        cycle_f = true;
-                        std::vector<int> quasi_sum_f(number_cells_K, 0);
-                        for (int j = 0; j < F.get_V()[i].size(); j++){
-                            for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++) {
-                                quasi_sum_f[F.get_D()[F.get_V()[i][j]][k]]++;
-                            }
-                        }
-                        for (int j = 0; j < quasi_sum_f.size(); j++) {//if there is an entry in quasi_sum that is not 0 mod 2 then does not represent a cycle
-                            if (quasi_sum_f[j] %2 != 0) {
-                                cycle_f = false;
-                                break;
-                            }
-                        }
-                    }
-                    if (cycle_f) {
-                        if (!G.get_R()[sorted_K_to_sorted_L[i]].empty()) {//check if negative in G
-                            bool cycle_g = false;
-                            if (!G.get_V()[i].empty()){ //same as previous cycle checks
-                                cycle_g = true;
-                                std::vector<int> quasi_sum_g(number_cells_L, 0);
-                                for (int j = 0; j < G.get_V()[sorted_K_to_sorted_L[i]].size(); j++){
-                                    for (int k = 0; k < G.get_D()[G.get_V()[sorted_K_to_sorted_L[i]][j]].size(); k++) {
-                                        quasi_sum_g[G.get_D()[G.get_V()[sorted_K_to_sorted_L[i]][j]][k]]++;
-                                    }
-                                }
-                                for (int j = 0; j < quasi_sum_g.size(); j++) {
-                                    if (quasi_sum_g[j] %2 != 0) {
-                                        cycle_g = false;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (!cycle_g) {
-                                int birth_id = new_order_to_old[Ker.get_R()[new_cols[i]].back()];
-                                int dim = K.dim_by_sorted_id(i)-1;
-                                if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-                                    KerDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i), birth_id, i);//[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //add point to the diagram
-                                    open_points_ker[birth_id] = false; //close the point which gave birth to the cycle that was just killed, so we don't add an point at inifity to the diagram
-                                }
-                            }
-                        }
-                    }
-                }
+        for(auto& x: new_col)
+            x = old_order_to_new_[x];
+
+        MatrixTraits::sort(new_col);
+
+        return new_col;
+    }
+
+    Matrix compute_d_im() const
+    {
+        if (not dcmp_F_.is_reduced)
+            throw std::runtime_error("reduce D_f first");
+
+        const Matrix& m = dcmp_F_.get_V();
+
+        Matrix result;
+
+        result.reserve(dcmp_F_.get_V().size());
+
+        for(const auto& col: m) {
+            result.emplace_back(reindex_to_new_order(col));
+        }
+
+        return result;
+    }
+
+    // take columns from v that correspond to cycles (i.e., the corresponding column in r is zero)
+    // apply old_to_new_order to them (reorder rows)
+    // return the matrix comprised from the resulting columns
+    Matrix compute_d_ker()
+    {
+        const Matrix& v = dcmp_im_.get_V();
+        const Matrix& r = dcmp_im_.get_R();
+
+        Matrix result;
+
+        size_t result_col_idx = 0;
+
+        int n_cycles = 0; int n_non_cycles = 0;
+
+        for(size_t col_idx = 0 ; col_idx < v.size() ; ++col_idx) {
+            if (not is_zero(r[col_idx])) {
+                n_non_cycles++;
+                continue;
             }
 
-            for (int i = 0; i < open_points_ker.size(); i++) {//check if there are any cycles with infinite life times
-                if (open_points_ker[i]) {
-                    int dim = K.dim_by_sorted_id(i)-1;
-                    KerDiagrams.add_point(dim,K.value_by_sorted_id(i), std::numeric_limits<double>::infinity(), i, plus_inf); //add point to the diagram
-                }
+            n_cycles++;
+
+            result.emplace_back(reindex_to_new_order(v[col_idx]));
+
+            K_to_ker_column_index_[col_idx] = result_col_idx;
+
+            result_col_idx++;
+        }
+
+        if (params_.verbose) std::cerr << "compute_d_ker: n_non_cycles = " << n_non_cycles << ", n_ccyles = " << n_cycles << std::endl;
+
+        return result;
+    }
+
+    Matrix compute_d_cok()
+    {
+        Matrix d_cok = dcmp_F_.get_D();
+
+        for(size_t i = 0 ; i < d_cok.size() ; i++) {
+            auto index_in_L = sorted_K_to_sorted_L_[i];
+            // skip non-L columns
+            if (index_in_L == k_invalid_index)
+                continue;
+
+            // if the column in V for L is not a cycle, skip
+            if (not is_zero(dcmp_G_.get_R()[index_in_L]))
+                continue;
+
+            // copy column of V_g to a new column
+            Column new_col = dcmp_G_.get_V()[index_in_L];
+
+            // indexing in G is with respect to L simplices, must re-index w.r.t. K
+            for(auto& x: new_col)
+                x = sorted_L_to_sorted_K_[x];
+
+            d_cok[i] = std::move(new_col);
+        }
+        return d_cok;
+    }
+
+public:
+
+    bool is_in_L(size_t index_in_K) const
+    {
+        return sorted_K_to_sorted_L_[index_in_K] != k_invalid_index;
+    }
+
+    bool is_in_K_only(size_t index_in_K) const
+    {
+        return sorted_K_to_sorted_L_[index_in_K] == k_invalid_index;
+    }
+
+    // parameters: complex K, a subcomplex L, reduction params
+    KerImCokReduced(const Fil& K, const Fil& L, Params& params)
+            :
+            fil_K_(K),
+            fil_L_(L),
+            sorted_K_to_sorted_L_(K.size(), k_invalid_index),
+            sorted_L_to_sorted_K_(L.size(), k_invalid_index),
+            new_order_to_old_(K.size(), k_invalid_index),
+            old_order_to_new_(K.size(), k_invalid_index),
+            K_to_ker_column_index_(K.size(), k_invalid_index),
+            max_dim_(K.max_dim()),
+            ker_diagrams_(max_dim_ + 1),
+            im_diagrams_(max_dim_ + 1),
+            cok_diagrams_(max_dim_ + 1),
+            params_(params)
+    {
+        if (params_.verbose) { std::cerr << "Performing kernel, image, cokernel reduction, reduction parameters: " << params << std::endl; }
+
+        if (fil_K_.size() < fil_L_.size())
+            throw std::runtime_error("second argument L must be a subcomplex of the first argument K");
+
+        for(size_t fil_L_idx = 0 ; fil_L_idx < fil_L_.size() ; fil_L_idx++) {//getting sorted L to sorted K is relatively easy
+            sorted_L_to_sorted_K_[fil_L_idx] = fil_K_.get_sorted_id_by_uid(fil_L_.get_cell(fil_L_idx).get_uid());
+        }
+
+        for(size_t i = 0 ; i < fil_L_.size() ; i++) {
+            //for cells in K which are also in L, set the sorted id, which we can get from sorted L to sorted K
+            sorted_K_to_sorted_L_[sorted_L_to_sorted_K_[i]] = i;
+        }
+
+        if (params_.verbose) { std::cerr << "K_to_L and L_to_K computed" << std::endl; }
+
+        //set up the reduction for F  on K
+        if (params_.verbose) std::cerr << "Reducing F on K." << std::endl;
+        dcmp_F_ = VRUDecomp(fil_K_.boundary_matrix_full());
+        if (params_.verbose) { std::cerr << "dcmp_F_ created" << std::endl; }
+        dcmp_F_.reduce_parallel_rv(params);
+        if (params_.verbose) { std::cerr << "dcmp_F_ reduced" << std::endl; }
+
+        //set up reduction for G on L
+        if (params_.verbose) std::cerr << "Reducing G on L." << std::endl;
+        dcmp_G_ = VRUDecomp(fil_L_.boundary_matrix_full());
+        if (params_.verbose) { std::cerr << "dcmp_G_ created" << std::endl; }
+        dcmp_G_.reduce_parallel_rv(params);
+        if (params_.verbose) { std::cerr << "dcmp_G_ reduced" << std::endl; }
+
+        std::iota(new_order_to_old_.begin(), new_order_to_old_.end(), 0);
+
+        if (params_.verbose) std::cerr << "Sorting so that cells in L come before cells in K." << std::endl;
+
+        std::sort(new_order_to_old_.begin(), new_order_to_old_.end(),
+                [&](size_t i, size_t j) {
+                  if (is_in_L(i) and not is_in_L(j))
+                      return true;
+                  if (is_in_L(j) and not is_in_L(i))
+                      return false;
+                  // if both i and j are in L or both are not, use the existing order
+                  return i < j;
+                });
+
+        // map from old order to new order so that we know which cells correspond to which rows.
+        // This could be done by just shuffling the row indices, but as we create a new reduction isntance, we need to create a new matrix anyway.
+
+        for(int i = 0 ; i < fil_K_.size() ; i++) {
+            old_order_to_new_[new_order_to_old_[i]] = i;
+        }
+
+        if (params_.verbose) { std::cerr << "L before K-L order done" << std::endl; }
+
+        params.clearing_opt = false;
+
+        // step 2 of the algorithm
+        auto d_im = compute_d_im();
+        if (params_.verbose) std::cerr << "Reducing Image." << std::endl;
+        dcmp_im_ = VRUDecomp(d_im);
+        if (params_.verbose) { std::cerr << "dcmp_im_ constructed" << std::endl; }
+        dcmp_im_.reduce_parallel_rv(params);
+        if (params_.verbose) { std::cerr << "dcmp_im_ reduced" << std::endl; }
+
+        // step 3 of the algorithm
+
+        Matrix d_ker = compute_d_ker();
+        if (params_.verbose) std::cerr << "Reducing Ker." << std::endl;
+        dcmp_ker_ = VRUDecomp(d_ker, fil_K_.size());
+        if (params_.verbose) { std::cerr << "dcmp_ker constructed" << std::endl; }
+        dcmp_ker_.reduce_serial(params);
+        if (params_.verbose) { std::cerr << "dcmp_ker reduced" << std::endl; }
+
+        // step 4 of the algorithm
+        Matrix d_cok = compute_d_cok();
+        if (params_.verbose) std::cerr << "Reducing Cok." << std::endl;
+        dcmp_cok_ = VRUDecomp(d_cok, fil_K_.size());
+        if (params_.verbose) { std::cerr << "dcmp_cok constructed" << std::endl; }
+        dcmp_cok_.reduce_parallel_rv(params);
+        if (params_.verbose) { std::cerr << "dcmp_cok reduced" << std::endl; }
+
+        if (params.kernel) generate_ker_diagrams();
+        if (params.cokernel) generate_cok_diagrams();
+        if (params.image) generate_im_diagrams();
+    }
+
+    void generate_ker_diagrams(bool inf_points = true)
+    {
+        if (params_.verbose) std::cerr << "generating kernel diagrams" << std::endl;
+        // if we need points at infinity,
+        // we have to keep track of the matched positive cells;
+        // all unmatched kernel birth cells will give a point at infinity
+        std::unordered_set<size_t> matched_positive_cells;
+
+        // simplex tau gives death in Ker(g -> f ) iff τ ∈ L,
+        // τ is negative in R_g , and τ is positive in R_f
+        for(size_t tau_idx = 0 ; tau_idx < dcmp_G_.get_R().size() ; ++tau_idx) {
+            // tau is positive -> skip it
+            if (dcmp_G_.is_positive(tau_idx)) {
+                if (params_.verbose) std::cerr << "tau_idx not in ker: positive in G" << std::endl;
+                continue;
             }
 
-            if (params.verbose) {
-                std::cerr << "The kernel diagrams are: " << std::endl;
-                for (int i = 0; i <= max_dim; i++) {
-                    if (KerDiagrams.extract(i).empty()) {
-                        std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
-                    } else {
-                        std::cerr << "Diagram in dimension " << i << " is:" << std::endl;
-                        for (int j = 0; j < KerDiagrams[i].size(); j++) {
-                            std::cerr << "(" << KerDiagrams[i][j].birth << ", " << KerDiagrams[i][j].death << ")" << std::endl;
-                        }
-                    }
-                }
+            // always use indices in K in the diagram; tau_idx is w.r.t. L
+            size_t death_idx = sorted_L_to_sorted_K_[tau_idx];
+
+            // tau is not positive in R_f -> skip it
+            if (dcmp_F_.is_negative(death_idx)) {
+                continue;
+            }
+
+            // In this case, the lowest one in the column of τ in R_ker
+            // corresponds to a simplex σ ∈ K − L that gives birth in Ker(g -> f).
+            //Then (σ, τ ) is a pair.
+
+            size_t tau_in_ker_idx = K_to_ker_column_index_[death_idx];
+            if (tau_in_ker_idx == k_invalid_index) {
+                continue;
+            }
+            size_t sigma_in_ker_idx = low(dcmp_ker_.get_R()[tau_in_ker_idx]);
+            size_t birth_idx = new_order_to_old_[sigma_in_ker_idx];
+
+            Real birth = fil_K_.value_by_sorted_id(birth_idx);
+            Real death = fil_K_.value_by_sorted_id(death_idx);
+
+            dim_type dim = fil_K_.get_cell(death_idx).dim() - 1;
+
+            ker_diagrams_.add_point(dim, birth, death, birth_idx, death_idx);
+
+            if (inf_points) {
+                assert(matched_positive_cells.count(birth_idx) == 0);
+                matched_positive_cells.insert(birth_idx);
+            }
+
+            // for kernel p-diagram, birth and death simplices are
+            // (p+1)-simplices
+            assert(fil_K_.get_cell(death_idx).dim() == fil_K_.get_cell(birth_idx).dim());
+        }
+
+        if (params_.verbose) std::cerr << "finite points in kernel diagram generated, found " << matched_positive_cells.size() << std::endl;
+
+        if (inf_points) {
+            for(size_t birth_idx = 0 ; birth_idx < dcmp_F_.get_R().size() ; ++birth_idx) {
+                // sigma is in L, skip it
+                if (is_in_L(birth_idx))
+                    continue;
+
+                // sigma is positive in R_f, skip it
+                if (dcmp_F_.is_positive(birth_idx))
+                    continue;
+
+                size_t low_idx = low(dcmp_im_.get_R()[birth_idx]);
+
+                // lowest one if R_im is in K, not in L
+                // order of rows in R_im: L first, then K-L
+                if (low_idx >= fil_L_.size())
+                    continue;
+
+                Real birth = fil_K_.get_cell_value(birth_idx);
+
+                dim_type dim = fil_K_.get_cell(birth_idx).dim() - 1;
+                ker_diagrams_.add_point(dim, birth, fil_K_.infinity(), birth_idx, k_invalid_index);
             }
         }
 
-
-//			//generate the kernel persistence diagrams and store them in KerDiagrams
-//			void GenerateKerDiagrams()
-//            {//Extract the points in the kernel diagrams.
-//				std::cout << "Generating kernel diagrams." << std::endl;
-//
-//				std::vector<bool> open_points_ker (number_cells_K); //keep track of points which give birth to a cycle
-//
-//                const auto& f_v_matrix = F.v_data;
-//                const auto& f_d_matrix = F.d_data;
-//                const auto& im_r_matrix = Im.r_data;
-//                const auto& g_v_matrix = G.v_data;
-//                const auto& g_r_matrix = G.r_data;
-//                const auto& g_d_matrix = G.d_data;
-//                const auto& ker_r_matrix = Ker.d_data;
-//
-//				for (int i = 0; i < number_cells_K; i++) {
-//                    if (sorted_K_to_sorted_L[i] == -1) {//To give birth the cell must be is in K-L
-//                        if (!F.is_R_column_zero(i)) {//Now check negativitiy in F, which requires the column to be non-zero, which given we are working with column sparse binary matrices is equivalent to the column being non-empty
-//                            bool cycle_f = false; //V[i] can only store a cycle if it is non-zero
-//							if (!F.is_V_column_zero(i)) {
-//								cycle_f = true; //easier to check if something is not a cycle than if it is, so we assume it is and then check
-//								std::vector<int> quasi_sum_f(number_cells_K, 0);
-//
-//								for (int j = 0; j < f_v_matrix[i].size(); j++){
-//									for (int k = 0; k < f_d_matrix[f_v_matrix[i][j]].size(); k++) {
-//										quasi_sum_f[f_d_matrix[f_v_matrix[i][j]][k]]++;
-//									}
-//								}
-//
-//								for (int j = 0; j < quasi_sum_f.size(); j++) {
-//									if (quasi_sum_f[j] %2 != 0) {//if one entry is not 0 mod 2, then V[i] does not store a cycle
-//										cycle_f = false;
-//										break;
-//									}
-//								}
-//							}
-//
-//                            if (!cycle_f) {
-//								if (sorted_K_to_sorted_L[low(im_r_matrix[i])] != -1) {//Check lowest 1 in R_im is in L
-//                                    open_points_ker[i] = true;
-//                                }
-//                            }
-//                        }
-//                    } else if (F.is_R_column_zero(i)) {//to kill something, i needs to be positive in f and negative in g, and so we begin with testing positive in f
-//                        bool cycle_f = false; //if V[i] is empty, cannot store a cycle, so we start with cycle as false, and then change to true if V[i] is not zero
-//                        if (!F.is_V_column_zero(i)) {//same as previous cycle check
-//                            cycle_f = true;
-//                            std::vector<int> quasi_sum_f(number_cells_K, 0);
-//                            for (int j = 0; j < f_v_matrix[i].size(); j++){
-//                                for (int k = 0; k < f_d_matrix[f_v_matrix[i][j]].size(); k++) {
-//                                    quasi_sum_f[f_d_matrix[f_v_matrix[i][j]][k]]++;
-//                                }
-//                            }
-//                            for (int j = 0; j < quasi_sum_f.size(); j++) {//if there is an entry in quasi_sum that is not 0 mod 2 then does not represent a cycle
-//                                if (quasi_sum_f[j] %2 != 0) {
-//                                    cycle_f = false;
-//                                    break;
-//                                }
-//                            }
-//                        }
-//                        if (cycle_f) {
-//                            if (!g_r_matrix[sorted_K_to_sorted_L[i]].empty()) {//check if negative in G
-//                                bool cycle_g = false;
-//								if (!g_v_matrix[i].empty()){ //same as previous cycle checks
-//									cycle_g = true;
-//									std::vector<int> quasi_sum_g(number_cells_L, 0);
-//									for (int j = 0; j < g_v_matrix[sorted_K_to_sorted_L[i]].size(); j++){
-//										for (int k = 0; k < g_d_matrix[g_v_matrix[sorted_K_to_sorted_L[i]][j]].size(); k++) {
-//											quasi_sum_g[g_d_matrix[g_v_matrix[sorted_K_to_sorted_L[i]][j]][k]]++;
-//										}
-//									}
-//									for (int j = 0; j < quasi_sum_g.size(); j++) {
-//										if (quasi_sum_g[j] %2 != 0) {
-//											cycle_g = false;
-//											break;
-//										}
-//									}
-//								}
-//                                if (!cycle_g) {
-//                                    int birth_id = new_order_to_old[ker_r_matrix[new_cols[i]].back()];
-//                                    int dim = K.dim_by_sorted_id(i)-1;
-//                                    if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-//                                        KerDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i), birth_id, i);//[dim].push_back(Point(K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i))); //add point to the diagram
-//                                        open_points_ker[birth_id] = false; //close the point which gave birth to the cycle that was just killed, so we don't add an point at inifity to the diagram
-//                                    }
-//                                }
-//                            }
-//                        }
-//                    }
-//                }
-//
-//				for (int i = 0; i < open_points_ker.size(); i++) {//check if there are any cycles with infinite life times
-//					if (open_points_ker[i]) {
-//						int dim = K.dim_by_sorted_id(i)-1;
-//						KerDiagrams.add_point(dim,K.value_by_sorted_id(i), std::numeric_limits<double>::infinity(), i, plus_inf); //add point to the diagram
-//					}
-//				}
-//
-//                if (params.verbose) {
-//                    std::cerr << "The kernel diagrams are: " << std::endl;
-//                    for (int i = 0; i <= max_dim; i++) {
-//                        if (KerDiagrams.extract(i).empty()) {
-//                            std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
-//                        } else {
-//                            std::cerr << "Diagram in dimension " << i << " is:" << std::endl;
-//                            for (int j = 0; j < KerDiagrams[i].size(); j++) {
-//                                std::cerr << "(" << KerDiagrams[i][j].birth << ", " << KerDiagrams[i][j].death << ")" << std::endl;
-//                            }
-//                        }
-//                    }
-//                }
-//			}
-
-			//generate the image persistence diagrams and store them in ImDiagrams
-			void GenerateImDiagrams() {
-				std::cout << "Generating the image diagrams." << std::endl;
-
-				std::vector<bool> open_points_im (number_cells_K);//keep track of cells which give birth to a cycle and if that cycle is killed or nop
-
-				for (int i = 0; i < number_cells_K; i++){
-                    if (sorted_K_to_sorted_L[i] != -1) {//a cell only gives birth if it is in L
-
-                        int sorted_id_in_L = sorted_K_to_sorted_L[i];//we are now working with a cell in L, and checking properties only L with respect to G, so we need to use the sorted id of the cell in L
-                        if (G.get_R()[sorted_id_in_L].empty()) {//needs to be positive in G
-                            std::vector<int> quasi_sum_g(number_cells_L, 0);
-                            bool cycle_g = false; //same as previous cycle checks.
-                            if (!G.get_V()[sorted_id_in_L].empty()){
-                                cycle_g = true;
-                                for (int j = 0; j < G.get_V()[sorted_id_in_L].size(); j++) {
-                                    for (int k = 0; k < G.get_D()[G.get_V()[sorted_id_in_L][j]].size(); k++) {
-                                        quasi_sum_g[G.get_D()[G.get_V()[sorted_id_in_L][j]][k]]++;
-                                    }
-                                }
-                                for (int k = 0; k < quasi_sum_g.size(); k++) {
-                                    if (quasi_sum_g[k] %2 != 0) {
-                                        cycle_g = false;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (cycle_g) {
-                                    open_points_im[i] = true;
-							}
-                        }
-                    }
-                    //any cell can kill something, so we just test negativitity in F
-                    if (!F.get_R()[i].empty()) {//F.get_R()[i] needs to be non-zero, which due to binary sparse format is the same as being non-empty
-						bool cycle_f = false;
-                        if (!F.get_V()[i].empty()) {
-                            cycle_f = true;
-                            std::vector<int> quasi_sum_f(number_cells_K, 0);
-                            for (int j = 0; j < F.get_V()[i].size(); j++) {
-                                for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++){
-                                    quasi_sum_f[F.get_D()[F.get_V()[i][j]][k]]++;
-                                }                           }
-                            for (int k = 0; k < quasi_sum_f.size(); k++) {
-                                if (quasi_sum_f[k] %2 != 0) {
-                                    cycle_f = false;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!cycle_f) {
-							int birth_id = new_order_to_old[Im.get_R()[i].back()];
-							if (sorted_K_to_sorted_L[birth_id] != -1) {
-								int dim = K.dim_by_sorted_id(i)-1;
-								if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-									ImDiagrams.add_point(dim, K.value_by_sorted_id(birth_id), K.value_by_sorted_id(i), birth_id, i);// add the point to the diaram
-//                                    IndexImDiagrams.add_point(dim, birth_id, i);                                       // record cell indices in index_diagram
-								}
-								open_points_im[birth_id] = false;
-							}
-                        }
-                    }
+        if (params_.verbose) {
+            std::cerr << "The kernel diagrams are: " << std::endl;
+            for(int i = 0 ; i <= max_dim_ ; i++) {
+                std::cerr << "Diagram in dimension " << i << " is: [" << std::endl;
+                for(int j = 0 ; j < ker_diagrams_[i].size() ; j++) {
+                    std::cerr << ker_diagrams_[i][j] << std::endl;
                 }
-				//for any cycle with infinite life, add the point to the diagram
-				for (int i = 0; i < open_points_im.size(); i++) {
-					if (open_points_im[i]) {
-						int dim = K.dim_by_sorted_id(i);
-						ImDiagrams.add_point(dim, K.value_by_sorted_id(i), std::numeric_limits<double>::infinity(), i, plus_inf);
-//                        IndexImDiagrams.add_point(dim, i, plus_inf);
-					}
-				}
+                std::cerr << "]";
+            }
+        }
+    }
 
-				std::cerr << "The image diagrams are: " << std::endl;
-				for (int i = 0; i <= max_dim; i++) {
-					if (ImDiagrams.extract(i).empty()) {
-						std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
-					} else if (!ImDiagrams.extract(i).empty()) {
-						std::cerr << "Diagram in dimension " << i << " is:" << std::endl;
-						for (int j = 0; j < ImDiagrams[i].size(); j++) {
-							std::cerr << "(" << ImDiagrams[i][j].birth << ", " << ImDiagrams[i][j].death << ")" << std::endl;
-						}
-					}
-				}
-			}
+    void generate_cok_diagrams(bool inf_points = true)
+    {
+        if (params_.verbose) std::cerr << "generating cokernel diagrams" << std::endl;
+        // if we need points at infinity,
+        // we have to keep track of the matched positive cells;
+        // all unmatched kernel birth cells will give a point at infinity
+        std::unordered_set<size_t> matched_positive_cells;
 
-			//Generate the cokernel diagrams and store them in CokDiagrams
-			void GenerateCokDiagrams() {
-				std::cout << "Starting to extract the cokernel diagrams." << std::endl;
+        // simplex τ gives death in Cok(g -> f) iff τ is
+        // negative in R_f and the lowest one in its column in R_im
+        // corresponds to a simplex in K − L
+        for(size_t death_idx = 0 ; death_idx < dcmp_F_.get_R().size() ; ++death_idx) {
+            // tau is positive -> skip it
+            if (dcmp_F_.is_positive(death_idx))
+                continue;
 
-				std::vector<bool> open_points_cok (number_cells_K);//keep track of open cycles
-
-				for (int i = 0; i < number_cells_K; i++) {//we first check that i is positive in f
-					if (F.get_R()[i].empty()) {//the column in R needs to be empty
-						bool cycle_f = false;
-						if (!F.get_V()[i].empty()) {//standard cycle check as previous ones
-							cycle_f = true;
-							std::vector<int> quasi_sum_f(number_cells_K, 0);
-							for (int j = 0; j < F.get_V()[i].size(); j++) {
-								for (int k = 0; k < F.get_D()[F.get_V()[i][j]].size(); k++) {
-									quasi_sum_f[F.get_D()[F.get_V()[i][j]][k]]++;
-								}
-							}
-							for (int k = 0; k < quasi_sum_f.size(); k++) {
-								if (quasi_sum_f[k] %2 != 0) {
-									cycle_f = false;
-									break;
-								}
-							}
-						}
-						if (cycle_f) {
-							//now we check if either i is in K-L or negative in g
-							if (sorted_K_to_sorted_L[i] == -1) {
-								open_points_cok[i] = true;
-							} else {
-								if (!G.get_R()[sorted_K_to_sorted_L[i]].empty()) {
-									bool cycle_g = false;
-									if (!G.get_V()[sorted_K_to_sorted_L[i]].empty()) {//standard cycle check
-										cycle_g= true;
-										std::vector<int> quasi_sum_g(number_cells_L, 0);
-										for (int j = 0; j < G.get_V()[sorted_K_to_sorted_L[i]].size(); j++) {
-											for (int k = 0; k < G.get_D()[G.get_V()[sorted_K_to_sorted_L[i]][j]].size(); k++) {
-												quasi_sum_g[G.get_D()[G.get_V()[sorted_K_to_sorted_L[i]][j]][k]]++;
-											}
-										}
-										for (int k = 0; k < quasi_sum_g.size(); k++) {
-											if (quasi_sum_g[k] %2 != 0) {
-												cycle_g = false;
-												break;
-											}
-										}
-									}
-									if (!cycle_g) {
-										open_points_cok[i] = true;
-									}
-								}
-							}
-						}
-					} else if (!Im.get_V()[i].empty()){
-						bool cycle_im = false;
-						if (!Im.get_V()[i].empty()) {
-							cycle_im = true;
-							std::vector<int> quasi_sum_f(number_cells_K, 0);
-							for (int j = 0; j < Im.get_V()[i].size(); j++) {
-								for (int k = 0; k < Im.get_D()[Im.get_V()[i][j]].size(); k++) {
-									quasi_sum_f[Im.get_D()[Im.get_V()[i][j]][k]]++;
-								}
-							}
-							for (int k = 0; k < quasi_sum_f.size(); k++) {
-								if (quasi_sum_f[k] %2 != 0) {
-									cycle_im = false;
-									break;
-								}
-							}
-						}
-						if (!cycle_im && sorted_K_to_sorted_L[new_order_to_old[Im.get_R()[i].back()]] == -1) {
-							int birth_id = new_order_to_old[Cok.get_R()[i].back()];
-							if (K.value_by_sorted_id(birth_id) != K.value_by_sorted_id(i)) {
-								int dim = K.dim_by_sorted_id(birth_id);
-								CokDiagrams.add_point(dim, K.value_by_sorted_id(birth_id) ,K.value_by_sorted_id(i), birth_id, i);//add point to the diagram
-							}
-							open_points_cok[birth_id] = false;
-						}
-					}
-				}
-
-				//for any open cycles add a point with infinite lifetime to the diagram
-				for (int i = 0; i < open_points_cok.size(); i++) {
-					if (open_points_cok[i]) {
-						int dim = K.dim_by_sorted_id(i);
-						CokDiagrams.add_point(dim, K.value_by_sorted_id(i), std::numeric_limits<double>::infinity(), i, plus_inf);
-					}
-				}
-
-				std::cerr << "The cokernel diagrams are: " << std::endl;
-				for (int i = 0; i <= max_dim; i++) {
-					if (CokDiagrams.extract(i).empty()) {
-						std::cerr << "Diagram in dimension " << i << " is empty." << std::endl;
-					} else if (!CokDiagrams.extract(i).empty()) {
-						std::cerr << "Diagram in dimension " << i << " is:" << std::endl;
-						for (int j = 0; j < CokDiagrams[i].size(); j++) {
-							std::cerr << "(" << CokDiagrams[i][j].birth << ", " << CokDiagrams[i][j].death << ")" << std::endl;
-						}
-					}
-				}
-			}
+            const auto& tau_col_R_im = dcmp_im_.get_R()[death_idx];
 
 
-			//Useful functions to obtain the various matrices. Mostly useful in debugging, but potentially useful for other people depending on applications.
-			MatrixData get_D_f() {
-				return F.get_D();
-			}
-
-			MatrixData get_V_f() {
-				return F.get_V();
-			}
-
-			MatrixData get_R_f() {
-				return F.get_R();
-			}
-
-			MatrixData get_D_g() {
-				return G.get_D();
-			}
-
-			MatrixData get_V_g() {
-				return G.get_V();
-			}
-
-			MatrixData get_R_g() {
-				return G.get_R();
-			}
-
-			MatrixData get_D_im() {
-				return Im.get_D();
-			}
-
-			MatrixData get_V_im() {
-				return Im.get_V();
-			}
-
-			MatrixData get_R_im() {
-				return Im.get_R();
-			}
-
-			MatrixData get_D_ker() {
-				return Ker.get_D();
-			}
-
-			MatrixData get_V_ker() {
-				return Ker.get_V();
-			}
-
-			MatrixData get_R_ker() {
-				return Ker.get_R();
-			}
-
-			MatrixData get_D_cok() {
-				return Cok.get_D();
-			}
-
-			MatrixData get_V_cok() {
-				return Cok.get_V();
-			}
-
-			MatrixData get_R_cok() {
-				return Cok.get_R();
-			}
-			Dgms get_kernel_diagrams(){
-				return KerDiagrams;
-			}
-
-			Dgms get_image_diagrams(){
-				return ImDiagrams;
-			}
-
-            IndexDgms get_image_index_diagrams(){
-                return IndexImDiagrams;
+            // TODO: get rid of this if
+            // tau is positive in R_f -> skip it
+            if (dcmp_im_.is_positive(death_idx)) {
+                throw std::runtime_error("probably should not happen: negative in R_f implies negative in R_im");
+                continue;
             }
 
-			Dgms get_cokernel_diagrams(){
-				return CokDiagrams;
-			}
-	};
+            auto im_low = low(tau_col_R_im);
 
-	//Function which takes as input a complex K, a subcomplex L (only requirement is sorted by dimension), and a map from L to K, as well as params,te
-	template <typename Cell, typename Real>
-	KerImCokReduced<Cell, Real> reduce_ker_im_cok(Filtration<Cell, Real> K, Filtration<Cell, Real> L, std::vector<int> L_to_K, Params& params) {
-		using Int = typename Cell::Int;
-        using VRUDecomp = VRUDecomposition<Int>;
-    	using MatrixData = typename VRUDecomp::MatrixData;
-		using FiltrationSimplex = CellWithValue<Cell, Real>;
-   		using FiltrationSimplexVector = std::vector<FiltrationSimplex>;
-		using Point = DgmPoint<Real>;
-		using Diagram = std::vector<Point>;
+            // lowest one in the column of tau in R_im is in L, skip it
+            if (im_low < fil_L_.size())
+                continue;
 
-        if (params.verbose) {
-            std::cerr << "Performing kernel, image, cokernel reduction with the following parameters:" << std::endl;
-            std::cerr << "n_threads: " << params.n_threads << std::endl;
-            std::cerr << "kernel: " << params.kernel << std::endl;
-            std::cerr << "image: " << params.image << std::endl;
-            std::cerr << "cokernel: " << params.cokernel << std::endl;
-            std::cerr << "verbose: " << params.verbose << std::endl;
+            // In this case, the lowest one in the column of τ in R_cok corresponds to a
+            // simplex σ that gives birth in Cok(g -> f). Then (σ, τ) is a pair.
+            // row and column order in R_cok, D_cok is the same as in K
+            if (is_zero(dcmp_cok_.get_R()[death_idx]))
+                continue;
+            auto birth_idx = low(dcmp_cok_.get_R()[death_idx]);
+
+            Real birth = fil_K_.value_by_sorted_id(birth_idx);
+            Real death = fil_K_.value_by_sorted_id(death_idx);
+
+            dim_type dim = fil_K_.get_cell(birth_idx).dim();
+
+            cok_diagrams_.add_point(dim, birth, death, birth_idx, death_idx);
+
+            if (inf_points) {
+                assert(matched_positive_cells.count(birth_idx) == 0);
+                matched_positive_cells.insert(birth_idx);
+            }
+
+            // for cokernel p-diagram, birth is at p-simplex, death is at (p+1)-simplex
+            assert(fil_K_.get_cell(death_idx).dim() == dim + 1);
         }
 
-		FiltrationSimplexVector K_simps = K.cells(); //cells of L as we will need to work with them to get their order
-		int number_cells_K =  K_simps.size(); // number of cells in K
-		FiltrationSimplexVector L_simps = L.cells(); //cells of L as we will need to work with them to get their order
-		int number_cells_L =  L_simps.size(); // number of cells in L
+        if (params_.verbose) std::cerr << "cokernel diagrams, finite points done, # matched " << matched_positive_cells.size() << std::endl;
 
-		std::vector<int> sorted_L_to_sorted_K(number_cells_L, 0); //need to create the map from sorted L to sorted K
-		std::vector<int> sorted_K_to_sorted_L(number_cells_K, -1); //need a map from sorted K to sorted L, for any cell not in L, we set the value to -1, which is convenient for getting the diagrams.
+        if (inf_points) {
+            // A simplex σ gives birth in Cok(g -> f) iff σ is positive
+            // in R_f and it is either in K − L or negative in R_g .
+            for(size_t birth_idx = 0 ; birth_idx < dcmp_F_.get_R().size() ; ++birth_idx) {
+                // sigma is paired, skip it
+                if (matched_positive_cells.count(birth_idx))
+                    continue;
 
+                // sigma is negative in R_f, skip it
+                if (dcmp_F_.is_negative(birth_idx))
+                    continue;
 
-		for (int i = 0; i < number_cells_L; i++) {//getting sorted L to sorted K is relatively easy
-			sorted_L_to_sorted_K[L.get_sorted_id(i)] = K.get_sorted_id(L_to_K[i]);
-		}
+                if (not is_in_K_only(birth_idx)) {
+                    // sigma is in K and in L, and sigma is positive in R_g, skip it
+                    if (dcmp_G_.is_positive(sorted_K_to_sorted_L_[birth_idx]))
+                        continue;
+                }
 
-		for (int i = 0; i < number_cells_L; i++) {//for cells in K which are also in L, set the sorted id, which we can get from sorted L to sorted K
-			sorted_K_to_sorted_L[sorted_L_to_sorted_K[i]] = i;
-		}
+                Real birth = fil_K_.value_by_sorted_id(birth_idx);
+                dim_type dim = fil_K_.get_cell(birth_idx).dim();
+                // K.infinity() will return +inf or -inf depending on
+                // negate; plus_inf is max of size_t
+                cok_diagrams_.add_point(dim, birth, fil_K_.infinity(), birth_idx, plus_inf);
+            }
+        }
+    }
 
-		//set up the reduction for F  on K
-		if (params.verbose) std::cerr << "Reducing F on K." << std::endl;
-		VRUDecomp F(K.boundary_matrix_full());
-		F.reduce_parallel_rv(params);
+    void generate_im_diagrams(bool inf_points = true)
+    {
+        throw std::runtime_error("not implemented yet");
+    }
 
-		//set up reduction for G on L
-		if (params.verbose) std::cerr << "Reducing G on L." << std::endl;
-		VRUDecomp G(L.boundary_matrix_full());
-		G.reduce_parallel_rv(params);
+    const Dgms& get_kernel_diagrams() const
+    {
+        if (not params_.kernel)
+            throw std::runtime_error("kernel diagrams were not computed, because params.kernel was false in constructor");
+        return ker_diagrams_;
+    }
 
-		std::vector<int> new_order (number_cells_K);//we will need to reorder rows so that L comes first and then K-L
-		std::iota (new_order.begin(), new_order.end(), 0);
+    const Dgms& get_image_diagrams() const
+    {
+        if (not params_.image)
+            throw std::runtime_error("image diagrams were not computed, because params.image was false in constructor");
+        return im_diagrams_;
+    }
 
-		if (params.verbose) std::cerr << "Sorting so that cells in L come before cells in K." << std::endl;
-		std::sort(new_order.begin(), new_order.end(), [&](int i, int j) {//sort so that all cells in L come first sorted by dimension and then value in G, and then cells in K-L sorted by dimension and value in F
-			if (sorted_K_to_sorted_L[i] != -1 && sorted_K_to_sorted_L[j] != -1) {//if both are in L, sort by dimension and then value under G
-				int i_dim, j_dim;
-				double i_val, j_val;
-				i_dim = L.dim_by_sorted_id(sorted_K_to_sorted_L[i]);
-				j_dim = L.dim_by_sorted_id(sorted_K_to_sorted_L[j]);
-				if (i_dim == j_dim) {
-					i_val = L.value_by_sorted_id(sorted_K_to_sorted_L[i]);
-					j_val = L.value_by_sorted_id(sorted_K_to_sorted_L[j]);
-					if (i_val == j_val) {
-						if ( i < j) {
-							return true;
-						} else {
-							return false;
-						}
-					} else if  (i_val < j_val) {
-						return true;
-					} else {
-						return false;
-					}
-				} else {
-					if (i_dim < j_dim) {
-						return true;
-					} else {
-						return false;
-					}
-				}
-			} else if (sorted_K_to_sorted_L[i] != -1 && sorted_K_to_sorted_L[j] == -1) {//i is in L and j is not
-				return true;
-			} else if (sorted_K_to_sorted_L[i] == -1 && sorted_K_to_sorted_L[j] != -1) {//i is not in L but j is
-				return false;
-			} else {
-				int i_dim, j_dim;
-				double i_val, j_val;
-				i_dim = K.dim_by_sorted_id(i);
-				j_dim = K.dim_by_sorted_id(j);
-				if (i_dim == j_dim) {
-					i_val = K.value_by_sorted_id(i);
-					j_val = K.value_by_sorted_id(j);
-					if (i_val == j_val) {
-						if ( i < j) {
-							return true;
-						} else {
-							return false;
-						}
-					} else if  (i_val < j_val) {
-						return true;
-					} else {
-						return false;
-					}
-				} else {
-					if (i_dim < j_dim) {
-						return true;
-					} else {
-						return false;
-					}
-				}
-			}
-		});
-
-		std::vector<int> old_to_new_order(number_cells_K);//map from old order to new order so that we know which cells correspond to which rows. This could be done by just shuffling the row indices, but as we create a new reduction isntance, we need to create a new matrix anyway.
-
-		for (int i = 0; i < number_cells_K; i++) {
-			old_to_new_order[new_order[i]] = i;
-		}
-
-		MatrixData d_im;
-		for (int i = 0; i < F.get_D().size(); i++) {
-			std::vector<int> new_col_i;
-			if (!F.get_D()[i].empty()) {
-				for (int j = 0; j < F.get_D()[i].size(); j++) {
-					new_col_i.push_back(old_to_new_order[F.get_D()[i][j]]);
-				}
-			}
-			std::sort(new_col_i.begin(), new_col_i.end());//sort to make sure this is all correct.
-			d_im.push_back(new_col_i);
-		}
-
-
-        params.clearing_opt = false;//set clearing to false as this was interferring with the change in row order
-		//set up Im reduction
-		if (params.verbose) std::cerr << "Reducing Image." << std::endl;
-		VRUDecomp Im(d_im);
-		Im.reduce_parallel_rv(params);
-
-		//we need to remove some columns from Im to get Ker, so we need to know which ones we keep, and then what cells they correspond t
-		if (params.verbose) std::cerr << "Checking which columns to keep." << std::endl;
-		std::vector<char> to_keep(number_cells_K);
-		//using MatrixData = std::vector<std::vector<int> >;
-        //
-		const MatrixData F_V(F.get_V());
-		const MatrixData F_D(F.get_D());
-		tbb::parallel_for(tbb::blocked_range<std::size_t>(0, number_cells_K), [&](const tbb::blocked_range<std::size_t> &r) {
-			for (int i=r.begin(); i < r.end(); i++){
-				if (!F_V[i].empty()) {//cycle check as in the code for generating the persistence diagrams.
-					bool cycle = true;
-					std::vector<int> quasi_sum (number_cells_K, 0);
-					for (int j = 0; j < F_V[i].size(); j++) {
-						for (int k = 0; k < F_D[F_V[i][j]].size(); k++) {
-							quasi_sum[F_D[F_V[i][j]][k]]++;
-						}
-					}
-					for (int j = 0; j < quasi_sum.size(); j++) {
-						if (quasi_sum[j]%2 != 0) {
-							break;
-						}
-					}
-					if (cycle) {
-						to_keep[i] = 't';
-					} else {
-						to_keep[i] = 'f';
-					}
-				};
-			};
-		});
-
-		MatrixData d_ker;
-		std::vector<int> new_cols(number_cells_K, -1);
-		int counter = 0;
-		for (int i = 0; i < number_cells_K; i++) {
-			if (to_keep[i] == 't') {
-				d_ker.push_back(Im.get_V()[i]);
-				new_cols[i] = counter;
-				counter++;
-			}
-		}
-		if (params.verbose) std::cerr << "Reducing Ker." << std::endl;
-		VRUDecomp Ker(d_ker, K.size());
-		Ker.reduce_parallel_rv(params);
-		MatrixData d_cok(Im.get_D());
-
-
-		for (int i = 0; i < number_cells_L; i++) {
-			bool replace = false;
-			std::vector<int> quasi_sum (number_cells_L, 0);
-			if (!G.get_V()[i].empty()) {
-				replace = true;
-				for (int j = 0; j < G.get_V()[i].size(); j++) {
-					for (int k = 0; k < G.get_D()[G.get_V()[i][j]].size(); k++) {
-						quasi_sum[G.get_D()[G.get_V()[i][j]][k]]++;//check if a column in V_g represents a cycle
-					}
-				}
-			}
-			for (int j = 0; j < quasi_sum.size(); j++) {
-				if (quasi_sum[j]%2 !=0) {
-					replace = false;
-					break;
-				}
-			}
-			if (replace) {
-				d_cok[sorted_L_to_sorted_K[i]] = G.get_D()[i];
-			}
-		}
-
-		if (params.verbose) std::cerr << "Reducing Cok." << std::endl;
-		VRUDecomp Cok(d_cok);
-		Cok.reduce_parallel_rv(params);
-
-		KerImCokReduced<Cell, Real> KICR(K, L, F, G, Im, Ker, Cok, sorted_L_to_sorted_K, sorted_K_to_sorted_L, new_order, new_cols, params);
-
-		if (params.kernel) KICR.GenerateKerDiagrams();
-		if (params.image) KICR.GenerateImDiagrams();
-		if (params.cokernel) KICR.GenerateCokDiagrams();
-
-		return  KICR;
-	}
-
-
-//	//Function which takes as input a complex K, a subcomplex L (only requirement is sorted by dimension), and a map from L to K, as well as params,te
-//	template <typename Cell, typename Real>
-//	KerImCokReduced<Cell, Real> reduce_ker_im_cok_cylinder(Filtration<Cell, Real> K, Filtration<Cell, Real> L, Params& params) {
-//
-//        using ProdCell = ProductCell<typename CWV::Cell, Simplex<typename CWV::Int>>;
-//        using ProdCellV = CellWithValue<ProdCell, typename CWV::Real>;
-//        using CylFil = Filtration<ProdCellV>;
-//
-//	}
-
-}
+    const Dgms& get_cokernel_diagrams() const
+    {
+        if (not params_.cokernel)
+            throw std::runtime_error("cokernel diagrams were not computed, because params.cokernel was false in constructor");
+        return cok_diagrams_;
+    }
+};
+} // namespace oineus
 
