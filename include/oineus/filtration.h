@@ -200,6 +200,10 @@ namespace oineus {
             return cells_[uid_to_sorted_id.at(uid)];
         }
 
+        bool contains_cell_with_uid(const CellUid& uid) const
+        {
+            return uid_to_sorted_id.count(uid) == 1;
+        }
 
         Real min_value() const
         {
