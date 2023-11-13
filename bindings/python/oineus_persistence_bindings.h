@@ -418,6 +418,7 @@ void init_oineus_common(py::module& m)
             .def_readwrite("image", &ReductionParams::image)
             .def_readwrite("cokernel", &ReductionParams::cokernel)
             .def_readwrite("verbose", &ReductionParams::verbose)
+            .def("__repr__", [](const ReductionParams& self) { std::stringstream ss; ss << self; return ss.str(); })
             .def(py::pickle(
                     // __getstate__
 
