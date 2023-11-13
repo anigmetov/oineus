@@ -435,6 +435,9 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::reduce(Params& params)
     {
+         if (d_data.empty())
+            return;
+
         if (params.n_threads > 1 and params.compute_u)
             throw std::runtime_error("Cannot compute U matrix in parallel");
 
@@ -460,13 +463,15 @@ namespace oineus {
 
         Int n_cols = d_data.size();
 
-        std::cerr << "reduce_serial, n_cols = " << n_cols << std::endl;
-
         if (params.compute_v)
             v_data = MatrixTraits::eye(d_data.size());
 
         if (params.compute_u)
             u_data_t = MatrixTraits::eye(d_data.size());
+
+        // D matrix empty, nothing to do
+        if (d_data.empty())
+            return;
 
 
         std::vector<Int> pivots(n_rows, -1);
@@ -530,6 +535,9 @@ namespace oineus {
         using namespace std::placeholders;
 
         size_t n_cols = size();
+
+        if (n_cols == 0)
+            return;
 
         using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
         using Column = typename MatrixTraits::Column;
@@ -631,6 +639,9 @@ namespace oineus {
 
         int c = 0;
         size_t n_cols = size();
+
+        if (n_cols == 0)
+            return;
 
         v_data = std::vector<IntSparseColumn>(n_cols);
 
