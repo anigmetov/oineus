@@ -48,6 +48,7 @@ private:
     std::vector<size_t> old_order_to_new_;     // the inverse of the above
     std::vector<size_t> K_to_ker_column_index_;
     Params params_;
+    bool include_zero_persistence_ {false};   // whether we want to have points on the diagonal in the diagram
 
     // entries (rows) in col are indexed w.r.t. K filtration order
     // return col reindexed by the new order: L first, K-L second
@@ -69,7 +70,7 @@ private:
         if (not dcmp_F_.is_reduced)
             throw std::runtime_error("reduce D_f first");
 
-        const Matrix& m = dcmp_F_.get_V();
+        const Matrix& m = dcmp_F_.get_D();
 
         Matrix result;
 
@@ -158,7 +159,7 @@ public:
     }
 
     // parameters: complex K, a subcomplex L, reduction params
-    KerImCokReduced(const Fil& K, const Fil& L, Params& params)
+    KerImCokReduced(const Fil& K, const Fil& L, Params& params, bool include_zero_persistence=false)
             :
             fil_K_(K),
             fil_L_(L),
@@ -171,7 +172,8 @@ public:
             ker_diagrams_(K.max_dim() + 1),
             im_diagrams_(K.max_dim() + 1),
             cok_diagrams_(K.max_dim() + 1),
-            params_(params)
+            params_(params),
+            include_zero_persistence_(include_zero_persistence)
     {
         if (params.compute_u) { std::cerr << "WARNING: compute_u will be ignored, do not need it for Ker/Im/Cok algorithm" << std::endl; }
         if (!params.compute_v) { std::cerr << "WARNING: compute_v is false, but V will be computed, we need it for Ker/Im/Cok algorithm" << std::endl; }
@@ -301,7 +303,8 @@ public:
 
             dim_type dim = fil_K_.get_cell(death_idx).dim() - 1;
 
-            ker_diagrams_.add_point(dim, birth, death, birth_idx, death_idx);
+            if (birth != death or include_zero_persistence_)
+                ker_diagrams_.add_point(dim, birth, death, birth_idx, death_idx);
 
             if (inf_points) {
                 assert(matched_positive_cells.count(birth_idx) == 0);
@@ -319,6 +322,10 @@ public:
             for(size_t birth_idx = 0 ; birth_idx < dcmp_F_.get_R().size() ; ++birth_idx) {
                 // sigma is in L, skip it
                 if (is_in_L(birth_idx))
+                    continue;
+
+                // sigma is paired
+                if (matched_positive_cells.count(birth_idx))
                     continue;
 
                 // sigma is positive in R_f, skip it
@@ -395,7 +402,8 @@ public:
 
             dim_type dim = fil_K_.get_cell(birth_idx).dim();
 
-            cok_diagrams_.add_point(dim, birth, death, birth_idx, death_idx);
+            if (birth != death or include_zero_persistence_)
+                cok_diagrams_.add_point(dim, birth, death, birth_idx, death_idx);
 
             if (inf_points) {
                 assert(matched_positive_cells.count(birth_idx) == 0);
@@ -468,7 +476,8 @@ public:
             Real death = fil_K_.value_by_sorted_id(death_idx);
             dim_type dim = fil_K_.get_cell(birth_idx).dim();
 
-            im_diagrams_.add_point(dim, birth, death, birth_idx, death_idx);
+            if (birth != death or include_zero_persistence_)
+                im_diagrams_.add_point(dim, birth, death, birth_idx, death_idx);
 
             if (inf_points) {
                 assert(matched_positive_cells.count(birth_idx) == 0);

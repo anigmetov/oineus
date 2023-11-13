@@ -900,7 +900,7 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
     m.def("min_filtration", &oin::min_filtration<ProdSimplex, Real>, py::arg("fil_1"), py::arg("fil_2"), "return a filtration where each cell has minimal value from fil_1, fil_2");
 
     py::class_<KerImCokRedSimplex>(m, ker_im_cok_reduced_class_name.c_str())
-            .def(py::init<const Filtration&, const Filtration&, oin::Params&>())
+            .def(py::init<const Filtration&, const Filtration&, oin::Params&, bool>(), py::arg("K"), py::arg("L"), py::arg("params"), py::arg("include_zero_persistence")=false)
             .def("kernel_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<Real>(self.get_kernel_diagrams()); })
             .def("cokernel_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<Real>(self.get_cokernel_diagrams()); })
             .def("image_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<Real>(self.get_image_diagrams()); })
@@ -913,7 +913,7 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
             ;
 
      py::class_<KerImCokRedProdSimplex>(m, ker_im_cok_reduced_prod_class_name.c_str())
-            .def(py::init<const ProdFiltration&, const ProdFiltration&, oin::Params&>())
+            .def(py::init<const ProdFiltration&, const ProdFiltration&, oin::Params&, bool>(), py::arg("K"), py::arg("L"), py::arg("params"), py::arg("include_zero_persistence")=false)
             .def("kernel_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<Real>(self.get_kernel_diagrams()); })
             .def("cokernel_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<Real>(self.get_cokernel_diagrams()); })
             .def("image_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<Real>(self.get_image_diagrams()); })
