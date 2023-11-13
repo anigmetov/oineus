@@ -173,6 +173,12 @@ public:
             cok_diagrams_(K.max_dim() + 1),
             params_(params)
     {
+        if (params.compute_u) { std::cerr << "WARNING: compute_u will be ignored, do not need it for Ker/Im/Cok algorithm" << std::endl; }
+        if (!params.compute_v) { std::cerr << "WARNING: compute_v is false, but V will be computed, we need it for Ker/Im/Cok algorithm" << std::endl; }
+
+        params.compute_v = true;
+        params.compute_u = false;
+
         if (params_.verbose) { std::cerr << "Performing kernel, image, cokernel reduction, reduction parameters: " << params << std::endl; }
 
         // all cells in L must be present in K
@@ -195,12 +201,12 @@ public:
 
         //set up the reduction for F  on K
         dcmp_F_ = VRUDecomp(fil_K_.boundary_matrix_full());
-        dcmp_F_.reduce_parallel_rv(params);
+        dcmp_F_.reduce(params);
         if (params_.verbose) { std::cerr << "dcmp_F_ reduced" << std::endl; }
 
         //set up reduction for G on L
         dcmp_G_ = VRUDecomp(fil_L_.boundary_matrix_full());
-        dcmp_G_.reduce_parallel_rv(params);
+        dcmp_G_.reduce(params);
         if (params_.verbose) { std::cerr << "dcmp_G_ reduced" << std::endl; }
 
         std::iota(new_order_to_old_.begin(), new_order_to_old_.end(), 0);
@@ -229,15 +235,17 @@ public:
         // step 2 of the algorithm
         auto d_im = compute_d_im();
         dcmp_im_ = VRUDecomp(d_im);
-        dcmp_im_.reduce_parallel_rv(params);
+        dcmp_im_.reduce(params);
         if (params_.verbose) { std::cerr << "dcmp_im_ reduced" << std::endl; }
 
         // step 3 of the algorithm
 
+        params.compute_v = false;
+
         Matrix d_ker = compute_d_ker();
         // NB: d_ker is not a square matrix, has fewer columns that rows. We must give the number of rows (#cells in K) to VRUDecomp ctor.
         dcmp_ker_ = VRUDecomp(d_ker, fil_K_.size());
-        dcmp_ker_.reduce_serial(params);
+        dcmp_ker_.reduce(params);
         if (params_.verbose) { std::cerr << "dcmp_ker reduced" << std::endl; }
 
         // step 4 of the algorithm
