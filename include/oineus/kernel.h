@@ -242,7 +242,7 @@ public:
 
         // step 3 of the algorithm
 
-        params.compute_v = false;
+        //params.compute_v = false;
 
         Matrix d_ker = compute_d_ker();
         // NB: d_ker is not a square matrix, has fewer columns that rows. We must give the number of rows (#cells in K) to VRUDecomp ctor.
