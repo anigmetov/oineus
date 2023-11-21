@@ -38,7 +38,9 @@ public:
     VRUDecomp dcmp_ker_; //reduced kernel triple
     VRUDecomp dcmp_cok_; //reduced cokernel triple
     int max_dim_;        //the maximum dimension of a cell
-    Dgms ker_diagrams_;  // kernel diagrams (essentially, map dim -> vector of DgmPoints
+    Dgms dom_diagrams_;  // diagrams of the included complex L
+    Dgms cod_diagrams_;  // diagrams of the ambient complex K
+    Dgms ker_diagrams_;  // kernel diagrams (essentially, map dim -> vector of DgmPoints)
     Dgms im_diagrams_;   // image diagrams
     Dgms cok_diagrams_;  // cokernel diagrams
 private:
@@ -210,6 +212,9 @@ public:
         dcmp_G_ = VRUDecomp(fil_L_.boundary_matrix_full());
         dcmp_G_.reduce(params);
         if (params_.verbose) { std::cerr << "dcmp_G_ reduced" << std::endl; }
+
+        cod_diagrams_ = dcmp_F_.diagram(fil_K_, true);
+        dom_diagrams_ = dcmp_G_.diagram(fil_L_, true);
 
         std::iota(new_order_to_old_.begin(), new_order_to_old_.end(), 0);
 
@@ -534,5 +539,16 @@ public:
             throw std::runtime_error("cokernel diagrams were not computed because params.cokernel was false in constructor");
         return cok_diagrams_;
     }
+
+    const Dgms& get_domain_diagrams() const
+    {
+        return dom_diagrams_;
+    }
+
+    const Dgms& get_codomain_diagrams() const
+    {
+        return cod_diagrams_;
+    }
+
 };
 } // namespace oineus
