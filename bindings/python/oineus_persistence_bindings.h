@@ -901,6 +901,8 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
 
     py::class_<KerImCokRedSimplex>(m, ker_im_cok_reduced_class_name.c_str())
             .def(py::init<const Filtration&, const Filtration&, oin::Params&, bool>(), py::arg("K"), py::arg("L"), py::arg("params"), py::arg("include_zero_persistence")=false)
+            .def("domain_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<Real>(self.get_domain_diagrams()); })
+            .def("codomain_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<Real>(self.get_codomain_diagrams()); })
             .def("kernel_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<Real>(self.get_kernel_diagrams()); })
             .def("cokernel_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<Real>(self.get_cokernel_diagrams()); })
             .def("image_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<Real>(self.get_image_diagrams()); })
