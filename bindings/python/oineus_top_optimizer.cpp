@@ -74,6 +74,10 @@ void init_oineus_top_optimizer(py::module& m)
                     py::arg("critical_sets"),
                     py::arg("strategy"),
                     "combine critical sets into well-defined assignment of new values to indices")
+            .def("linear_decrease_death", &TopologyOptimizer::linear_decrease_death, "linear decrease death")
+            .def("linear_increase_death", &TopologyOptimizer::linear_increase_death, "linear increase death")
+            .def("linear_decrease_birth", &TopologyOptimizer::linear_decrease_death, "linear decrease birth")
+            .def("linear_increase_birth", &TopologyOptimizer::linear_increase_death, "linear increase birth")
             .def("update", &TopologyOptimizer::update);
 
     // induced matching
