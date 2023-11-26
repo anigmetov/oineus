@@ -136,6 +136,8 @@ public:
     {
         params_hom_.clearing_opt = false;
         params_coh_.clearing_opt = false;
+        params_coh_.compute_u = true;
+        params_hom_.compute_u = true;
     }
 
     TopologyOptimizer(const Fil& fil, const ComputeFlags& hints)
@@ -693,11 +695,40 @@ public:
         return result;
     }
     
-    CriticalSets linear_decrease_deathes((const Indices& indices, const Values& values)) const{
+    CriticalSets linear_decrease_deaths(const Indices& indices, const Values& values) const{
         CriticalSets results;
         for(size_t i = 0 ; i < indices.size() ; ++i) {
-            results.emplace_back(linear_decrease_deathes(indices[i], values[i]));
+            auto crit_set_i = linear_decrease_death(indices[i], values[i]);
+            results.insert(results.end(), crit_set_i.begin(), crit_set_i.end());
         }
+        return results;
+    }
+
+    CriticalSets linear_increase_deaths(const Indices& indices, const Values& values) const{
+        CriticalSets results;
+        for(size_t i = 0 ; i < indices.size() ; ++i) {
+            auto crit_set_i = linear_increase_death(indices[i], values[i]);
+            results.insert(results.end(), crit_set_i.begin(), crit_set_i.end());
+        }
+        return results;
+    }
+
+    CriticalSets linear_decrease_births(const Indices& indices, const Values& values) const{
+        CriticalSets results;
+        for(size_t i = 0 ; i < indices.size() ; ++i) {
+            auto crit_set_i = linear_decrease_birth(indices[i], values[i]);
+            results.insert(results.end(), crit_set_i.begin(), crit_set_i.end());
+        }
+        return results;
+    }
+
+    CriticalSets linear_increase_births(const Indices& indices, const Values& values) const{
+        CriticalSets results;
+        for(size_t i = 0 ; i < indices.size() ; ++i) {
+            auto crit_set_i = linear_increase_birth(indices[i], values[i]);
+            results.insert(results.end(), crit_set_i.begin(), crit_set_i.end());
+        }
+        return results;
     }
 
     CriticalSets linear_increase_death(size_t negative_simplex_idx, Real target_death) const
@@ -729,11 +760,11 @@ public:
             Real min_val_tau = fil_.get_cell_value(tau_idx);
             for(auto v_idx_it = v_col.rbegin() ; v_idx_it != v_col.rend() ; ++v_idx_it) {
                 auto v_idx = *v_idx_it;
+                // filtration index is the same as index stored in column  
                 min_val_tau = std::min(min_val_tau, fil_.get_cell_value(v_idx));    
             }
             // Liner interpolate
-            // TODO: what is the target value at the anothor peak
-            Real slope = linear_slope(min_val_tau, tau_val, target_death-negative_val+tau_val, true);
+            Real slope = linear_slope(min_val_tau, tau_val, target_death, true);
             for(auto v_idx_it = v_col.rbegin() ; v_idx_it != v_col.rend() ; ++v_idx_it) {
                 auto v_idx = *v_idx_it;
                 Real new_val = min_val_tau + slope * (fil_.get_cell_value(v_idx) - min_val_tau);
@@ -743,7 +774,6 @@ public:
 
         if (result.empty())
             throw std::runtime_error("increase_death: empty");
-
         return result;
     }
 
@@ -766,7 +796,7 @@ public:
             }
 
             // index in the anti-transpose matrix
-            auto& sigma_matrix_col_idx = fil_.index_in_matrix(fil_idx, true);
+            const auto& sigma_matrix_col_idx = fil_.index_in_matrix(fil_idx, true);
             auto& v_col = decmp_coh_.v_data.at(sigma_matrix_col_idx); 
             // loop column to find the max value
             Real max_val = sigma_val;
@@ -779,7 +809,7 @@ public:
             for(auto index_in_matrix = v_col.rbegin() ; index_in_matrix != v_col.rend() ; ++index_in_matrix) {
                 auto fil_idx = fil_.index_in_filtration(*index_in_matrix, true);
                 Real new_val = target_birth + slope * (fil_.get_cell_value(fil_idx) - sigma_val);
-                result.emplace_back(new_val, Indices{fil_idx});   
+                result.emplace_back(new_val, Indices{static_cast<int>(fil_idx)});
             }
         }
 
@@ -809,7 +839,7 @@ public:
         for(auto index_in_matrix = v_col.rbegin() ; index_in_matrix != v_col.rend() ; ++index_in_matrix) {
             auto fil_idx = fil_.index_in_filtration(*index_in_matrix, true);
             Real new_val = target_birth + slope * (fil_.get_cell_value(fil_idx) - positive_val);
-            result.emplace_back(new_val, Indices{fil_idx});   
+            result.emplace_back(new_val, Indices{static_cast<int>(fil_idx)});   
         }
 
         if (result.empty())
