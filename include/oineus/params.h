@@ -106,6 +106,12 @@ namespace oineus {
         }
     }
 #endif
+
+    inline std::ostream& operator<<(std::ostream& out, const oineus::ThreadStats& p)
+    {
+        out << "Stats(thread_id = " << p.thread_id << ", n_cleared = " << p.n_cleared << ", n_right_pivots = " << p.n_right_pivots <<")";
+        return out;
+    }
 }
 
 #endif //OINEUS_PARAMS_H

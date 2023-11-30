@@ -15,41 +15,7 @@
 #define CALI_MARK_END(x) x;
 #endif
 
-#ifdef OINEUS_USE_SPDLOG
-
-#include "spdlog/spdlog.h"
-#include "spdlog/fmt/ostr.h"
-namespace spd = spdlog;
-
-template<typename... Args>
-inline void debug(const Args& ... args)
-{
-    spd::debug(args...);
-}
-
-template<typename... Args>
-inline void info(const Args& ... args)
-{
-    spd::info(args...);
-}
-
-#else
-
-template<typename... Args>
-inline void debug([[maybe_unused]] const Args& ... args)
-{
-    ;
-}
-
-template<typename... Args>
-inline void info([[maybe_unused]] const Args& ... args)
-{
-    ;
-}
-
-#endif
-
-#include "icecream/icecream.hpp"
+#include "log_wrapper.h"
 
 namespace oineus {
 
