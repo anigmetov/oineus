@@ -53,9 +53,10 @@ namespace oineus {
             return (counter / n_threads_) % 2 == 0;
         }
 
-        void retire(T* ptr)
+        void retire(T*& ptr)
         {
             to_retire_.push_back(ptr);
+            ptr = nullptr;
         }
 
         void quiescent()

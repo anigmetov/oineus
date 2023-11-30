@@ -2,6 +2,8 @@
 #ifndef OINEUS_SPARSE_MATRIX_H
 #define OINEUS_SPARSE_MATRIX_H
 
+#include <iostream>
+#include <sstream>
 #include <vector>
 #include <utility>
 #include <set>
@@ -87,21 +89,35 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
     using APColumn = std::atomic<PColumn>;
     using AMatrix = std::vector<APColumn>;
 
+    using CachedColumn = std::set<Entry>;
+
     static bool is_zero(const Column* c) { return c->empty(); }
     static bool is_zero(const Column& c) { return c.empty(); }
 
     static size_t r_column_size(const Column& col) { return col.size(); }
     static size_t v_column_size(const Column& col) { return 0; }
 
+    static size_t r_column_size(const CachedColumn& col) { return col.size(); }
+    static size_t v_column_size(const CachedColumn& col) { return 0; }
+
     static Int low(const Column* c)
     {
         return c->empty() ? -1 : c->back();
     }
 
-
-    static void add_column(const Column& col_a, const Column& col_b, Column& sum)
+    static CachedColumn load_to_cache(const Column& col)
     {
-        add_column(&col_a, &col_b, &sum);
+        return CachedColumn(col.begin(), col.end());
+    }
+
+    static CachedColumn load_to_cache(Column* col)
+    {
+        return load_to_cache(*col);
+    }
+
+    static void add_to_cached(const Column& pivot, CachedColumn& reduced)
+    {
+        add_to_cached(&pivot, reduced);
     }
 
     // sort by index
@@ -110,36 +126,60 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
         std::sort(col.begin(), col.end());
     }
 
-    static void add_column(const Column* col_a, const Column* col_b, Column* sum)
+    static void add_to_cached(const Column* pivot, CachedColumn& reduced)
     {
-        // add_column cannot work as +=
-        assert(col_a->data() != sum->data() and col_b->data() != sum->data());
+        //{
+        //    std::stringstream ss;
+        //    ss << "ENTER add_to_cached, pivots = [";
+        //    for(auto x : *pivot)
+        //        ss << x << ", ";
+        //    ss << "], reduced = [";
+        //    for(auto x : reduced)
+        //        ss << x << ", ";
+        //    ss << "]";
+        //    std::cerr << ss.str() << std::endl;
+        //}
 
-        auto a_iter = col_a->cbegin();
-        auto b_iter = col_b->cbegin();
-
-        sum->clear();
-
-        while(true) {
-            if (a_iter == col_a->cend() && b_iter == col_b->cend()) {
-                break;
-            } else if (a_iter == col_a->cend() && b_iter != col_b->cend()) {
-                sum->push_back(*b_iter++);
-            } else if (a_iter != col_a->cend() && b_iter == col_b->cend()) {
-                sum->push_back(*a_iter++);
-            } else if (*a_iter < *b_iter) {
-                sum->push_back(*a_iter++);
-            } else if (*b_iter < *a_iter) {
-                sum->push_back(*b_iter++);
-            } else {
-                assert(*a_iter == *b_iter);
-                ++a_iter;
-                ++b_iter;
-            }
+        for(auto e : *pivot) {
+            auto iter_exists = reduced.insert(e);
+            if (!iter_exists.second)
+                reduced.erase(iter_exists.first);
         }
+
+        //{
+        //    std::stringstream ss;
+        //    ss << "EXIT add_to_cached, pivots = [";
+        //    for(auto x : *pivot)
+        //        ss << x << ", ";
+        //    ss << "], reduced = [";
+        //    for(auto x : reduced)
+        //        ss << x << ", ";
+        //    ss << "]";
+        //    std::cerr << ss.str() << std::endl;
+        //}
     }
 
-     // get identity matrix
+    static bool is_zero(const CachedColumn& col)
+    {
+        return col.empty();
+    }
+
+    static Int low(const CachedColumn& col)
+    {
+        return is_zero(col) ? -1 : *col.rbegin();
+    }
+
+    static PColumn load_from_cache(const CachedColumn& col)
+    {
+        return new Column(col.begin(), col.end());
+    }
+
+    static void load_from_cache(const CachedColumn& cached_col, Column& col)
+    {
+        col = Column(cached_col.begin(), cached_col.end());
+    }
+
+    // get identity matrix
     static Matrix eye(size_t n)
     {
         Matrix cols{n};
@@ -297,27 +337,49 @@ struct SimpleRVMatrixTraits<Int_, 2> {
     using Int = Int_;
 
     using Column = RVColumn<Int, 2>;
+    using CachedColumn = std::pair<std::set<Int>, std::set<Int>>;
     using PColumn = Column*;
     using APColumn = std::atomic<PColumn>;
     using AMatrix = std::vector<APColumn>;
 
-    static bool is_zero(const Column* col) { return col->is_zero(); }
+    static bool is_zero(const Column* col)       { return col->is_zero(); }
+    static bool is_zero(const CachedColumn& col) { return col.first.empty(); }
 
-    static Int low(const Column* col) { return col->low(); }
-    static Int low(const Column& col) { return col.low(); }
+    static Int low(const Column* col)       { return col->low(); }
+    static Int low(const Column& col)       { return col.low(); }
+
+    static Int low(const CachedColumn& col) { return is_zero(col) ? -1 : *col.first.rbegin(); }
 
     static size_t r_column_size(const Column& col) { return col.r_column.size(); }
     static size_t v_column_size(const Column& col) { return col.v_column.size(); }
 
-    static void add_column(const Column& a, const Column& b, Column& sum)
+    static size_t r_column_size(const CachedColumn& col) { return col.first.size(); }
+    static size_t v_column_size(const CachedColumn& col) { return col.second.size(); }
+
+    static void add_to_cached(const Column& pivot, CachedColumn& reduced)
     {
-        add_column(&a, &b, &sum);
+        SimpleSparseMatrixTraits<Int, 2>::add_to_cached(pivot.r_column, reduced.first);
+        SimpleSparseMatrixTraits<Int, 2>::add_to_cached(pivot.v_column, reduced.second);
     }
 
-    static void add_column(const Column* a, const Column* b, Column* sum)
+    static void add_to_cached(const Column* pivot, CachedColumn& reduced)
     {
-        SimpleSparseMatrixTraits<Int, 2>::add_column(a->r_column, b->r_column, sum->r_column);
-        SimpleSparseMatrixTraits<Int, 2>::add_column(a->v_column, b->v_column, sum->v_column);
+        add_to_cached(*pivot, reduced);
+    }
+
+    static CachedColumn load_to_cache(const Column& col)
+    {
+        return {{col.r_column.begin(), col.r_column.end()}, {col.v_column.begin(), col.v_column.end()}};
+    }
+
+    static CachedColumn load_to_cache(Column* col)
+    {
+        return load_to_cache(*col);
+    }
+
+    static PColumn load_from_cache(const CachedColumn& col)
+    {
+        return new Column({col.first.begin(), col.first.end()}, {col.second.begin(), col.second.end()});
     }
 
 //    // get identity matrix

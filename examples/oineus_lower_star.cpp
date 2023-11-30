@@ -156,7 +156,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    info("Reading file {}", fname_in);
+    spd::info("Reading file {}", fname_in);
 
     using Decomposition = VRUDecomposition<Int>;
     using MatrixData = typename Decomposition::MatrixData;
@@ -175,7 +175,7 @@ int main(int argc, char** argv)
         auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
         VRUDecomposition<Int> decmp {fil, false };
 
-        info("Matrix read");
+        spd::info("Matrix read");
 
         fname_dgm = fname_in + "_t_" + std::to_string(params.n_threads) + "_c_" + std::to_string(params.chunk_size);
 
@@ -193,7 +193,7 @@ int main(int argc, char** argv)
 
         dgm.save_as_txt(fname_dgm);
 
-        info("Diagrams saved");
+        spd::info("Diagrams saved");
     }
 
     return 0;

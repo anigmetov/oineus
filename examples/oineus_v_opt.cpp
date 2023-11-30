@@ -106,7 +106,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    info("Reading file {}", fname_in);
+    spd::info("Reading file {}", fname_in);
 
     auto grid_func = read_function<Int, Real, 3>(fname_in, wrap);
     auto& grid = grid_func.first;
@@ -114,7 +114,7 @@ int main(int argc, char** argv)
     auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
     VRUDecomposition<Int> rv { fil, false };
 
-    info("Matrix read");
+    spd::info("Matrix read");
 
     fname_dgm = fname_in + "_t_" + std::to_string(params.n_threads) + "_c_" + std::to_string(params.chunk_size);
 
@@ -129,7 +129,7 @@ int main(int argc, char** argv)
 
     dgm.save_as_txt(fname_dgm);
 
-    info("Diagrams saved");
+    spd::info("Diagrams saved");
 
     dim_type dim = 0;
     Real eps = 0.8;

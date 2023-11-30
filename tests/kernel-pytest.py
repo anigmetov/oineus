@@ -10,7 +10,10 @@ def test_kernel_1():
     K = [ [0, [0], 10], [1,[1],50], [2,[2], 20], [3, [3], 50], [4,[4], 15], [5, [5], 12], [6,[0,1], 50], [7, [1,2], 60], [8,[2,3], 70], [9, [3,4], 80], [10, [0,5], 30], [11,[4,5], 20]]
     L = [ [0, [0], 10], [1,[1],50], [2,[2], 20], [3, [3], 50], [4,[4], 15], [5,[0,1], 50], [6, [1,2], 60], [7,[2,3], 70], [8, [3,4], 80] ]
     IdMapping = [0,1,2,3,4,6,7,8,9]
-    kicr = oin.compute_kernel_image_cokernel_reduction(K, L, IdMapping, params)
+    K = oin.list_to_filtration_double(K)
+    L = oin.list_to_filtration_double(L)
+    kicr = oin.KerImCokReduced_double(K, L, params)
+    # print(kicr.kernel_diagrams().in_dimension(0))
     assert (kicr.kernel_diagrams().in_dimension(0) == [[30., 80.],[20., math.inf]]).all()
     assert (len(kicr.kernel_diagrams().in_dimension(1)) == 0)
     assert (kicr.cokernel_diagrams().in_dimension(0) == [[12., 20.]]).all()
@@ -26,8 +29,9 @@ def test_kernel_2():
     params.cokernel=True
     K=[[0,[0], 10], [1, [1], 30], [2, [2], 10], [3, [3], 0], [4, [0,1], 30], [5, [1,2], 30], [6, [0,3], 10], [7, [2,3], 10]]
     L=[[0,[0], 10.], [1, [1], 30], [2, [2], 10], [3, [0,1], 30], [4, [1,2], 30]]
-    IdMapping=[0,1,2,4,5]
-    kicr = oin.compute_kernel_image_cokernel_reduction(K, L, IdMapping, params)
+    K = oin.list_to_filtration_double(K)
+    L = oin.list_to_filtration_double(L)
+    kicr = oin.KerImCokReduced_double(K, L, params)
     assert (kicr.kernel_diagrams().in_dimension(0) == [[10., 30.]]).all()
     assert (len(kicr.kernel_diagrams().in_dimension(1)) == 0)
     assert (kicr.cokernel_diagrams().in_dimension(0) == [[0., 10.]]).all()

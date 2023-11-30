@@ -145,14 +145,13 @@ decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::
 
 template<typename Int, typename Real>
 decltype(auto)
-list_to_filtration(py::list data, oin::Params& params) //take a list of cells and turn it into a filtration for oineus. The list should contain cells in the form '[id, [boundary], filtration value]'.
+list_to_filtration(py::list data) //take a list of cells and turn it into a filtration for oineus. The list should contain cells in the form '[id, [boundary], filtration value]'.
 {
     using Fil = oin::Filtration<oin::Simplex<Int>, Real>;
     using Simplex = oin::Simplex<Int>;
     using SimplexVector = typename Fil::CellVector;
 
     int n_simps = data.size();
-    std::cout << "Number of cells in the complex is: " << n_simps << std::endl;
     SimplexVector FSV;
 
     for(int i = 0 ; i < n_simps ; i++) {
@@ -171,7 +170,6 @@ list_to_filtration(py::list data, oin::Params& params) //take a list of cells an
             }
             count++;
         }
-        if (params.verbose) std::cout << "parsed the following data. id: " << id << " val: " << val << std::endl;
         FSV.emplace_back(Simplex(id, vertices), val);
     }
 
@@ -340,9 +338,9 @@ decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_,
     std::cout << std::endl;
 
     std::cout << "------------ Importing K ------------" << std::endl;
-    Filtration K = list_to_filtration<Int, Real>(K_, params);
+    Filtration K = list_to_filtration<Int, Real>(K_);
     std::cout << "------------ Importing L ------------" << std::endl;
-    Filtration L = list_to_filtration<Int, Real>(L_, params);
+    Filtration L = list_to_filtration<Int, Real>(L_);
 
     int n_L = IdMap_.size();
     std::vector<int> IdMapping;
