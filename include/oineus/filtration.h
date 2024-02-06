@@ -25,22 +25,24 @@ namespace oineus {
     // filtration + vector of locations of critical value for each simplex
     // L = int: vertex id in grid for lower-star
     // L = VREdge: edge for Vietoris--Rips
-    template<typename Cell, typename L>
+    template<typename Cell, typename Real, typename L>
     struct FiltrationCritValLocs {
-        Filtration<Cell> filtration;
+        Filtration<Cell, Real> filtration;
         std::vector<L> critical_value_locations;
     };
 
 
-    template<class Cell_>
+    template<class UnderCell_, class Real_>
     class Filtration {
     public:
-        using Cell = Cell_;
+        using Real = Real_;
+        using Cell = CellWithValue<UnderCell_, Real>;
         using Int = typename Cell::Int;
-        using Real = typename Cell::Real;
         using CellVector = std::vector<Cell>;
-        using IntVector = std::vector<Int>;
         using BoundaryMatrix = typename VRUDecomposition<Int>::MatrixData;
+
+        using CellUid = typename Cell::Uid;
+        using UidHasher = typename Cell::UidHasher;
 
         Filtration() = default;
 
@@ -76,7 +78,7 @@ namespace oineus {
         void reset_ids_to_sorted_ids()
         {
             for(auto& sigma : cells_) {
-                sigma.id_ = sigma.sorted_id_;
+                sigma.set_id(sigma.get_sorted_id());
             }
             for(Int i = 0; i < id_to_sorted_id_.size(); ++i) {
                 id_to_sorted_id_[i] = i;
@@ -101,7 +103,7 @@ namespace oineus {
         auto dim_first() const { return dim_first_; }
         auto dim_last() const { return dim_last_; }
 
-        Real get_cell_value(size_t i) { return cells_[i].value(); }
+        Real get_cell_value(size_t i) const { return cells_[i].get_value(); }
 
         size_t size_in_dimension(dim_type d) const
         {
@@ -145,7 +147,7 @@ namespace oineus {
                     col.reserve(d + 1);
 
                     for(const auto& tau_vertices: sigma.boundary()) {
-                        col.push_back(vertices_to_sorted_id_.at(tau_vertices));
+                        col.push_back(uid_to_sorted_id.at(tau_vertices));
                     }
 
                     std::sort(col.begin(), col.end());
@@ -174,35 +176,46 @@ namespace oineus {
             return sorted_id_to_value_[sorted_id];
         }
 
-        Real value_by_vertices(const IntVector& vs) const
+        Real value_by_vertices(const CellUid& vs) const
         {
-            return sorted_id_to_value_.at(vertices_to_sorted_id_.at(vs));
+            return sorted_id_to_value_.at(uid_to_sorted_id.at(vs));
         }
 
-        auto get_sorted_id_by_vertices(const IntVector& vs) const
+        auto get_sorted_id_by_vertices(const CellUid& vs) const
         {
-            return vertices_to_sorted_id_.at(vs);
+            return uid_to_sorted_id.at(vs);
         }
+
+        auto get_sorted_id_by_uid(const CellUid& uid) const
+        {
+            return uid_to_sorted_id.at(uid);
+        }
+
+        Cell get_cell_by_uid(const CellUid& uid) const
+        {
+            return cells_[uid_to_sorted_id.at(uid)];
+        }
+
 
         Real min_value() const
         {
             if (cells_.empty())
                 return negate_ ? std::numeric_limits<Real>::max() : -std::numeric_limits<Real>::max();
             else
-                return cells_[0].value();
+                return cells_[0].get_value();
         }
 
         Real min_value(dim_type d) const
         {
-            return cells_.at(dim_first(d)).value();
+            return cells_.at(dim_first(d)).get_value();
         }
 
         const CellVector& cells() const { return cells_; }
         CellVector& cells() { return cells_; }
         CellVector cells_copy() const { return cells_; }
 
-        Cell get_cell(size_t i)    { return cells_.at(i); }
-        Cell get_simplex(size_t i) { return cells_.at(i); }
+        Cell get_cell(size_t i)  const { return cells_.at(i); }
+        Cell get_simplex(size_t i) const { return cells_.at(i); }
 
         auto get_sorted_id(int i) const
         {
@@ -255,7 +268,7 @@ namespace oineus {
         bool negate_;
         CellVector cells_;
 
-        std::map<IntVector, Int> vertices_to_sorted_id_;
+        std::unordered_map<CellUid, Int, UidHasher> uid_to_sorted_id;
         std::unordered_map<Int, Int> id_to_sorted_id_;
         std::vector<Int> sorted_id_to_id_;
 
@@ -268,7 +281,7 @@ namespace oineus {
         void set_ids()
         {
             for(size_t id = 0; id < cells_.size(); ++id) {
-                cells_[id].id_ = static_cast<Int>(id);
+                cells_[id].set_id(static_cast<Int>(id));
             }
         }
 
@@ -300,7 +313,7 @@ namespace oineus {
             }
 
             sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
-            vertices_to_sorted_id_.clear();
+            uid_to_sorted_id.clear();
             sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
 
             size_t sorted_id = 0;
@@ -309,11 +322,11 @@ namespace oineus {
 
             for(auto& [dim, cells_in_dim] : dim_to_cells) {
                 for(auto& cell : cells_in_dim) {
-                    id_to_sorted_id_[cell.id_] = sorted_id;
-                    sorted_id_to_id_.at(sorted_id) = cell.id_;
+                    id_to_sorted_id_[cell.get_id()] = sorted_id;
+                    sorted_id_to_id_.at(sorted_id) = cell.get_id();
                     cell.sorted_id_ = sorted_id;
-                    vertices_to_sorted_id_[cell.vertices_] = sorted_id;
-                    sorted_id_to_value_.at(sorted_id) = cell.value();
+                    uid_to_sorted_id[cell.get_uid()] = sorted_id;
+                    sorted_id_to_value_.at(sorted_id) = cell.get_value();
 
                     cells_.push_back(cell);
 
@@ -328,15 +341,16 @@ namespace oineus {
             CALI_CXX_MARK_FUNCTION;
 
             sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
-            vertices_to_sorted_id_.clear();
+            uid_to_sorted_id.clear();
             sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
 
             // sort by dimension first, then by value, then by id
             auto cmp = [this](const Cell& sigma, const Cell& tau) {
-              Real v_sigma = this->negate_ ? -sigma.value() : sigma.value();
-              Real v_tau = this->negate_ ? -tau.value() : tau.value();
-              Int d_sigma = sigma.dim(), d_tau = tau.dim();
-              return std::tie(d_sigma, v_sigma, sigma.id_) < std::tie(d_tau, v_tau, tau.id_);
+              auto v_sigma = this->negate_ ? -sigma.get_value() : sigma.get_value();
+              auto v_tau = this->negate_ ? -tau.get_value() : tau.get_value();
+              auto d_sigma = sigma.dim(), d_tau = tau.dim();
+              auto sigma_id = sigma.get_id(), tau_id = tau.get_id();
+              return std::tie(d_sigma, v_sigma, sigma_id) < std::tie(d_tau, v_tau, tau_id);
             };
 
             if (n_threads > 1) {
@@ -349,20 +363,20 @@ namespace oineus {
             for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
                 auto& sigma = cells_[sorted_id];
 
-                id_to_sorted_id_[sigma.id_] = sorted_id;
-                sorted_id_to_id_[sorted_id] = sigma.id_;
+                id_to_sorted_id_[sigma.get_id()] = sorted_id;
+                sorted_id_to_id_[sorted_id] = sigma.get_id();
                 sigma.sorted_id_ = sorted_id;
-                vertices_to_sorted_id_[sigma.vertices_] = sorted_id;
-                sorted_id_to_value_[sorted_id] = sigma.value();
+                uid_to_sorted_id[sigma.get_uid()] = sorted_id;
+                sorted_id_to_value_[sorted_id] = sigma.get_value();
             }
         }
 
-        template<typename C>
-        friend std::ostream& operator<<(std::ostream&, const Filtration<C>&);
+        template<typename C, typename R>
+        friend std::ostream& operator<<(std::ostream&, const Filtration<C, R>&);
     };
 
-    template<typename C>
-    std::ostream& operator<<(std::ostream& out, const Filtration<C>& fil)
+    template<typename C, typename R>
+    std::ostream& operator<<(std::ostream& out, const Filtration<C, R>& fil)
     {
         out << "Filtration(size = " << fil.size() << ", " << "\ncells = [";
         dim_type d = 0;
@@ -384,6 +398,29 @@ namespace oineus {
         out << "]\n";
         out << ");";
         return out;
+    }
+
+    template<class C, class R>
+    Filtration<C, R> min_filtration(const Filtration<C, R>& fil_1, const Filtration<C, R>& fil_2)
+    {
+        if (fil_1.negate() != fil_2.negate())
+            throw std::runtime_error("Cannot construct min filtration from two filtrations with opposite order");
+
+        if (fil_1.size() != fil_2.size())
+            throw std::runtime_error("Refuse to construct min filtration from two filtrations of different sizes");
+
+        auto cells = fil_1.cells_copy();
+
+        for(CellWithValue<C, R>& cell : cells) {
+            auto cell_index_2 = fil_2.get_sorted_id_by_uid(cell.get_uid());
+            R value_2 = fil_2.get_cell_value(cell_index_2);
+            if (fil_1.cmp(value_2, cell.get_value())) {
+                cell.set_value(value_2);
+            }
+        }
+
+        // retain ids from fil_1
+        return Filtration<C, R>(cells, fil_1.negate(), 1, false, false);
     }
 
 } // namespace oineus

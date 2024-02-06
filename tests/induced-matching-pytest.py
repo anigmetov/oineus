@@ -39,7 +39,8 @@ def test_ind_match():
 
     m = oin.get_induced_matching(fil_domain, fil_codomain)
 
-    assert(len(m[0]) == 2)
+    assert(len(m[0]) == 3)
+    assert(len(m[1]) == 1)
 
 if __name__ == "__main__":
     test_ind_match()

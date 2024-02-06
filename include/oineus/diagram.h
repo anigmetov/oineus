@@ -180,10 +180,9 @@ namespace oineus {
 
         [[nodiscard]] size_t n_dims() const noexcept { return diagram_in_dimension_.size(); }
 
-        // will throw, if there is no diagram for dimension d
-        Dgm get_diagram_in_dimension(dim_type d) const
+        Dgm get_diagram_in_dimension(dim_type d)
         {
-            return diagram_in_dimension_.at(d);
+            return diagram_in_dimension_[d];
         }
 
         IndexDgm get_index_diagram_in_dimension(dim_type d) const
@@ -198,7 +197,7 @@ namespace oineus {
         }
 
         Dgm& extract(int i) { return diagram_in_dimension_[i]; }
-        Dgm& operator[](size_t d) { return diagram_in_dimension_.at(d); }
+        Dgm& operator[](size_t d) { return diagram_in_dimension_[d]; }
         const Dgm& operator[](size_t d) const { return diagram_in_dimension_.at(d); }
 
         void add_point(dim_type dim, Real birth_value, Real death_value, size_t birth_index, size_t death_index)

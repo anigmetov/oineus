@@ -6,9 +6,10 @@ void init_oineus_top_optimizer(py::module& m)
     using Real = double;
     using Int = int;
 
-    using Simplex = oin::Simplex<Int, Real>;
-    using Filtration = oin::Filtration<Simplex>;
-    using TopologyOptimizer = oin::TopologyOptimizer<Simplex>;
+    using Simp = oin::Simplex<Int>;
+    using SWV = oin::CellWithValue<oin::Simplex<Int>, Real>;
+    using SimplexFiltration = oin::Filtration<Simp, Real>;
+    using TopologyOptimizer = oin::TopologyOptimizer<Simp, Real>;
     using Indices = typename TopologyOptimizer::Indices;
     using Values = typename TopologyOptimizer::Values;
     using IndicesValues = typename TopologyOptimizer::IndicesValues;
@@ -37,7 +38,7 @@ void init_oineus_top_optimizer(py::module& m)
 
     // optimization
     py::class_<TopologyOptimizer>(m, "TopologyOptimizer")
-            .def(py::init<const Filtration&>())
+            .def(py::init<const SimplexFiltration&>())
             .def("compute_diagram", [](TopologyOptimizer& opt, bool include_inf_points) { return PyOineusDiagrams<Real>(opt.compute_diagram(include_inf_points)); },
                     py::arg("include_inf_points"),
                     "compute diagrams in all dimensions")
@@ -60,8 +61,15 @@ void init_oineus_top_optimizer(py::module& m)
                     py::arg("return_wasserstein_distance")=false,
                     "return target from Wasserstein matching"
             )
+            .def_property_readonly("homology_decomposition", &TopologyOptimizer::get_homology_decompostion)
+            .def_property_readonly("cohomology_decomposition", &TopologyOptimizer::get_cohomology_decompostion)
             .def("singleton", &TopologyOptimizer::singleton)
             .def("singletons", &TopologyOptimizer::singletons)
+            .def("reduce_all", &TopologyOptimizer::reduce_all)
+            .def("increase_death", py::overload_cast<size_t>(&TopologyOptimizer::increase_death, py::const_), py::arg("negative_simplex_idx"), "return critical set for increasing death to inf")
+            .def("decrease_death", py::overload_cast<size_t>(&TopologyOptimizer::decrease_death, py::const_), py::arg("negative_simplex_idx"), "return critical set for decreasing death to -inf")
+            .def("increase_birth", py::overload_cast<size_t>(&TopologyOptimizer::increase_birth, py::const_), py::arg("negative_simplex_idx"), "return critical set for increasing birth to inf")
+            .def("decrease_birth", py::overload_cast<size_t>(&TopologyOptimizer::decrease_birth, py::const_), py::arg("negative_simplex_idx"), "return critical set for decreasing birth to -inf")
             .def("combine_loss", static_cast<IndicesValues (TopologyOptimizer::*)(const CriticalSets&, ConflictStrategy)>(&TopologyOptimizer::combine_loss),
                     py::arg("critical_sets"),
                     py::arg("strategy"),
@@ -69,11 +77,10 @@ void init_oineus_top_optimizer(py::module& m)
             .def("update", &TopologyOptimizer::update);
 
     // induced matching
-    m.def("get_induced_matching", &oin::get_induced_matching<Simplex>,
+    m.def("get_induced_matching", &oin::get_induced_matching<Simp, Real>,
             "Compute induced matching for two filtrations of the same complex",
             py::arg("included_filtration"),
             py::arg("containing_filtration"),
+            py::arg("dim")=static_cast<dim_type >(-1),
             py::arg("n_threads")=1);
-
-//    IndicesValues combine_loss(const CriticalSets& critical_sets, ConflictStrategy strategy)
 }

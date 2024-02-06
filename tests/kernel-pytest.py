@@ -35,3 +35,8 @@ def test_kernel_2():
     assert (kicr.image_diagrams().in_dimension(0) == [[10., math.inf]]).all()
     assert (len(kicr.image_diagrams().in_dimension(1)) == 0)
 
+
+if __name__ == "__main__":
+    test_kernel_1()
+    test_kernel_2()
+

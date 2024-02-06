@@ -25,7 +25,7 @@
 
 namespace oineus {
 
-    template<typename Cell>
+    template<typename Cell, typename Real>
     class Filtration;
 
     using Idx = int;
@@ -204,8 +204,8 @@ namespace oineus {
         VRUDecomposition& operator=(VRUDecomposition&&) noexcept = default;
         VRUDecomposition& operator=(const VRUDecomposition&) = default;
 
-        template<class C>
-        VRUDecomposition(const Filtration<C>& fil, bool _dualize)
+        template<class C, class R>
+        VRUDecomposition(const Filtration<C, R>& fil, bool _dualize)
                 :
                 d_data(!_dualize ? fil.boundary_matrix_full() : antitranspose(fil.boundary_matrix_full(), fil.size())),
                 r_data(d_data),
@@ -269,34 +269,37 @@ namespace oineus {
         bool has_matrix_u() const { return u_data_t.size() > 0; }
         bool has_matrix_v() const { return v_data.size() > 0; }
 
-        template<typename Cell>
-        Diagrams<typename Cell::Real> diagram_general(const Filtration<Cell>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const;
+        template<typename Cell, typename Real>
+        Diagrams<Real> diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const;
 
-        template<typename Cell>
-        Diagrams<typename Cell::Real> diagram(const Filtration<Cell>& fil, bool include_inf_points) const;
+        template<typename Cell, typename Real>
+        Diagrams<Real> diagram(const Filtration<Cell, Real>& fil, bool include_inf_points) const;
 
-        template<typename Cell>
-        Diagrams<typename Cell::Real> zero_persistence_diagram(const Filtration<Cell>& fil) const;
+        template<typename Cell, typename Real>
+        Diagrams<Real> zero_persistence_diagram(const Filtration<Cell, Real>& fil) const;
 
         template<typename Int>
         friend std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m);
 
         bool sanity_check();
 
-    public:
-        MatrixData get_D()
+        const MatrixData& get_D()
         {
             return d_data;
         }
-        MatrixData get_V()
+
+        const MatrixData& get_V()
         {
             return v_data;
         }
 
-        MatrixData get_R()
+        const MatrixData& get_R()
         {
             return r_data;
         }
+
+        bool is_R_column_zero(size_t col_idx) const { return r_data[col_idx].empty(); }
+        bool is_V_column_zero(size_t col_idx) const { return v_data[col_idx].empty(); }
     };
 
     template<class Int>
@@ -728,10 +731,9 @@ namespace oineus {
     }
 
     template<class Int>
-    template<class Cell>
-    Diagrams<typename Cell::Real> VRUDecomposition<Int>::diagram_general(const Filtration<Cell>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const
+    template<class Cell, class Real>
+    Diagrams<Real> VRUDecomposition<Int>::diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const
     {
-        using Real = typename Cell::Real;
         if (not is_reduced)
             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
 
@@ -790,15 +792,15 @@ namespace oineus {
     }
 
     template<class Int>
-    template<class Cell>
-    Diagrams<typename Cell::Real> VRUDecomposition<Int>::diagram(const Filtration<Cell>& fil, bool include_inf_points) const
+    template<class Cell, class Real>
+    Diagrams<Real> VRUDecomposition<Int>::diagram(const Filtration<Cell, Real>& fil, bool include_inf_points) const
     {
         return diagram_general(fil, false, include_inf_points, false);
     }
 
     template<class Int>
-    template<class Cell>
-    Diagrams<typename Cell::Real> VRUDecomposition<Int>::zero_persistence_diagram(const Filtration<Cell>& fil) const
+    template<class Cell, class Real>
+    Diagrams<Real> VRUDecomposition<Int>::zero_persistence_diagram(const Filtration<Cell, Real>& fil) const
     {
         return diagram_general(fil, false, false, true);
     }
@@ -844,5 +846,4 @@ namespace oineus {
 
         return out;
     }
-
 }

@@ -19,26 +19,43 @@
 #include "diagram.h"
 #include "decomposition.h"
 #include "params.h"
+#include "product_cell.h"
 
 namespace oineus {
 
-template<class Cell_, class Real_>
-class InclusionFiltration {
+template<class Cell_>
+class CylinderFiltration {
 public:
-    using Cell = Cell_;
-    using Real = Real_;
-    using Fil = Filtration<Cell, Real>;
-    using Int = typename Cell::Int;
+    using Cell = ProductCell<Cell_, Cell_>;
+    using Fil = Filtration<Cell_>;
+    using Int = typename Cell_::Int;
+    using Real = typename Cell_::Real;
+    using Mapping = std::vector<size_t>; // for each simplex of Fil_1, contains its index in Fil_2
     using BoundaryMatrix = typename VRUDecomposition<Int>::MatrixData;
 
-    InclusionFiltration() = default;
+    CylinderFiltration() = default;
 
-    InclusionFiltration(const Fil& fil_domain,
-            const Fil& fil_codomain)
+    CylinderFiltration(const Fil& fil_domain,
+            const Fil& fil_codomain,
+            const Mapping& map)
             :
             fil_domain_(fil_domain),
             fil_codomain_(fil_codomain)
     {
+
+        std::vector<Cell> all_cells;
+
+        Simplex<Int, Real> pt;
+        Cell_ segment;
+
+        for(size_t dom_idx = 0; dom_idx < fil_domain.cells().size(); ++dom_idx) {
+            auto dom_cell = fil_domain.cells()[dom_idx];
+            auto image_cell = fil_codomain.cells()[map[dom_idx]];
+            all_cells.emplace_back(dom_cell, pt, dom_cell.value());
+            all_cells.emplace_back(image_cell, pt, image_cell.value())
+        }
+
+
         check_sizes();
     }
 
@@ -118,15 +135,15 @@ public:
     Real domain_negate() const { return fil_domain_.negate(); }
     bool codomain_negate() const { return fil_codomain_.negate(); }
 
-    template<typename C, typename R>
-    friend std::ostream& operator<<(std::ostream&, const InclusionFiltration<C, R>&);
+    template<typename C>
+    friend std::ostream& operator<<(std::ostream&, const InclusionFiltration<C>&);
 private:
     Fil fil_domain_;
     Fil fil_codomain_;
 };
 
-template<typename C, typename R>
-std::ostream& operator<<(std::ostream& out, const InclusionFiltration<C, R>& fil)
+template<typename C>
+std::ostream& operator<<(std::ostream& out, const InclusionFiltration<C>& fil)
 {
     out << "InclusionFiltration(size = " << fil.size() << ", " << "\ncells = [";
     dim_type d = 0;
@@ -164,9 +181,10 @@ std::unordered_map<P, P> compose_matchings(const std::unordered_map<P, P>& a_to_
     return a_to_c;
 }
 
-template<class Cell, class Real>
-Diagrams<Real> get_image_diagram(const VRUDecomposition<typename Cell::Int>& dcmp, InclusionFiltration<Cell, Real>& fil, bool include_inf_points)
+template<class Cell>
+Diagrams<typename Cell::Real> get_image_diagram(const VRUDecomposition<typename Cell::Int>& dcmp, InclusionFiltration<Cell>& fil, bool include_inf_points)
 {
+    using Real = typename Cell::Real;
     using Int = typename Cell::Int;
 
     if (not dcmp.is_reduced)
@@ -237,18 +255,18 @@ Diagrams<Real> get_image_diagram(const VRUDecomposition<typename Cell::Int>& dcm
     return result;
 }
 
-template<class Cell, class Real>
-auto get_induced_matching(const Filtration<Cell, Real>& fil_domain, const Filtration<Cell, Real>& fil_codomain, dim_type result_dim = static_cast<dim_type >(-1), int n_threads = 1)
+template<class Cell>
+auto get_induced_matching(const Filtration<Cell>& fil_domain, const Filtration<Cell>& fil_codomain, int n_threads = 1)
 /**
  *
  * @tparam Cell Class of cells in Filtration, usually Simplex
- * @tparam Real Class of real values in Filtration
  * @param fil_domain domain of the inclusion
  * @param fil_codomain codomain of the inclusion
  * @return Partial matching of barcodes of fil_domain and fil_codomain. Each bar is represented as DgmPoint<size_t>
  */
 {
     using Int = typename Cell::Int;
+    using Real = typename Cell::Real;
     using Bar = DgmPoint<Real>;
     using MatchingInDimension = std::unordered_map<Bar, Bar>;
     using Matching = std::map<dim_type, MatchingInDimension>;
@@ -264,15 +282,15 @@ auto get_induced_matching(const Filtration<Cell, Real>& fil_domain, const Filtra
 
     for(size_t i = 0 ; i < fil_domain.size() ; ++i) {
         // tau = f(sigma)
-        const auto& sigma = fil_domain.cells()[i];
-        const auto& tau = fil_codomain.cells()[i];
-        old_ids_dom[i] = sigma.get_id();
-        old_ids_cod[i] = tau.get_id();
-        domain_values[i] = sigma.get_value();
-        codomain_values[i] = tau.get_value();
+        const Cell& sigma = fil_domain.cells()[i];
+        const Cell& tau = fil_codomain.cells()[i];
+        old_ids_dom[i] = sigma.id();
+        old_ids_cod[i] = tau.id();
+        domain_values[i] = sigma.value();
+        codomain_values[i] = tau.value();
     }
 
-    InclusionFiltration<Cell, Real> ifil(fil_domain, fil_codomain);
+    InclusionFiltration<Cell> ifil(fil_domain, fil_codomain);
 
     bool dualize = false;
 
@@ -299,10 +317,6 @@ auto get_induced_matching(const Filtration<Cell, Real>& fil_domain, const Filtra
     auto codomain_diagrams = dcmp_cod.diagram(fil_codomain, include_infinite_points);
 
     for(dim_type d = 0 ; d < fil_domain.max_dim(); ++d) {
-
-        if (result_dim != static_cast<dim_type>(-1) and result_dim != d) {
-            continue;
-        }
 
         std::unordered_map<Real, std::vector<Bar>> birth_to_image_bars, birth_to_dom_bars, death_to_image_bars, death_to_cod_bars;
 
