@@ -438,15 +438,15 @@ To obtain the different diagrams, we use `kernel()`, `image()`, `cokernel()`, an
 Suppose we have a simplicial complex $K$ with a function $f$ on it, and a subcomplex $L \subset K$ with a function $g$ on it. In this example, $g = f|_L$. We then perform the 5 necessary reductions and compute the persistence diagrams using `compute_kernel_image_cokernel_diagrams`, and then access the 3 sets of diagrams using `kernel()`, `image()`, `cokernel()` respectively. After which we can obtain a diagram in a specific dimension $i$ using `in_dimension(i)`.
 
 ```python
->>> import oineus as oin
->>> n_threads = 4
->>> K = [[0, [0], 10], [1,[1],50], [2,[2], 10], [3, [3], 10], [4,[0,1], 50], [5, [1,2], 50], [6,[0,3], 10], [7, [2,3], 10]]
->>> L = [[0, [0], 10], [1,[1],50], [2,[2], 10], [3, [0,1], 50], [4,[1,2],50]]
->>> L_to_K = [0,1,2,4,5]
->>> ker_im_cok_dgms = oin.compute_kernel_image_cokernel_diagrams(K, L, L_to_K, n_threads)
->>> ker_dgms = ker_im_cok_dgms.kernel()
->>> im_dgms = ker_im_cok_dgms.image()
->>> cok_dgms = ker_im_cok_dgms.cokernel()
->>> ker_dgms.in_dimension(0)
+import oineus as oin
+n_threads = 4
+K = [[0, [0], 10], [1,[1],50], [2,[2], 10], [3, [3], 10], [4,[0,1], 50], [5, [1,2], 50], [6,[0,3], 10], [7, [2,3], 10]]
+L = [[0, [0], 10], [1,[1],50], [2,[2], 10], [3, [0,1], 50], [4,[1,2],50]]
+L_to_K = [0,1,2,4,5]
+ker_im_cok_dgms = oin.compute_kernel_image_cokernel_diagrams(K, L, L_to_K, n_threads)
+ker_dgms = ker_im_cok_dgms.kernel()
+im_dgms = ker_im_cok_dgms.image()
+cok_dgms = ker_im_cok_dgms.cokernel()
+ker_dgms.in_dimension(0)
 ```
  
