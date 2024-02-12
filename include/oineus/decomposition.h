@@ -829,7 +829,7 @@ namespace oineus {
             auto col = &r_data[col_idx];
 
             auto simplex_idx = fil.index_in_filtration(col_idx, dualize());
-
+			auto simplex_idx_us = fil.get_id_by_sorted_id(simplex_idx);
             if (is_zero(col)) {
                 if (not include_inf_points or rows_with_lowest_one.count(col_idx) != 0)
                     // we don't want infinite points or col_idx is a negative simplex
@@ -840,10 +840,11 @@ namespace oineus {
                 Real birth = fil.value_by_sorted_id(simplex_idx);
                 Real death = fil.infinity();
 
-                result.add_point(dim, birth, death, simplex_idx, plus_inf);
+                result.add_point(dim, birth, death, simplex_idx, plus_inf, simplex_idx_us, plus_inf);
             } else {
                 // finite point
                 Int birth_idx = fil.index_in_filtration(low(col), dualize()), death_idx = simplex_idx;
+				Int birth_idx_us = fil.get_id_by_sorted_id(birth_idx), death_idx_us = fil.get_id_by_sorted_id(death_idx);
                 dim_type dim = fil.dim_by_sorted_id(birth_idx);
                 Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
 
@@ -853,9 +854,9 @@ namespace oineus {
                     continue;
 
                 if (dualize()) {
-                    result.add_point(dim - 1, death, birth, death_idx, birth_idx);
+                    result.add_point(dim - 1, death, birth, death_idx, birth_idx, death_idx_us, birth_idx_us);
                 } else {
-                    result.add_point(dim, birth, death, birth_idx, death_idx);
+                    result.add_point(dim, birth, death, birth_idx, death_idx, birth_idx_us, death_idx_us);
                 }
             }
         }

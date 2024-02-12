@@ -20,6 +20,8 @@ namespace oineus {
 
         size_t birth_index {k_invalid_index};
         size_t death_index {k_invalid_index};
+		size_t birth_index_unsorted {k_invalid_index};
+        size_t death_index_unsorted {k_invalid_index};
 
         id_type id {0};
 
@@ -34,6 +36,9 @@ namespace oineus {
 
         DgmPoint(T b, T d, size_t b_i, size_t d_i)
                 :birth(b), death(d), birth_index(b_i), death_index(d_i) { };
+
+		DgmPoint(T b, T d, size_t b_i, size_t d_i, size_t b_i_us, size_t d_i_us)
+                :birth(b), death(d), birth_index(b_i), death_index(d_i), birth_index_unsorted(b_i_us), death_index_unsorted(d_i_us) { };
 
         T persistence() const { return std::abs(death - birth); }
         size_t index_persistence() const { return std::abs(static_cast<long>(death_index) - static_cast<long>(birth_index)); }
@@ -185,14 +190,19 @@ namespace oineus {
             return diagram_in_dimension_[d];
         }
 
-        IndexDgm get_index_diagram_in_dimension(dim_type d) const
+        IndexDgm get_index_diagram_in_dimension(dim_type d, bool sorted = true) const
         {
             IndexDgm index_dgm;
 
             // just duplicate information for now: birth and death are also indices
-            for(Point p : diagram_in_dimension_.at(d))
-                index_dgm.emplace_back(p.birth_index, p.death_index, p.birth_index, p.death_index);
-
+            if (sorted) {
+				for(Point p : diagram_in_dimension_.at(d))
+                	index_dgm.emplace_back(p.birth_index, p.death_index, p.birth_index, p.death_index);
+			} else {
+				std::cout << "sorted is set to false, so will return the original id" << std::endl;
+				for(Point p : diagram_in_dimension_.at(d))
+                	index_dgm.emplace_back(p.birth_index_unsorted, p.death_index_unsorted);
+			}
             return index_dgm;
         }
 
@@ -200,9 +210,14 @@ namespace oineus {
         Dgm& operator[](size_t d) { return diagram_in_dimension_[d]; }
         const Dgm& operator[](size_t d) const { return diagram_in_dimension_.at(d); }
 
-        void add_point(dim_type dim, Real birth_value, Real death_value, size_t birth_index, size_t death_index)
+		void add_point(dim_type dim, Real birth_value, Real death_value, size_t birth_index, size_t death_index)
         {
             diagram_in_dimension_[dim].emplace_back(birth_value, death_value, birth_index, death_index);
+        }
+
+        void add_point(dim_type dim, Real birth_value, Real death_value, size_t birth_index, size_t death_index, size_t birth_index_unsorted, size_t death_index_unsorted)
+        {
+            diagram_in_dimension_[dim].emplace_back(birth_value, death_value, birth_index, death_index, birth_index_unsorted, death_index_unsorted);
         }
 
         void sort()

@@ -309,7 +309,7 @@ public:
             dim_type dim = fil_K_.get_cell(death_idx).dim() - 1;
 
             if (birth != death or include_zero_persistence_)
-                ker_diagrams_.add_point(dim, birth, death, birth_idx, death_idx);
+                ker_diagrams_.add_point(dim, birth, death, birth_idx, death_idx, fil_K_.get_id_by_sorted_id(birth_idx), fil_K_.get_id_by_sorted_id(death_idx));
 
             if (inf_points) {
                 assert(matched_positive_cells.count(birth_idx) == 0);
@@ -347,7 +347,7 @@ public:
                 Real birth = fil_K_.get_cell_value(birth_idx);
 
                 dim_type dim = fil_K_.get_cell(birth_idx).dim() - 1;
-                ker_diagrams_.add_point(dim, birth, fil_K_.infinity(), birth_idx, k_invalid_index);
+                ker_diagrams_.add_point(dim, birth, fil_K_.infinity(), birth_idx, k_invalid_index, fil_K_.get_id_by_sorted_id(birth_idx), k_invalid_index);
             }
         }
 
@@ -408,7 +408,7 @@ public:
             dim_type dim = fil_K_.get_cell(birth_idx).dim();
 
             if (birth != death or include_zero_persistence_)
-                cok_diagrams_.add_point(dim, birth, death, birth_idx, death_idx);
+                cok_diagrams_.add_point(dim, birth, death, birth_idx, death_idx, fil_K_.get_id_by_sorted_id(birth_idx), fil_K_.get_id_by_sorted_id(death_idx));
 
             if (inf_points) {
                 assert(matched_positive_cells.count(birth_idx) == 0);
@@ -443,7 +443,7 @@ public:
                 dim_type dim = fil_K_.get_cell(birth_idx).dim();
                 // K.infinity() will return +inf or -inf depending on
                 // negate; plus_inf is max of size_t
-                cok_diagrams_.add_point(dim, birth, fil_K_.infinity(), birth_idx, plus_inf);
+                cok_diagrams_.add_point(dim, birth, fil_K_.infinity(), birth_idx, plus_inf, fil_K_.get_id_by_sorted_id(birth_idx), plus_inf);
             }
         }
     }
@@ -482,7 +482,7 @@ public:
             dim_type dim = fil_K_.get_cell(birth_idx).dim();
 
             if (birth != death or include_zero_persistence_)
-                im_diagrams_.add_point(dim, birth, death, birth_idx, death_idx);
+                im_diagrams_.add_point(dim, birth, death, birth_idx, death_idx, fil_K_.get_id_by_sorted_id(birth_idx), fil_K_.get_id_by_sorted_id(death_idx));
 
             if (inf_points) {
                 assert(matched_positive_cells.count(birth_idx) == 0);
@@ -512,7 +512,7 @@ public:
                 dim_type dim = fil_K_.get_cell(birth_idx).dim();
                 // K.infinity() will return +inf or -inf depending on
                 // negate; plus_inf is max of size_t
-                im_diagrams_.add_point(dim, birth, fil_K_.infinity(), birth_idx, plus_inf);
+                im_diagrams_.add_point(dim, birth, fil_K_.infinity(), birth_idx, plus_inf, fil_K_.get_id_by_sorted_id(birth_idx), plus_inf);
                 n_inf_points++;
             }
             if (params_.verbose) std::cerr << "image diagrams, infinite points done, # points at infinity " << n_inf_points << std::endl;

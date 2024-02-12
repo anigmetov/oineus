@@ -65,14 +65,14 @@ public:
         return diagrams_.get_diagram_in_dimension(d);
     }
 
-    auto get_index_diagram_in_dimension(dim_type d)
+    auto get_index_diagram_in_dimension(dim_type d, bool sorted = true)
     {
-        return diagrams_.get_index_diagram_in_dimension(d);
+        return diagrams_.get_index_diagram_in_dimension(d, sorted);
     }
 
-    py::array_t<size_t> get_index_diagram_in_dimension_as_numpy(dim_type d)
+    py::array_t<size_t> get_index_diagram_in_dimension_as_numpy(dim_type d, bool sorted = true)
     {
-        auto index_dgm = diagrams_.get_index_diagram_in_dimension(d);
+        auto index_dgm = diagrams_.get_index_diagram_in_dimension(d, sorted);
         return diagram_to_numpy<size_t>(index_dgm);
     }
 
@@ -770,13 +770,13 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
                           return self.get_diagram_in_dimension(dim);
                     }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
                     py::arg("dim"), py::arg("as_numpy") = true)
-            .def("index_diagram_in_dimension", [](Diagram& self, dim_type dim, bool as_numpy) -> std::variant<pybind11::array_t<size_t>, IndexDgmPtVec> {
+            .def("index_diagram_in_dimension", [](Diagram& self, dim_type dim, bool as_numpy, bool sorted) -> std::variant<pybind11::array_t<size_t>, IndexDgmPtVec> {
                       if (as_numpy)
-                          return self.get_index_diagram_in_dimension_as_numpy(dim);
+                          return self.get_index_diagram_in_dimension_as_numpy(dim, sorted);
                       else
-                          return self.get_index_diagram_in_dimension(dim);
+                          return self.get_index_diagram_in_dimension(dim, sorted);
                     }, "return persistence pairing (index diagram) in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
-                    py::arg("dim"), py::arg("as_numpy") = true)
+                    py::arg("dim"), py::arg("as_numpy") = true, py::arg("sorted") =  true)
             .def("__getitem__", &Diagram::get_diagram_in_dimension_as_numpy);
 
     py::class_<SimplexValue>(m, simplex_class_name.c_str())
