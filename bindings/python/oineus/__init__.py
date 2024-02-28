@@ -199,7 +199,6 @@ def list_to_filtration(simplex_list): #take a list which contains data for simpl
         func = getattr(_oineus, f"list_to_filtration_int")
         return func(simplex_list)
     elif "float" in string_type:
-        print("float")
         func = getattr(_oineus, f"list_to_filtration_float")
         return func(simplex_list)
     elif "double" in string_type:
