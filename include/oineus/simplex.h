@@ -166,18 +166,31 @@ struct Simplex {
         }
     };
 
+    std::string repr() const
+    {
+        std::stringstream out;
+        out << "Simplex(id_=" << id_ << ", vertices_=[";
+
+        for(size_t i = 0 ; i < vertices_.size() - 1 ; ++i)
+            out << vertices_[i] << ", ";
+
+        out << vertices_[vertices_.size() - 1] << "])";
+
+        return out.str();
+    }
+
     using UidSet = std::unordered_set<Uid, UidHasher>;
 };
 
 template<typename I>
 std::ostream& operator<<(std::ostream& out, const Simplex<I>& s)
 {
-    out << "Simplex(id_=" << s.id_ << ", vertices_=[";
+    out << "[";
 
     for(size_t i = 0 ; i < s.vertices_.size() - 1 ; ++i)
         out << s.vertices_[i] << ", ";
 
-    out << s.vertices_[s.vertices_.size() - 1] << "])";
+    out << s.vertices_[s.vertices_.size() - 1] << "]";
 
     return out;
 }

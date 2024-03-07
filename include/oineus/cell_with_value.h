@@ -82,6 +82,13 @@ struct CellWithValue {
     bool operator==(const CellWithValue& other) const { return cell_ == other.cell_ and value_ == other.value_; }
     bool operator!=(const CellWithValue& other) const { return !(*this == other); }
 
+    std::string repr() const
+    {
+        std::stringstream out;
+        out << "CellWithValue(value_ =" << get_value() << ", sorted_id_ = " << get_sorted_id() << ", cell=" << cell_ << ")";
+        return out.str();
+    }
+
     template<typename R, typename C>
     friend std::ostream& operator<<(std::ostream&, const CellWithValue<R, C>&);
 };
@@ -89,7 +96,7 @@ struct CellWithValue {
 template<typename C, typename R>
 std::ostream& operator<<(std::ostream& out, const CellWithValue<C, R>& s)
 {
-    out << "CellWithValue(value_ =" << s.get_value() << ", sorted_id_ = " << s.get_sorted_id() << ", cell=" << s.cell_ << ")";
+    out << "(" << s.get_cell() << ", " << s.get_value() << ")";
     return out;
 }
 

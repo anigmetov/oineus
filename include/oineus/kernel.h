@@ -130,6 +130,10 @@ private:
             if (index_in_L == k_invalid_index)
                 continue;
 
+            // skip vertices: they are cycles (D v = 0), but the corresponding column in V is 0 (actually, V has 0 rows)
+            if (fil_L_.dim_by_sorted_id(index_in_L) == 0)
+                continue;
+
             // if the column in V for L is not a cycle, skip
             if (not is_zero(dcmp_G_.get_R()[index_in_L]))
                 continue;
@@ -376,11 +380,11 @@ public:
         // corresponds to a simplex in K − L
         for(size_t death_idx = 0 ; death_idx < dcmp_F_.get_R().size() ; ++death_idx) {
             // tau is positive -> skip it
-            if (dcmp_F_.is_positive(death_idx))
+            if (dcmp_F_.is_positive(death_idx)) {
                 continue;
+            }
 
             const auto& tau_col_R_im = dcmp_im_.get_R()[death_idx];
-
 
             // TODO: get rid of this if
             // tau is positive in R_f -> skip it
@@ -392,8 +396,9 @@ public:
             auto im_low = low(tau_col_R_im);
 
             // lowest one in the column of tau in R_im is in L, skip it
-            if (im_low < fil_L_.size())
+            if (im_low < fil_L_.size()) {
                 continue;
+            }
 
             // In this case, the lowest one in the column of τ in R_cok corresponds to a
             // simplex σ that gives birth in Cok(g -> f). Then (σ, τ) is a pair.
@@ -426,12 +431,14 @@ public:
             // in R_f and it is either in K − L or negative in R_g .
             for(size_t birth_idx = 0 ; birth_idx < dcmp_F_.get_R().size() ; ++birth_idx) {
                 // sigma is paired, skip it
-                if (matched_positive_cells.count(birth_idx))
+                if (matched_positive_cells.count(birth_idx)) {
                     continue;
+                }
 
                 // sigma is negative in R_f, skip it
-                if (dcmp_F_.is_negative(birth_idx))
+                if (dcmp_F_.is_negative(birth_idx)) {
                     continue;
+                }
 
                 if (not is_in_K_only(birth_idx)) {
                     // sigma is in K and in L, and sigma is positive in R_g, skip it

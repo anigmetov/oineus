@@ -78,9 +78,16 @@ struct ProductCell {
         return result;
     }
 
+    std::string repr() const
+    {
+        std::stringstream ss;
+        ss << "ProductCell(factor_1 = " << get_factor_1() << ", factor_2 = " << get_factor_2() << ", id = " << get_id() << ")";
+        return ss.str();
+    }
+
     friend std::ostream& operator<<(std::ostream& out, const ProductCell& s)
     {
-        out << "ProductCell(factor_1 = " << s.get_factor_1() << ", factor_2 = " << s.get_factor_2() << ", id = " << s.get_id() << ")";
+        out <<  s.get_factor_1() << " x " << s.get_factor_2();
         return out;
     }
 
@@ -178,24 +185,6 @@ build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtratio
     append_products(fil_codomain.cells(), v_codomain, cyl_simplices);
     // get cylinder interior simplices
     append_products(fil_domain.cells(), edge, cyl_simplices);
-
-    if (not is_surjective) {
-        // append codomain simplices not included in the domain
-        UidSet image_uids;
-
-        for(size_t sigma_idx = 0 ; sigma_idx < fil_domain.size() ; ++sigma_idx) {
-            if (f[sigma_idx] != k_invalid_index) {
-                const auto& f_sigma = fil_codomain.get_cell(f[sigma_idx]);
-                image_uids.insert(f_sigma.get_uid());
-            }
-        }
-
-        for(const auto& tau: fil_codomain.cells()) {
-            if (image_uids.count(tau.get_uid()))
-                continue;
-            cyl_simplices.emplace_back(ProdCell(tau.get_cell(), v_codomain), tau.get_value());
-        }
-    }
 
     return Filtration<ProdCell, Real>(cyl_simplices, fil_domain.negate());
 }
