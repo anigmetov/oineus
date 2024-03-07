@@ -184,8 +184,10 @@ build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtratio
         UidSet image_uids;
 
         for(size_t sigma_idx = 0 ; sigma_idx < fil_domain.size() ; ++sigma_idx) {
-            const auto& f_sigma = fil_codomain.get_cell(f[sigma_idx]);
-            image_uids.insert(f_sigma.get_uid());
+            if (f[sigma_idx] != k_invalid_index) {
+                const auto& f_sigma = fil_codomain.get_cell(f[sigma_idx]);
+                image_uids.insert(f_sigma.get_uid());
+            }
         }
 
         for(const auto& tau: fil_codomain.cells()) {
