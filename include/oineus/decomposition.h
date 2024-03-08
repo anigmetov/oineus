@@ -717,12 +717,8 @@ namespace oineus {
 
         // move data to r_v_matrix
         for(size_t i = 0; i < n_cols; ++i) {
-            if (i < dim_last[0])
-                r_v_matrix[i] = new RVColumn(r_data[i], {});
-            else {
-                IntSparseColumn v_column = {static_cast<Int>(i)};
-                r_v_matrix[i] = new RVColumn(r_data[i], v_column);
-            }
+            IntSparseColumn v_column = {static_cast<Int>(i)};
+            r_v_matrix[i] = new RVColumn(r_data[i], v_column);
         }
         spd::debug("Matrix moved");
 

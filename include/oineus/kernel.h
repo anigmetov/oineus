@@ -130,10 +130,6 @@ private:
             if (index_in_L == k_invalid_index)
                 continue;
 
-            // skip vertices: they are cycles (D v = 0), but the corresponding column in V is 0 (actually, V has 0 rows)
-            if (fil_L_.dim_by_sorted_id(index_in_L) == 0)
-                continue;
-
             // if the column in V for L is not a cycle, skip
             if (not is_zero(dcmp_G_.get_R()[index_in_L]))
                 continue;
