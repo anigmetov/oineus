@@ -136,6 +136,8 @@ public:
     {
         params_hom_.clearing_opt = false;
         params_coh_.clearing_opt = false;
+        params_coh_.compute_u = true;
+        params_hom_.compute_u = true;
     }
 
     TopologyOptimizer(const Fil& fil, const ComputeFlags& hints)
@@ -591,14 +593,14 @@ public:
         if (not(sigma >= 0 and sigma < r_cols.size()))
             throw std::runtime_error("expected negative simplex");
 
-        for(auto tau_idx: u_rows.at(negative_simplex_idx)) {
+        for(auto tau_idx: u_rows.at(negative_simplex_idx)) { // loop over all indices in this row
             if (fil_.cmp(target_death, fil_.get_cell_value(tau_idx))) {
                 break;
             }
 
-            if (low(decmp_hom_.r_data[tau_idx]) <= sigma) {
-                result.push_back(tau_idx);
-            }
+            // if (low(decmp_hom_.r_data[tau_idx]) <= sigma) { // do not need this
+            result.push_back(tau_idx);
+            // }
         }
 
         if (result.empty())
@@ -648,6 +650,204 @@ public:
         return decrease_death(negative_simplex_idx, -fil_.infinity());
     }
 
+
+    /*
+        Compute the slope of the linear interpolate function. `death=true` for modifying birth. 
+        When modify death, T is the negative value of tau, B is the min value in V[tau]
+        When modify birth, B is the positive value of sigma, T is the max value in V^{anti-transpose}[sigma]
+    */
+    Real linear_slope(Real B, Real T, Real t, bool death = true) const
+    {
+        Real slope;
+        if (death){
+            slope = (t-B)/(T-B);
+        }else{ 
+            slope = (T-t)/(T-B);
+        }
+        return slope;
+    }
+
+
+    CriticalSets linear_decrease_death(size_t negative_simplex_idx, Real target_death) const
+    {
+        Real negative_val = fil_.get_cell_value(negative_simplex_idx);
+        if (fil_.cmp(negative_val, target_death)) 
+            throw std::runtime_error("Want to decrease death value, but current value < target");
+
+        CriticalSets result;
+        auto& v_col = decmp_hom_.v_data[negative_simplex_idx];
+        // find min filtration value inside the column
+        Real min_val = negative_val;  
+        for(auto v_idx_it = v_col.rbegin() ; v_idx_it != v_col.rend() ; ++v_idx_it) {
+            auto v_idx = *v_idx_it;
+            min_val = std::min(min_val, fil_.get_cell_value(v_idx));    
+        }
+        // Linear interpolate
+        Real slope = linear_slope(min_val, negative_val, target_death, true);
+        for(auto v_idx_it = v_col.rbegin() ; v_idx_it != v_col.rend() ; ++v_idx_it) {
+            auto v_idx = *v_idx_it;
+            Real new_val = min_val + slope * (fil_.get_cell_value(v_idx) - min_val);
+            result.emplace_back(new_val, Indices{v_idx});   
+        }
+
+        if (result.empty())
+            throw std::runtime_error("decrease_death: empty");
+        return result;
+    }
+    
+    CriticalSets linear_decrease_deaths(const Indices& indices, const Values& values) const{
+        CriticalSets results;
+        for(size_t i = 0 ; i < indices.size() ; ++i) {
+            auto crit_set_i = linear_decrease_death(indices[i], values[i]);
+            results.insert(results.end(), crit_set_i.begin(), crit_set_i.end());
+        }
+        return results;
+    }
+
+    CriticalSets linear_increase_deaths(const Indices& indices, const Values& values) const{
+        CriticalSets results;
+        for(size_t i = 0 ; i < indices.size() ; ++i) {
+            auto crit_set_i = linear_increase_death(indices[i], values[i]);
+            results.insert(results.end(), crit_set_i.begin(), crit_set_i.end());
+        }
+        return results;
+    }
+
+    CriticalSets linear_decrease_births(const Indices& indices, const Values& values) const{
+        CriticalSets results;
+        for(size_t i = 0 ; i < indices.size() ; ++i) {
+            auto crit_set_i = linear_decrease_birth(indices[i], values[i]);
+            results.insert(results.end(), crit_set_i.begin(), crit_set_i.end());
+        }
+        return results;
+    }
+
+    CriticalSets linear_increase_births(const Indices& indices, const Values& values) const{
+        CriticalSets results;
+        for(size_t i = 0 ; i < indices.size() ; ++i) {
+            auto crit_set_i = linear_increase_birth(indices[i], values[i]);
+            results.insert(results.end(), crit_set_i.begin(), crit_set_i.end());
+        }
+        return results;
+    }
+
+    CriticalSets linear_increase_death(size_t negative_simplex_idx, Real target_death) const
+    {
+        // input validity check 
+        Real negative_val = fil_.get_cell_value(negative_simplex_idx);
+        if (fil_.cmp(target_death, negative_val))
+            throw std::runtime_error("Want to increase death value, but current value > target");
+
+        const auto& r_cols = decmp_hom_.r_data;
+        size_t n_cols = decmp_hom_.v_data.size();
+        Int sigma = low(r_cols[negative_simplex_idx]);
+        if (not(sigma >= 0 and sigma < r_cols.size()))
+            throw std::runtime_error("expected negative simplex");
+
+        // store results in vector of pairs of new target values and indices
+        CriticalSets result;
+        const auto& u_rows = decmp_hom_.u_data_t;
+
+        for(auto tau_idx: u_rows.at(negative_simplex_idx)) {
+            Real tau_val = fil_.get_cell_value(tau_idx);
+            if (fil_.cmp(target_death, tau_val)) {
+                break;
+            }
+            
+            auto& v_col = decmp_hom_.v_data[tau_idx];
+            // find min filtration value inside the column
+            // TODO: Make the following into a function
+            Real min_val_tau = fil_.get_cell_value(tau_idx);
+            for(auto v_idx_it = v_col.rbegin() ; v_idx_it != v_col.rend() ; ++v_idx_it) {
+                auto v_idx = *v_idx_it;
+                // filtration index is the same as index stored in column  
+                min_val_tau = std::min(min_val_tau, fil_.get_cell_value(v_idx));    
+            }
+            // Liner interpolate
+            Real slope = linear_slope(min_val_tau, tau_val, target_death, true);
+            for(auto v_idx_it = v_col.rbegin() ; v_idx_it != v_col.rend() ; ++v_idx_it) {
+                auto v_idx = *v_idx_it;
+                Real new_val = min_val_tau + slope * (fil_.get_cell_value(v_idx) - min_val_tau);
+                result.emplace_back(new_val, Indices{v_idx});   
+            }
+        }
+
+        if (result.empty())
+            throw std::runtime_error("increase_death: empty");
+        return result;
+    }
+
+
+
+    CriticalSets linear_decrease_birth(size_t positive_simplex_idx, Real target_birth) const
+    {   
+        Real positive_val = fil_.get_cell_value(positive_simplex_idx);
+        if (fil_.cmp(positive_val, target_birth)) // cur < target
+            throw std::runtime_error("target_birth cannot precede current value"); 
+
+        CriticalSets result;
+        const auto& u_rows = decmp_coh_.u_data_t;
+        for(auto index_in_matrix: u_rows.at(fil_.index_in_matrix(positive_simplex_idx, true))) {
+            // get filtration index from the index in anti-transpose matrix  
+            auto fil_idx = fil_.index_in_filtration(index_in_matrix, true);
+            Real sigma_val = fil_.get_cell_value(fil_idx);
+            if (fil_.cmp(sigma_val, target_birth)) {
+                break;
+            }
+
+            // index in the anti-transpose matrix
+            const auto& sigma_matrix_col_idx = fil_.index_in_matrix(fil_idx, true);
+            auto& v_col = decmp_coh_.v_data.at(sigma_matrix_col_idx); 
+            // loop column to find the max value
+            Real max_val = sigma_val;
+            for(auto index_in_matrix = v_col.rbegin() ; index_in_matrix != v_col.rend() ; ++index_in_matrix) {
+                auto fil_idx = fil_.index_in_filtration(*index_in_matrix, true);
+                max_val = std::max(max_val, fil_.get_cell_value(fil_idx));
+            }
+            // set new value
+            Real slope = linear_slope(sigma_val, max_val, target_birth, false);
+            for(auto index_in_matrix = v_col.rbegin() ; index_in_matrix != v_col.rend() ; ++index_in_matrix) {
+                auto fil_idx = fil_.index_in_filtration(*index_in_matrix, true);
+                Real new_val = target_birth + slope * (fil_.get_cell_value(fil_idx) - sigma_val);
+                result.emplace_back(new_val, Indices{static_cast<int>(fil_idx)});
+            }
+        }
+
+        if (result.empty())
+            throw std::runtime_error("decrease birth : empty");
+        return result;
+    }
+    
+
+    CriticalSets linear_increase_birth(size_t positive_simplex_idx, Real target_birth) const
+    {
+        Real positive_val = fil_.get_cell_value(positive_simplex_idx);
+        if (fil_.cmp(target_birth, positive_val)) // target < cur
+            throw std::runtime_error("Want to increase birth value, but target < current value"); 
+
+        CriticalSets result;
+
+        auto& v_col = decmp_coh_.v_data.at(fil_.index_in_matrix(positive_simplex_idx, true));
+        // loop column to find the max value
+        Real max_val = positive_val;
+        for(auto index_in_matrix = v_col.rbegin() ; index_in_matrix != v_col.rend() ; ++index_in_matrix) {
+            auto fil_idx = fil_.index_in_filtration(*index_in_matrix, true);
+            max_val = std::max(max_val, fil_.get_cell_value(fil_idx));
+        }
+        // set new value
+        Real slope = linear_slope(positive_val, max_val, target_birth, false);
+        for(auto index_in_matrix = v_col.rbegin() ; index_in_matrix != v_col.rend() ; ++index_in_matrix) {
+            auto fil_idx = fil_.index_in_filtration(*index_in_matrix, true);
+            Real new_val = target_birth + slope * (fil_.get_cell_value(fil_idx) - positive_val);
+            result.emplace_back(new_val, Indices{static_cast<int>(fil_idx)});   
+        }
+
+        if (result.empty())
+            throw std::runtime_error("increase_death: empty");
+        return result;
+    }
+
+
     Decomposition get_homology_decompostion() const { return decmp_hom_; }
     Decomposition get_cohomology_decompostion() const { return decmp_coh_; }
 
@@ -678,7 +878,7 @@ private:
             decmp_coh_.reduce(params_coh_);
         }
 
-        if (cmp(target_birth, current_birth))
+        if (cmp(target_birth, current_birth)) // target < curr, decrease
             return decrease_birth(positive_simplex_idx, target_birth);
         else if (fil_.cmp(current_birth, target_birth))
             return increase_birth(positive_simplex_idx, target_birth);
@@ -690,7 +890,7 @@ private:
     {
         CALI_CXX_MARK_FUNCTION;
         Real current_death = get_cell_value(negative_simplex_idx);
-        if (cmp(target_death, current_death))
+        if (cmp(target_death, current_death)) // target less than current 
             return decrease_death(negative_simplex_idx, target_death);
         else if (cmp(current_death, target_death))
             return increase_death(negative_simplex_idx, target_death);
