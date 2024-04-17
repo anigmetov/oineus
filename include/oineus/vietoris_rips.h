@@ -221,8 +221,18 @@ namespace oineus {
         bool check_initial {false};
 
         bron_kerbosch(current, candidates, excluded_end, max_dim, neighbor, functor, check_initial);
+        // Filtration constructor will sort simplices and assign sorted ids
+        auto fil = Filtration(std::move(simplices), negate, n_threads);
 
-        return std::make_pair(Filtration(std::move(simplices), negate, n_threads), std::move(edges));
+        // use sorted info from fil to rearrange edges
+        std::vector<VREdge> sorted_edges;
+        sorted_edges.reserve(edges.size());
+
+        for(size_t sorted_edge_idx = 0; sorted_edge_idx < edges.size(); ++sorted_edge_idx) {
+            sorted_edges.push_back(edges[fil.get_id_by_sorted_id(sorted_edge_idx)]);
+        }
+
+        return std::make_pair(fil, sorted_edges);
     }
 
     template<class Int, class Real, std::size_t D>
