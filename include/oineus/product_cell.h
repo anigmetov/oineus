@@ -189,4 +189,59 @@ build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtratio
     return Filtration<ProdCell, Real>(cyl_simplices, fil_domain.negate());
 }
 
+template<class Cell, class Real>
+std::pair<Filtration<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>, std::vector<typename Cell::Int>>
+build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain, const Filtration<Cell, Real>& fil_codomain, const Simplex<typename Cell::Int>& v_domain, const Simplex<typename Cell::Int>& v_codomain)
+/**
+ *
+ * @tparam Cell class of cells in filtrations
+ * @tparam Real double or float
+ * @param fil_domain filtration of space L
+ * @param fil_codomain filtration of space K, L \subset K
+ * @param v_domain vertex by which cells of fil_domain are multiplied to get the top of the mapping cylinder
+ * @param v_codomain vertex by which cells of fil_domain are multiplied to get the top of the mapping cylinder
+ * @return A pair, first component: filtration of a mapping cylinder of the inclusion L \to K, second component: indices of critical values.
+ * Second component: indices of critical values. Type of cells in the returned filtration is Cell \times Simplex. Indices are with respect to concatenated arrays
+ * of critical values of fil_domain and fil_codomain (in this order).
+ */
+{
+    using Int = typename Cell::Int;
+    using ProdCell = ProductCell<Cell, Simplex<Int>>;
+    using ResultCell = CellWithValue<ProdCell, Real>;
+
+    auto fil = build_mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain);
+
+    std::vector<Int> crit_val_indices;
+    crit_val_indices.reserve(fil.size());
+    for(const ResultCell& cell : fil.cells()) {
+        auto cell_id = cell.get_id();
+        if (cell_id < fil_domain.size()) {
+            // domain simplex x v_domain, critical value comes from domain
+            assert(cell.get_factor_2().vertices_ == std::vector({v_domain.get_id()}));
+            assert(cell.get_value() == fil_domain.get_cell_value(cell_id));
+
+            crit_val_indices.push_back(cell_id);
+        } else if (cell_id < fil_domain.size() + fil_codomain.size()) {
+            // codomain simplex x v_codomain, critical value comes from codomain
+            // in the concatenated tensor, it's still cell_id
+            assert(cell.get_factor_2().vertices_ == std::vector({v_codomain.get_id()}));
+            assert(cell.get_value() == fil_domain.get_cell_value(cell_id-fil_domain.size()));
+
+            crit_val_indices.push_back(cell_id);
+        } else {
+            // domain simplex x [v_domain, v_codomain] critical value comes from domain
+            assert(cell.get_factor_2().vertices_ == std::vector({v_domain.get_id(), v_codomain.get_id()}) or cell.get_factor_2().vertices_ == std::vector({v_codomain.get_id(), v_domain.get_id()}) );
+            assert(cell_id >= fil_domain.size() + fil_codomain.size());
+
+            Int domain_id = cell_id - fil_domain.size() - fil_codomain.size();
+
+            assert(cell.get_value() == fil_domain.get_cell_value(domain_id));
+
+            crit_val_indices.push_back(domain_id);
+        }
+    }
+
+    return { fil, crit_val_indices };
+}
+
 } // end of namespace oineus
