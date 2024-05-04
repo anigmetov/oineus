@@ -898,6 +898,10 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
     m.def("min_filtration", &oin::min_filtration<Simplex, Real>, py::arg("fil_1"), py::arg("fil_2"), "return a filtration where each simplex has minimal value from fil_1, fil_2");
     m.def("min_filtration", &oin::min_filtration<ProdSimplex, Real>, py::arg("fil_1"), py::arg("fil_2"), "return a filtration where each cell has minimal value from fil_1, fil_2");
 
+    // helper for differentiable filtration
+    m.def("min_filtration_with_indices", &oin::min_filtration_with_indices<Simplex, Real>, py::arg("fil_1"), py::arg("fil_2"), "return a tuple (filtration, inds_1, inds_2) where each simplex has minimal value from fil_1, fil_2 and inds_1, inds_2 are its indices in fil_1, fil_2");
+    m.def("min_filtration_with_indices", &oin::min_filtration_with_indices<ProdSimplex, Real>, py::arg("fil_1"), py::arg("fil_2"), "return a tuple (filtration, inds_1, inds_2) where each simplex has minimal value from fil_1, fil_2 and inds_1, inds_2 are its indices in fil_1, fil_2");
+
     py::class_<KerImCokRedSimplex>(m, ker_im_cok_reduced_class_name.c_str())
             .def(py::init<const Filtration&, const Filtration&, oin::Params&, bool>(), py::arg("K"), py::arg("L"), py::arg("params"), py::arg("include_zero_persistence")=false)
             .def("domain_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<Real>(self.get_domain_diagrams()); })

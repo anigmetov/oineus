@@ -8,6 +8,13 @@ from . import _oineus
 
 from ._oineus import *
 
+import warnings
+
+try:
+    from . import diff
+except:
+    warnings.warn("oineus.diff import failed, probably, because eagerpy is not installed")
+
 
 # __all__ = ["compute_diagrams_ls", "compute_diagrams_and_v_ls", "get_boundary_matrix", "to_scipy_matrix", "is_reduced", "get_freudenthal_filtration"]
 
@@ -74,6 +81,7 @@ def get_freudenthal_filtration_and_critical_vertices(data, negate, wrap, max_dim
 
 
 def get_vr_filtration_from_pwdists(pwdists, max_dim, max_radius, n_threads):
+    type_part, _ = get_type_dim(pwdists, False)
     func = getattr(_oineus, f"get_vr_filtration_from_pwdists_{type_part}")
     return func(pwdists, max_dim, max_radius, n_threads)
 
