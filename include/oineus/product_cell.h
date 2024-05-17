@@ -225,7 +225,7 @@ build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain, co
             // codomain simplex x v_codomain, critical value comes from codomain
             // in the concatenated tensor, it's still cell_id
             assert(cell.get_factor_2().vertices_ == std::vector({v_codomain.get_id()}));
-            assert(cell.get_value() == fil_domain.get_cell_value(cell_id-fil_domain.size()));
+            assert(cell.get_value() == fil_codomain.get_cell_value(cell_id-fil_domain.size()));
 
             crit_val_indices.push_back(cell_id);
         } else {

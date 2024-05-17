@@ -1,27 +1,25 @@
 #include "oineus_persistence_bindings.h"
 
-void init_oineus_top_optimizer(py::module& m)
-{
 
+template<class Cell>
+void init_oineus_top_optimizer_class(py::module& m, std::string opt_name, std::string ind_vals_name)
+{
     using Real = double;
     using Int = int;
 
-    using Simp = oin::Simplex<Int>;
-    using SWV = oin::CellWithValue<oin::Simplex<Int>, Real>;
-    using SimplexFiltration = oin::Filtration<Simp, Real>;
-    using TopologyOptimizer = oin::TopologyOptimizer<Simp, Real>;
-    using Indices = typename TopologyOptimizer::Indices;
-    using Values = typename TopologyOptimizer::Values;
+    using Filtration = oin::Filtration<Cell, Real>;
+    using TopologyOptimizer = oin::TopologyOptimizer<Cell, Real>;
     using IndicesValues = typename TopologyOptimizer::IndicesValues;
-    using CrititcalSet = typename TopologyOptimizer::CriticalSet;
-    using Target = typename TopologyOptimizer::Target;
-    using Indices = typename TopologyOptimizer::Indices;
-    using Values = typename TopologyOptimizer::Values;
     using CriticalSets = typename TopologyOptimizer::CriticalSets;
     using ConflictStrategy = oin::ConflictStrategy;
     using Diagram = typename oin::Diagrams<Real>::Dgm;
+    using Indices = typename TopologyOptimizer::Indices;
+    using Values = typename TopologyOptimizer::Values;
+    using IndicesValues = typename TopologyOptimizer::IndicesValues;
+    using Indices = typename TopologyOptimizer::Indices;
+    using Values = typename TopologyOptimizer::Values;
 
-    py::class_<IndicesValues>(m, "IndicesValues")
+    py::class_<IndicesValues>(m, ind_vals_name.c_str())
             .def("__getitem__", [](const IndicesValues& iv, int i) -> std::variant<Indices, Values> {
               if (i == 0)
                   return {iv.indices};
@@ -37,8 +35,8 @@ void init_oineus_top_optimizer(py::module& m)
             });
 
     // optimization
-    py::class_<TopologyOptimizer>(m, "TopologyOptimizer")
-            .def(py::init<const SimplexFiltration&>())
+    py::class_<TopologyOptimizer>(m, opt_name.c_str())
+            .def(py::init<const Filtration&>())
             .def("compute_diagram", [](TopologyOptimizer& opt, bool include_inf_points) { return PyOineusDiagrams<Real>(opt.compute_diagram(include_inf_points)); },
                     py::arg("include_inf_points"),
                     "compute diagrams in all dimensions")
@@ -75,6 +73,20 @@ void init_oineus_top_optimizer(py::module& m)
                     py::arg("strategy"),
                     "combine critical sets into well-defined assignment of new values to indices")
             .def("update", &TopologyOptimizer::update);
+
+}
+
+void init_oineus_top_optimizer(py::module& m)
+{
+
+    using Real = double;
+    using Int = int;
+
+    using Simp = oin::Simplex<Int>;
+    using SimpProd = oin::ProductCell<Simp, Simp>;
+
+    init_oineus_top_optimizer_class<Simp>(m, "TopologyOptimizer", "IndicesValues");
+    init_oineus_top_optimizer_class<SimpProd>(m, "TopologyOptimizerProd", "IndicesValuesProd");
 
     // induced matching
     m.def("get_induced_matching", &oin::get_induced_matching<Simp, Real>,
