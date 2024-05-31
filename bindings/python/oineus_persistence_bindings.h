@@ -546,10 +546,19 @@ void init_oineus_common_decomposition(py::module& m)
                     py::arg("fil"), py::arg("include_inf_points") = true)
             .def("diagram", [](const Decomposition& self, const SimplexFiltrationFloat& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); },
                     py::arg("fil"), py::arg("include_inf_points") = true)
+            .def("diagram", [](const Decomposition& self, const ProdSimplexFiltrationDouble& fil, bool include_inf_points) { return PyOineusDiagrams<double>(self.diagram(fil, include_inf_points)); },
+                    py::arg("fil"), py::arg("include_inf_points") = true)
+            .def("diagram", [](const Decomposition& self, const ProdSimplexFiltrationFloat& fil, bool include_inf_points) { return PyOineusDiagrams<float>(self.diagram(fil, include_inf_points)); },
+                    py::arg("fil"), py::arg("include_inf_points") = true)
             .def("zero_pers_diagram", [](const Decomposition& self, const SimplexFiltrationFloat& fil) { return PyOineusDiagrams<float>(self.zero_persistence_diagram(fil)); },
                     py::arg("fil"))
             .def("zero_pers_diagram", [](const Decomposition& self, const SimplexFiltrationDouble& fil) { return PyOineusDiagrams<double>(self.zero_persistence_diagram(fil)); },
-                    py::arg("fil"));
+                    py::arg("fil"))
+            .def("zero_pers_diagram", [](const Decomposition& self, const ProdSimplexFiltrationFloat& fil) { return PyOineusDiagrams<float>(self.zero_persistence_diagram(fil)); },
+                    py::arg("fil"))
+            .def("zero_pers_diagram", [](const Decomposition& self, const ProdSimplexFiltrationDouble& fil) { return PyOineusDiagrams<double>(self.zero_persistence_diagram(fil)); },
+                    py::arg("fil"))
+                    ;
 
 }
 
