@@ -523,14 +523,19 @@ void init_oineus_common_decomposition(py::module& m)
     using oin::DenoiseStrategy;
     using oin::ConflictStrategy;
     using Decomposition = oin::VRUDecomposition<Int>;
-    using SimplexFiltrationDouble = oin::Filtration<oin::Simplex<Int>, double>;
-    using SimplexFiltrationFloat = oin::Filtration<oin::Simplex<Int>, float>;
-    using ReductionParams = oin::Params;
+    using Simplex = oin::Simplex<Int>;
+    using SimplexFiltrationDouble = oin::Filtration<Simplex, double>;
+    using SimplexFiltrationFloat = oin::Filtration<Simplex, float>;
+    using ProdSimplex = oin::ProductCell<Simplex, Simplex>;
+    using ProdSimplexFiltrationDouble = oin::Filtration<ProdSimplex, double>;
+    using ProdSimplexFiltrationFloat = oin::Filtration<ProdSimplex, float>;
     std::string vr_edge_name = "VREdge";
 
     py::class_<Decomposition>(m, "Decomposition")
             .def(py::init<const SimplexFiltrationDouble&, bool>())
             .def(py::init<const SimplexFiltrationFloat&, bool>())
+            .def(py::init<const ProdSimplexFiltrationDouble&, bool>())
+            .def(py::init<const ProdSimplexFiltrationFloat&, bool>())
             .def_readwrite("r_data", &Decomposition::r_data)
             .def_readwrite("v_data", &Decomposition::v_data)
             .def_readwrite("u_data_t", &Decomposition::u_data_t)
@@ -545,6 +550,7 @@ void init_oineus_common_decomposition(py::module& m)
                     py::arg("fil"))
             .def("zero_pers_diagram", [](const Decomposition& self, const SimplexFiltrationDouble& fil) { return PyOineusDiagrams<double>(self.zero_persistence_diagram(fil)); },
                     py::arg("fil"));
+
 }
 
 void init_oineus_common_decomposition_int(py::module& m);
