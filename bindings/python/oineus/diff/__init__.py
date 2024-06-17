@@ -75,17 +75,18 @@ class DiffFiltration:
     def simplex_value_by_sorted_id(self, sorted_id):
         return self.under_fil.simplex_value_by_sorted_id(sorted_id)
 
-    @ft.wraps(_oineus.Filtration_double.simplex_value_by_sorted_id)
+    @ft.wraps(_oineus.Filtration_double.simplex_value_by_vertices)
     def simplex_value_by_vertices(self, vertices):
         return self.under_fil.simplex_value_by_vertices(vertices)
 
     @ft.wraps(_oineus.Filtration_double.get_sorted_id_by_vertices)
     def get_sorted_id_by_vertices(self, vertices):
-        return self.under_fil.simplex_value_by_vertices(vertices)
+        return self.under_fil.get_sorted_id_by_vertices(vertices)
 
     @ft.wraps(_oineus.Filtration_double.reset_ids_to_sorted_ids)
     def reset_ids_to_sorted_ids(self):
         self.under_fil.reset_ids_to_sorted_ids()
+
 
 
 
@@ -97,7 +98,7 @@ class TopologyOptimizer:
     not to worry about the type of a filtration
     """
     def __init__(self, fil):
-        if type(fil) is DiffFiltration:
+        if isinstance(fil,DiffFiltration): 
             fil = fil.under_fil
         if type(fil) is _oineus.Filtration_double:
             self.under_opt = _oineus.TopologyOptimizer(fil)
