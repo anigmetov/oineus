@@ -100,6 +100,8 @@ struct ProductCell {
             return seed;
         }
     };
+
+    using UidSet = std::unordered_set<Uid, UidHasher>;
 };
 
 template<class Cell, class Real>

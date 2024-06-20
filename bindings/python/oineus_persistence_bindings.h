@@ -274,6 +274,31 @@ compute_diagrams_from_fil(const oineus::Filtration<Cell, Real>& fil, int n_threa
     return PyOineusDiagrams<Real>(d_matrix.diagram(fil));
 }
 
+template<class Cell, class Real>
+PyOineusDiagrams<Real>
+compute_relative_diagrams(const oineus::Filtration<Cell, Real>& fil, const oineus::Filtration<Cell, Real>& relative, bool include_inf_points)
+{
+    using Int = typename Cell::Int;
+
+    typename Cell::UidSet relative_;
+    for(const auto& sigma : relative.cells()) {
+        relative_.insert(sigma.get_uid());
+    }
+
+    auto rel_matrix = fil.boundary_matrix_full_rel(relative_);
+    oineus::VRUDecomposition<Int> d_matrix {rel_matrix, false};
+
+    oineus::Params params;
+
+    params.sort_dgms = false;
+    params.clearing_opt = true;
+    params.n_threads = 1;
+
+    d_matrix.reduce(params);
+
+    return PyOineusDiagrams<Real>(d_matrix.diagram(fil, relative_, include_inf_points));
+}
+
 template<class Int, class Real, size_t D>
 decltype(auto)
 get_vr_filtration_and_critical_edges(py::array_t<Real, py::array::c_style | py::array::forcecast> points, dim_type max_dim, Real max_radius, int n_threads)
@@ -611,6 +636,7 @@ void init_oineus_functions(py::module& m, std::string suffix)
     using namespace pybind11::literals;
 
     using Simp = oin::Simplex<Int>;
+    using SimpProd = oin::ProductCell<Simp, Simp>;
     using Filtration = oin::Filtration<Simp, Real>;
 
     using oin::VREdge;
@@ -722,6 +748,12 @@ void init_oineus_functions(py::module& m, std::string suffix)
 
     func_name = "get_ls_filtration" + suffix;
     m.def(func_name.c_str(), &get_ls_filtration<Int, Real>);
+
+    func_name = "compute_relative_diagrams" + suffix;
+    m.def(func_name.c_str(), &compute_relative_diagrams<Simp, Real>, py::arg("fil"), py::arg("rel"), py::arg("include_inf_points")=true);
+
+    func_name = "compute_relative_diagrams" + suffix;
+    m.def(func_name.c_str(), &compute_relative_diagrams<SimpProd, Real>, py::arg("fil"), py::arg("rel"), py::arg("include_inf_points")=true);
 }
 
 void init_oineus_functions_double(py::module& m, std::string suffix);
@@ -871,6 +903,7 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
             .def("get_sorted_id_by_vertices", &Filtration::get_sorted_id_by_vertices, py::arg("vertices"))
             .def("cell_by_uid", &Filtration::get_cell_by_uid, py::arg("uid"))
             .def("boundary_matrix", &Filtration::boundary_matrix_full)
+            .def("boundary_matrix_rel", &Filtration::boundary_matrix_full_rel)
             .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids)
             .def("__repr__", [](const Filtration& fil) {
               std::stringstream ss;

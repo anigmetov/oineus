@@ -160,6 +160,50 @@ namespace oineus {
             return result;
         }
 
+        BoundaryMatrix boundary_matrix_full_rel(const std::unordered_set<typename Cell::Uid, typename Cell::UidHasher>& relative) const
+        {
+            CALI_CXX_MARK_FUNCTION;
+
+            BoundaryMatrix result;
+            result.reserve(size());
+
+            for(dim_type d = 0; d <= max_dim(); ++d) {
+                auto m = boundary_matrix_in_dimension(d, relative);
+                result.insert(result.end(), std::make_move_iterator(m.begin()), std::make_move_iterator(m.end()));
+            }
+
+            return result;
+        }
+
+        BoundaryMatrix boundary_matrix_in_dimension(dim_type d, const std::unordered_set<typename Cell::Uid, typename Cell::UidHasher>& relative) const
+        {
+            BoundaryMatrix result(size_in_dimension(d));
+            // fill D with empty vectors
+
+            // boundary of vertex is empty, need to do something in positive dimension only
+            if (d > 0)
+                for(size_t col_idx = 0; col_idx < size_in_dimension(d); ++col_idx) {
+
+                    const auto& sigma = cells_[col_idx + dim_first(d)];
+
+                    if (relative.find(sigma.get_uid()) != relative.end())
+                        continue;
+
+                    auto& col = result[col_idx];
+                    col.reserve(d + 1);
+
+                    for(const auto& tau_vertices: sigma.boundary()) {
+                        if (relative.find(tau_vertices) == relative.end())
+                            col.push_back(uid_to_sorted_id.at(tau_vertices));
+                    }
+
+                    std::sort(col.begin(), col.end());
+                }
+
+            return result;
+        }
+
+
         template<typename I, typename R, size_t D>
         friend class Grid;
 

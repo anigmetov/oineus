@@ -253,6 +253,10 @@ def compute_ker_im_cok_reduction_cyl(fil_2, fil_3):
     kicr_reduction = _oineus.KerImCokReducedProd_double(fil_cyl, fil_3_prod, params)
     return kicr_reduction
 
+def compute_relative_diagrams(fil, rel, include_inf_points=True):
+    type_part = get_real_type(fil)
+    func = getattr(_oineus, f"compute_relative_diagrams_{type_part}")
+    return func(fil, rel, include_inf_points)
 
 #def compute_cokernel_diagrams(K_, L_, IdMap, n_threads): #
 #    string_type = str(type(K_[0][2]))
