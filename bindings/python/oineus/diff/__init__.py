@@ -19,71 +19,71 @@ class DiffFiltration:
     def __repr__(self):
         return f"DiffFil(under_fil={self.under_fil}, values={self.values})"
 
-    @ft.wraps(_oineus.Filtration_double.max_dim)
+    #@ft.wraps(_oineus.Filtration_double.max_dim)
     def max_dim(self):
         return self.under_fil.max_dim()
 
-    @ft.wraps(_oineus.Filtration_double.size)
+    #@ft.wraps(_oineus.Filtration_double.size)
     def size(self):
         return self.under_fil.size()
 
-    @ft.wraps(_oineus.Filtration_double.size_in_dimension)
+    #@ft.wraps(_oineus.Filtration_double.size_in_dimension)
     def size_in_dimension(self, dim):
         return self.under_fil.size(dim)
 
-    @ft.wraps(_oineus.Filtration_double.n_vertices)
+    #@ft.wraps(_oineus.Filtration_double.n_vertices)
     def n_vertices(self):
         return self.under_fil.n_vertices()
 
-    @ft.wraps(_oineus.Filtration_double.cells)
+    #@ft.wraps(_oineus.Filtration_double.cells)
     def cells(self):
         return self.under_fil.cells()
 
-    @ft.wraps(_oineus.Filtration_double.get_id_by_sorted_id)
+    #@ft.wraps(_oineus.Filtration_double.get_id_by_sorted_id)
     def get_id_by_sorted_id(self, sorted_id):
         return self.under_fil.get_id_by_sorted_id(sorted_id)
 
-    @ft.wraps(_oineus.Filtration_double.get_sorted_id_by_id)
+    #@ft.wraps(_oineus.Filtration_double.get_sorted_id_by_id)
     def get_sorted_id_by_id(self, id):
         return self.under_fil.get_sorted_id_by_id(id)
 
-    @ft.wraps(_oineus.Filtration_double.get_cell)
+    #@ft.wraps(_oineus.Filtration_double.get_cell)
     def get_cell(self, sorted_idx):
         return self.under_fil.get_cell(sorted_idx)
 
-    @ft.wraps(_oineus.Filtration_double.get_simplex)
+    #@ft.wraps(_oineus.Filtration_double.get_simplex)
     def get_simplex(self, sorted_idx):
         return self.under_fil.get_simplex(sorted_idx)
 
-    @ft.wraps(_oineus.Filtration_double.get_sorting_permutation)
+    #@ft.wraps(_oineus.Filtration_double.get_sorting_permutation)
     def get_sorting_permutation(self):
         return self.under_fil.get_sorting_permutation()
 
-    @ft.wraps(_oineus.Filtration_double.get_inv_sorting_permutation)
+    #@ft.wraps(_oineus.Filtration_double.get_inv_sorting_permutation)
     def get_inv_sorting_permutation(self):
         return self.under_fil.get_inv_sorting_permutation()
 
-    @ft.wraps(_oineus.Filtration_double.cell_by_uid)
+    #@ft.wraps(_oineus.Filtration_double.cell_by_uid)
     def cell_by_uid(self, uid):
         return self.under_fil.cell_by_uid(uid)
 
-    @ft.wraps(_oineus.Filtration_double.boundary_matrix)
+    #@ft.wraps(_oineus.Filtration_double.boundary_matrix)
     def boundary_matrix(self, uid):
         return self.under_fil.boundary_matrix(uid)
 
-    @ft.wraps(_oineus.Filtration_double.simplex_value_by_sorted_id)
+    #@ft.wraps(_oineus.Filtration_double.simplex_value_by_sorted_id)
     def simplex_value_by_sorted_id(self, sorted_id):
         return self.under_fil.simplex_value_by_sorted_id(sorted_id)
 
-    @ft.wraps(_oineus.Filtration_double.simplex_value_by_vertices)
+    #@ft.wraps(_oineus.Filtration_double.simplex_value_by_vertices)
     def simplex_value_by_vertices(self, vertices):
         return self.under_fil.simplex_value_by_vertices(vertices)
 
-    @ft.wraps(_oineus.Filtration_double.get_sorted_id_by_vertices)
+    #@ft.wraps(_oineus.Filtration_double.get_sorted_id_by_vertices)
     def get_sorted_id_by_vertices(self, vertices):
         return self.under_fil.get_sorted_id_by_vertices(vertices)
 
-    @ft.wraps(_oineus.Filtration_double.reset_ids_to_sorted_ids)
+    #@ft.wraps(_oineus.Filtration_double.reset_ids_to_sorted_ids)
     def reset_ids_to_sorted_ids(self):
         self.under_fil.reset_ids_to_sorted_ids()
 
@@ -107,19 +107,19 @@ class TopologyOptimizer:
         else:
             raise RuntimeError("unknown filtration type in oineus.diff.TopologyOptimizer constructor")
 
-    @ft.wraps(_oineus.TopologyOptimizer.compute_diagram)
+    #@ft.wraps(_oineus.TopologyOptimizer.compute_diagram)
     def compute_diagram(self, include_inf_points: bool):
         return self.under_opt.compute_diagram(include_inf_points)
 
-    @ft.wraps(_oineus.TopologyOptimizer.simplify)
+    #@ft.wraps(_oineus.TopologyOptimizer.simplify)
     def simplify(self, epsilon: float, strategy, dim: int):
         return self.under_opt.simplify(epsilon, strategy, dim)
 
-    @ft.wraps(_oineus.TopologyOptimizer.get_nth_persistence)
+    #@ft.wraps(_oineus.TopologyOptimizer.get_nth_persistence)
     def get_nth_persistence(self, dim: int, n: int):
         return self.under_opt.get_nth_persistence(dim=dim, n=n)
 
-    @ft.wraps(_oineus.TopologyOptimizer.match)
+    #@ft.wraps(_oineus.TopologyOptimizer.match)
     def match(self, template_dgm, dim: int, wasserstein_q: float=1.0, return_wasserstein_distance: bool=False):
         return self.under_opt.match(temlate_dgm=template_dgm, dim=dim, wasserstein_q=wasserstein_q,
                                     return_wasserstein_distance=return_wasserstein_distance)
@@ -132,39 +132,39 @@ class TopologyOptimizer:
     def cohomology_decomposition(self):
         return self.under_opt.cohomology_decomposition
 
-    @ft.wraps(_oineus.TopologyOptimizer.singleton)
+    #@ft.wraps(_oineus.TopologyOptimizer.singleton)
     def singleton(self, index: int, value: float):
         return self.under_opt.singleton(index, value)
 
-    @ft.wraps(_oineus.TopologyOptimizer.singletons)
+    #@ft.wraps(_oineus.TopologyOptimizer.singletons)
     def singletons(self, indices, values):
         return self.under_opt.singletons(indices, values)
 
-    @ft.wraps(_oineus.TopologyOptimizer.reduce_all)
+    #@ft.wraps(_oineus.TopologyOptimizer.reduce_all)
     def reduce_all(self):
         return self.under_opt.reduce_all()
 
-    @ft.wraps(_oineus.TopologyOptimizer.update)
+    #@ft.wraps(_oineus.TopologyOptimizer.update)
     def update(self):
         return self.under_opt.update()
 
-    @ft.wraps(_oineus.TopologyOptimizer.increase_death)
+    #@ft.wraps(_oineus.TopologyOptimizer.increase_death)
     def increase_death(self, negative_simplex_idx: int):
         return self.under_opt.increase_death(negative_simplex_idx)
 
-    @ft.wraps(_oineus.TopologyOptimizer.decrease_death)
+    #@ft.wraps(_oineus.TopologyOptimizer.decrease_death)
     def decrease_death(self, negative_simplex_idx: int):
         return self.under_opt.decrease_death(negative_simplex_idx)
 
-    @ft.wraps(_oineus.TopologyOptimizer.increase_birth)
+    #@ft.wraps(_oineus.TopologyOptimizer.increase_birth)
     def increase_birth(self, positive_simplex_idx: int):
         return self.under_opt.increase_birth(positive_simplex_idx)
 
-    @ft.wraps(_oineus.TopologyOptimizer.decrease_birth)
+    #@ft.wraps(_oineus.TopologyOptimizer.decrease_birth)
     def decrease_birth(self, positive_simplex_idx: int):
         return self.under_opt.decrease_birth(positive_simplex_idx)
 
-    @ft.wraps(_oineus.TopologyOptimizer.combine_loss)
+    #@ft.wraps(_oineus.TopologyOptimizer.combine_loss)
     def combine_loss(self, critical_sets, strategy):
         return self.under_opt.combine_loss(critical_sets, strategy)
 
