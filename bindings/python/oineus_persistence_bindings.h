@@ -583,6 +583,7 @@ void init_oineus_common_decomposition(py::module& m)
                     py::arg("fil"))
             .def("zero_pers_diagram", [](const Decomposition& self, const ProdSimplexFiltrationDouble& fil) { return PyOineusDiagrams<double>(self.zero_persistence_diagram(fil)); },
                     py::arg("fil"))
+            .def("filtration_index", &Decomposition::filtration_index, py::arg("matrix_index"))
                     ;
 
 }

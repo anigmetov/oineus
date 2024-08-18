@@ -362,6 +362,11 @@ namespace oineus {
             return r_data;
         }
 
+        size_t filtration_index(size_t matrix_idx) const
+        {
+            return dualize() ? size() - matrix_idx - 1 : matrix_idx;
+        }
+
         bool is_R_column_zero(size_t col_idx) const { return r_data[col_idx].empty(); }
         bool is_V_column_zero(size_t col_idx) const { return v_data[col_idx].empty(); }
     };
