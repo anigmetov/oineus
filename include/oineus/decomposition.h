@@ -287,12 +287,13 @@ namespace oineus {
             }
         }
 
-        VRUDecomposition(const MatrixData& d, size_t n_rows = std::numeric_limits<decltype(n_rows)>::max())
+        VRUDecomposition(const MatrixData& d, size_t n_rows = std::numeric_limits<decltype(n_rows)>::max(), bool dualize=false)
                 :
                 d_data(d),
                 r_data(d),
-                dualize_(false),
+                dualize_(dualize),
                 n_rows(n_rows == std::numeric_limits<decltype(n_rows)>::max() ? d_data.size() : n_rows),
+                // TODO: think about dimensions here
                 dim_first(std::vector<size_t>({0})),
                 dim_last(std::vector<size_t>({d.size() - 1}))
         {
