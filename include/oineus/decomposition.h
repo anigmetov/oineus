@@ -261,7 +261,7 @@ namespace oineus {
         template<class C, class R>
         VRUDecomposition(const Filtration<C, R>& fil, bool _dualize)
                 :
-                d_data(!_dualize ? fil.boundary_matrix_full() : antitranspose(fil.boundary_matrix_full(), fil.size())),
+                d_data(!_dualize ? fil.boundary_matrix_full() : fil.coboundary_matrix()),
                 r_data(d_data),
                 dualize_(_dualize),
                 dim_first(fil.dim_first()),

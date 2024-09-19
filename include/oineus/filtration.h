@@ -123,6 +123,7 @@ namespace oineus {
 
         dim_type max_dim() const { return dim_last_.size() - 1; }
 
+
         BoundaryMatrix boundary_matrix_full() const
         {
             CALI_CXX_MARK_FUNCTION;
@@ -203,6 +204,10 @@ namespace oineus {
             return result;
         }
 
+        BoundaryMatrix coboundary_matrix() const
+        {
+            return antitranspose(boundary_matrix_full(), size());
+        }
 
         template<typename I, typename R, size_t D>
         friend class Grid;

@@ -8,7 +8,7 @@ PYBIND11_MODULE(_oineus, m)
 {
     m.doc() = "Oineus python bindings";
 
-    std::string float_suffix = "_float";
+//    std::string float_suffix = "_float";
     std::string double_suffix = "_double";
 //    std::string double_suffix = "";
 
@@ -16,8 +16,8 @@ PYBIND11_MODULE(_oineus, m)
     init_oineus_common_diagram_int(m);
     init_oineus_common_decomposition_int(m);
 
-    init_oineus_functions_float(m, float_suffix);
-    init_oineus_fil_dgm_simplex_float(m, float_suffix);
+//    init_oineus_functions_float(m, float_suffix);
+//    init_oineus_fil_dgm_simplex_float(m, float_suffix);
 
     init_oineus_functions_double(m, double_suffix);
     init_oineus_fil_dgm_simplex_double(m, double_suffix);

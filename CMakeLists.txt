@@ -5,6 +5,7 @@ project(oineus LANGUAGES CXX)
 option(oin_use_spdlog "Use spdlog" OFF)
 option(oin_use_jemalloc "Use jemalloc" OFF)
 option(oin_build_tests "Build tests" ON)
+option(oin_build_examples "Build examples" ON)
 option(oin_gather_add_stats "Gather statistics about summand sizes" OFF)
 option(oin_caliper "Enable profiling with Caliper" OFF)
 
@@ -40,7 +41,10 @@ if(oin_caliper)
 endif()
 
 
-add_subdirectory(examples)
+if (oin_build_examples)
+    add_subdirectory(examples)
+endif ()
+
 add_subdirectory(bindings/python)
 
 if (oin_build_tests)
