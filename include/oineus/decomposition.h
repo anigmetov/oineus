@@ -246,8 +246,8 @@ namespace oineus {
         bool is_reduced {false};
         bool dualize_ {false};
 
-        std::vector<size_t> dim_first;
-        std::vector<size_t> dim_last;
+        std::vector<Int> dim_first;
+        std::vector<Int> dim_last;
 
         size_t n_rows {0};
 
@@ -271,7 +271,7 @@ namespace oineus {
             if (dualize_) {
                 std::reverse(dim_first.begin(), dim_first.end());
                 std::reverse(dim_last.begin(), dim_last.end());
-                std::vector<size_t> new_dim_first, new_dim_last;
+                std::vector<Int> new_dim_first, new_dim_last;
                 for(size_t i = 0; i < dim_first.size(); ++i) {
                     size_t cnt = dim_last[i] - dim_first[i];
                     if (i == 0) {
@@ -294,8 +294,8 @@ namespace oineus {
                 dualize_(dualize),
                 n_rows(n_rows == std::numeric_limits<decltype(n_rows)>::max() ? d_data.size() : n_rows),
                 // TODO: think about dimensions here
-                dim_first(std::vector<size_t>({0})),
-                dim_last(std::vector<size_t>({d.size() - 1}))
+                dim_first(std::vector<Int>({0})),
+                dim_last(std::vector<Int>({d.size() - 1}))
         {
         }
 

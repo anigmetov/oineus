@@ -908,6 +908,11 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
             .def("coboundary_matrix", &Filtration::coboundary_matrix)
             .def("boundary_matrix_rel", &Filtration::boundary_matrix_full_rel)
             .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids)
+            .def("subfiltration", [](Filtration& self, const py::function& py_pred) {
+                auto pred = [&py_pred](const typename Filtration::Cell& s) -> bool { return py_pred(s).template cast<bool>(); };
+                Filtration result = self.subfiltration(pred);
+                return result;
+            }, py::arg("predicate"), py::return_value_policy::move)
             .def("__repr__", [](const Filtration& fil) {
               std::stringstream ss;
               ss << fil;

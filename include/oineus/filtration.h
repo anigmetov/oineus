@@ -44,6 +44,7 @@ namespace oineus {
         using CellUid = typename Cell::Uid;
         using UidHasher = typename Cell::UidHasher;
 
+
         Filtration() = default;
         Filtration(const Filtration&) = default;
         Filtration(Filtration&&) = default;
@@ -101,8 +102,8 @@ namespace oineus {
 
         size_t size() const { return cells_.size(); }
 
-        size_t dim_first(dim_type d) const { return dim_first_.at(d); }
-        size_t dim_last(dim_type d) const { return dim_last_.at(d); }
+        auto dim_first(dim_type d) const { return dim_first_.at(d); }
+        auto dim_last(dim_type d) const { return dim_last_.at(d); }
 
         auto dim_first() const { return dim_first_; }
         auto dim_last() const { return dim_last_; }
@@ -123,7 +124,6 @@ namespace oineus {
 
         dim_type max_dim() const { return dim_last_.size() - 1; }
 
-
         BoundaryMatrix boundary_matrix_full() const
         {
             CALI_CXX_MARK_FUNCTION;
@@ -141,6 +141,8 @@ namespace oineus {
 
         BoundaryMatrix boundary_matrix_in_dimension(dim_type d) const
         {
+            bool missing_ok = is_subfiltration();
+
             BoundaryMatrix result(size_in_dimension(d));
             // fill D with empty vectors
 
@@ -152,7 +154,14 @@ namespace oineus {
                     col.reserve(d + 1);
 
                     for(const auto& tau_vertices: sigma.boundary()) {
-                        col.push_back(uid_to_sorted_id.at(tau_vertices));
+                        if (missing_ok) {
+                            auto iter = uid_to_sorted_id.find(tau_vertices);
+                            if (iter != uid_to_sorted_id.end()) {
+                                col.push_back(iter->second);
+                            }
+                        } else {
+                            col.push_back(uid_to_sorted_id.at(tau_vertices));
+                        }
                     }
 
                     std::sort(col.begin(), col.end());
@@ -326,10 +335,49 @@ namespace oineus {
         }
 
 
+        // return true, if it's a subfiltration (subset) of a true filtration
+        // if so, the
+        bool is_subfiltration() const { return is_subfiltration_; }
+
+        template<class P>
+        Filtration subfiltration(const P& pred)
+        {
+            Filtration result;
+            result.cells_.reserve(size());
+
+            result.is_subfiltration_ = true;
+
+            std::set<dim_type> dims;
+
+            Int sorted_id = 0;
+            for(const auto& cell : cells_) {
+                if (pred(cell)) {
+                    dims.insert(cell.dim());
+                    result.cells_.push_back(cell);
+                    result.uid_to_sorted_id[cell.get_uid()] = sorted_id;
+                    result.id_to_sorted_id_[cell.get_id()] = sorted_id;
+                    result.sorted_id_to_id_.push_back(cell.get_id());
+                    result.sorted_id_to_value_.push_back(cell.get_value());
+                    result.cells_.back().sorted_id_ = sorted_id;
+                    sorted_id++;
+                }
+            }
+
+            if (result.size() == 0)
+                return Filtration();
+
+            dim_type max_dim = cells_.back().dim();
+
+            result.set_dim_info(max_dim, dims);
+
+            return result;
+        }
+
     private:
         // data
         bool negate_;
         CellVector cells_;
+        bool is_subfiltration_ {false};
 
         std::unordered_map<CellUid, Int, UidHasher> uid_to_sorted_id;
         std::unordered_map<Int, Int> id_to_sorted_id_;
@@ -337,8 +385,8 @@ namespace oineus {
 
         std::vector<Real> sorted_id_to_value_;
 
-        std::vector<size_t> dim_first_;
-        std::vector<size_t> dim_last_;
+        std::vector<Int> dim_first_;
+        std::vector<Int> dim_last_;
 
         // private methods
         void set_ids()
@@ -352,7 +400,7 @@ namespace oineus {
         {
             Int curr_dim = 0;
             dim_first_.push_back(0);
-            for(size_t i = 0; i < size(); ++i)
+            for(Int i = 0; i < size(); ++i)
                 if (cells_[i].dim() != curr_dim) {
                     if (cells_[i].dim() != curr_dim + 1)
                         throw std::runtime_error("Wrong dimension");
@@ -362,6 +410,41 @@ namespace oineus {
                     curr_dim = cells_[i].dim();
                 }
             dim_last_.push_back(size() - 1);
+        }
+
+        // for subfiltration case only:
+        // some dimensions might be missing, present_dims contains the dimensions
+        // for which there are cells in subfiltration
+        void set_dim_info(dim_type max_dim, const std::set<dim_type>& present_dims)
+        {
+            dim_first_ = std::vector<Int>(max_dim + 1, 0);
+            dim_last_ = std::vector<Int>(max_dim + 1, 0);
+
+            // for missing dimensions set dim_last to be smaller
+            // than dim_first so that we skip it when looping over
+            // dimensions
+            for(dim_type d = 0; d < max_dim; ++d) {
+                if (present_dims.find(d) == present_dims.end()) {
+                    dim_last_[d] = -1;
+                }
+            }
+
+            if (cells_.empty()) {
+                return;
+            }
+
+            dim_type curr_dim = cells_[0].dim();
+            dim_first_[curr_dim] = 0;
+            for(size_t i = 0; i < size(); ++i) {
+                dim_type new_dim = cells_[i].dim();
+                if (new_dim != curr_dim) {
+                    dim_last_[curr_dim] = i - 1;
+                    dim_first_[new_dim] = i;
+                    curr_dim = new_dim;
+                }
+            }
+
+            dim_last_[curr_dim] = size() - 1;
         }
 
         // sort cells and assign sorted_ids
