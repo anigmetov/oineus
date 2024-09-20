@@ -7,8 +7,6 @@
 #include <numeric>
 #include <functional>
 
-#include <icecream/icecream.hpp>
-
 #include <oineus/filtration.h>
 
 namespace std {

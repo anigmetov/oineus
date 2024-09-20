@@ -11,8 +11,6 @@
 #include <tbb/parallel_sort.h>
 #include <tbb/global_control.h>
 
-#include <icecream/icecream.hpp>
-
 #include "timer.h"
 #include "simplex.h"
 #include "decomposition.h"
@@ -343,7 +341,6 @@ namespace oineus {
         Filtration subfiltration(const P& pred)
         {
             Filtration result;
-            result.cells_.reserve(size());
 
             result.is_subfiltration_ = true;
 

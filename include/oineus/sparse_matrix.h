@@ -11,8 +11,6 @@
 #include <cassert>
 #include <algorithm>
 
-#include "icecream/icecream.hpp"
-
 namespace oineus {
 
 template<class Int>

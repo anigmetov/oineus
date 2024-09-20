@@ -2,8 +2,6 @@
 
 #include <string>
 
-#include "icecream/icecream.hpp"
-
 #ifdef OINEUS_USE_SPDLOG
 
 #include <spdlog/spdlog.h>

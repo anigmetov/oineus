@@ -295,7 +295,7 @@ namespace oineus {
                 n_rows(n_rows == std::numeric_limits<decltype(n_rows)>::max() ? d_data.size() : n_rows),
                 // TODO: think about dimensions here
                 dim_first(std::vector<Int>({0})),
-                dim_last(std::vector<Int>({d.size() - 1}))
+                dim_last(std::vector<Int>({static_cast<Int>(d.size() - 1)}))
         {
         }
 
