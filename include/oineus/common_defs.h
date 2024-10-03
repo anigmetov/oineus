@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <sstream>
+#include <limits>
 
 #ifdef OINEUS_USE_CALIPER
 #include <caliper/cali.h>

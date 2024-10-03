@@ -8,8 +8,8 @@
 
 #include <algorithm>
 
-#include <tbb/parallel_sort.h>
-#include <tbb/global_control.h>
+#include <taskflow/taskflow.hpp>
+#include <taskflow/algorithm/sort.hpp>
 
 #include "timer.h"
 #include "simplex.h"
@@ -497,8 +497,10 @@ namespace oineus {
             };
 
             if (n_threads > 1) {
-                tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, n_threads);
-                tbb::parallel_sort(cells_, cmp);
+                tf::Executor executor(n_threads);
+                tf::Taskflow taskflow;
+                tf::Task sort = taskflow.sort(cells_.begin(), cells_.end(), cmp);
+                executor.run(taskflow).wait();
             } else {
                 std::sort(cells_.begin(), cells_.end(), cmp);
             }

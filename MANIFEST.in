@@ -1,0 +1,22 @@
+include CMakeLists.txt description.rst MANIFEST.in README.md licence.txt legal.txt
+include requirements.txt peru.yaml version.txt
+recursive-include bindings/python *
+recursive-exclude bindings/python/pybind11/docs *
+recursive-exclude bindings/python/pybind11/tests *
+recursive-include extern *
+recursive-include include/oineus *
+recursive-include src *
+recursive-include tests *
+recursive-include doc *
+global-exclude *.pyc *.swp
+prune .git
+recursive-exclude extern/Catch2 *
+recursive-exclude ./*venv* *
+recursive-exclude ./doc/_build *
+recursive-exclude ./dist *
+recursive-exclude *build* *
+recursive-exclude *venv* *
+recursive-exclude ./bindings/python/oineus/__pycache__ *
+recursive-exclude ./.peru *
+recursive-exclude ./.pytest_cache *
+recursive-exclude ./tests/__pycache__ *

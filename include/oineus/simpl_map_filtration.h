@@ -8,9 +8,6 @@
 
 #include <algorithm>
 
-#include <tbb/parallel_sort.h>
-#include <tbb/global_control.h>
-
 #include <icecream/icecream.hpp>
 
 #include "timer.h"

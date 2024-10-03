@@ -20,7 +20,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package (Threads REQUIRED)
-find_package (TBB REQUIRED)
 find_package (Boost REQUIRED)
 find_package (Python3 COMPONENTS Interpreter Development REQUIRED)
 
@@ -28,7 +27,7 @@ message(WARNING "executable ${Python3_EXECUTABLE}, ${Python_EXECUTABLE} ")
 
 include_directories(${Boost_INCLUDE_DIRS})
 
-set (libraries ${libraries} ${CMAKE_THREAD_LIBS_INIT} TBB::tbb)
+set (libraries ${libraries} ${CMAKE_THREAD_LIBS_INIT})
 
 if (oin_use_jemalloc)
     set (libraries ${libraries} jemalloc)
