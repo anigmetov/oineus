@@ -316,7 +316,7 @@ namespace oineus {
         [[nodiscard]] size_t index_in_matrix(size_t cell_idx, bool dualize) const { return dualize ? size() - cell_idx - 1 : cell_idx; }
         [[nodiscard]] size_t index_in_filtration(size_t matrix_idx, bool dualize) const { return dualize ? size() - matrix_idx - 1 : matrix_idx; }
 
-        void set_values(const std::vector<Real>& new_values, int n_threads=1)
+        void set_values(const std::vector<Real>& new_values)
         {
             if (new_values.size() != cells_.size())
                 throw std::runtime_error("new_values.size() != cells_.size()");
@@ -324,7 +324,7 @@ namespace oineus {
             for(size_t i = 0; i < new_values.size(); ++i)
                 cells_[i].value_ = new_values[i];
 
-            sort(n_threads);
+            sort(1);
         }
 
         std::vector<Real> all_values() const
