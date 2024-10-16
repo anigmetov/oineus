@@ -908,6 +908,8 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
             .def("coboundary_matrix", &Filtration::coboundary_matrix)
             .def("boundary_matrix_rel", &Filtration::boundary_matrix_full_rel)
             .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids)
+            .def("set_values", &Filtration::set_values)
+            .def("__iter__", [](Filtration& fil) { return py::make_iterator(fil.begin(), fil.end()); }, py::keep_alive<0, 1>())
             .def("subfiltration", [](Filtration& self, const py::function& py_pred) {
                 auto pred = [&py_pred](const typename Filtration::Cell& s) -> bool { return py_pred(s).template cast<bool>(); };
                 Filtration result = self.subfiltration(pred);
@@ -930,6 +932,7 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
             .def("cells", &ProdFiltration::cells_copy, "copy of all cells in filtration order")
             .def("size", &ProdFiltration::size, "number of cells in filtration")
             .def("__len__", &ProdFiltration::size)
+            .def("__iter__", [](ProdFiltration& fil) { return py::make_iterator(fil.begin(), fil.end()); }, py::keep_alive<0, 1>())
             .def("size_in_dimension", &ProdFiltration::size_in_dimension, py::arg("dim"), "number of cells of dimension dim")
             .def("cell_value_by_sorted_id", &ProdFiltration::value_by_sorted_id, py::arg("sorted_id"))
             .def("get_id_by_sorted_id", &ProdFiltration::get_id_by_sorted_id, py::arg("sorted_id"))
@@ -939,6 +942,7 @@ void init_oineus_fil_dgm_simplex(py::module& m, std::string suffix)
             .def("get_inv_sorting_permutation", &ProdFiltration::get_inv_sorting_permutation)
             .def("boundary_matrix", &ProdFiltration::boundary_matrix_full)
             .def("reset_ids_to_sorted_ids", &ProdFiltration::reset_ids_to_sorted_ids)
+            .def("set_values", &ProdFiltration::set_values)
             .def("__repr__", [](const ProdFiltration& fil) {
               std::stringstream ss;
               ss << fil;

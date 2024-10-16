@@ -289,7 +289,7 @@ public:
 
     void update(const Values& new_values, int n_threads = 1)
     {
-        fil_.update(new_values);
+        fil_.set_values(new_values);
 
         decmp_hom_ = Decomposition(fil_, false);
         decmp_coh_ = Decomposition(fil_, true);
