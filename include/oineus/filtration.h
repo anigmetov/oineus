@@ -363,7 +363,7 @@ namespace oineus {
             if (result.size() == 0)
                 return Filtration();
 
-            dim_type max_dim = cells_.back().dim();
+            dim_type max_dim = result.cells_.back().dim();
 
             result.set_dim_info(max_dim, dims);
 

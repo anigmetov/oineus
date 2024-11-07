@@ -4,17 +4,48 @@
 #include <unordered_map>
 #include <cmath>
 #include <numeric>
+#include <ostream>
 
 #include "simplex.h"
 #include "sparse_matrix.h"
 #include "decomposition.h"
 #include "filtration.h"
 #include "diagram.h"
+#include "profile.h"
 
 // suppress pragma message from boost
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
 namespace oineus {
+
+struct KICRParams {
+    bool kernel {true};
+    bool image  {true};
+    bool cokernel {true};
+    bool include_zero_persistence {false};
+    bool verbose {false};
+    Params params_f;
+    Params params_g;
+    Params params_ker;
+    Params params_im;
+    Params params_cok;
+};
+
+inline std::ostream& operator<<(std::ostream& out, const KICRParams& p)
+{
+    out << "KICRParams(compute_kernel = " << p.kernel;
+    out << ", compute_image = " << p.image;
+    out << ", compute_cokernel = " << p.cokernel;
+    out << ", include_zero_persistence = " << p.include_zero_persistence;
+    out << ", verbose = " << p.verbose;
+    out << ", params_f = " << p.params_f;
+    out << ", params_g = " << p.params_g;
+    if (p.kernel) out << ", params_ker = " << p.params_ker;
+    if (p.image)  out << ", params_im = " << p.params_im;
+    if (p.cokernel)  out << ", params_cok = " << p.params_cok;
+    out << ")";
+    return out;
+}
 
 template<typename Cell, typename Real_, int P = 2>
 struct KerImCokReduced {
@@ -49,8 +80,7 @@ private:
     std::vector<size_t> new_order_to_old_;     //given sorted_id i of cell in K, new_order_to_old[i] is its index in the ordering 'first L, then K-L', used in D_im
     std::vector<size_t> old_order_to_new_;     // the inverse of the above
     std::vector<size_t> K_to_ker_column_index_;
-    Params params_;
-    bool include_zero_persistence_ {false};   // whether we want to have points on the diagonal in the diagram
+    KICRParams params_;
 
     // entries (rows) in col are indexed w.r.t. K filtration order
     // return col reindexed by the new order: L first, K-L second
@@ -69,9 +99,6 @@ private:
 
     Matrix compute_d_im() const
     {
-        if (not dcmp_F_.is_reduced)
-            throw std::runtime_error("reduce D_f first");
-
         const Matrix& m = dcmp_F_.get_D();
 
         Matrix result;
@@ -87,7 +114,7 @@ private:
 
     // take columns from v that correspond to cycles (i.e., the corresponding column in r is zero)
     // apply old_to_new_order to them (reorder rows)
-    // return the matrix comprised from the resulting columns
+    // return the matrix comprised of the resulting columns
     Matrix compute_d_ker()
     {
         const Matrix& v = dcmp_im_.get_V();
@@ -141,10 +168,10 @@ private:
             for(auto& x: new_col)
                 x = sorted_L_to_sorted_K_[x];
 
-            // NB: sorting not needed: new_col was sorted before
-
+            // sorting not needed: new_col was sorted before
             d_cok[i] = std::move(new_col);
         }
+
         return d_cok;
     }
 
@@ -161,7 +188,8 @@ public:
     }
 
     // parameters: complex K, a subcomplex L, reduction params
-    KerImCokReduced(const Fil& K, const Fil& L, Params& params, bool include_zero_persistence=false)
+    KerImCokReduced(const Fil& K, const Fil& L,
+                    KICRParams& params)
             :
             fil_K_(K),
             fil_L_(L),
@@ -174,15 +202,8 @@ public:
             ker_diagrams_(K.max_dim() + 1),
             im_diagrams_(K.max_dim() + 1),
             cok_diagrams_(K.max_dim() + 1),
-            params_(params),
-            include_zero_persistence_(include_zero_persistence)
+            params_(params)
     {
-        if (params.compute_u) { std::cerr << "WARNING: compute_u will be ignored, do not need it for Ker/Im/Cok algorithm" << std::endl; }
-        if (!params.compute_v) { std::cerr << "WARNING: compute_v is false, but V will be computed, we need it for Ker/Im/Cok algorithm" << std::endl; }
-
-        params.compute_v = true;
-        params.compute_u = false;
-
         if (params_.verbose) { std::cerr << "Performing kernel, image, cokernel reduction, reduction parameters: " << params << std::endl; }
 
         // all cells in L must be present in K
@@ -192,30 +213,47 @@ public:
         if (fil_K_.size() < fil_L_.size())
             throw std::runtime_error("second argument L must be a subcomplex of the first argument K");
 
+        CALI_MARK_BEGIN("sorted_L_to_sorted_K");
         for(size_t fil_L_idx = 0 ; fil_L_idx < fil_L_.size() ; fil_L_idx++) {//getting sorted L to sorted K is relatively easy
             sorted_L_to_sorted_K_[fil_L_idx] = fil_K_.get_sorted_id_by_uid(fil_L_.get_cell(fil_L_idx).get_uid());
         }
+        CALI_MARK_END("sorted_L_to_sorted_K");
 
+        CALI_MARK_BEGIN("sorted_K_to_sorted_L");
         for(size_t i = 0 ; i < fil_L_.size() ; i++) {
             //for cells in K which are also in L, set the sorted id, which we can get from sorted L to sorted K
             sorted_K_to_sorted_L_[sorted_L_to_sorted_K_[i]] = i;
         }
+        CALI_MARK_END("sorted_K_to_sorted_L");
 
         if (params_.verbose) { std::cerr << "K_to_L and L_to_K computed" << std::endl; }
 
         //set up the reduction for F  on K
+        CALI_MARK_BEGIN("dcmp_F.reduce");
         dcmp_F_ = VRUDecomp(fil_K_.boundary_matrix_full());
-        dcmp_F_.reduce(params);
-        if (params_.verbose) { std::cerr << "dcmp_F_ reduced" << std::endl; }
+        dcmp_F_.reduce(params_.params_f);
+        if (params_.verbose) { std::cerr << "dcmp_F_ reduced with params = " << params_.params_f << std::endl; }
+        CALI_MARK_END("dcmp_F.reduce");
 
         //set up reduction for G on L
+        CALI_MARK_BEGIN("dcmp_G.reduce");
+        params_.params_g.compute_v = params_.params_g.compute_v or params_.cokernel;
         dcmp_G_ = VRUDecomp(fil_L_.boundary_matrix_full());
-        dcmp_G_.reduce(params);
-        if (params_.verbose) { std::cerr << "dcmp_G_ reduced" << std::endl; }
+        dcmp_G_.reduce(params_.params_g);
+        if (params_.verbose) { std::cerr << "dcmp_G_ reduced with params = " << params_.params_g << std::endl; }
+        CALI_MARK_END("dcmp_G.reduce");
 
+        CALI_MARK_BEGIN("dcmp_F.diagram");
         cod_diagrams_ = dcmp_F_.diagram(fil_K_, true);
-        dom_diagrams_ = dcmp_G_.diagram(fil_L_, true);
+        if (params_.verbose) { std::cerr << "cod_diagrams computed" << std::endl; }
+        CALI_MARK_END("dcmp_F.diagram");
 
+        CALI_MARK_BEGIN("dcmp_G.diagram");
+        dom_diagrams_ = dcmp_G_.diagram(fil_L_, true);
+        if (params_.verbose) { std::cerr << "dom_diagrams computed" << std::endl; }
+        CALI_MARK_END("dcmp_G.diagram");
+
+        CALI_MARK_BEGIN("new_order_to_old");
         std::iota(new_order_to_old_.begin(), new_order_to_old_.end(), 0);
 
         if (params_.verbose) std::cerr << "Sorting so that cells in L come before cells in K." << std::endl;
@@ -229,6 +267,7 @@ public:
                   // if both i and j are in L or both are not, use the existing order
                   return i < j;
                 });
+        CALI_MARK_END("new_order_to_old");
 
         // map from old order to new order so that we know which cells correspond to which rows.
         // This could be done by just shuffling the row indices, but as we create a new reduction isntance, we need to create a new matrix anyway.
@@ -237,38 +276,50 @@ public:
             old_order_to_new_[new_order_to_old_[i]] = i;
         }
 
-        params.clearing_opt = false;
-
         // step 2 of the algorithm
+        CALI_MARK_BEGIN("dcmp_im");
+        params_.params_im.clearing_opt = false;
+        // if user wants to compute v, keep it, but if we need ker, we must compute it anyway
+        params_.params_im.compute_v = params_.params_im.compute_v or params_.kernel;
         auto d_im = compute_d_im();
         dcmp_im_ = VRUDecomp(d_im);
-        dcmp_im_.reduce(params);
-        if (params_.verbose) { std::cerr << "dcmp_im_ reduced" << std::endl; }
+        dcmp_im_.reduce(params_.params_im);
+        if (params_.verbose) { std::cerr << "dcmp_im_ reduced, size=" << dcmp_im_.size() << ", params = " << params_.params_im << std::endl; }
+        CALI_MARK_END("dcmp_im");
 
         // step 3 of the algorithm
 
-        //params.compute_v = false;
+        if (params_.kernel) {
+            CALI_MARK_BEGIN("dcmp_ker");
+            params_.params_ker.clearing_opt = false;
+            Matrix d_ker = compute_d_ker();
+            // NB: d_ker is not a square matrix, has fewer columns that rows. We must give the number of rows (#cells in K) to VRUDecomp ctor.
+            dcmp_ker_ = VRUDecomp(d_ker, fil_K_.size());
+            dcmp_ker_.reduce(params_.params_ker);
+            if (params_.verbose) { std::cerr << "dcmp_ker reduced, size=" << dcmp_ker_.size() << ", params = " << params_.params_ker << std::endl; }
+            CALI_MARK_END("dcmp_ker");
+        }
 
-        Matrix d_ker = compute_d_ker();
-        // NB: d_ker is not a square matrix, has fewer columns that rows. We must give the number of rows (#cells in K) to VRUDecomp ctor.
-        dcmp_ker_ = VRUDecomp(d_ker, fil_K_.size());
-        dcmp_ker_.reduce(params);
-        if (params_.verbose) { std::cerr << "dcmp_ker reduced" << std::endl; }
+        if (params_.cokernel) {
+            // step 4 of the algorithm
+            CALI_MARK_BEGIN("dcmp_cok");
+            params_.params_cok.clearing_opt = false;
+            Matrix d_cok = compute_d_cok();
+            // NB: d_cok is not a square matrix, has fewer columns that rows. We must give the number of rows to VRUDecomp ctor.
+            dcmp_cok_ = VRUDecomp(d_cok, fil_K_.size());
+            dcmp_cok_.reduce(params_.params_cok);
+            if (params_.verbose) { std::cerr << "dcmp_cok reduced, size=" << dcmp_cok_.size() << std::endl; }
+            CALI_MARK_END("dcmp_cok");
+        }
 
-        // step 4 of the algorithm
-        Matrix d_cok = compute_d_cok();
-        // NB: d_cok is not a square matrix, has fewer columns that rows. We must give the number of rows to VRUDecomp ctor.
-        dcmp_cok_ = VRUDecomp(d_cok, fil_K_.size());
-        dcmp_cok_.reduce_parallel_rv(params);
-        if (params_.verbose) { std::cerr << "dcmp_cok reduced" << std::endl; }
-
-        if (params.kernel) generate_ker_diagrams();
-        if (params.cokernel) generate_cok_diagrams();
-        if (params.image) generate_im_diagrams();
+        if (params_.kernel) generate_ker_diagrams();
+        if (params_.cokernel) generate_cok_diagrams();
+        if (params_.image) generate_im_diagrams();
     }
 
     void generate_ker_diagrams(bool inf_points = true)
     {
+        CALI_CXX_MARK_FUNCTION;
         if (params_.verbose) std::cerr << "generating kernel diagrams" << std::endl;
         // if we need points at infinity,
         // we have to keep track of the matched positive cells;
@@ -308,7 +359,7 @@ public:
 
             dim_type dim = fil_K_.get_cell(death_idx).dim() - 1;
 
-            if (birth != death or include_zero_persistence_)
+            if (birth != death or params_.include_zero_persistence)
                 ker_diagrams_.add_point(dim, birth, death, birth_idx, death_idx, fil_K_.get_id_by_sorted_id(birth_idx), fil_K_.get_id_by_sorted_id(death_idx));
 
             if (inf_points) {
@@ -365,6 +416,7 @@ public:
 
     void generate_cok_diagrams(bool inf_points = true)
     {
+        CALI_CXX_MARK_FUNCTION;
         if (params_.verbose) std::cerr << "generating cokernel diagrams" << std::endl;
         // if we need points at infinity,
         // we have to keep track of the matched positive cells;
@@ -374,9 +426,9 @@ public:
         // simplex τ gives death in Cok(g -> f) iff τ is
         // negative in R_f and the lowest one in its column in R_im
         // corresponds to a simplex in K − L
-        for(size_t death_idx = 0 ; death_idx < dcmp_F_.get_R().size() ; ++death_idx) {
+        for(size_t death_idx = 0 ; death_idx < dcmp_im_.get_R().size() ; ++death_idx) {
             // tau is positive -> skip it
-            if (dcmp_F_.is_positive(death_idx)) {
+            if (dcmp_im_.is_positive(death_idx)) {
                 continue;
             }
 
@@ -408,7 +460,7 @@ public:
 
             dim_type dim = fil_K_.get_cell(birth_idx).dim();
 
-            if (birth != death or include_zero_persistence_)
+            if (birth != death or params_.include_zero_persistence)
                 cok_diagrams_.add_point(dim, birth, death, birth_idx, death_idx, fil_K_.get_id_by_sorted_id(birth_idx), fil_K_.get_id_by_sorted_id(death_idx));
 
             if (inf_points) {
@@ -425,14 +477,14 @@ public:
         if (inf_points) {
             // A simplex σ gives birth in Cok(g -> f) iff σ is positive
             // in R_f and it is either in K − L or negative in R_g .
-            for(size_t birth_idx = 0 ; birth_idx < dcmp_F_.get_R().size() ; ++birth_idx) {
+            for(size_t birth_idx = 0 ; birth_idx < dcmp_im_.get_R().size() ; ++birth_idx) {
                 // sigma is paired, skip it
                 if (matched_positive_cells.count(birth_idx)) {
                     continue;
                 }
 
                 // sigma is negative in R_f, skip it
-                if (dcmp_F_.is_negative(birth_idx)) {
+                if (dcmp_im_.is_negative(birth_idx)) {
                     continue;
                 }
 
@@ -454,6 +506,7 @@ public:
     // TODO: merge with cokernel diagrams? the logic is close, instead of continue we can just have an if-statement
     void generate_im_diagrams(bool inf_points = true)
     {
+        CALI_CXX_MARK_FUNCTION;
         std::unordered_set<size_t> matched_positive_cells;
 
         // Death. A simplex τ gives death in Im(g →f ) iff τ is negative in Rf
@@ -484,7 +537,7 @@ public:
             Real death = fil_K_.value_by_sorted_id(death_idx);
             dim_type dim = fil_K_.get_cell(birth_idx).dim();
 
-            if (birth != death or include_zero_persistence_)
+            if (birth != death or params_.include_zero_persistence)
                 im_diagrams_.add_point(dim, birth, death, birth_idx, death_idx, fil_K_.get_id_by_sorted_id(birth_idx), fil_K_.get_id_by_sorted_id(death_idx));
 
             if (inf_points) {

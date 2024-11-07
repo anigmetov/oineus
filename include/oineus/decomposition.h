@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <stdexcept>
 
+#include "icecream/icecream.hpp"
 
 #include "common_defs.h"
 #include "timer.h"

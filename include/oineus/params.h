@@ -11,17 +11,14 @@ namespace oineus {
         int n_threads{1};
         int chunk_size{128};
         bool write_dgms{false};
-        bool sort_dgms{true};
+        bool sort_dgms{false};
         bool clearing_opt{true};
         bool acq_rel{false};
         bool print_time{false};
-        bool compute_v{true};
+        bool compute_v{false};
         bool compute_u{false};
         bool do_sanity_check{false};
         double elapsed{0.0};
-        bool kernel{false};
-        bool image{false};
-        bool cokernel{false};
         bool verbose{false};
     };
 
@@ -38,9 +35,6 @@ namespace oineus {
         out << ", compute_u = " << p.compute_u;
         out << ", do_sanity_check = " << p.do_sanity_check;
         out << ", elapsed = " << p.elapsed;
-        out << ", kernel = " << p.kernel;
-        out << ", image = " << p.image;
-        out << ", cokernel = " << p.cokernel;
         out << ", verbose = " << p.verbose;
         out << ")";
         return out;
