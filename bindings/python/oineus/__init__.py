@@ -10,13 +10,15 @@ from ._oineus import *
 
 import warnings
 
+from icecream import ic
+
 try:
     from . import diff
 except:
     warnings.warn("oineus.diff import failed, probably, because eagerpy is not installed")
 
 
-# __all__ = ["compute_diagrams_ls", "compute_diagrams_and_v_ls", "get_boundary_matrix", "to_scipy_matrix", "is_reduced", "get_freudenthal_filtration"]
+__all__ = ["compute_diagrams_ls", "get_boundary_matrix", "to_scipy_matrix", "is_reduced"]
 
 
 def to_scipy_matrix(sparse_cols, shape=None):
@@ -29,6 +31,65 @@ def to_scipy_matrix(sparse_cols, shape=None):
     return scipy.sparse.csc_matrix((data, (row_ind, col_ind)), shape=shape)
 
 
+def max_distance(data: np.ndarray, from_pwdists: bool=False):
+    if from_pwdists:
+        return np.max(data)
+    else:
+        assert data.ndim == 2 and data.shape[0] >= 2
+        diff = data[:, np.newaxis, :] - data[np.newaxis, :, :]
+        squared_distances = np.sum(diff**2, axis=2)
+        return np.sqrt(np.max(squared_distances))
+
+
+def freudenthal_filtration(data: np.ndarray,
+                           negate: bool=False,
+                           wrap: bool=False,
+                           max_dim: int = 3,
+                           with_critical_vertices: bool=False,
+                           n_threads: int=1):
+    max_dim = min(max_dim, data.ndim)
+    if with_critical_vertices:
+        return _oineus.get_freudenthal_filtration_and_critical_vertices(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
+    else:
+        return _oineus.get_freudenthal_filtration(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
+
+
+def vr_filtration(data: np.ndarray,
+                  from_pwdists: bool = False,
+                  max_dim: int = -1,
+                  max_diameter: float = -1.0,
+                  with_critical_edges: bool = False,
+                  n_threads: int = 1):
+    assert data.ndim == 2
+
+    if from_pwdists:
+        assert data.shape[0] == data.shape[1]
+
+    if max_diameter < 0:
+        max_diameter = max_distance(data, from_pwdists)
+
+    ic(max_dim, max_diameter)
+
+    if max_dim < 0:
+        if from_pwdists:
+            raise RuntimeError("vr_filtration: if input is pairwise distance matrix, max_dim must be specified")
+        else:
+            max_dim = data.shape[1]
+
+    if from_pwdists:
+        if with_critical_edges:
+            func = _oineus.get_vr_filtration_and_critical_edges_from_pwdists
+        else:
+            func = _oineus.get_vr_filtration_from_pwdists
+    else:
+        if with_critical_edges:
+            func = _oineus.get_vr_filtration_and_critical_edges
+        else:
+            func = _oineus.get_vr_filtration
+
+    return func(data, max_dim=max_dim, max_diameter=max_diameter, n_threads=n_threads)
+
+
 def is_reduced(a):
     lowest_ones = []
     for col_idx in range(a.shape[1]):
@@ -37,85 +98,29 @@ def is_reduced(a):
     return len(lowest_ones) == len(set(lowest_ones))
 
 
-def get_real_type(fil):
-    if "_double" in str(type(fil)):
-        return "double"
-    elif "_float" in str(type(fil)):
-        return "float"
-    else:
-        raise RuntimeError(f"Unknown type: {type(fil)}")
-
-
-def get_type_dim(data: np.ndarray, points=False):
-    if data.dtype == np.float32:
-        type_part = "float"
-    elif data.dtype == np.float64:
-        type_part = "double"
-    else:
-        raise RuntimeError(f"Type not supported: {data.dtype}")
-
+def get_dim(data: np.ndarray, points=False):
     if points:
         if data.ndim == 2 and data.shape[1] in [1, 2, 3, 4]:
-            dim_part = str(data.shape[1])
+            return data.shape[1]
         else:
             raise RuntimeError(f"Dimension not supported: shape = {data.shape}")
     else:
         if data.ndim in [1, 2, 3]:
-            dim_part = str(data.ndim)
+            return data.ndim
         else:
             raise RuntimeError(f"Dimension not supported: shape = {data.shape}")
 
-    return type_part, dim_part
-
-
-def get_freudenthal_filtration(data, negate, wrap, max_dim, n_threads):
-    type_part, dim_part = get_type_dim(data)
-    func = getattr(_oineus, f"get_fr_filtration_{type_part}_{dim_part}")
-    return func(data, negate, wrap, max_dim, n_threads)
-
-def get_freudenthal_filtration_and_critical_vertices(data, negate, wrap, max_dim, n_threads):
-    type_part, dim_part = get_type_dim(data)
-    func = getattr(_oineus, f"get_fr_filtration_and_critical_vertices_{type_part}_{dim_part}")
-    fil, cv = func(data, negate, wrap, max_dim, n_threads)
-    return fil, np.array(cv)
-
-
-def get_vr_filtration_from_pwdists(pwdists, max_dim, max_radius, n_threads):
-    type_part, _ = get_type_dim(pwdists, False)
-    func = getattr(_oineus, f"get_vr_filtration_from_pwdists_{type_part}")
-    return func(pwdists, max_dim, max_radius, n_threads)
-
-def get_vr_filtration_and_critical_edges_from_pwdists(pwdists, max_dim, max_radius, n_threads):
-    type_part, _ = get_type_dim(pwdists, False)
-    func = getattr(_oineus, f"get_vr_filtration_and_critical_edges_from_pwdists_{type_part}")
-    fil, edges = func(pwdists, max_dim, max_radius, n_threads)
-    edges = np.array([[e.x, e.y] for e in edges])
-    return fil, edges
-
-
-def get_vr_filtration(points, max_dim, max_radius, n_threads):
-    type_part, dim_part = get_type_dim(points, True)
-    func = getattr(_oineus, f"get_vr_filtration_{type_part}_{dim_part}")
-    return func(points, max_dim, max_radius, n_threads)
-
-def get_vr_filtration_and_critical_edges(points, max_dim, max_radius, n_threads):
-    type_part, dim_part = get_type_dim(points, True)
-    func = getattr(_oineus, f"get_vr_filtration_and_critical_edges_{type_part}_{dim_part}")
-    fil, edges = func(points, max_dim, max_radius, n_threads)
-    edges = np.array([[e.x, e.y] for e in edges])
-    return fil, edges
-
 
 def get_boundary_matrix(data, negate, wrap, max_dim, n_threads):
-    type_part, dim_part = get_type_dim(data)
-    func = getattr(_oineus, f"get_boundary_matrix_{type_part}_{dim_part}")
+    dim_part = get_dim(data)
+    func = getattr(_oineus, f"get_boundary_matrix_{dim_part}")
     bm = func(data, negate, wrap, max_dim, n_threads)
     return to_scipy_matrix(bm)
 
 
 def compute_diagrams_ls(data, negate, wrap, max_dim, params, include_inf_points, dualize):
-    type_part, dim_part = get_type_dim(data)
-    func = getattr(_oineus, f"compute_diagrams_ls_{type_part}_{dim_part}")
+    dim_part = get_dim(data)
+    func = getattr(_oineus, f"compute_diagrams_ls_{dim_part}")
     return func(data, negate, wrap, max_dim, params, include_inf_points, dualize)
 
 

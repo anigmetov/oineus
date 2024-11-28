@@ -640,6 +640,7 @@ SparseMatrix<Int> mat_multiply_2(const SparseMatrix<Int>& a, const SparseMatrix<
 template<typename Int>
 SparseMatrix<Int> antitranspose(const SparseMatrix<Int>& a)
 {
+    CALI_CXX_MARK_FUNCTION;
     SparseMatrix<Int> result(a.n_cols(), a.n_rows());
 
     for(size_t row_idx = 0 ; row_idx < a.size() ; ++row_idx) {

@@ -53,8 +53,9 @@ namespace oineus {
         Filtration(CellVector&& _simplices, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false, bool _set_ids=true)
                 :
                 negate_(_negate),
-                cells_(_simplices)
+                cells_(std::move(_simplices))
         {
+            CALI_CXX_MARK_FUNCTION;
             init(n_threads, _sort_only_by_dim, _set_ids);
         }
 
@@ -80,6 +81,7 @@ namespace oineus {
 
         void reset_ids_to_sorted_ids()
         {
+            CALI_CXX_MARK_FUNCTION;
             for(auto& sigma : cells_) {
                 sigma.set_id(sigma.get_sorted_id());
             }
@@ -139,6 +141,7 @@ namespace oineus {
 
         BoundaryMatrix boundary_matrix_in_dimension(dim_type d) const
         {
+            CALI_CXX_MARK_FUNCTION;
             bool missing_ok = is_subfiltration();
 
             BoundaryMatrix result(size_in_dimension(d));
@@ -185,6 +188,7 @@ namespace oineus {
 
         BoundaryMatrix boundary_matrix_in_dimension(dim_type d, const std::unordered_set<typename Cell::Uid, typename Cell::UidHasher>& relative) const
         {
+            CALI_CXX_MARK_FUNCTION;
             BoundaryMatrix result(size_in_dimension(d));
             // fill D with empty vectors
 
@@ -213,6 +217,7 @@ namespace oineus {
 
         BoundaryMatrix coboundary_matrix() const
         {
+            CALI_CXX_MARK_FUNCTION;
             return antitranspose(boundary_matrix_full(), size());
         }
 
@@ -508,15 +513,22 @@ namespace oineus {
                 std::sort(cells_.begin(), cells_.end(), cmp);
             }
 
+            CALI_MARK_BEGIN("filtration_init_housekeeping-1");
             for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
                 auto& sigma = cells_[sorted_id];
-
                 id_to_sorted_id_[sigma.get_id()] = sorted_id;
                 sorted_id_to_id_[sorted_id] = sigma.get_id();
                 sigma.sorted_id_ = sorted_id;
+            }
+            CALI_MARK_END("filtration_init_housekeeping-1");
+
+            CALI_MARK_BEGIN("filtration_init_housekeeping-uid");
+            for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
+                auto& sigma = cells_[sorted_id];
                 uid_to_sorted_id[sigma.get_uid()] = sorted_id;
                 sorted_id_to_value_[sorted_id] = sigma.get_value();
             }
+            CALI_MARK_END("filtration_init_housekeeping-uid");
         }
 
         template<typename C, typename R>

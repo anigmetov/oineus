@@ -10,7 +10,7 @@ f = np.random.uniform(size=(8, 8, 8))
 # triangulate domain via Freudenthal and create lower star filtration
 # negate: set to True to get upper-star filtration
 # wrap: set to True to work on torus (periodic boundary conditions)
-fil = oin.get_freudenthal_filtration(data=f, negate=False, wrap=False, max_dim=3, n_threads=1)
+fil = oin.freudenthal_filtration(data=f, negate=False, wrap=False)
 
 cells = fil.cells()
 
@@ -25,10 +25,11 @@ dcmp = oin.Decomposition(fil, dualize)
 # reduction parameters
 # relevant members:
 # rp.clearing_opt --- whether you want to use clearing, True by default
-# rp.compute_v: True by default
+# rp.compute_v: False by default
 # rp.n_threads: number of threads to use, default is 1
 # rp. compute_u: False by default (cannot do it in multi-threaded mode, so switch off just to be on the safe side)
 rp = oin.ReductionParams()
+rp.compute_v = True
 
 # perform reduction
 dcmp.reduce(rp)

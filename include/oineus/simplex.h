@@ -67,7 +67,7 @@ struct Simplex {
     Int get_id() const { return id_; }
     void set_id(Int new_id) { id_ = new_id; }
 
-    Simplex(const int _id, const IdxVector& _vertices)
+    Simplex(const Int _id, const IdxVector& _vertices)
             :vertices_(_vertices), id_(_id)
     {
         if (vertices_.empty())

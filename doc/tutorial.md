@@ -13,17 +13,17 @@ we need to create simplices first. We have a filtration of a triangle,
 and we use `double` to store filtration values (second argument to the constructor):
 ```python
 # vertices
-v0 = oin.Simplex_double([0], 0.1)
-v1 = oin.Simplex_double([1], 0.2)
-v2 = oin.Simplex_double([2], 0.3)
+v0 = oin.Simplex([0], 0.1)
+v1 = oin.Simplex([1], 0.2)
+v2 = oin.Simplex([2], 0.3)
 
 # edges
-e1 = oin.Simplex_double([0, 1], 1.2)
-e2 = oin.Simplex_double([0, 2], 1.4)
-e3 = oin.Simplex_double([1, 2], 2.1)
+e1 = oin.Simplex([0, 1], 1.2)
+e2 = oin.Simplex([0, 2], 1.4)
+e3 = oin.Simplex([1, 2], 2.1)
 
 # triangle
-t1 = oin.Simplex_double([0, 1, 2], 4.0)
+t1 = oin.Simplex([0, 1, 2], 4.0)
 ```
 
 We now put simplices into a list and create a parallel list
@@ -38,7 +38,7 @@ Now we create a filtration.
 
 ```python
 # constructor will sort simplices and assign sorted_ids
-fil = oin.Filtration_double(simplices)
+fil = oin.Filtration(simplices)
 
 print(fil)
 ```
@@ -55,7 +55,7 @@ by the `sorted_id`.
 The constructor of a filtration has some additional arguments:
 * `set_ids` is `True` by default, that is why `id`s are overwritten. Set it to `False` to preserve original `id`s.
 Caveat: vertex `i` must still have `id == i` and the `id`s must be unique. You can specify
-the `id` as the first argument to constructor: `oin.Simplex_double(3, [0, 1], 0.5)` or assign to it: `sigma.id = 3`.
+the `id` as the first argument to constructor: `oin.Simplex(3, [0, 1], 0.5)` or assign to it: `sigma.id = 3`.
 * `sort_only_by_dimension` is `False` by default. If you know that your simplices are already in the correct
 order, you can set it to `True`: the simplices will be arranged by dimension, but the order
 of simplices of same dimension will be preserved.
