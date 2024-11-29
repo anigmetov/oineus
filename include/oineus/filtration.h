@@ -238,12 +238,12 @@ namespace oineus {
 
         Real value_by_sorted_id(Int sorted_id) const
         {
-            return sorted_id_to_value_[sorted_id];
+            return cells_[sorted_id].get_value();
         }
 
         Real value_by_vertices(const CellUid& vs) const
         {
-            return sorted_id_to_value_.at(uid_to_sorted_id.at(vs));
+            return cells_[uid_to_sorted_id.at(vs)].get_value();
         }
 
         auto get_sorted_id_by_vertices(const CellUid& vs) const
@@ -332,12 +332,6 @@ namespace oineus {
             sort(1);
         }
 
-        std::vector<Real> all_values() const
-        {
-            return sorted_id_to_value_;
-        }
-
-
         // return true, if it's a subfiltration (subset) of a true filtration
         // if so, the
         bool is_subfiltration() const { return is_subfiltration_; }
@@ -359,7 +353,6 @@ namespace oineus {
                     result.uid_to_sorted_id[cell.get_uid()] = sorted_id;
                     result.id_to_sorted_id_[cell.get_id()] = sorted_id;
                     result.sorted_id_to_id_.push_back(cell.get_id());
-                    result.sorted_id_to_value_.push_back(cell.get_value());
                     result.cells_.back().sorted_id_ = sorted_id;
                     sorted_id++;
                 }
@@ -387,8 +380,6 @@ namespace oineus {
         std::unordered_map<CellUid, Int, UidHasher> uid_to_sorted_id;
         std::unordered_map<Int, Int> id_to_sorted_id_;
         std::vector<Int> sorted_id_to_id_;
-
-        std::vector<Real> sorted_id_to_value_;
 
         std::vector<Int> dim_first_;
         std::vector<Int> dim_last_;
@@ -465,7 +456,6 @@ namespace oineus {
 
             sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
             uid_to_sorted_id.clear();
-            sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
 
             size_t sorted_id = 0;
 
@@ -477,7 +467,6 @@ namespace oineus {
                     sorted_id_to_id_.at(sorted_id) = cell.get_id();
                     cell.sorted_id_ = sorted_id;
                     uid_to_sorted_id[cell.get_uid()] = sorted_id;
-                    sorted_id_to_value_.at(sorted_id) = cell.get_value();
 
                     cells_.push_back(cell);
 
@@ -493,7 +482,6 @@ namespace oineus {
 
             sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
             uid_to_sorted_id.clear();
-            sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
 
             // sort by dimension first, then by value, then by id
             auto cmp = [this](const Cell& sigma, const Cell& tau) {
@@ -526,7 +514,6 @@ namespace oineus {
             for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
                 auto& sigma = cells_[sorted_id];
                 uid_to_sorted_id[sigma.get_uid()] = sorted_id;
-                sorted_id_to_value_[sorted_id] = sigma.get_value();
             }
             CALI_MARK_END("filtration_init_housekeeping-uid");
         }
@@ -596,9 +583,6 @@ namespace oineus {
 
         bool negate = fil_1.negate();
 
-        std::vector<Real> values_1 = fil_1.all_values();
-        std::vector<Real> values_2 = fil_2.all_values();
-
         const std::vector<Cell>& cells = fil_1.cells();
 
         std::vector<std::tuple<Real, dim_type, size_t, size_t>> to_sort;
@@ -608,8 +592,8 @@ namespace oineus {
         for(size_t idx_1 = 0; idx_1 < fil_1.size(); ++idx_1) {
             size_t idx_2 = fil_2.get_sorted_id_by_uid(cells[idx_1].get_uid());
 
-            Real value_1 = values_1[idx_1];
-            Real value_2 = values_2[idx_2];
+            Real value_1 = fil_1.get_cell_value(idx_1);
+            Real value_2 = fil_2.get_cell_value(idx_2);
 
             Real min_value = negate ? std::min(-value_1, -value_2) : std::min(value_1, value_2);
             to_sort.emplace_back(min_value, cells[idx_1].dim(), idx_1, idx_2);
