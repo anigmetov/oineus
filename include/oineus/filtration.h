@@ -35,13 +35,12 @@ namespace oineus {
     public:
         using Real = Real_;
         using Cell = CellWithValue<UnderCell_, Real>;
+        using UidHasher = typename UnderCell_::UidHasher;
         using Int = typename Cell::Int;
         using CellVector = std::vector<Cell>;
         using BoundaryMatrix = typename VRUDecomposition<Int>::MatrixData;
 
         using CellUid = typename Cell::Uid;
-        using UidHasher = typename Cell::UidHasher;
-
 
         Filtration() = default;
         Filtration(const Filtration&) = default;
@@ -171,7 +170,7 @@ namespace oineus {
             return result;
         }
 
-        BoundaryMatrix boundary_matrix_full_rel(const std::unordered_set<typename Cell::Uid, typename Cell::UidHasher>& relative) const
+        BoundaryMatrix boundary_matrix_full_rel(const typename Cell::UidSet& relative) const
         {
             CALI_CXX_MARK_FUNCTION;
 
@@ -186,7 +185,7 @@ namespace oineus {
             return result;
         }
 
-        BoundaryMatrix boundary_matrix_in_dimension(dim_type d, const std::unordered_set<typename Cell::Uid, typename Cell::UidHasher>& relative) const
+        BoundaryMatrix boundary_matrix_in_dimension(dim_type d, const typename Cell::UidSet& relative) const
         {
             CALI_CXX_MARK_FUNCTION;
             BoundaryMatrix result(size_in_dimension(d));

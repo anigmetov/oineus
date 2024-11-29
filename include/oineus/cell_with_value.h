@@ -15,7 +15,7 @@ struct CellWithValue {
 
     using Int = typename Cell::Int;
     using Uid = typename Cell::Uid;
-    using UidHasher = typename Cell::UidHasher;
+    using UidSet = typename Cell::UidSet;
     using Boundary = typename Cell::Boundary;
 
     static constexpr Int k_invalid_id = Int(-1);
@@ -49,7 +49,6 @@ struct CellWithValue {
     void set_sorted_id(Int sorted_id) { sorted_id_ = sorted_id; }
 
     Uid get_uid() const { return cell_.get_uid(); }
-    void set_uid(const Uid& new_uid) { return cell_.set_uid(new_uid); }
 
     const Cell& get_cell() const { return cell_; }
 

@@ -13,6 +13,34 @@
 
 namespace oineus {
 
+template<typename IntIn, typename IntOut>
+IntOut comb(IntIn n, IntIn k)
+{
+    if (n < k) {
+        return static_cast<IntOut>(0);
+    }
+    IntOut result = 1;
+    for(IntOut i = 0; i < k; i++) {
+        result *= (n - i);
+        if (i) {
+            assert(result % i == 0);
+            result /= i;
+        }
+    }
+    return result;
+}
+
+template<typename IntIn, typename IntOut>
+IntOut simplex_uid(const std::vector<IntIn>& vertices)
+{
+    IntOut uid = 0;
+    for(IntIn i = 0; i < vertices.size(); i++) {
+        uid += comb<IntIn, IntOut>(vertices[i], i + 1);
+    }
+    return uid;
+}
+
+
 struct VREdge {
     size_t x;
     size_t y;
@@ -35,13 +63,14 @@ struct Simplex {
     using Int = Int_;
     using IdxVector = std::vector<Int>;
 
-    using Uid = IdxVector;
+    using Uid = long long;
     // for Z2 only for now
     using Boundary = std::vector<Uid>;
 
     static constexpr Int k_invalid_id = Int(-1);
 
     Int id_ {k_invalid_id};
+    Uid uid_ {k_invalid_id};
     IdxVector vertices_;
 
     Simplex() = default;
@@ -50,7 +79,7 @@ struct Simplex {
     Simplex& operator=(const Simplex&) = default;
     Simplex& operator=(Simplex&&) = default;
 
-    Simplex(const IdxVector& _vertices)
+    Simplex(const IdxVector& _vertices, bool set_uid_immediately = true)
             :vertices_(_vertices)
     {
         if (vertices_.empty())
@@ -59,33 +88,40 @@ struct Simplex {
         if (vertices_.size() == 1)
             id_ = vertices_[0];
         else
-            std::sort(vertices_.begin(), vertices_.end());
+            std::sort(vertices_.begin(), vertices_.end(), std::greater<Int>());
+
+        if (set_uid_immediately) set_uid();
     }
+
+    // uids are set in parallel
+    void set_uid() { uid_ = simplex_uid<Int, Uid>(vertices_); }
 
     dim_type dim() const { return static_cast<Int>(vertices_.size()) - 1; }
 
     Int get_id() const { return id_; }
     void set_id(Int new_id) { id_ = new_id; }
 
-    Simplex(const Int _id, const IdxVector& _vertices)
+    Simplex(const Int _id, const IdxVector& _vertices, bool set_uid_immediately = true)
             :vertices_(_vertices), id_(_id)
     {
         if (vertices_.empty())
             throw std::runtime_error("Empty simplex not allowed");
 
         if (vertices_.size() > 1)
-            std::sort(vertices_.begin(), vertices_.end());
+            std::sort(vertices_.begin(), vertices_.end(), std::greater<Int>());
+
+        if (set_uid_immediately) set_uid();
     }
 
     Boundary boundary() const
     {
-        std::vector<IdxVector> bdry;
+        Boundary boundary;
 
         if (dim() == 0)
-            return bdry;
+            return boundary;
 
-        bdry.reserve(vertices_.size());
-
+        boundary.reserve(vertices_.size());
+        // TODO: do not materialize tau and just skip in when computing uid?
         for(size_t i = 0 ; i < vertices_.size() ; ++i) {
             IdxVector tau;
             tau.reserve(vertices_.size() - 1);
@@ -96,10 +132,10 @@ struct Simplex {
 
             // vertices_ is sorted -> tau is sorted automatically
 
-            bdry.push_back(tau);
+            boundary.push_back(simplex_uid<Int, Uid>(tau));
         }
 
-        return bdry;
+        return boundary;
     }
 
     // create a new simplex by joining with vertex and assign value to it
@@ -132,39 +168,18 @@ struct Simplex {
     template<typename I>
     friend std::ostream& operator<<(std::ostream&, const Simplex<I>&);
 
-    const Uid& get_uid() const { return vertices_; }
-    void set_uid(const Uid& new_vs)
-    {
-        vertices_ = new_vs;
-        std::sort(vertices_.begin(), vertices_.end());
-    }
+    Uid get_uid() const { return uid_; }
 
-    static std::string uid_to_string(const Uid& uid)
-    {
-        std::stringstream ss;
-        ss << "[";
-        for(auto v : uid) {
-            ss << v << ",";
-        }
-        ss << "]";
-        return ss.str();
-    }
-
-    std::string uid_as_string() const
-    {
-        return uid_to_string(get_uid());
-    }
-
-    struct UidHasher {
-        std::size_t operator()(const Uid& vs) const
-        {
-            // TODO: replace with better hash function
-            std::size_t seed = 0;
-            for(auto v: vs)
-                oineus::hash_combine(seed, v);
-            return seed;
-        }
-    };
+    // struct UidHasher {
+    //     std::size_t operator()(const Uid& vs) const
+    //     {
+    //         // TODO: replace with better hash function
+    //         std::size_t seed = 0;
+    //         for(auto v: vs)
+    //             oineus::hash_combine(seed, v);
+    //         return seed;
+    //     }
+    // };
 
     std::string repr() const
     {
@@ -179,6 +194,7 @@ struct Simplex {
         return out.str();
     }
 
+    using UidHasher = std::hash<Uid>;
     using UidSet = std::unordered_set<Uid, UidHasher>;
 };
 
