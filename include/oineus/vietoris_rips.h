@@ -121,6 +121,35 @@ namespace oineus {
         return {Simplex({vertices}, crit_value), crit_edge};
     }
 
+    template<class Int, class Real, std::size_t D>
+    CellWithValue<Simplex<Int>, Real> vr_simplex(const std::vector<Point<Real, D>>& points, const std::vector<size_t>& vertices_)
+    {
+        using IdxVector = typename Simplex<Int>::IdxVector;
+        using Simplex = CellWithValue<Simplex<Int>, Real>;
+
+        assert(not vertices_.empty());
+
+        Real crit_value = 0;
+
+        for(size_t u_idx = 0; u_idx < vertices_.size(); ++u_idx) {
+            for(size_t v_idx = u_idx + 1; v_idx < vertices_.size(); ++v_idx) {
+                size_t u = vertices_[u_idx];
+                size_t v = vertices_[v_idx];
+                if (sq_dist(points[u], points[v]) > crit_value) {
+                    crit_value = sq_dist(points[u], points[v]);
+                }
+            }
+        }
+
+        crit_value = sqrt(crit_value);
+
+        // convert size_t to Int, if necessary
+        IdxVector vertices {vertices_.begin(), vertices_.end()};
+
+        return Simplex({vertices}, crit_value);
+    }
+
+
     template<class Functor, class NeighborTest, class VertexContainer>
     void bron_kerbosch(VertexContainer& current,
             const VertexContainer& candidates,
@@ -137,22 +166,50 @@ namespace oineus {
         if (current.size() == max_dim + 1)
             return;
 
+        size_t cur_idx = 0;
         for(auto cur = excluded_end; cur != candidates.end(); ++cur) {
             current.push_back(*cur);
 
             VertexContainer new_candidates;
 
-            for(auto ccur = candidates.begin(); ccur != cur; ++ccur)
+            size_t i = 0;
+
+            for(auto ccur = candidates.begin(); ccur != cur; ++ccur) {
                 if (neighbor(*ccur, *cur))
                     new_candidates.push_back(*ccur);
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                if (i % 100 == 0) {
+                    OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                }
+                i++;
+#endif
+            }
 
             size_t ex = new_candidates.size();
 
-            for(auto ccur = std::next(cur); ccur != candidates.end(); ++ccur)
+            i = 0;
+            for(auto ccur = std::next(cur); ccur != candidates.end(); ++ccur) {
                 if (neighbor(*ccur, *cur))
                     new_candidates.push_back(*ccur);
 
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                if (i % 100 == 0) {
+                    OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                }
+                i++;
+#endif
+
+            }
+
             excluded_end = new_candidates.begin() + ex;
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+            if (cur_idx % 100 == 0) {
+                OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+            }
+            cur_idx++;
+#endif
 
             bron_kerbosch(current, new_candidates, excluded_end, max_dim, neighbor, functor, true);
 
@@ -170,8 +227,6 @@ namespace oineus {
         using Simplex = typename VRFiltration::Cell;
         using VertexContainer = std::vector<size_t>;
         using Edges = std::vector<VREdge>;
-
-        IC(max_diameter);
 
         auto neighbor = [&](size_t u, size_t v) { return sq_dist(points[u], points[v]) <= max_diameter * max_diameter; };
 
@@ -206,6 +261,7 @@ namespace oineus {
 
         // use sorted info from fil to rearrange edges
         Edges sorted_edges;
+
         sorted_edges.reserve(edges.size());
 
         for(size_t sorted_edge_idx = 0; sorted_edge_idx < edges.size(); ++sorted_edge_idx) {
@@ -236,6 +292,7 @@ namespace oineus {
             simplices.emplace_back(simplex);
             edges.emplace_back(edge);
         }
+
 
         auto functor = [&](const VertexContainer& vs)
                 { if (vs.size() > 1) {
@@ -269,13 +326,71 @@ namespace oineus {
     template<class Int, class Real, std::size_t D>
     auto get_vr_filtration(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_diameter = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
-        return get_vr_filtration_and_critical_edges<Int, Real, D>(points, max_dim, max_diameter, n_threads).first;
+        CALI_CXX_MARK_FUNCTION;
+        using VertexContainer = std::vector<size_t>;
+
+        auto neighbor = [&](size_t u, size_t v) { return sq_dist(points[u], points[v]) <= max_diameter * max_diameter; };
+
+        std::vector<CellWithValue<Simplex<Int>, Real>> simplices;
+        bool negate {false};
+
+        // vertices are added manually to preserve order (id == index)
+        for(size_t v = 0; v < points.size(); ++v) {
+            simplices.emplace_back(vr_simplex<Int, Real, D>(points, {v}));
+        }
+
+        auto functor = [&](const VertexContainer& vs)
+                { if (vs.size() > 1) {
+                    simplices.emplace_back(vr_simplex<Int, Real, D>(points, vs));
+                }
+                };
+
+        VertexContainer current;
+        VertexContainer candidates(points.size());
+        std::iota(candidates.begin(), candidates.end(), 0);
+        auto excluded_end {candidates.cbegin()};
+        bool check_initial {false};
+
+        bron_kerbosch(current, candidates, excluded_end, max_dim, neighbor, functor, check_initial);
+        // Filtration constructor will sort simplices and assign sorted ids
+        return Filtration<Simplex<Int>, Real>(std::move(simplices), negate, n_threads);
     }
 
     template<class Int, class Real>
     auto get_vr_filtration(const DistMatrix<Real>& dist_matrix, dim_type max_dim, Real max_diameter = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
-        return get_vr_filtration_and_critical_edges<Int, Real>(dist_matrix, max_dim, max_diameter, n_threads).first;
+        using Filtration = Filtration<Simplex<Int>, Real>;
+        using Simplex = CellWithValue<Simplex<Int>, Real>;
+        using VertexContainer = std::vector<size_t>;
+
+        auto neighbor = [&](size_t u, size_t v) { return dist_matrix.get_distance(u, v) <= max_diameter * max_diameter; };
+
+        std::vector<Simplex> simplices;
+        bool negate {false};
+
+        size_t n_points = dist_matrix.n_points;
+
+        // vertices are added manually to preserve order (id == index)
+        for(size_t v = 0; v < n_points; ++v) {
+            auto simplex = vr_simplex<Int, Real>(dist_matrix, {v});
+            simplices.emplace_back(simplex);
+        }
+
+        auto functor = [&](const VertexContainer& vs)
+                { if (vs.size() > 1) {
+                    simplices.emplace_back(vr_simplex<Int, Real>(dist_matrix, vs));
+                }
+                };
+
+        VertexContainer current;
+        VertexContainer candidates(n_points);
+        std::iota(candidates.begin(), candidates.end(), 0);
+        auto excluded_end {candidates.cbegin()};
+        bool check_initial {false};
+
+        bron_kerbosch(current, candidates, excluded_end, max_dim, neighbor, functor, check_initial);
+        // Filtration constructor will sort simplices and assign sorted ids
+        return Filtration(std::move(simplices), negate, n_threads);
     }
 
 

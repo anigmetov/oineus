@@ -14,6 +14,9 @@
 
 namespace py = pybind11;
 
+#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT {if (PyErr_CheckSignals() != 0) throw py::error_already_set();}
+#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL { py::gil_scoped_acquire acq; {if (PyErr_CheckSignals() != 0) throw py::error_already_set();} }
+
 #include <oineus/timer.h>
 #include <oineus/oineus.h>
 
@@ -27,6 +30,7 @@ namespace py = pybind11;
 
 using oin_int = OINEUS_PYTHON_INT;
 using oin_real = OINEUS_PYTHON_REAL;
+
 
 static_assert(std::is_same<oin_int, int>::value ||
               std::is_same<oin_int, long int>::value ||

@@ -9,7 +9,9 @@
 #include <algorithm>
 
 #include <taskflow/taskflow.hpp>
+#include <taskflow/core/flow_builder.hpp>
 #include <taskflow/algorithm/sort.hpp>
+#include <taskflow/algorithm/for_each.hpp>
 
 #include "timer.h"
 #include "simplex.h"
@@ -28,7 +30,6 @@ namespace oineus {
         Filtration<Cell, Real> filtration;
         std::vector<L> critical_value_locations;
     };
-
 
     template<class UnderCell_, class Real_>
     class Filtration {
@@ -208,6 +209,12 @@ namespace oineus {
                             col.push_back(uid_to_sorted_id.at(tau_vertices));
                     }
 
+                    if (col_idx % 100 == 0) {
+ #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                      OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+#endif
+                    }
+
                     std::sort(col.begin(), col.end());
                 }
 
@@ -320,7 +327,7 @@ namespace oineus {
         [[nodiscard]] size_t index_in_matrix(size_t cell_idx, bool dualize) const { return dualize ? size() - cell_idx - 1 : cell_idx; }
         [[nodiscard]] size_t index_in_filtration(size_t matrix_idx, bool dualize) const { return dualize ? size() - matrix_idx - 1 : matrix_idx; }
 
-        void set_values(const std::vector<Real>& new_values)
+        void set_values(const std::vector<Real>& new_values, int n_threads=1)
         {
             if (new_values.size() != cells_.size())
                 throw std::runtime_error("new_values.size() != cells_.size()");
@@ -328,7 +335,7 @@ namespace oineus {
             for(size_t i = 0; i < new_values.size(); ++i)
                 cells_[i].value_ = new_values[i];
 
-            sort(1);
+            sort(n_threads);
         }
 
         // return true, if it's a subfiltration (subset) of a true filtration
@@ -475,40 +482,60 @@ namespace oineus {
         }
 
         // sort cells and assign sorted_ids
-        void sort([[maybe_unused]] int n_threads = 1)
+        void sort(int n_threads)
         {
             CALI_CXX_MARK_FUNCTION;
 
             sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
             uid_to_sorted_id.clear();
 
-            // sort by dimension first, then by value, then by id
-            auto cmp = [this](const Cell& sigma, const Cell& tau) {
-              auto v_sigma = this->negate_ ? -sigma.get_value() : sigma.get_value();
-              auto v_tau = this->negate_ ? -tau.get_value() : tau.get_value();
-              auto d_sigma = sigma.dim(), d_tau = tau.dim();
-              auto sigma_id = sigma.get_id(), tau_id = tau.get_id();
-              return std::tie(d_sigma, v_sigma, sigma_id) < std::tie(d_tau, v_tau, tau_id);
-            };
+            auto cmp = [this](const Cell& sigma, const Cell& tau)
+                {
+                      Real v_sigma = negate() ? -sigma.get_value() : sigma.get_value();
+                      Real v_tau = negate() ? -tau.get_value() : tau.get_value();
+                      dim_type d_sigma = sigma.dim(), d_tau = tau.dim();
+                      auto sigma_id = sigma.get_id(), tau_id = tau.get_id();
+                      return std::tie(d_sigma, v_sigma, sigma_id) < std::tie(d_tau, v_tau, tau_id);
+                };
 
             if (n_threads > 1) {
+                CALI_MARK_BEGIN("TF_SORT_AND_SET");
                 tf::Executor executor(n_threads);
                 tf::Taskflow taskflow;
-                tf::Task sort = taskflow.sort(cells_.begin(), cells_.end(), cmp);
+                tf::Task sort_task = taskflow.sort(cells_.begin(), cells_.end(), cmp);
+                tf::Task id_info = taskflow.for_each_index(static_cast<Int>(0), static_cast<Int>(size()), static_cast<Int>(1),
+                        [this](Int sorted_id){
+                        auto& sigma = this->cells_[sorted_id];
+//                        this->id_to_sorted_id_[sigma.get_id()] = sorted_id;
+                        this->sorted_id_to_id_[sorted_id] = sigma.get_id();
+                        sigma.sorted_id_ = sorted_id;
+                        });
+                id_info.succeed(sort_task);
                 executor.run(taskflow).wait();
+                CALI_MARK_END("TF_SORT_AND_SET");
+
+                CALI_MARK_BEGIN("filtration_init_housekeeping-1");
+                for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
+                    auto& sigma = cells_[sorted_id];
+                    id_to_sorted_id_[sigma.get_id()] = sorted_id;
+                }
+                CALI_MARK_END("filtration_init_housekeeping-1");
             } else {
+                CALI_MARK_BEGIN("std::sort");
                 std::sort(cells_.begin(), cells_.end(), cmp);
+                CALI_MARK_END("std::sort");
+
+                CALI_MARK_BEGIN("filtration_init_housekeeping-1");
+                for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
+                    auto& sigma = cells_[sorted_id];
+                    id_to_sorted_id_[sigma.get_id()] = sorted_id;
+                    sorted_id_to_id_[sorted_id] = sigma.get_id();
+                    sigma.sorted_id_ = sorted_id;
+                }
+                CALI_MARK_END("filtration_init_housekeeping-1");
             }
 
-            CALI_MARK_BEGIN("filtration_init_housekeeping-1");
-            for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
-                auto& sigma = cells_[sorted_id];
-                id_to_sorted_id_[sigma.get_id()] = sorted_id;
-                sorted_id_to_id_[sorted_id] = sigma.get_id();
-                sigma.sorted_id_ = sorted_id;
-            }
-            CALI_MARK_END("filtration_init_housekeeping-1");
-
+            // unordered_set is not thread-safe, cannot do in parallel
             CALI_MARK_BEGIN("filtration_init_housekeeping-uid");
             for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
                 auto& sigma = cells_[sorted_id];

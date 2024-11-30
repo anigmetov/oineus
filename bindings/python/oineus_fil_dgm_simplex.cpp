@@ -19,7 +19,6 @@ void init_oineus_fil_dgm_simplex(py::module& m)
 
     using oin::VREdge;
 
-    using VRUDecomp = oin::VRUDecomposition<oin_int>;
     using KerImCokRedSimplex = oin::KerImCokReduced<Simplex, oin_real>;
     using KerImCokRedProdSimplex = oin::KerImCokReduced<ProdSimplex, oin_real>;
 

@@ -33,12 +33,12 @@ def to_scipy_matrix(sparse_cols, shape=None):
 
 def max_distance(data: np.ndarray, from_pwdists: bool=False):
     if from_pwdists:
-        return np.max(data)
+        return 1.00001 * np.min(np.max(data, axis=1))
     else:
         assert data.ndim == 2 and data.shape[0] >= 2
         diff = data[:, np.newaxis, :] - data[np.newaxis, :, :]
         squared_distances = np.sum(diff**2, axis=2)
-        return np.sqrt(np.max(squared_distances))
+        return 1.00001 * np.sqrt(np.min(np.max(squared_distances, axis=1)))
 
 
 def freudenthal_filtration(data: np.ndarray,

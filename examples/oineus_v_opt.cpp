@@ -4,6 +4,9 @@
 #include <random>
 
 #include <oineus/oineus.h>
+#include <taskflow/taskflow.hpp>
+#include <taskflow/core/flow_builder.hpp>
+#include <taskflow/algorithm/for_each.hpp>
 #include <opts/opts.h>
 
 using namespace oineus;
@@ -88,6 +91,7 @@ int main(int argc, char** argv)
     bool negate {false};
 
     Params params;
+    params.n_threads = 10;
     ops
             >> Option('d', "dim", top_d, "top dimension")
             >> Option('c', "chunk-size", params.chunk_size, "chunk_size")
@@ -108,12 +112,27 @@ int main(int argc, char** argv)
 
     spd::info("Reading file {}", fname_in);
 
+
     auto grid_func = read_function<Int, Real, 3>(fname_in, wrap);
     auto& grid = grid_func.first;
 
     auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
     VRUDecomposition<Int> rv { fil, false };
 
+    {
+        tf::Executor executor;
+        tf::Taskflow taskflow;
+        oineus::Filtration<oineus::Simplex<Int>, Real> fil1;
+        oineus::HelperFilCallable<oineus::Simplex<Int>, Real> aa(&fil1);
+        std::vector<Int> bb(10000);
+        tf::Task task1 = taskflow.for_each(bb.begin(), bb.end(), [] (auto& i) { i = 100; });
+//        tf::Task t1 = taskflow.for_each_index<Int, Int, Int, oineus::HelperFilCallable<oineus::Simplex<Int>, Real>> (Int(0), Int(0), Int(1), aa);
+//        tf::Task t2 = taskflow.for_each_index(Int(0), Int(0), Int(1), [](Int i) { std::cout << i << std::endl; });
+        executor.run(taskflow);
+        executor.wait_for_all();
+
+    }
+//
     spd::info("Matrix read");
 
     fname_dgm = fname_in + "_t_" + std::to_string(params.n_threads) + "_c_" + std::to_string(params.chunk_size);

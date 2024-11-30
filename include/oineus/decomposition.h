@@ -16,8 +16,6 @@
 #include <cstdlib>
 #include <stdexcept>
 
-#include "icecream/icecream.hpp"
-
 #include "common_defs.h"
 #include "timer.h"
 #include "diagram.h"
@@ -224,6 +222,12 @@ namespace oineus {
                 logger->critical("Error: chunk_begin = {}, {} unprocessed_cols remaining, first: {}, stats = {}", chunk_begin, unprocessed_cols.size(), *unprocessed_cols.begin(), stats);
                 logger->flush();
                 throw std::runtime_error("some columns in chunk not processed");
+            }
+#endif
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL
+            if (my_chunk % 100 == 0) {
+                OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL;
             }
 #endif
             mm->quiescent();
@@ -593,6 +597,12 @@ namespace oineus {
                         if (params.compute_u)
                             u_data_t[pivot].push_back(i);
                     }
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                    if (i % 2000 == 0) {
+                        OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL;
+                    }
+#endif
                 } // reduction loop
                 MatrixTraits::load_from_cache(cached_r_col, r_data[i]);
                 if (params.compute_v)
@@ -838,9 +848,17 @@ namespace oineus {
         }
 
         if (include_inf_points)
-            for(size_t i = 0; i < r_data.size(); ++i)
+            for(size_t i = 0; i < r_data.size(); ++i) {
                 if (!is_zero(&r_data[i]))
                     rows_with_lowest_one.insert(low(&r_data[i]));
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                if (i % 100 == 0) {
+                    OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+                }
+#endif
+
+            }
 
         for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
             auto col = &r_data[col_idx];
@@ -876,6 +894,13 @@ namespace oineus {
                     result.add_point(dim, birth, death, birth_idx, death_idx, birth_idx_us, death_idx_us);
                 }
             }
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+            if (col_idx % 100 == 0) {
+                OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+            }
+#endif
+
         }
 
         return result;
@@ -912,6 +937,13 @@ namespace oineus {
 
                 if (!is_zero(&r_data[i]))
                     rows_with_lowest_one.insert(low(&r_data[i]));
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                if (i % 100 == 0) {
+                    OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+                }
+#endif
+
             }
 
         for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
@@ -958,6 +990,12 @@ namespace oineus {
                     result.add_point(dim, birth, death, birth_idx, death_idx, birth_idx_us, death_idx_us);
                 }
             }
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+            if (col_idx % 100 == 0) {
+                OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+            }
+#endif
         }
 
         return result;
