@@ -4,7 +4,7 @@ void init_oineus_common(py::module& m)
 {
     using namespace pybind11::literals;
 
-    using oin::VREdge;
+    using VREdge = oin::VREdge<oin_int>;
 
     using oin::DenoiseStrategy;
     using oin::ConflictStrategy;

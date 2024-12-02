@@ -36,20 +36,19 @@ namespace oineus {
     }
 
     template<class Int, class Real>
-    std::pair<CellWithValue<Simplex<Int>, Real>, VREdge> vr_simplex_with_edge(const DistMatrix<Real>& dist_matrix, const std::vector<size_t>& vertices_)
+    std::pair<CellWithValue<Simplex<Int>, Real>, VREdge<Int>> vr_simplex_with_edge(const DistMatrix<Real>& dist_matrix, const typename Simplex<Int>::IdxVector& vertices)
     {
-        using IdxVector = typename Simplex<Int>::IdxVector;
-        using Simplex = CellWithValue<Simplex<Int>, Real>;
+        using SimplexWithValue = CellWithValue<Simplex<Int>, Real>;
 
-        assert(not vertices_.empty());
+        assert(not vertices.empty());
 
         Real crit_value = 0;
-        VREdge crit_edge {vertices_[0], vertices_[0]};
+        VREdge<Int> crit_edge {vertices[0], vertices[0]};
 
-        for(size_t u_idx = 0; u_idx < vertices_.size(); ++u_idx) {
-            for(size_t v_idx = u_idx + 1; v_idx < vertices_.size(); ++v_idx) {
-                size_t u = vertices_[u_idx];
-                size_t v = vertices_[v_idx];
+        for(size_t u_idx = 0; u_idx < vertices.size(); ++u_idx) {
+            for(size_t v_idx = u_idx + 1; v_idx < vertices.size(); ++v_idx) {
+                auto u = vertices[u_idx];
+                auto v = vertices[v_idx];
                 Real uv_dist = dist_matrix.get_distance(u, v);
                 if (uv_dist > crit_value) {
                     crit_value = uv_dist;
@@ -58,41 +57,34 @@ namespace oineus {
             }
         }
 
-        // convert size_t to Int, if necessary
-        IdxVector vertices {vertices_.begin(), vertices_.end()};
-
-        return {Simplex(vertices, crit_value), crit_edge};
+        return {SimplexWithValue(Simplex(vertices, false), crit_value), crit_edge};
     }
 
     template<class Int, class Real>
-    CellWithValue<Simplex<Int>, Real> vr_simplex(const DistMatrix<Real>& dist_matrix, const std::vector<size_t>& vertices_)
+    CellWithValue<Simplex<Int>, Real> vr_simplex(const DistMatrix<Real>& dist_matrix, const typename Simplex<Int>::IdxVector& vertices)
     {
-        using IdxVector = typename Simplex<Int>::IdxVector;
         using Simplex = CellWithValue<Simplex<Int>, Real>;
 
-        assert(not vertices_.empty());
+        assert(not vertices.empty());
 
         Real crit_value = 0;
 
-        for(size_t u_idx = 0; u_idx < vertices_.size(); ++u_idx) {
-            for(size_t v_idx = u_idx + 1; v_idx < vertices_.size(); ++v_idx) {
-                size_t u = vertices_[u_idx];
-                size_t v = vertices_[v_idx];
+        for(size_t u_idx = 0; u_idx < vertices.size(); ++u_idx) {
+            for(size_t v_idx = u_idx + 1; v_idx < vertices.size(); ++v_idx) {
+                auto u = vertices[u_idx];
+                auto v = vertices[v_idx];
                 Real uv_dist = dist_matrix.get_distance(u, v);
                 if (uv_dist > crit_value) {
                     crit_value = uv_dist;
                 }
             }
         }
-
-        // convert size_t to Int, if necessary
-        IdxVector vertices {vertices_.begin(), vertices_.end()};
 
         return Simplex(vertices, crit_value);
     }
 
     template<class Int, class Real, std::size_t D>
-    std::pair<CellWithValue<Simplex<Int>, Real>, VREdge> vr_simplex_with_edge(const std::vector<Point<Real, D>>& points, const std::vector<size_t>& vertices_)
+    std::pair<CellWithValue<Simplex<Int>, Real>, VREdge<Int>> vr_simplex_with_edge(const std::vector<Point<Real, D>>& points, const typename Simplex<Int>::IdxVector& vertices_)
     {
         using IdxVector = typename Simplex<Int>::IdxVector;
         using Simplex = CellWithValue<Simplex<Int>, Real>;
@@ -100,12 +92,12 @@ namespace oineus {
         assert(not vertices_.empty());
 
         Real crit_value = 0;
-        VREdge crit_edge {vertices_[0], vertices_[0]};
+        VREdge<Int> crit_edge {vertices_[0], vertices_[0]};
 
         for(size_t u_idx = 0; u_idx < vertices_.size(); ++u_idx) {
             for(size_t v_idx = u_idx + 1; v_idx < vertices_.size(); ++v_idx) {
-                size_t u = vertices_[u_idx];
-                size_t v = vertices_[v_idx];
+                auto u = vertices_[u_idx];
+                auto v = vertices_[v_idx];
                 if (sq_dist(points[u], points[v]) > crit_value) {
                     crit_value = sq_dist(points[u], points[v]);
                     crit_edge = {u, v};
@@ -115,26 +107,22 @@ namespace oineus {
 
         crit_value = sqrt(crit_value);
 
-        // convert size_t to Int, if necessary
-        IdxVector vertices {vertices_.begin(), vertices_.end()};
-
-        return {Simplex({vertices}, crit_value), crit_edge};
+        return {Simplex({vertices_}, crit_value), crit_edge};
     }
 
     template<class Int, class Real, std::size_t D>
-    CellWithValue<Simplex<Int>, Real> vr_simplex(const std::vector<Point<Real, D>>& points, const std::vector<size_t>& vertices_)
+    CellWithValue<Simplex<Int>, Real> vr_simplex(const std::vector<Point<Real, D>>& points, const typename Simplex<Int>::IdxVector& vertices)
     {
-        using IdxVector = typename Simplex<Int>::IdxVector;
         using Simplex = CellWithValue<Simplex<Int>, Real>;
 
-        assert(not vertices_.empty());
+        assert(not vertices.empty());
 
         Real crit_value = 0;
 
-        for(size_t u_idx = 0; u_idx < vertices_.size(); ++u_idx) {
-            for(size_t v_idx = u_idx + 1; v_idx < vertices_.size(); ++v_idx) {
-                size_t u = vertices_[u_idx];
-                size_t v = vertices_[v_idx];
+        for(size_t u_idx = 0; u_idx < vertices.size(); ++u_idx) {
+            for(size_t v_idx = u_idx + 1; v_idx < vertices.size(); ++v_idx) {
+                auto u = vertices[u_idx];
+                auto v = vertices[v_idx];
                 if (sq_dist(points[u], points[v]) > crit_value) {
                     crit_value = sq_dist(points[u], points[v]);
                 }
@@ -142,9 +130,6 @@ namespace oineus {
         }
 
         crit_value = sqrt(crit_value);
-
-        // convert size_t to Int, if necessary
-        IdxVector vertices {vertices_.begin(), vertices_.end()};
 
         return Simplex({vertices}, crit_value);
     }
@@ -179,7 +164,7 @@ namespace oineus {
                     new_candidates.push_back(*ccur);
 
 #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-                if (i % 100 == 0) {
+                if (i % 500 == 0) {
                     OINEUS_CHECK_FOR_PYTHON_INTERRUPT
                 }
                 i++;
@@ -194,7 +179,7 @@ namespace oineus {
                     new_candidates.push_back(*ccur);
 
 #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-                if (i % 100 == 0) {
+                if (i % 500 == 0) {
                     OINEUS_CHECK_FOR_PYTHON_INTERRUPT
                 }
                 i++;
@@ -205,7 +190,7 @@ namespace oineus {
             excluded_end = new_candidates.begin() + ex;
 
 #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-            if (cur_idx % 100 == 0) {
+            if (cur_idx % 500 == 0) {
                 OINEUS_CHECK_FOR_PYTHON_INTERRUPT
             }
             cur_idx++;
@@ -220,13 +205,13 @@ namespace oineus {
 
     // Bron-Kerbosch, from Dionysus
     template<class Int, class Real, std::size_t D>
-    std::pair<Filtration<Simplex<Int>, Real>, std::vector<VREdge>> get_vr_filtration_and_critical_edges(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_diameter = std::numeric_limits<Real>::max(), int n_threads = 1)
+    std::pair<Filtration<Simplex<Int>, Real>, std::vector<VREdge<Int>>> get_vr_filtration_and_critical_edges(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_diameter = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
         CALI_CXX_MARK_FUNCTION;
         using VRFiltration = Filtration<Simplex<Int>, Real>;
         using Simplex = typename VRFiltration::Cell;
-        using VertexContainer = std::vector<size_t>;
-        using Edges = std::vector<VREdge>;
+        using VertexContainer = typename Simplex::Cell::IdxVector;
+        using Edges = std::vector<VREdge<Int>>;
 
         auto neighbor = [&](size_t u, size_t v) { return sq_dist(points[u], points[v]) <= max_diameter * max_diameter; };
 
@@ -235,7 +220,7 @@ namespace oineus {
         bool negate {false};
 
         // vertices are added manually to preserve order (id == index)
-        for(size_t v = 0; v < points.size(); ++v) {
+        for(Int v = 0; v < static_cast<Int>(points.size()); ++v) {
             auto [simplex, edge] = vr_simplex_with_edge<Int, Real>(points, {v});
             simplices.emplace_back(simplex);
             edges.emplace_back(edge);
@@ -272,22 +257,22 @@ namespace oineus {
     }
 
     template<class Int, class Real>
-    std::pair<Filtration<Simplex<Int>, Real>, std::vector<VREdge>> get_vr_filtration_and_critical_edges(const DistMatrix<Real>& dist_matrix, dim_type max_dim, Real max_diameter = std::numeric_limits<Real>::max(), int n_threads = 1)
+    std::pair<Filtration<Simplex<Int>, Real>, std::vector<VREdge<Int>>> get_vr_filtration_and_critical_edges(const DistMatrix<Real>& dist_matrix, dim_type max_dim, Real max_diameter = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
         using Filtration = Filtration<Simplex<Int>, Real>;
+        using VertexContainer = typename Simplex<Int>::IdxVector;
         using Simplex = CellWithValue<Simplex<Int>, Real>;
-        using VertexContainer = std::vector<size_t>;
 
         auto neighbor = [&](size_t u, size_t v) { return dist_matrix.get_distance(u, v) <= max_diameter * max_diameter; };
 
         std::vector<Simplex> simplices;
-        std::vector<VREdge> edges;
+        std::vector<VREdge<Int>> edges;
         bool negate {false};
 
-        size_t n_points = dist_matrix.n_points;
+        Int n_points = dist_matrix.n_points;
 
         // vertices are added manually to preserve order (id == index)
-        for(size_t v = 0; v < n_points; ++v) {
+        for(Int v = 0; v < n_points; ++v) {
             auto [simplex, edge] = vr_simplex_with_edge<Int, Real>(dist_matrix, {v});
             simplices.emplace_back(simplex);
             edges.emplace_back(edge);
@@ -313,7 +298,7 @@ namespace oineus {
         auto fil = Filtration(std::move(simplices), negate, n_threads);
 
         // use sorted info from fil to rearrange edges
-        std::vector<VREdge> sorted_edges;
+        std::vector<VREdge<Int>> sorted_edges;
         sorted_edges.reserve(edges.size());
 
         for(size_t sorted_edge_idx = 0; sorted_edge_idx < edges.size(); ++sorted_edge_idx) {
@@ -327,7 +312,7 @@ namespace oineus {
     auto get_vr_filtration(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_diameter = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
         CALI_CXX_MARK_FUNCTION;
-        using VertexContainer = std::vector<size_t>;
+        using VertexContainer = typename Simplex<Int>::IdxVector;
 
         auto neighbor = [&](size_t u, size_t v) { return sq_dist(points[u], points[v]) <= max_diameter * max_diameter; };
 
@@ -335,7 +320,7 @@ namespace oineus {
         bool negate {false};
 
         // vertices are added manually to preserve order (id == index)
-        for(size_t v = 0; v < points.size(); ++v) {
+        for(Int v = 0; v < static_cast<Int>(points.size()); ++v) {
             simplices.emplace_back(vr_simplex<Int, Real, D>(points, {v}));
         }
 
@@ -360,18 +345,18 @@ namespace oineus {
     auto get_vr_filtration(const DistMatrix<Real>& dist_matrix, dim_type max_dim, Real max_diameter = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
         using Filtration = Filtration<Simplex<Int>, Real>;
+        using VertexContainer = typename Simplex<Int>::IdxVector;
         using Simplex = CellWithValue<Simplex<Int>, Real>;
-        using VertexContainer = std::vector<size_t>;
 
         auto neighbor = [&](size_t u, size_t v) { return dist_matrix.get_distance(u, v) <= max_diameter * max_diameter; };
 
         std::vector<Simplex> simplices;
         bool negate {false};
 
-        size_t n_points = dist_matrix.n_points;
+        Int n_points = dist_matrix.n_points;
 
         // vertices are added manually to preserve order (id == index)
-        for(size_t v = 0; v < n_points; ++v) {
+        for(Int v = 0; v < n_points; ++v) {
             auto simplex = vr_simplex<Int, Real>(dist_matrix, {v});
             simplices.emplace_back(simplex);
         }
@@ -396,13 +381,13 @@ namespace oineus {
 
     // stupid brute-force
     template<class Int, class Real, std::size_t D>
-    std::pair<Filtration<Simplex<Int>, Real>, std::vector<VREdge>> get_vr_filtration_and_critical_edges_naive(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_diameter = std::numeric_limits<Real>::max(), int n_threads = 1)
+    std::pair<Filtration<Simplex<Int>, Real>, std::vector<VREdge<Int>>> get_vr_filtration_and_critical_edges_naive(const std::vector<Point<Real, D>>& points, dim_type max_dim = D, Real max_diameter = std::numeric_limits<Real>::max(), int n_threads = 1)
     {
         using VRFiltration = Filtration<Simplex<Int>, Real>;
         using VRSimplex = typename VRFiltration::Cell;
 
         std::vector<VRSimplex> simplices;
-        std::vector<VREdge> edges;
+        std::vector<VREdge<Int>> edges;
 
         for(size_t v_idx = 0; v_idx < points.size(); ++v_idx) {
             std::vector<size_t> vertices {v_idx};
@@ -447,7 +432,7 @@ namespace oineus {
         if (max_dim >= 4)
             throw std::runtime_error("not implemented");
 
-        return std::make_pair<VRFiltration, std::vector<VREdge>>(VRFiltration(std::move(simplices), false, n_threads), std::move(edges));
+        return std::make_pair<VRFiltration, std::vector<VREdge<Int>>>(VRFiltration(std::move(simplices), false, n_threads), std::move(edges));
     }
 
     template<class Int, class Real, std::size_t D>

@@ -506,6 +506,7 @@ namespace oineus {
                 tf::Task id_info = taskflow.for_each_index(static_cast<Int>(0), static_cast<Int>(size()), static_cast<Int>(1),
                         [this](Int sorted_id){
                         auto& sigma = this->cells_[sorted_id];
+//                        sigma.set_uid();
 //                        this->id_to_sorted_id_[sigma.get_id()] = sorted_id;
                         this->sorted_id_to_id_[sorted_id] = sigma.get_id();
                         sigma.sorted_id_ = sorted_id;

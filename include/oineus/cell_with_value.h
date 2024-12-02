@@ -35,7 +35,7 @@ struct CellWithValue {
 //            : cell_(std::forward(args)...), value_(value) { }
 
     CellWithValue(const Cell& cell, Real value) : cell_(cell), value_(value) {}
-    CellWithValue(Cell&& cell, Real value) : cell_(cell), value_(value) {}
+    CellWithValue(Cell&& cell, Real value) : cell_(std::move(cell)), value_(value) {}
 
     dim_type dim() const { return cell_.dim(); }
 
@@ -49,6 +49,7 @@ struct CellWithValue {
     void set_sorted_id(Int sorted_id) { sorted_id_ = sorted_id; }
 
     Uid get_uid() const { return cell_.get_uid(); }
+    void set_uid() { cell_.set_uid(); }
 
     const Cell& get_cell() const { return cell_; }
 

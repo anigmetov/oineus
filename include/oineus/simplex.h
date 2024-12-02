@@ -40,10 +40,11 @@ IntOut simplex_uid(const std::vector<IntIn>& vertices)
     return uid;
 }
 
-
+template<typename Int_>
 struct VREdge {
-    size_t x;
-    size_t y;
+    using Int = Int_;
+    Int x;
+    Int y;
     bool operator==(const VREdge& other) const { return x == other.x and y == other.y; }
     bool operator!=(const VREdge& other) const { return !(*this == other); }
     bool operator<(const VREdge& other) const { return x < other.x or (x == other.x and y < other.y); };
@@ -52,7 +53,8 @@ struct VREdge {
     bool operator>=(const VREdge& other) const { return *this > other or *this == other; }
 };
 
-inline std::ostream& operator<<(std::ostream& out, const VREdge& e)
+template<class Int>
+inline std::ostream& operator<<(std::ostream& out, const VREdge<Int>& e)
 {
     out << "edge(x=" << e.x << ", y=" << e.y << ")";
     return out;
@@ -213,9 +215,9 @@ std::ostream& operator<<(std::ostream& out, const Simplex<I>& s)
 }
 
 namespace std {
-template<>
-struct hash<oineus::VREdge> {
-    std::size_t operator()(const oineus::VREdge& p) const
+template<class Int>
+struct hash<oineus::VREdge<Int>> {
+    std::size_t operator()(const oineus::VREdge<Int>& p) const
     {
         std::size_t seed = 0;
         oineus::hash_combine(seed, p.x);
