@@ -66,15 +66,17 @@ void init_oineus_fil_dgm_simplex(py::module& m)
             .def("__getitem__", &Diagram::get_diagram_in_dimension_as_numpy);
 
     py::class_<SimplexValue>(m, simplex_class_name.c_str())
-            .def(py::init([](typename Simplex::IdxVector vs, oin_real value) -> SimplexValue {
+            .def(py::init([](Simplex::IdxVector vs, oin_real value) -> SimplexValue {
                       return SimplexValue({vs}, value);
                     }),
                     py::arg("vertices"),
-                    py::arg("value"))
-            .def(py::init([](oin_int id, typename Simplex::IdxVector vs, oin_real value) -> SimplexValue { return SimplexValue({id, vs}, value); }), py::arg("id"), py::arg("vertices"), py::arg("value"))
+                    py::arg("value")=0.0)
+            .def(py::init([](oin_int id, Simplex::IdxVector vs, oin_real value) -> SimplexValue { return SimplexValue({id, vs}, value); }), py::arg("id"), py::arg("vertices"), py::arg("value"))
             .def_property("id", &SimplexValue::get_id, &SimplexValue::set_id)
             .def_readwrite("sorted_id", &SimplexValue::sorted_id_)
             .def_property_readonly("vertices", [](const SimplexValue& sigma) { return sigma.cell_.vertices_; })
+            .def_property_readonly("uid", &SimplexValue::get_uid)
+            .def("__iter__", [](SimplexValue& sigma) { return py::make_iterator(sigma.cell_.vertices_.begin(), sigma.cell_.vertices_.end()); }, py::keep_alive<0, 1>())
             .def_readwrite("value", &SimplexValue::value_)
             .def("dim", &SimplexValue::dim)
             .def("boundary", &SimplexValue::boundary)
@@ -118,7 +120,7 @@ void init_oineus_fil_dgm_simplex(py::module& m)
             });
 
     py::class_<Filtration>(m, filtration_class_name.c_str())
-            .def(py::init<typename Filtration::CellVector, bool, int, bool, bool>(),
+            .def(py::init<Filtration::CellVector, bool, int, bool, bool>(),
                     py::arg("cells"),
                     py::arg("negate") = false,
                     py::arg("n_threads") = 1,
@@ -159,7 +161,7 @@ void init_oineus_fil_dgm_simplex(py::module& m)
             });
 
     py::class_<ProdFiltration>(m, prod_filtration_class_name.c_str())
-            .def(py::init<typename ProdFiltration::CellVector, bool, int, bool, bool>(),
+            .def(py::init<ProdFiltration::CellVector, bool, int, bool, bool>(),
                     py::arg("cells"),
                     py::arg("negate") = false,
                     py::arg("n_threads") = 1,
