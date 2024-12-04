@@ -18,7 +18,7 @@ except:
     warnings.warn("oineus.diff import failed, probably, because eagerpy is not installed")
 
 
-__all__ = ["compute_diagrams_ls", "get_boundary_matrix", "to_scipy_matrix", "is_reduced"]
+__all__ = ["compute_diagrams_ls", "compute_diagrams_vr", "get_boundary_matrix", "is_reduced"]
 
 
 def to_scipy_matrix(sparse_cols, shape=None):
@@ -118,50 +118,28 @@ def get_boundary_matrix(data, negate, wrap, max_dim, n_threads):
     return to_scipy_matrix(bm)
 
 
-def compute_diagrams_ls(data, negate, wrap, max_dim, params, include_inf_points, dualize):
-    dim_part = get_dim(data)
-    func = getattr(_oineus, f"compute_diagrams_ls_{dim_part}")
-    return func(data, negate, wrap, max_dim, params, include_inf_points, dualize)
+def compute_diagrams_ls(data: np.ndarray, negate: bool=False, wrap: bool=False,
+                        max_dim: typing.Optional[int]=None, params: typing.Optional[ReductionParams]=None,
+                        include_inf_points: bool=True, dualize: bool=False):
+    if max_dim is None:
+        max_dim = data.ndim - 1
+    if params is None:
+        params = _oineus.ReductionParams()
+    # max_dim is maximal dimension of the _diagram_, we need simplices one dimension higher, hence +1
+    fil = freudenthal_filtration(data=data, negate=negate, wrap=wrap, max_dim=max_dim + 1, n_threads=params.n_threads)
+    dcmp = _oineus.Decomposition(fil, dualize)
+    dcmp.reduce(params)
+    return dcmp.diagram(fil=fil, include_inf_points=include_inf_points)
 
 
-def get_denoise_target(d, fil, rv, eps, strat):
-    type_part = get_real_type(fil)
-    func = getattr(_oineus, f"get_denoise_target_{type_part}")
-    return func(d, fil, rv, eps, strat)
-
-
-def get_well_group_target(d, fil, rv, t):
-    type_part = get_real_type(fil)
-    func = getattr(_oineus, f"get_well_group_target_{type_part}")
-    return func(d, fil, rv, t)
-
-
-def get_ls_target_values_diagram_loss(d, dtv, fil):
-    type_part = get_real_type(fil)
-    func = getattr(_oineus, f"get_target_values_diagram_loss_{type_part}")
-    return func(dtv, False)
-
-
-def get_vr_target_values_diagram_loss(d, dtv, fil):
-    type_part = get_real_type(fil)
-    death_only = d == 0
-    func = getattr(_oineus, f"get_target_values_diagram_loss_{type_part}")
-    return func(dtv, death_only)
-
-
-
-def get_ls_target_values_x(d, dtv, fil, decmp, decmp_coh, conflict_strategy):
-    type_part = get_real_type(fil)
-    func = getattr(_oineus, f"get_ls_target_values_x_{type_part}")
-    return func(d, dtv, fil, decmp, decmp_coh, conflict_strategy, False)
-
-
-def get_vr_target_values_x(d, dtv, fil, decmp, decmp_coh, conflict_strategy):
-    type_part = get_real_type(fil)
-    death_only = d == 0
-    func = getattr(_oineus, f"get_vr_target_values_x_{type_part}")
-    return func(d, dtv, fil, decmp, decmp_coh, conflict_strategy, death_only)
-
+def compute_diagrams_vr(data: np.ndarray, from_pwdists: bool=False, max_dim: int=-1, max_diameter: float = -1.0, params: typing.Optional[ReductionParams]=None, include_inf_points: bool=True, dualize: bool=True):
+    if params is None:
+        params = _oineus.ReductionParams()
+    # max_dim is maximal dimension of the _diagram_, we need simplices one dimension higher, hence +1
+    fil = vr_filtration(data, from_pwdists, max_dim=max_dim, max_diameter=max_diameter, with_critical_edges=False, n_threads=params.n_threads)
+    dcmp = _oineus.Decomposition(fil, dualize)
+    dcmp.reduce(params)
+    return dcmp.diagram(fil=fil, include_inf_points=include_inf_points)
 
 
 def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d: int, q: float, mip: bool, mdp: bool):
@@ -179,30 +157,10 @@ def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d: int, q: float, mi
     return func(dgm, fil, rv, d, q, mip, mdp)
 
 
-
-def get_bruelle_target(fil, rv, p, q, i_0, d, minimize, min_birth, max_death):
-    type_part = get_real_type(fil)
-    func = getattr(_oineus, f"get_bruelle_target_{type_part}")
-    return func(fil, rv, p, q, i_0, d, minimize, min_birth, max_death)
-
-
-def get_barycenter_target(fil, rv, d):
-    type_part = get_real_type(fil)
-    func = getattr(_oineus, f"get_barycenter_target_{type_part}")
-    return func(fil, rv, d)
-
-
-def get_nth_persistence(fil, rv, d, n):
-    type_part = get_real_type(fil)
-    func = getattr(_oineus, f"get_nth_persistence_{type_part}")
-    return func(fil, rv, d, n)
-
-
 def get_permutation(target_values, fil):
     if len(target_values) == 0:
         return {}
-    type_part = get_real_type(fil)
-    func = getattr(_oineus, f"get_permutation_{type_part}")
+    func = getattr(_oineus, f"get_permutation")
     return func(target_values, fil)
 
 
@@ -219,17 +177,8 @@ def list_to_filtration(simplex_list): #take a list which contains data for simpl
         return func(simplex_list)
 
 def compute_kernel_image_cokernel_reduction(K_, L_, IdMap, n_threads): #
-    string_type = str(type(K_[0][2]))
-    func = getattr(_oineus, f"compute_kernel_image_cokernel_reduction_float")
+    func = getattr(_oineus, f"compute_kernel_image_cokernel_reduction")
     return func(K_, L_, IdMap, n_threads)
-
-
-def get_ls_filtration(simplices: typing.List[typing.List[int]], vertex_values: np.ndarray, negate: bool, n_threads: int):
-    if vertex_values.dtype == np.float32:
-        func = getattr(_oineus, f"get_ls_filtration_float")
-    elif vertex_values.dtype == np.float64:
-        func = getattr(_oineus, f"get_ls_filtration_double")
-    return func(simplices, vertex_values, negate, n_threads)
 
 
 def compute_ker_im_cok_reduction_cyl(fil_2, fil_3):

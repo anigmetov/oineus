@@ -209,13 +209,21 @@ namespace oineus {
                             col.push_back(uid_to_sorted_id.at(tau_vertices));
                     }
 
-                    if (col_idx % 100 == 0) {
  #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                    if (col_idx % 100 == 0) {
                       OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-#endif
                     }
+#endif
 
                     std::sort(col.begin(), col.end());
+
+#ifndef NDEBUG
+                    // verify that there are no duplicates
+                    std::set<Int> col_check {col.begin(), col.end()};
+                    if (col_check.size() != col.size())
+                        throw std::runtime_error("Bad uid computation");
+#endif
+
                 }
 
             return result;

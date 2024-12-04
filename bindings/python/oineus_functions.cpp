@@ -12,10 +12,6 @@ void init_oineus_functions(py::module& m)
 
     std::string func_name;
 
-    // diagrams
-    func_name = "compute_diagrams_ls";
-    m.def(func_name.c_str(), &compute_diagrams_ls_freudenthal<oin_int, oin_real>);
-
     // Lower-star Freudenthal filtration
     func_name = "get_freudenthal_filtration";
     m.def(func_name.c_str(), &get_fr_filtration<oin_int, oin_real>,

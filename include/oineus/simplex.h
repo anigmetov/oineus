@@ -16,28 +16,33 @@ namespace oineus {
 template<typename IntIn, typename IntOut>
 IntOut comb(IntIn n, IntIn k)
 {
-    if (n < k) {
+    if (n < k || n == 0) {
         return static_cast<IntOut>(0);
     }
+
+    if (k == 0 || k == n)
+        return static_cast<IntOut>(1);
+
     IntOut result = 1;
-    for(IntOut i = 0; i < k; i++) {
-        result *= (n - i);
-        if (i) {
-            assert(result % i == 0);
-            result /= i;
-        }
+    for(IntOut i = 1; i <= k; i++) {
+        result *= (n - i + 1);
+        assert(result % i == 0);
+        result /= i;
     }
     return result;
 }
 
+// combinatorial simplex numbering, as in Ripser (see Bauer's paper)
+// encode dimension info in the 4 most significant bits of result
 template<typename IntIn, typename IntOut>
 IntOut simplex_uid(const std::vector<IntIn>& vertices)
 {
+    IntOut dim_info = (vertices.size() + 1) << (8 * sizeof(IntOut) - 4);
     IntOut uid = 0;
     for(IntIn i = 0; i < vertices.size(); i++) {
         uid += comb<IntIn, IntOut>(vertices[i], i + 1);
     }
-    return uid;
+    return uid | dim_info;
 }
 
 template<typename Int_>
@@ -90,7 +95,7 @@ struct Simplex {
         if (vertices_.size() == 1)
             id_ = vertices_[0];
         else
-            std::sort(vertices_.begin(), vertices_.end(), std::greater<Int>());
+            std::sort(vertices_.begin(), vertices_.end());
 
         if (set_uid_immediately) set_uid();
     }
