@@ -312,9 +312,9 @@ namespace oineus {
         VRUDecomposition& operator=(const VRUDecomposition&) = default;
 
         template<class C, class R>
-        VRUDecomposition(const Filtration<C, R>& fil, bool _dualize)
+        VRUDecomposition(const Filtration<C, R>& fil, bool _dualize, int n_threads=8)
                 :
-                d_data(!_dualize ? fil.boundary_matrix_full() : fil.coboundary_matrix()),
+                d_data(_dualize ? fil.coboundary_matrix(n_threads) : fil.boundary_matrix(n_threads)),
                 r_data(d_data),
                 dualize_(_dualize),
                 dim_first(fil.dim_first()),

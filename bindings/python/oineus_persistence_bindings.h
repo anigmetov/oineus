@@ -346,7 +346,7 @@ compute_relative_diagrams(const oineus::Filtration<Cell, Real>& fil, const oineu
         relative_.insert(sigma.get_uid());
     }
 
-    auto rel_matrix = fil.boundary_matrix_full_rel(relative_);
+    auto rel_matrix = fil.boundary_matrix_rel(relative_);
     oineus::VRUDecomposition<Int> d_matrix {rel_matrix, false};
 
     oineus::Params params;
@@ -389,7 +389,7 @@ typename oin::VRUDecomposition<Int>::MatrixData
 get_boundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
     auto fil = get_fr_filtration<Int, Real>(data, negate, wrap, max_dim, n_threads);
-    return fil.boundary_matrix_full();
+    return fil.boundary_matrix();
 }
 
 template<class Int, class Real, size_t D>
@@ -397,7 +397,7 @@ typename oin::VRUDecomposition<Int>::MatrixData
 get_coboundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
     auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads);
-    auto bm = fil.boundary_matrix_full();
+    auto bm = fil.boundary_matrix();
     return oin::antitranspose(bm);
 }
 

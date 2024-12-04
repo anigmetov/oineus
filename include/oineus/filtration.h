@@ -124,7 +124,7 @@ namespace oineus {
 
         dim_type max_dim() const { return dim_last_.size() - 1; }
 
-        BoundaryMatrix boundary_matrix_full() const
+        BoundaryMatrix boundary_matrix(int n_threads=1) const
         {
             CALI_CXX_MARK_FUNCTION;
 
@@ -132,14 +132,14 @@ namespace oineus {
             result.reserve(size());
 
             for(dim_type d = 0; d <= max_dim(); ++d) {
-                auto m = boundary_matrix_in_dimension(d);
+                auto m = boundary_matrix_in_dimension(d, n_threads);
                 result.insert(result.end(), std::make_move_iterator(m.begin()), std::make_move_iterator(m.end()));
             }
 
             return result;
         }
 
-        BoundaryMatrix boundary_matrix_in_dimension(dim_type d) const
+        BoundaryMatrix boundary_matrix_in_dimension(dim_type d, int n_threads) const
         {
             CALI_CXX_MARK_FUNCTION;
             bool missing_ok = is_subfiltration();
@@ -148,30 +148,54 @@ namespace oineus {
             // fill D with empty vectors
 
             // boundary of vertex is empty, need to do something in positive dimension only
-            if (d > 0)
-                for(size_t col_idx = 0; col_idx < size_in_dimension(d); ++col_idx) {
-                    auto& sigma = cells_[col_idx + dim_first(d)];
-                    auto& col = result[col_idx];
-                    col.reserve(d + 1);
+            if (d > 0) {
+                if (n_threads > 1) {
+                    tf::Executor executor(n_threads);
+                    tf::Taskflow taskflow;
+                    tf::Task fill_bdry_matrix = taskflow.for_each_index(0, size_in_dimension(d), (size_t)1,
+                            [this, d, missing_ok, &result](size_t col_idx) {
+                                auto& sigma = cells_[col_idx + dim_first(d)];
+                                auto& col = result[col_idx];
+                                col.reserve(d + 1);
 
-                    for(const auto& tau_vertices: sigma.boundary()) {
-                        if (missing_ok) {
-                            auto iter = uid_to_sorted_id.find(tau_vertices);
-                            if (iter != uid_to_sorted_id.end()) {
-                                col.push_back(iter->second);
+                                for(const auto& tau_vertices: sigma.boundary()) {
+                                    if (missing_ok) {
+                                        auto iter = uid_to_sorted_id.find(tau_vertices);
+                                        if (iter != uid_to_sorted_id.end()) {
+                                            col.push_back(iter->second);
+                                        }
+                                    } else {
+                                        col.push_back(uid_to_sorted_id.at(tau_vertices));
+                                    }
+                                }
+                                std::sort(col.begin(), col.end());
+                            });
+                    executor.run(taskflow).wait();
+                } else {
+                    for(size_t col_idx = 0; col_idx < size_in_dimension(d); ++col_idx) {
+                        auto& sigma = cells_[col_idx + dim_first(d)];
+                        auto& col = result[col_idx];
+                        col.reserve(d + 1);
+
+                        for(const auto& tau_vertices: sigma.boundary()) {
+                            if (missing_ok) {
+                                auto iter = uid_to_sorted_id.find(tau_vertices);
+                                if (iter != uid_to_sorted_id.end()) {
+                                    col.push_back(iter->second);
+                                }
+                            } else {
+                                col.push_back(uid_to_sorted_id.at(tau_vertices));
                             }
-                        } else {
-                            col.push_back(uid_to_sorted_id.at(tau_vertices));
                         }
+
+                        std::sort(col.begin(), col.end());
                     }
-
-                    std::sort(col.begin(), col.end());
                 }
-
+            }
             return result;
         }
 
-        BoundaryMatrix boundary_matrix_full_rel(const typename Cell::UidSet& relative) const
+        BoundaryMatrix boundary_matrix_rel(const typename Cell::UidSet& relative) const
         {
             CALI_CXX_MARK_FUNCTION;
 
@@ -179,14 +203,14 @@ namespace oineus {
             result.reserve(size());
 
             for(dim_type d = 0; d <= max_dim(); ++d) {
-                auto m = boundary_matrix_in_dimension(d, relative);
+                auto m = boundary_matrix_in_dimension_rel(d, relative);
                 result.insert(result.end(), std::make_move_iterator(m.begin()), std::make_move_iterator(m.end()));
             }
 
             return result;
         }
 
-        BoundaryMatrix boundary_matrix_in_dimension(dim_type d, const typename Cell::UidSet& relative) const
+        BoundaryMatrix boundary_matrix_in_dimension_rel(dim_type d, const typename Cell::UidSet& relative) const
         {
             CALI_CXX_MARK_FUNCTION;
             BoundaryMatrix result(size_in_dimension(d));
@@ -229,10 +253,10 @@ namespace oineus {
             return result;
         }
 
-        BoundaryMatrix coboundary_matrix() const
+        BoundaryMatrix coboundary_matrix(int n_threads=1) const
         {
             CALI_CXX_MARK_FUNCTION;
-            return antitranspose(boundary_matrix_full(), size());
+            return antitranspose(boundary_matrix(n_threads), size());
         }
 
         template<typename I, typename R, size_t D>
