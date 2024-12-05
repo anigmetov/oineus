@@ -43,7 +43,7 @@ struct CellWithValue {
     void set_value(Real new_value) { value_ = new_value; }
 
     Int get_id() const { return cell_.get_id(); }
-    void set_id(Int new_id) { return cell_.set_id(new_id); }
+    void set_id(Int new_id) { cell_.set_id(new_id); }
 
     Int get_sorted_id() const { return sorted_id_; }
     void set_sorted_id(Int sorted_id) { sorted_id_ = sorted_id; }

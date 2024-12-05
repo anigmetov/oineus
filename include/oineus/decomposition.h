@@ -556,6 +556,7 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::reduce(Params& params)
     {
+        CALI_CXX_MARK_FUNCTION;
         if (d_data.empty()) {
             is_reduced = true;
             return;
@@ -686,25 +687,30 @@ namespace oineus {
         std::atomic<int> next_free_chunk = 0;
         std::vector<std::atomic<int>> next_free_chunks(dim_first.size());
         for(auto& nfc : next_free_chunks) {
-            nfc.store(0, std::memory_order_seq_cst);
+            nfc.store(0, std::memory_order_relaxed);
         }
+
+        const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
 
         AMatrix ar_matrix(n_cols);
-
-        // move data to ar_matrix
-        for(size_t i = 0; i < n_cols; ++i) {
-            ar_matrix[i] = new Column(std::move(r_data[i]));
-            assert(MatrixTraits::check_col_duplicates(ar_matrix[i]).empty());
-        }
-        spd::debug("Matrix moved");
-
         AtomicIdxVector pivots(n_cols);
-        for(auto& p: pivots) {
-            p.store(-1, std::memory_order_seq_cst);
+
+        tf::Executor executor(n_threads);
+
+        // move data to ar_matrix and set pivots in parallel
+        {
+            tf::Taskflow taskflow_prepare;
+            taskflow_prepare.for_each_index((size_t)0, n_cols, (size_t)1,
+                    [this, &ar_matrix, &pivots](size_t col_idx) {
+                        pivots[col_idx].store(-1, std::memory_order_relaxed);
+                        ar_matrix[col_idx] = new Column(std::move(r_data[col_idx]));
+                        assert(MatrixTraits::check_col_duplicates(ar_matrix[col_idx]).empty());
+                    });
+            executor.run(taskflow_prepare).wait();
         }
+
         spd::debug("Pivots initialized");
 
-        int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
 
         std::vector<std::thread> ts;
         std::vector<std::unique_ptr<MemoryReclaimC>> mms;
@@ -754,16 +760,19 @@ namespace oineus {
 #ifdef OINEUS_GATHER_ADD_STATS
         write_add_stats_file(stats);
 #endif
-
-        // write reduced matrix back, mark as reduced
-        for(size_t i = 0; i < n_cols; ++i) {
-            auto p = ar_matrix[i].load(std::memory_order_seq_cst);
-            if (p) {
-                r_data[i] = std::move(*p);
-                delete p;
-            } else {
-                r_data[i].clear();
-            }
+        {
+            tf::Taskflow taskflow_finish;
+            taskflow_finish.for_each_index((size_t)0, n_cols, (size_t)1,
+                    [this, &ar_matrix, &pivots](size_t col_idx) {
+                        auto p = ar_matrix[col_idx].load(std::memory_order_relaxed);
+                        if (p) {
+                            r_data[col_idx] = std::move(*p);
+                            delete p;
+                        } else {
+                            r_data[col_idx].clear();
+                        }
+                    });
+            executor.run(taskflow_finish).wait();
         }
 
         is_reduced = true;
@@ -772,12 +781,15 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::reduce_parallel_rv(Params& params)
     {
+        CALI_CXX_MARK_FUNCTION;
         using namespace std::placeholders;
 
         size_t n_cols = size();
 
         if (n_cols == 0)
             return;
+
+        int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
 
         v_data = std::vector<IntSparseColumn>(n_cols);
 
@@ -789,13 +801,6 @@ namespace oineus {
 
         RVMatrix r_v_matrix(n_cols);
 
-        // move data to r_v_matrix
-        for(size_t i = 0; i < n_cols; ++i) {
-            IntSparseColumn v_column = {static_cast<Int>(i)};
-            r_v_matrix[i] = new RVColumn(r_data[i], v_column);
-        }
-        spd::debug("Matrix moved");
-
         std::atomic<typename MemoryReclaimC::EpochCounter> counter;
         counter = 0;
 
@@ -806,12 +811,20 @@ namespace oineus {
         }
 
         AtomicIdxVector pivots(n_rows);
-        for(auto& p: pivots) {
-            p.store(-1, std::memory_order_seq_cst);
-        }
-        spd::debug("Pivots initialized");
 
-        int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+        tf::Executor executor(n_threads);
+
+        // move data to ar_matrix and set pivots in parallel
+        {
+            tf::Taskflow taskflow_prepare;
+            taskflow_prepare.for_each_index((size_t)0, n_cols, (size_t)1,
+                    [this, &r_v_matrix, &pivots](size_t col_idx) {
+                        pivots[col_idx].store(-1, std::memory_order_relaxed);
+                        IntSparseColumn v_column = {static_cast<Int>(col_idx)};
+                        r_v_matrix[col_idx] = new RVColumn(r_data[col_idx], v_column);
+                    });
+            executor.run(taskflow_prepare).wait();
+        }
 
         std::vector<std::thread> ts;
         std::vector<std::unique_ptr<MemoryReclaimC>> mms;
@@ -863,19 +876,22 @@ namespace oineus {
 #ifdef OINEUS_GATHER_ADD_STATS
         write_add_stats_file(stats);
 #endif
-
-        // write reduced matrix back, collect V matrix, mark as reduced
-        for(size_t i = 0; i < n_cols; ++i) {
-            auto p = r_v_matrix[i].load(std::memory_order_seq_cst);
-            if (p) {
-                r_data[i] = std::move(p->r_column);
-                v_data[i] = std::move(p->v_column);
-                delete p;
-            } else {
-                r_data[i].clear();
-                // TODO: Bauer's trick with filling V
-                v_data[i].clear();
-            }
+        {
+            tf::Taskflow taskflow_finish;
+            taskflow_finish.for_each_index((size_t)0, n_cols, (size_t)1,
+                    [this, &r_v_matrix, &pivots](size_t col_idx) {
+                        auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+                        if (p) {
+                            r_data[col_idx] = std::move(p->r_column);
+                            v_data[col_idx] = std::move(p->v_column);
+                            delete p;
+                        } else {
+                            r_data[col_idx].clear();
+                            // TODO: Bauer's trick with filling V
+                            v_data[col_idx].clear();
+                        }
+                    });
+            executor.run(taskflow_finish).wait();
         }
 
         is_reduced = true;

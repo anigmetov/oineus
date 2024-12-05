@@ -57,13 +57,14 @@ namespace oineus {
             }
         }
 
+        // false: do not compute uid immediately, set it in filtration ctor in parallel
         return {SimplexWithValue(Simplex(vertices, false), crit_value), crit_edge};
     }
 
     template<class Int, class Real>
     CellWithValue<Simplex<Int>, Real> vr_simplex(const DistMatrix<Real>& dist_matrix, const typename Simplex<Int>::IdxVector& vertices)
     {
-        using Simplex = CellWithValue<Simplex<Int>, Real>;
+        using Simp = CellWithValue<Simplex<Int>, Real>;
 
         assert(not vertices.empty());
 
@@ -80,7 +81,8 @@ namespace oineus {
             }
         }
 
-        return Simplex(vertices, crit_value);
+        // false in Simplex<Int> ctor: do not set uid immediately
+        return Simp({vertices, false}, crit_value);
     }
 
     template<class Int, class Real, std::size_t D>

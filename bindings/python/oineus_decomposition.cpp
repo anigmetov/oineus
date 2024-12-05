@@ -11,8 +11,8 @@ void init_oineus_common_decomposition(py::module& m)
     using ProdSimplexFiltration = oin::Filtration<ProdSimplex, oin_real>;
 
     py::class_<Decomposition>(m, "Decomposition")
-            .def(py::init<const SimplexFiltration&, bool>())
-            .def(py::init<const ProdSimplexFiltration&, bool>())
+            .def(py::init<const SimplexFiltration&, bool, int>(), py::arg("filtration"), py::arg("dualize"), py::arg("n_threads")=4)
+            .def(py::init<const ProdSimplexFiltration&, bool, int>(), py::arg("filtration"), py::arg("dualize"), py::arg("n_threads")=4)
             .def(py::init<const typename Decomposition::MatrixData&, size_t, bool>())
             .def_readwrite("r_data", &Decomposition::r_data)
             .def_readwrite("v_data", &Decomposition::v_data)
