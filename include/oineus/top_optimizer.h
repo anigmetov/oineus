@@ -134,8 +134,10 @@ public:
             fil_(fil),
             negate_(fil.negate())
     {
-        params_hom_.clearing_opt = false;
-        params_coh_.clearing_opt = false;
+        params_hom_.compute_v = true;
+        params_coh_.compute_v = true;
+        params_hom_.compute_u = true;
+        params_coh_.compute_u = true;
     }
 
     TopologyOptimizer(const Fil& fil, const ComputeFlags& hints)
@@ -147,11 +149,6 @@ public:
     {
         params_hom_.compute_u = hints.compute_homology_u;
         params_coh_.compute_u = hints.compute_cohomology_u;
-
-        if (hints.compute_homology_u)
-            params_hom_.clearing_opt = false;
-        if (hints.compute_cohomology_u)
-            params_coh_.clearing_opt = false;
     }
 
     bool cmp(Real a, Real b) const
@@ -259,6 +256,7 @@ public:
         if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u())) {
             decmp_hom_.reduce_serial(params_hom_);
         }
+        std::cerr << "singleton: reduction ok" << std::endl;
 
         if (decmp_hom_.is_negative(index)) {
             return {value, change_death(index, value)};
@@ -273,7 +271,6 @@ public:
             throw std::runtime_error("indices and values must have the same size");
 
         auto flags = get_flags(indices, values);
-        //IC(flags);
         params_coh_.compute_u = flags.compute_cohomology_u;
         params_hom_.compute_u = flags.compute_homology_u;
 
@@ -309,7 +306,7 @@ public:
 
     Real get_cell_value(size_t simplex_idx) const
     {
-        return fil_.value_by_sorted_id(simplex_idx);
+        return fil_.get_cell_value(simplex_idx);
     }
 
 //    Target dgm_target_to_target(const DgmTarget& dgm_target) const
@@ -609,11 +606,13 @@ public:
 
     Indices increase_death(size_t negative_simplex_idx) const
     {
+        CALI_CXX_MARK_FUNCTION;
         return increase_death(negative_simplex_idx, fil_.infinity());
     }
 
     Indices decrease_death(size_t negative_simplex_idx, Real target_death) const
     {
+        CALI_CXX_MARK_FUNCTION;
         Indices result;
 
         auto& r_cols = decmp_hom_.r_data;
@@ -645,6 +644,7 @@ public:
 
     Indices decrease_death(size_t negative_simplex_idx) const
     {
+        CALI_CXX_MARK_FUNCTION;
         return decrease_death(negative_simplex_idx, -fil_.infinity());
     }
 

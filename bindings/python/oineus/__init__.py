@@ -87,7 +87,14 @@ def vr_filtration(data: np.ndarray,
         else:
             func = _oineus.get_vr_filtration
 
-    return func(data, max_dim=max_dim, max_diameter=max_diameter, n_threads=n_threads)
+    result = func(data, max_dim=max_dim, max_diameter=max_diameter, n_threads=n_threads)
+    if with_critical_edges:
+        # convert list of VREdges to numpy array
+        edges = [ [ e.x, e.y] for e in result[1] ]
+        edges = np.array(edges, dtype=np.int64)
+        return result[0], edges
+    else:
+        return result
 
 
 def is_reduced(a):
