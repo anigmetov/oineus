@@ -505,6 +505,7 @@ namespace oineus {
             }
 
             uid_to_sorted_id.clear();
+            uid_to_sorted_id.reserve(cells_.size());
 
             size_t sorted_id = 0;
 
@@ -530,6 +531,7 @@ namespace oineus {
             CALI_CXX_MARK_FUNCTION;
 
             uid_to_sorted_id.clear();
+            uid_to_sorted_id.reserve(cells_.size());
 
             auto cmp = [this](const Cell& sigma, const Cell& tau)
                 {

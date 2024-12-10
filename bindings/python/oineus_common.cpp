@@ -135,47 +135,5 @@ void init_oineus_common(py::module& m)
             .value("FixCritAvg", ConflictStrategy::FixCritAvg, "use matching on critical, average gradients on other cells")
             .def("as_str", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); });
 
-    using Simp = oin::Simplex<oin_int>;
-
-    py::class_<Simp>(m, "BareSimplex")
-            .def(py::init([](typename Simp::IdxVector vs) -> Simp {
-                      return Simp({vs});
-                    }),
-                    py::arg("vertices"))
-            .def(py::init([](oin_int id, typename Simp::IdxVector vs) -> Simp {
-              return Simp(id, vs);
-            }), py::arg("id"), py::arg("vertices"))
-            .def_property("id", &Simp::get_id, &Simp::set_id)
-            .def_property("vertices", &Simp::get_uid, &Simp::set_uid)
-            .def("get_uid", &Simp::get_uid)
-            .def("dim", &Simp::dim)
-            .def("boundary", &Simp::boundary)
-            .def("join", [](const Simp& sigma, oin_int new_vertex, oin_int new_id) {
-                      return sigma.join(new_id, new_vertex);
-                    },
-                    py::arg("new_vertex"),
-                    py::arg("new_id") = Simp::k_invalid_id)
-            .def("__repr__", [](const Simp& sigma) {
-              std::stringstream ss;
-              ss << sigma;
-              return ss.str();
-            });
-
-    using ProdSimplex = oin::ProductCell<Simp, Simp>;
-
-    py::class_<ProdSimplex>(m, "BareSimplexProduct")
-            .def(py::init([](const Simp& s1, const Simp& s2) -> ProdSimplex {
-                      return {s1, s2};
-                    }),
-                    py::arg("simplex_1"), py::arg("simplex_2"))
-            .def_property("id", &ProdSimplex::get_id, &ProdSimplex::set_id)
-            .def("get_uid", &ProdSimplex::get_uid)
-            .def("dim", &ProdSimplex::dim)
-            .def("boundary", &ProdSimplex::boundary)
-            .def("__repr__", [](const ProdSimplex& sigma) {
-              std::stringstream ss;
-              ss << sigma;
-              return ss.str();
-            });
 
 }

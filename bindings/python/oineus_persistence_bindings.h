@@ -424,41 +424,11 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
 
 
 template<typename C, typename Real>
-decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_, py::list IdMap_,
-        oin::Params& params) //take a list of cells and turn it into a filtration for oineus. The list should contain cells in the form '[id, [boundary], filtration value].
+oin::KerImCokReduced<C, Real, 2> compute_kernel_image_cokernel_reduction(const oin::Filtration<C, Real>& K, const oin::Filtration<C, Real>& L, oin::Params& params)
 {
     using Int = typename C::Int;
     using Filtration = oin::Filtration<C, Real>;
     using KICR = oin::KerImCokReduced<C, Real, 2>;
-
-    std::cout << "======================================" << std::endl;
-    std::cout << std::endl;
-    std::cout << "You have called \'compute_kernel_image_cokernel_reduction\', it takes as input a complex K, and a subcomplex L, as lists of cells in the format:" << std::endl;
-    std::cout << "          [id, [boundary], filtration value]" << std::endl;
-    std::cout << "and a mapping from L to K, which takes the id of a cell in L and returns the id of the cell in K, as well as an integer, telling oineus how many threads to use." << std::endl;
-    std::cout << std::endl;
-    std::cout << "======================================" << std::endl;
-    std::cout << std::endl;
-
-    std::cout << "------------ Importing K ------------" << std::endl;
-    Filtration K = list_to_filtration<Int, Real>(K_);
-    std::cout << "------------ Importing L ------------" << std::endl;
-    Filtration L = list_to_filtration<Int, Real>(L_);
-
-    int n_L = IdMap_.size();
-    std::vector<int> IdMapping;
-
-    for(int i = 0 ; i < n_L ; i++) {
-        int i_map = IdMap_[i].cast<int>();
-        IdMapping.push_back(i_map);
-    }
-
-    if (params.verbose) {
-        std::cout << "---------- Map from L to K ----------" << std::endl;
-        for(int i = 0 ; i < n_L ; i++) {
-            std::cout << "Cell " << i << " in L is mapped to cell " << IdMapping[i] << " in K." << std::endl;
-        }
-    }
 
     params.sort_dgms = false;
     params.clearing_opt = false;
@@ -477,9 +447,11 @@ decltype(auto) compute_kernel_image_cokernel_reduction(py::list K_, py::list L_,
 
 void init_oineus_common(py::module& m);
 void init_oineus_common_decomposition(py::module& m);
-void init_oineus_common_diagram(py::module& m);
+void init_oineus_diagram(py::module& m);
 void init_oineus_functions(py::module& m);
-void init_oineus_fil_dgm_simplex(py::module& m);
+void init_oineus_filtration(py::module& m);
+void init_oineus_cells(py::module& m);
+void init_oineus_kicr(py::module& m);
 void init_oineus_top_optimizer(py::module& m);
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

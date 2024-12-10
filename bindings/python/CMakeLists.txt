@@ -22,8 +22,10 @@ set_property(CACHE OINEUS_PYTHON_REAL PROPERTY STRINGS "float" "double")
 pybind11_add_module         (_oineus oineus.cpp
                                      oineus_common.cpp
                                      oineus_decomposition.cpp
-                                     oineus_index_diagram.cpp
-                                     oineus_fil_dgm_simplex.cpp
+                                     oineus_diagram.cpp
+                                     oineus_cells.cpp
+                                     oineus_filtration.cpp
+                                     oineus_kicr.cpp
                                      oineus_functions.cpp
                                      oineus_top_optimizer.cpp
                             )

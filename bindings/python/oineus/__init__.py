@@ -6,17 +6,22 @@ import scipy.sparse
 
 from . import _oineus
 
-from ._oineus import *
+from ._oineus import ConflictStrategy, DenoiseStrategy, VREdge
+from ._oineus import CombinatorialProdSimplex, CombinatorialSimplex,Simplex, ProdSimplex
+from ._oineus import Filtration, ProdFiltration
+from ._oineus import Decomposition, IndexDiagramPoint, DiagramPoint, Diagrams
+from ._oineus import ReductionParams, KICRParams, KerImCokReduced, KerImCokReducedProd
+from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizer, TopologyOptimizerProd
+from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise_target, get_induced_matching
+from ._oineus import get_nth_persistence, get_permutation_dtv, list_to_filtration, mapping_cylinder, mapping_cylinder_with_indices, min_filtration
 
-import warnings
-
-from icecream import ic
-
-try:
-    from . import diff
-except:
-    warnings.warn("oineus.diff import failed, probably, because eagerpy is not installed")
-
+# import warnings
+#
+# try:
+#     from . import diff
+# except:
+#     warnings.warn("oineus.diff import failed, probably, because eagerpy is not installed")
+#
 
 __all__ = ["compute_diagrams_ls", "compute_diagrams_vr", "get_boundary_matrix", "is_reduced"]
 
@@ -49,7 +54,7 @@ def freudenthal_filtration(data: np.ndarray,
                            n_threads: int=1):
     max_dim = min(max_dim, data.ndim)
     if with_critical_vertices:
-        return _oineus.get_freudenthal_filtration_and_critical_vertices(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
+        return _oineus.get_freudenthal_filtration_and_crit_vertices(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
     else:
         return _oineus.get_freudenthal_filtration(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
 
@@ -67,8 +72,6 @@ def vr_filtration(data: np.ndarray,
 
     if max_diameter < 0:
         max_diameter = max_distance(data, from_pwdists)
-
-    ic(max_dim, max_diameter)
 
     if max_dim < 0:
         if from_pwdists:
@@ -105,26 +108,6 @@ def is_reduced(a):
     return len(lowest_ones) == len(set(lowest_ones))
 
 
-def get_dim(data: np.ndarray, points=False):
-    if points:
-        if data.ndim == 2 and data.shape[1] in [1, 2, 3, 4]:
-            return data.shape[1]
-        else:
-            raise RuntimeError(f"Dimension not supported: shape = {data.shape}")
-    else:
-        if data.ndim in [1, 2, 3]:
-            return data.ndim
-        else:
-            raise RuntimeError(f"Dimension not supported: shape = {data.shape}")
-
-
-def get_boundary_matrix(data, negate, wrap, max_dim, n_threads):
-    dim_part = get_dim(data)
-    func = getattr(_oineus, f"get_boundary_matrix_{dim_part}")
-    bm = func(data, negate, wrap, max_dim, n_threads)
-    return to_scipy_matrix(bm)
-
-
 def compute_diagrams_ls(data: np.ndarray, negate: bool=False, wrap: bool=False,
                         max_dim: typing.Optional[int]=None, params: typing.Optional[ReductionParams]=None,
                         include_inf_points: bool=True, dualize: bool=False):
@@ -150,45 +133,53 @@ def compute_diagrams_vr(data: np.ndarray, from_pwdists: bool=False, max_dim: int
 
 
 def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d: int, q: float, mip: bool, mdp: bool):
-    type_part = get_real_type(fil)
-    func = getattr(_oineus, f"get_ls_wasserstein_matching_target_values_{type_part}")
+    func = getattr(_oineus, f"get_ls_wasserstein_matching_target_values")
 
     if type(dgm) is np.ndarray:
-        DgmPt = getattr(_oineus, f"DiagramPoint_{type_part}")
         dgm_1 = []
         assert len(dgm.shape) == 2 and dgm.shape[1] == 2
         for p in dgm:
-            dgm_1.append(DgmPt(p[0], p[1]))
+            dgm_1.append(DiagramPoint(p[0], p[1]))
         dgm = dgm_1
 
     return func(dgm, fil, rv, d, q, mip, mdp)
 
 
-def get_permutation(target_values, fil):
-    if len(target_values) == 0:
-        return {}
-    func = getattr(_oineus, f"get_permutation")
-    return func(target_values, fil)
+def compute_kernel_image_cokernel_reduction(K, L, params=None, reduction_params=None):
+    # simplicial filtrations can be supplied as lists,
+    # convert to Oineus filtrations if necessary
+    if isinstance(K, list):
+        K = _oineus.list_to_filtration(K)
+    if isinstance(L, list):
+        L = _oineus.list_to_filtration(L)
+
+    # KICR class is templatized by cell type in C++
+    # different instantiations have different class names in Python
+    # figure out the right one by type
+    if isinstance(K[0], _oineus.Simplex):
+        KICR_Class = _oineus.KerImCokReduced
+    elif isinstance(K[0], _oineus.ProdSimplex):
+        KICR_Class = _oineus.KerImCokReducedProd
+
+    if params is None:
+        # compute all by default
+        params = _oineus.KICRParams()
+        params.kernel = True
+        params.cokernel = True
+        params.image = True
+
+    if reduction_params != None:
+        assert type(params) == _oineus.ReductionParams
+        params.params_f = reduction_params
+        params.params_g = reduction_params
+        params.params_ker = reduction_params
+        params.params_im = reduction_params
+        params.params_cok = reduction_params
+
+    return KICR_Class(K, L, params)
 
 
-def list_to_filtration(simplex_list): #take a list which contains data for simplices and convert it to a filtration
-    string_type = str(type(simplex_list[0][2]))
-    if "int" in string_type:
-        func = getattr(_oineus, f"list_to_filtration_int")
-        return func(simplex_list)
-    elif "float" in string_type:
-        func = getattr(_oineus, f"list_to_filtration_float")
-        return func(simplex_list)
-    elif "double" in string_type:
-        func = getattr(_oineus, f"list_to_filtration_double")
-        return func(simplex_list)
-
-def compute_kernel_image_cokernel_reduction(K_, L_, IdMap, n_threads): #
-    func = getattr(_oineus, f"compute_kernel_image_cokernel_reduction")
-    return func(K_, L_, IdMap, n_threads)
-
-
-def compute_ker_im_cok_reduction_cyl(fil_2, fil_3):
+def compute_ker_cok_reduction_cyl(fil_2, fil_3):
     fil_min = _oineus.min_filtration(fil_2, fil_3)
 
     id_domain = fil_3.size() + fil_min.size() + 1
@@ -207,22 +198,10 @@ def compute_ker_im_cok_reduction_cyl(fil_2, fil_3):
     # to get a subcomplex, we multiply each fil_3 with id_domain
     fil_3_prod = _oineus.multiply_filtration(fil_3, v0)
 
-    params = _oineus.ReductionParams()
+    params = _oineus.KICRParams()
     params.kernel = params.cokernel = True
     params.image = False
 
-    kicr_reduction = _oineus.KerImCokReducedProd_double(fil_cyl, fil_3_prod, params)
+    kicr_reduction = _oineus.KerImCokReducedProd(fil_cyl, fil_3_prod, params)
+
     return kicr_reduction
-
-def compute_relative_diagrams(fil, rel, include_inf_points=True):
-    type_part = get_real_type(fil)
-    func = getattr(_oineus, f"compute_relative_diagrams_{type_part}")
-    return func(fil, rel, include_inf_points)
-
-#def compute_cokernel_diagrams(K_, L_, IdMap, n_threads): #
-#    string_type = str(type(K_[0][2]))
-#    func = getattr(_oineus, f"compute_cokernel_diagrams_float")
-#    return func(K_, L_, IdMap, n_threads)
-#
-
-#def lists_to_paired_filtrations(simplex_list_1, simplex_list_2)

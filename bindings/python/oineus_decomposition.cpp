@@ -18,7 +18,7 @@ void init_oineus_common_decomposition(py::module& m)
             .def_readwrite("v_data", &Decomposition::v_data)
             .def_readwrite("u_data_t", &Decomposition::u_data_t)
             .def_readwrite("d_data", &Decomposition::d_data)
-            .def("reduce", &Decomposition::reduce, py::call_guard<py::gil_scoped_release>())
+            .def("reduce", &Decomposition::reduce, py::arg("params")=oin::Params(), py::call_guard<py::gil_scoped_release>())
             .def("sanity_check", &Decomposition::sanity_check, py::call_guard<py::gil_scoped_release>())
             .def("diagram", [](const Decomposition& self, const SimplexFiltration& fil, bool include_inf_points)
                             { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points)); },

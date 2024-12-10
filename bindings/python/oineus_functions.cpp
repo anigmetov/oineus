@@ -50,18 +50,6 @@ void init_oineus_functions(py::module& m)
     func_name = "get_denoise_target";
     m.def(func_name.c_str(), &oin::get_denoise_target<Simp, oin_real>);
 
-    // target values -- diagram loss
-    func_name = "get_target_values_diagram_loss";
-    m.def(func_name.c_str(), &oin::get_prescribed_simplex_values_diagram_loss<oin_real>);
-
-    // target values --- X set
-    func_name = "get_target_values_x";
-    m.def(func_name.c_str(), &oin::get_prescribed_simplex_values_set_x<Simp, oin_real>);
-
-    // to reproduce "Well group loss" experiments
-    func_name = "get_well_group_target";
-    m.def(func_name.c_str(), &oin::get_well_group_target<Simp, oin_real>);
-
     func_name = "get_nth_persistence";
     m.def(func_name.c_str(), &oin::get_nth_persistence<Simp, oin_real>);
 
@@ -74,9 +62,6 @@ void init_oineus_functions(py::module& m)
 
     func_name = "list_to_filtration";
     m.def(func_name.c_str(), &list_to_filtration<oin_int, oin_real>);
-
-    func_name = "compute_kernel_image_cokernel_reduction";
-    m.def(func_name.c_str(), &compute_kernel_image_cokernel_reduction<Simp, oin_real>);
 
     func_name = "get_ls_filtration";
     m.def(func_name.c_str(), &get_ls_filtration<oin_int, oin_real>);

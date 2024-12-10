@@ -256,7 +256,6 @@ public:
         if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u())) {
             decmp_hom_.reduce_serial(params_hom_);
         }
-        std::cerr << "singleton: reduction ok" << std::endl;
 
         if (decmp_hom_.is_negative(index)) {
             return {value, change_death(index, value)};
