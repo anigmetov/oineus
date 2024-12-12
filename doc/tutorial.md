@@ -82,17 +82,21 @@ n_points = 20
 dim = 3
 points = np.random.uniform(size=(n_points, dim))
 
-fil = oin.get_vr_filtration(points, max_dim=3, max_radius=2)
+fil = oin.vr_filtration(points, max_dim=3, max_diameter=2)
 print(fil)
 ```
 
 The parameters are:
 * `points`: coordinates of points in the point cloud.
 * `max_dim`: the resulting filtration will contain simplices up to and including `max_dim`.
-If you want to compute persistence diagrams in dimension `d`, you need `max_dim >= d+1`.
-* `max_radius`: only consider balls up to this radius.
+If you want to compute persistence diagrams in dimension `d`, you need `max_dim >= d+1`. Default value:
+dimension of the points.
+* `max_diameter`: only consider simplices up to this diameter. Default value:
+a minimax that guarantees contractibility after that value, as in Ripser.
 
-For distance matrix:
+For distance matrix you use the same function, just
+specify the parameter `from_pwdists` to be True.
+In this case, `max_dim` must be supplied.
 
 ```python
 import numpy as np
@@ -109,7 +113,7 @@ points = np.random.uniform(size=(n_points, dim))
 
 distances = scipy.spatial.distance.cdist(points, points, 'euclidean')
 
-fil = oin.get_vr_filtration_from_pwdists(distances, max_dim=3, max_radius=2)
+fil = oin.vr_filtration(distances, from_pwdists=True, max_dim=3)
 print(fil)
 ```
 
@@ -122,18 +126,26 @@ for D = 1 , 2, or 3. Function values are represented as an D-dimensional NumPy a
 # create scalar function on 8x8x8 grid
 f = np.random.uniform(size=(8, 8, 8))
 
-fil = oin.get_freudenthal_filtration(data=f, max_dim=3)
+fil = oin.freudenthal_filtration(data=f, max_dim=3)
 ```
 
 If you want upper-star filtration, set `negate` to `True`:
 ```python
-fil = oin.get_freudenthal_filtration(data=f, negate=True, max_dim=3)
+fil = oin.freudenthal_filtration(data=f, negate=True)
 ```
 If you want periodic boundary conditions (D-dimensional torus instead
 of D-dimensional cube), set `wrap` to `True`:
 ```python
-fil = oin.get_freudenthal_filtration(data=f, wrap=True, max_dim=3)
+fil = oin.freudenthal_filtration(data=f, wrap=True)
 ```
+If your data is D-dimensional, but you only need lower-dimensional
+simplices, you can specify `max_dim` parameter (it defaults to `data.ndim`):
+```python
+fil = oin.freudenthal_filtration(data=f, max_dim=2)
+```
+Note that it is the dimension of maximal simplex in the filtration;
+if you want to compute persistence diagram in dimension k,
+you need to have simplices of dimension k+1 (negative ones).
 
 ## Persistence Diagrams
 
@@ -247,6 +259,89 @@ which you want to access.
 
 ## Topology Optimization
 
+There are two ways to perform topological optimization.
+We consider two examples, both use the following
+function to generate differentiable data.
+
+```python
+def sample_data(num_points: int=50, noise_std_dev=0.1):
+    # sample points from the unit circle and add noise
+    # num_points: number of points to sample
+    # noise_std_dev: standard deviation of Gaussian noise
+    # return points as differentiable torch tensor
+    np.random.seed(1)
+
+    angles = np.random.uniform(low=0, high=2*np.pi, size=num_points)
+    x = np.cos(angles)
+    y = np.sin(angles)
+
+    x += np.random.normal(loc=0, scale=noise_std_dev, size=num_points)
+    y += np.random.normal(loc=0, scale=noise_std_dev, size=num_points)
+
+    pts = np.vstack((x, y)).T
+    pts = torch.Tensor(pts)
+    pts.requires_grad_(True)
+
+    return pts
+
+pts = sample_data()
+```
+
+### Differentiable filtrations
+
+This requires `eagerpy` package. It provides
+wrappers around tensors from PyTorch, Jax and Tensorflow.
+Differentiable filtrations are defined in oineus.diff subpackage.
+To create a differentiable Vietoris-Rips, we can use
+the function `oineus.diff.vr_filtration` with essentially the same signature
+as `oineus.vr_filtration`.
+
+```
+import oineus as oin
+import oineus.diff
+
+
+fil = oin.diff.vr_filtration(pts)
+```
+
+`fil` is an object that contains the standard filtration (accessible as `fil.under_fil`)
+and a differentiable tensor of critical values `fil.values`.
+We also need to create a TopologyOptimizer object:
+```
+top_opt = oin.diff.TopologyOptimizer(fil)
+```
+Suppose that we want to keep only the most
+persistent point in the 1-dimensional persistence diagram,
+and all other points should go to the diagonal vertically (
+that is, a point (b, d) ideally should go to point (b, b)).
+```
+dim = 1
+n = 2
+dgm = top_opt.compute_diagram(include_inf_points=False)
+# eps is the threshold: all points whose persistence does not exceed eps will move
+# if we want to remove all but one, the most persistent point, eps must be the
+# second biggest persistence
+eps = top_opt.get_nth_persistence(dim, n)
+```
+TopologyOptimizer provides a helper function `simplify` which return
+a tuple of indices and values. 
+```
+indices, values = top_opt.simplify(eps, oin.DenoiseStrategy.BirthBirth, dim)
+critical_sets = top_opt.singletons(indices, values)
+crit_indices, crit_values = top_opt.combine_loss(critical_sets, oin.ConflictStrategy.Max)
+crit_indices = np.array(crit_indices, dtype=np.int32)
+crit_values = torch.Tensor(crit_values)
+
+top_loss = torch.mean((fil.values[crit_indices] - crit_values) ** 2)
+
+# let Torch figure the gradient on the coordinates
+top_loss.backward()
+
+
+
+### Manual
+
+
 Topology optimization is performed by the `TopologyOptimizer` class.
 It is created from a filtration.
 
@@ -255,6 +350,7 @@ opt = oin.TopologyOptimizer(fil)
 ```
 In order to specify the target (where some points
 in the diagram should go), we use indices and values.
+
 
 Let us consider an example. Here is a helper function to generate data:
 ```python
@@ -278,14 +374,22 @@ def sample_data(num_points: int=100, noise_std_dev=0.1):
 
     return pts
 ```
+
 Suppose that we want to push all but the first n-1 points
 in the PD in dimension dim to move to the diagonal.
+
+
+The more complicated way, which gives you more control,
+is to all the steps above by hand.
 The corresponding loss function is computed by this function:
 ```python
 def topological_loss(pts: torch.Tensor, dim: int=1, n: int=2):
     pts_as_numpy = pts.clone().detach().numpy().astype(np.float64)
-    fil, longest_edges = oin.get_vr_filtration_and_critical_edges(pts_as_numpy, max_dim=2, max_radius=9.0, n_threads=1)
-    
+    # we need critical edges for each simplex, so we specify
+    # with_critical_edges
+    fil, longest_edges = oin.vr_filtration(pts_as_numpy,
+            with_critical_edges=True)
+
     top_opt = oin.TopologyOptimizer(fil)
 
     eps = top_opt.get_nth_persistence(dim, n)
@@ -426,7 +530,8 @@ to compute your distances in the differentiable way.
 Oineus can compute the kernel, image and cokernel persistence diagrams as in ["Persistent Homology for Kernels, Images, and Cokernels"](https://doi.org/10.1137/1.9781611973068.110) by D. Cohen-Steiner, H. Edelsbrunner, D. Morozov. We first perform the required reductions using `compute_kernel_image_cokernel_diagrams`, which has arguments:
 * `K` the simplicial complex with function values, as a list with an element per simplex in the format `[simplex_id, vertices, value]`, where `vertices` is a list containing the ids of the vertices, and value is the value under the function f.
 * `L` the simplicial sub-complex with function values, as a list with an element per simplex in the format `[simplex_id, vertices, value]`, where `vertices` is a list containing the ids of the vertices, and value is the value under the function g.
-* `L_to_K` a list which maps the cells in L to their corresponding cells in K,
+* `params` specifies which of the three components (image, kernel, cokernel)
+    you need. Type: KICRParams.
 * `n_threads` the number of threads you want to use,
 * `return` an object which contains the kernel, image and cokernel diagrams, as well as the reduced matrices.
 
@@ -442,11 +547,15 @@ import oineus as oin
 n_threads = 4
 K = [[0, [0], 10], [1,[1],50], [2,[2], 10], [3, [3], 10], [4,[0,1], 50], [5, [1,2], 50], [6,[0,3], 10], [7, [2,3], 10]]
 L = [[0, [0], 10], [1,[1],50], [2,[2], 10], [3, [0,1], 50], [4,[1,2],50]]
-L_to_K = [0,1,2,4,5]
-ker_im_cok_dgms = oin.compute_kernel_image_cokernel_diagrams(K, L, L_to_K, n_threads)
+ker_im_cok_dgms = oin.compute_kernel_image_cokernel_diagrams(K, L)
+# by default, all 3 diagrams are computed
 ker_dgms = ker_im_cok_dgms.kernel()
 im_dgms = ker_im_cok_dgms.image()
 cok_dgms = ker_im_cok_dgms.cokernel()
 ker_dgms.in_dimension(0)
+# if you only want, e.g., kernel:
+params = oin.KICRParams()
+params.image = params.cokernel = False
+ker_im_cok_dgms = oin.compute_kernel_image_cokernel_diagrams(K, L, params)
 ```
  

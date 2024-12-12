@@ -20,6 +20,9 @@ class DiffFiltration:
     def __repr__(self):
         return f"DiffFil(under_fil={self.under_fil}, values={self.values})"
 
+    def __iter__(self):
+        return iter(self.under_fil)
+
     #@ft.wraps(_oineus.Filtration.max_dim)
     def max_dim(self):
         return self.under_fil.max_dim()
@@ -41,28 +44,28 @@ class DiffFiltration:
         return self.under_fil.cells()
 
     #@ft.wraps(_oineus.Filtration.get_id_by_sorted_id)
-    def get_id_by_sorted_id(self, sorted_id):
-        return self.under_fil.get_id_by_sorted_id(sorted_id)
+    def id_by_sorted_id(self, sorted_id):
+        return self.under_fil.id_by_sorted_id(sorted_id)
 
     #@ft.wraps(_oineus.Filtration.get_sorted_id_by_id)
-    def get_sorted_id_by_id(self, id):
-        return self.under_fil.get_sorted_id_by_id(id)
+    def sorted_id_by_id(self, id):
+        return self.under_fil.sorted_id_by_id(id)
 
     #@ft.wraps(_oineus.Filtration.get_cell)
-    def get_cell(self, sorted_idx):
-        return self.under_fil.get_cell(sorted_idx)
+    def cell(self, sorted_idx):
+        return self.under_fil.cell(sorted_idx)
 
     #@ft.wraps(_oineus.Filtration.get_simplex)
-    def get_simplex(self, sorted_idx):
-        return self.under_fil.get_simplex(sorted_idx)
+    def simplex(self, sorted_idx):
+        return self.under_fil.simplex(sorted_idx)
 
     #@ft.wraps(_oineus.Filtration.get_sorting_permutation)
-    def get_sorting_permutation(self):
-        return self.under_fil.get_sorting_permutation()
+    def sorting_permutation(self):
+        return self.under_fil.sorting_permutation()
 
     #@ft.wraps(_oineus.Filtration.get_inv_sorting_permutation)
     def get_inv_sorting_permutation(self):
-        return self.under_fil.get_inv_sorting_permutation()
+        return self.under_fil.inv_sorting_permutation()
 
     #@ft.wraps(_oineus.Filtration.cell_by_uid)
     def cell_by_uid(self, uid):
@@ -77,18 +80,19 @@ class DiffFiltration:
         return self.under_fil.simplex_value_by_sorted_id(sorted_id)
 
     #@ft.wraps(_oineus.Filtration.simplex_value_by_vertices)
-    def simplex_value_by_vertices(self, vertices):
-        return self.under_fil.simplex_value_by_vertices(vertices)
+    def simplex_value_by_uid(self, uid):
+        return self.under_fil.simplex_value_by_uid(uid)
+
+    def cell_value_by_uid(self, uid):
+        return self.under_fil.cell_value_by_uid(uid)
 
     #@ft.wraps(_oineus.Filtration.get_sorted_id_by_vertices)
-    def get_sorted_id_by_vertices(self, vertices):
-        return self.under_fil.get_sorted_id_by_vertices(vertices)
+    def sorted_id_by_uid(self, uid):
+        return self.under_fil.sorted_id_by_uid(uid)
 
     #@ft.wraps(_oineus.Filtration.reset_ids_to_sorted_ids)
     def reset_ids_to_sorted_ids(self):
         self.under_fil.reset_ids_to_sorted_ids()
-
-
 
 
 class TopologyOptimizer:
@@ -174,7 +178,7 @@ def min_filtration(fil_1: DiffFiltration, fil_2: DiffFiltration) -> DiffFiltrati
     fil_1_under = fil_1.under_fil
     fil_2_under = fil_2.under_fil
 
-    min_fil_under, inds_1, inds_2 = _oineus.min_filtration_with_indices(fil_1_under, fil_2_under)
+    min_fil_under, inds_1, inds_2 = _oineus._min_filtration_with_indices(fil_1_under, fil_2_under)
 
     inds_1 = np.array(inds_1)
     inds_2 = np.array(inds_2)
@@ -223,10 +227,16 @@ def mapping_cylinder_filtration(fil_domain: DiffFiltration, fil_codomain: DiffFi
     assert(type(fil_domain) is DiffFiltration)
     assert(type(fil_codomain) is DiffFiltration)
 
+    if isinstance(v_domain, _oineus.Simplex):
+        v_domain = v_domain.combinatorial_cell()
+
+    if isinstance(v_codomain, _oineus.Simplex):
+        v_codomain = v_codomain.combinatorial_cell()
+
     under_fil_dom = fil_domain.under_fil
     under_fil_cod = fil_codomain.under_fil
 
-    under_cyl_fil, cyl_val_inds = _oineus.mapping_cylinder_with_indices(under_fil_dom, under_fil_cod, v_domain, v_codomain)
+    under_cyl_fil, cyl_val_inds = _oineus._mapping_cylinder_with_indices(under_fil_dom, under_fil_cod, v_domain, v_codomain)
 
     cyl_val_inds = epy.astensor(np.array(cyl_val_inds, dtype=np.int64))
 

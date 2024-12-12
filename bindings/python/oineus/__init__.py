@@ -13,7 +13,7 @@ from ._oineus import Decomposition, IndexDiagramPoint, DiagramPoint, Diagrams
 from ._oineus import ReductionParams, KICRParams, KerImCokReduced, KerImCokReducedProd
 from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizer, TopologyOptimizerProd
 from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise_target, get_induced_matching
-from ._oineus import get_nth_persistence, get_permutation_dtv, list_to_filtration, mapping_cylinder, mapping_cylinder_with_indices, min_filtration
+from ._oineus import get_nth_persistence, get_permutation_dtv, list_to_filtration
 
 # import warnings
 #
@@ -54,7 +54,9 @@ def freudenthal_filtration(data: np.ndarray,
                            n_threads: int=1):
     max_dim = min(max_dim, data.ndim)
     if with_critical_vertices:
-        return _oineus.get_freudenthal_filtration_and_crit_vertices(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
+        fil, vertices = _oineus.get_freudenthal_filtration_and_crit_vertices(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
+        vertices = np.array(vertices, dtype=np.int64)
+        return fil, vertices
     else:
         return _oineus.get_freudenthal_filtration(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
 
@@ -107,6 +109,26 @@ def is_reduced(a):
             lowest_ones.append(np.max(np.where(a[:, col_idx] % 2 == 1)))
     return len(lowest_ones) == len(set(lowest_ones))
 
+def mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain, with_indices=False):
+    if isinstance(v_codomain, _oineus.Simplex) or isinstance(v_codomain, _oineus.ProdSimplex):
+        v_codomain = v_codomain.combinatorial_cell()
+    if isinstance(v_domain, _oineus.Simplex) or isinstance(v_domain, _oineus.ProdSimplex):
+        v_domain = v_domain.combinatorial_cell()
+    if with_indices:
+        return _oineus._mapping_cylinder_with_indices(fil_domain, fil_codomain, v_domain, v_codomain)
+    else:
+        return _oineus._mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain)
+
+def multiply_filtration(fil, sigma):
+    if isinstance(sigma, _oineus.Simplex):
+        sigma = sigma.combinatorial_cell()
+    return _oineus._multiply_filtration(fil, sigma)
+
+def min_filtration(fil_1, fil_2, with_indices=False):
+    if with_indices:
+        return _oineus._min_filtration_with_indices(fil_1, fil_2)
+    else:
+        return _oineus._min_filtration(fil_1, fil_2)
 
 def compute_diagrams_ls(data: np.ndarray, negate: bool=False, wrap: bool=False,
                         max_dim: typing.Optional[int]=None, params: typing.Optional[ReductionParams]=None,

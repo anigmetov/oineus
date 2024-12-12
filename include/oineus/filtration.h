@@ -253,7 +253,7 @@ namespace oineus {
                             col.push_back(uid_to_sorted_id.at(tau_vertices));
                     }
 
- #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
                     if (col_idx % 100 == 0) {
                       OINEUS_CHECK_FOR_PYTHON_INTERRUPT
                     }
@@ -299,14 +299,9 @@ namespace oineus {
             return cells_[sorted_id].get_value();
         }
 
-        Real value_by_vertices(const CellUid& vs) const
+        Real value_by_uid(const CellUid& vs) const
         {
             return cells_[uid_to_sorted_id.at(vs)].get_value();
-        }
-
-        auto get_sorted_id_by_vertices(const CellUid& vs) const
-        {
-            return uid_to_sorted_id.at(vs);
         }
 
         auto get_sorted_id_by_uid(const CellUid& uid) const
