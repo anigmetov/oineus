@@ -202,16 +202,8 @@ def get_permutation(target_values, fil):
 
 
 def list_to_filtration(simplex_list): #take a list which contains data for simplices and convert it to a filtration
-    string_type = str(type(simplex_list[0][2]))
-    if "int" in string_type:
-        func = getattr(_oineus, f"list_to_filtration_int")
-        return func(simplex_list)
-    elif "float" in string_type:
-        func = getattr(_oineus, f"list_to_filtration_float")
-        return func(simplex_list)
-    elif "double" in string_type:
-        func = getattr(_oineus, f"list_to_filtration_double")
-        return func(simplex_list)
+	func = getattr(_oineus, f"list_to_filtration_double")
+	return func(simplex_list)
 
 def compute_kernel_image_cokernel_reduction(K_, L_, IdMap, n_threads): #
     string_type = str(type(K_[0][2]))
