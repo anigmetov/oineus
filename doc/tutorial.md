@@ -248,20 +248,20 @@ sigma_sorted_idx, tau_sorted_idx = ind_dgm_2[0, :]
 `sigma_sorted_idx` is the index of the birth simplex (triangle) in filtration order.
 `tau_sorted_idx` is the index of the death simplex (tetrahedron) in filtration order.
 There are many ways to get the original simplex:
-* `sigma = fil.get_simplex(sigma_sorted_idx)` will return a simplex itself. So, `fil.get_simplex`
+* `sigma = fil.simplex(sigma_sorted_idx)` will return a simplex itself. So, `fil.simplex`
 takes the `sorted_id` of a simplex and just accesses the vector of simplices at this index,
 so it is cheap.
-* `sigma_idx = fil.get_id_by_sorted_id(sigma_sorted_idx)` will return the `id` of `sigma`.
-Recall that, by default, it is the index of `sigma` in the original list of simplices that was used to create the filtration.
+* `sigma_idx = fil.id_by_sorted_id(sigma_sorted_idx)` will return the `id` of `sigma`.
+Recall that it is the index of `sigma` in the original list of simplices that was used to create the filtration.
 This is convenient, if you have a parallel array of some information, one entry per simplex,
 which you want to access.
 
 
 ## Topology Optimization
 
-There are two ways to perform topological optimization.
-We consider two examples, both use the following
-function to generate differentiable data.
+
+There are two ways to perform topological optimization.  We consider two examples, both use the following function to generate differentiable data.
+
 
 ```python
 def sample_data(num_points: int=50, noise_std_dev=0.1):
@@ -287,16 +287,22 @@ def sample_data(num_points: int=50, noise_std_dev=0.1):
 pts = sample_data()
 ```
 
+
+We also set up a PyTorch optimizer that acts on the points:
+
+
+```python
+opt = torch.optim.SGD([pts], lr=0.1)
+```
+
+
 ### Differentiable filtrations
 
-This requires `eagerpy` package. It provides
-wrappers around tensors from PyTorch, Jax and Tensorflow.
-Differentiable filtrations are defined in oineus.diff subpackage.
-To create a differentiable Vietoris-Rips, we can use
-the function `oineus.diff.vr_filtration` with essentially the same signature
-as `oineus.vr_filtration`.
 
-```
+This method requires `eagerpy` package. It provides wrappers around tensors from PyTorch, Jax and Tensorflow.  Differentiable filtrations are defined in oineus.diff subpackage.  To create a differentiable Vietoris-Rips, we can use the function `oineus.diff.vr_filtration` with essentially the same signature as `oineus.vr_filtration`.
+
+
+```python
 import oineus as oin
 import oineus.diff
 
@@ -304,17 +310,19 @@ import oineus.diff
 fil = oin.diff.vr_filtration(pts)
 ```
 
-`fil` is an object that contains the standard filtration (accessible as `fil.under_fil`)
-and a differentiable tensor of critical values `fil.values`.
-We also need to create a TopologyOptimizer object:
-```
+
+Now `fil` is an object that contains the standard filtration (accessible as `fil.under_fil`) and a differentiable tensor of critical values `fil.values`.  We also need to create a TopologyOptimizer object:
+
+
+```python
 top_opt = oin.diff.TopologyOptimizer(fil)
 ```
-Suppose that we want to keep only the most
-persistent point in the 1-dimensional persistence diagram,
-and all other points should go to the diagonal vertically (
-that is, a point (b, d) ideally should go to point (b, b)).
-```
+
+
+Suppose that we want to keep only the most persistent point in the 1-dimensional persistence diagram, and all other points should go to the diagonal vertically (that is, a point (b, d) ideally should go to point (b, b)).
+
+
+```python
 dim = 1
 n = 2
 dgm = top_opt.compute_diagram(include_inf_points=False)
@@ -323,72 +331,64 @@ dgm = top_opt.compute_diagram(include_inf_points=False)
 # second biggest persistence
 eps = top_opt.get_nth_persistence(dim, n)
 ```
-TopologyOptimizer provides a helper function `simplify` which return
-a tuple of indices and values. 
-```
+
+
+TopologyOptimizer provides a helper function `simplify` which returns a tuple of indices and values. This is key concept: this tuple encodes prescribed targets for individual diagram points. The interpretation is: for every `i`, simplex `fil[indices[i]]` must take new critical value `values[i]`. In this case, we want to modify only the death value, so every simplex in `indices` will be a negative simplex that produces an off-diagonal point in the diagram.
+
+
+```python
 indices, values = top_opt.simplify(eps, oin.DenoiseStrategy.BirthBirth, dim)
+```
+
+
+Now, if we want to use the traditional method of back-propagation through a persistence diagram, we simply need to define the topological loss and use standard PyTorch approach like that:
+
+
+```python
+# zeros gradients on pts
+opt.zero_grad()
+
+top_loss = torch.mean((fil.values[indices] - values) ** 2)
+
+# populates gradients on pts from top_loss
+top_loss.backward()
+
+# updates pts using gradient descent
+opt.step()
+```
+
+However, if we want to operate through a bigger set of simplices at once, we can do the following (see 'Topological Optimization with Big Steps' for details):
+
+
+
+```python
+# returns a list of critical sets for each singleton loss defined by indices[i], values[i]
 critical_sets = top_opt.singletons(indices, values)
+
+# resolve conflicts between critical sets
 crit_indices, crit_values = top_opt.combine_loss(critical_sets, oin.ConflictStrategy.Max)
+
+# convert lists to something torch can understand
 crit_indices = np.array(crit_indices, dtype=np.int32)
 crit_values = torch.Tensor(crit_values)
 
+opt.zero_grad()
 top_loss = torch.mean((fil.values[crit_indices] - crit_values) ** 2)
-
-# let Torch figure the gradient on the coordinates
 top_loss.backward()
-
+opt.step()
+```
 
 
 ### Manual
 
 
-Topology optimization is performed by the `TopologyOptimizer` class.
-It is created from a filtration.
-
-```python
-opt = oin.TopologyOptimizer(fil)
-```
-In order to specify the target (where some points
-in the diagram should go), we use indices and values.
-
-
-Let us consider an example. Here is a helper function to generate data:
-```python
-def sample_data(num_points: int=100, noise_std_dev=0.1):
-    # sample points from the unit circle and add noise
-    # num_points: number of points to sample
-    # noise_std_dev: standard deviation of Gaussian noise
-    # return points as differentiable torch tensor
-    np.random.seed(1)
-
-    angles = np.random.uniform(low=0, high=2*np.pi, size=num_points)
-    x = np.cos(angles)
-    y = np.sin(angles)
-
-    x += np.random.normal(loc=0, scale=noise_std_dev, size=num_points)
-    y += np.random.normal(loc=0, scale=noise_std_dev, size=num_points)
-
-    pts = np.vstack((x, y)).T
-    pts = torch.Tensor(pts)
-    pts.requires_grad_(True)
-
-    return pts
-```
-
-Suppose that we want to push all but the first n-1 points
-in the PD in dimension dim to move to the diagonal.
-
-
-The more complicated way, which gives you more control,
-is to all the steps above by hand.
-The corresponding loss function is computed by this function:
+This is a more complicated way, which gives you more control, you do all the steps by hand.  The corresponding loss function is computed by this function:
 ```python
 def topological_loss(pts: torch.Tensor, dim: int=1, n: int=2):
     pts_as_numpy = pts.clone().detach().numpy().astype(np.float64)
     # we need critical edges for each simplex, so we specify
     # with_critical_edges
-    fil, longest_edges = oin.vr_filtration(pts_as_numpy,
-            with_critical_edges=True)
+    fil, longest_edges = oin.vr_filtration(pts_as_numpy, with_critical_edges=True)
 
     top_opt = oin.TopologyOptimizer(fil)
 
@@ -412,34 +412,21 @@ def topological_loss(pts: torch.Tensor, dim: int=1, n: int=2):
         top_loss.requires_grad_(True)
     return top_loss
 ```
-First, we need to convert `pts` to a NumPy array, because that is the type
-that `oin.get_vr_filtration_and_critical_edges` expects as the first argument.
-Then we create the `TopologyOptimizer` object that provides access to all
-optimization-related functions.
+
+
+First, we need to convert `pts` to a NumPy array, because that is the type that `oin.vr_filtration` expects as the first argument.  Then we create the `TopologyOptimizer` object that provides access to all optimization-related functions.
+
+
 ```python
     eps = top_opt.get_nth_persistence(dim, n)
 ```
-Since we want to preserve all but the first `n-1` points of the diagram,
-we compute the persistence of the `n`-th point in the diagram. All points
-with persistence at most `eps` will be driven to the diagonal.
-There are 3 natural choices: a point `(b, d)` can be moved to 
-`(b, b)`, `(d, d)` or `((b+d)/2, (b+d)/2)`.
-They correspond to 3 members of the enum `oin.DenoiseStrategy`: `BirthBirth`, `DeathDeath`, `Midway`.
 
+
+Since we want to preserve all but the first `n-1` points of the diagram, we compute the persistence of the `n`-th point in the diagram. All points with persistence at most `eps` will be driven to the diagonal.  There are 3 natural choices: a point `(b, d)` can be moved to `(b, b)`, `(d, d)` or `((b+d)/2, (b+d)/2)`.  They correspond to 3 members of the enum `oin.DenoiseStrategy`: `BirthBirth`, `DeathDeath`, `Midway`.
 ```python
     indices, values = top_opt.simplify(eps, oin.DenoiseStrategy.BirthBirth, dim)
 ```
-`indices` and `values` encode what we call the *matching loss*.  
-It is easier to explain the meaning of this by example.
-Say, we want to move two points of the persistence diagram, `(b_1, d_1)` and `(b_2, d_2)` to the destinations
-`(target_b_1, target_d_1)` and `(target_b_2, target_d_2)` respectively.
-Recall that `b_1` is the filtration value of some simplex in filtration,
-say, `sigma_1`. Similarly, `d_1` corresponds to `sigma_2`, `b_2` corresponds
-to `sigma_3` and `d_2` corresponds to `sigma_4`.
-In this case, `indices = [i_1, i_2, i_3, i_4]` and 
-`values = [target_b_1, target_d_1, target_b_2, target_d_2]`,
-where `i_1` is the index (`sorted_id`) of `sigma_1` in the filtration, `i_2` is
-the index of `sigma_2`, etc.
+`indices` and `values` encode what we call the *matching loss*.  It is easier to explain the meaning of this by example.  Say, we want to move two points of the persistence diagram, `(b_1, d_1)` and `(b_2, d_2)` to the destinations `(target_b_1, target_d_1)` and `(target_b_2, target_d_2)` respectively.  Recall that `b_1` is the filtration value of some simplex in filtration, say, `sigma_1`. Similarly, `d_1` corresponds to `sigma_2`, `b_2` corresponds to `sigma_3` and `d_2` corresponds to `sigma_4`.  In this case, `indices = [i_1, i_2, i_3, i_4]` and `values = [target_b_1, target_d_1, target_b_2, target_d_2]`, where `i_1` is the index (`sorted_id`) of `sigma_1` in the filtration, `i_2` is the index of `sigma_2`, etc.
 
 
 Note that each pair, like `(i_2, target_d_1)` defines
@@ -447,6 +434,8 @@ the *singleton loss*. The line
 ```python
     critical_sets = top_opt.singletons(indices, values)
 ```
+
+
 computes all the critical sets at once. `critical_sets`
 is a `list` of the same length as `indices`.
 Each element of the list is a pair `(value, simplex_indices)`,
@@ -454,52 +443,37 @@ where `simplex_indices` contains the critical set
 (indices of simplices in filtration order) and
 `value` is the target value that should be assigned to all of them.
 
-There can be conflicts: different terms in the matching loss
-can send the same simplex to different values.
-In order to resolve them, we use the function `combine_loss`:
+
+There can be conflicts: different terms in the matching loss can send the same simplex to different values.  In order to resolve them, we use the function `combine_loss`:
 ```python
     crit_indices, crit_values = top_opt.combine_loss(critical_sets, oin.ConflictStrategy.Max)
 ```
-The meaning of the output is the same as in `simplify`:
-`crit_indices` contains the indices of simplices and `crit_values`
-contains the values that we want these simplices to have.
-The conflicts are resolved according to the `oin.ConflictStrategy` enum:
-`Max` means that we choose the value that is the farthest one from the current
-filtration value of the given simplex, `Avg` means that we take the average.
+The meaning of the output is the same as in `simplify`: `crit_indices` contains the indices of simplices and `crit_values` contains the values that we want these simplices to have.  The conflicts are resolved according to the `oin.ConflictStrategy` enum: `Max` means that we choose the value that is the farthest one from the current filtration value of the given simplex, `Avg` means that we take the average.
 
 
-In this example we use Vietoris--Rips. The simplex
-`crit_indices[k]` has the longest edge, and `crit_values[k]` is the length
-that we want this edge to have. It remains to express
-this in the differentiable (known to Torch) way.
+In this example we use Vietoris--Rips. The simplex `crit_indices[k]` has the longest edge, and `crit_values[k]` is the length that we want this edge to have. It remains to express this in the differentiable (known to Torch) way.
+
 
 First, for each critical simplex, let us extract
 the endpoints of its longest edge.
 ```python
-    # convert from list of ints to np.array, so that subscription works
-    crit_indices = np.array(crit_indices, dtype=np.int32)
-    
-    # we get only the edges of the critical simplices
-    crit_edges = longest_edges[crit_indices, :]
-    # split them into start and end points
-    # for critical simplex sigma that appears in position k in crit_indices,
-    # crit_edges_x[k] and crit_edges_y[k] give the indices (in pts)
-    # of the endpoints of its longest edge.
-    crit_edges_x, crit_edges_y = crit_edges[:, 0], crit_edges[:, 1]
+# convert from list of ints to np.array, so that subscription works
+crit_indices = np.array(crit_indices, dtype=np.int32)
+
+# we get only the edges of the critical simplices
+crit_edges = longest_edges[crit_indices, :]
+# split them into start and end points
+# for critical simplex sigma that appears in position k in crit_indices,
+# crit_edges_x[k] and crit_edges_y[k] give the indices (in pts)
+# of the endpoints of its longest edge.
+crit_edges_x, crit_edges_y = crit_edges[:, 0], crit_edges[:, 1]
 ```
 
 ```python
     top_loss = torch.sum(torch.abs(torch.sum((pts[crit_edges_x, :] - pts[crit_edges_y, :])**2, axis=1) - crit_values ** 2))
 ```
 
-The expression `torch.sum((pts[crit_edges_x, :] - pts[crit_edges_y, :])**2, axis=1)`
-performs summation over all coordinates, so the resulting tensor
-contains the squared lengths of critical edges computed in a differentiable
-way. Do not take the square root of these lenghts,
-this will lead to NaN-s in your gradients (see https://github.com/pytorch/pytorch/issues/15506,
-but this is not Torch-specific, Jax has the same behavior).
-Instead, use the squares of target lengths, as in this example.
-
+The expression `torch.sum((pts[crit_edges_x, :] - pts[crit_edges_y, :])**2, axis=1)` performs summation over all coordinates, so the resulting tensor contains the squared lengths of critical edges computed in a differentiable way. Do not take the square root of these lenghts, this will lead to NaN-s in your gradients (see https://github.com/pytorch/pytorch/issues/15506, but this is not Torch-specific, Jax has the same behavior).  Instead, either use the squares of target lengths, as in this example, or add a small number before taking the square root.
 
 
 Remarks:
@@ -525,8 +499,9 @@ themselves. To be able to differentiate the distances, use `torch.cdist` or anal
 to compute your distances in the differentiable way.
 
 
-
 ## Kernel, image and cokernel persistence
+
+
 Oineus can compute the kernel, image and cokernel persistence diagrams as in ["Persistent Homology for Kernels, Images, and Cokernels"](https://doi.org/10.1137/1.9781611973068.110) by D. Cohen-Steiner, H. Edelsbrunner, D. Morozov. We first perform the required reductions using `compute_kernel_image_cokernel_diagrams`, which has arguments:
 * `K` the simplicial complex with function values, as a list with an element per simplex in the format `[simplex_id, vertices, value]`, where `vertices` is a list containing the ids of the vertices, and value is the value under the function f.
 * `L` the simplicial sub-complex with function values, as a list with an element per simplex in the format `[simplex_id, vertices, value]`, where `vertices` is a list containing the ids of the vertices, and value is the value under the function g.
@@ -539,7 +514,10 @@ To obtain the different diagrams, we use `kernel()`, `image()`, `cokernel()`, an
 
 **Note:** aside from the number of threads, all other parameters are set already. 
 
+
 #### Example
+
+
 Suppose we have a simplicial complex $K$ with a function $f$ on it, and a subcomplex $L \subset K$ with a function $g$ on it. In this example, $g = f|_L$. We then perform the 5 necessary reductions and compute the persistence diagrams using `compute_kernel_image_cokernel_diagrams`, and then access the 3 sets of diagrams using `kernel()`, `image()`, `cokernel()` respectively. After which we can obtain a diagram in a specific dimension $i$ using `in_dimension(i)`.
 
 ```python
@@ -558,4 +536,3 @@ params = oin.KICRParams()
 params.image = params.cokernel = False
 ker_im_cok_dgms = oin.compute_kernel_image_cokernel_diagrams(K, L, params)
 ```
- 
