@@ -55,7 +55,7 @@ namespace oineus {
 
         void retire(T*& ptr)
         {
-            to_retire_.push_back(ptr);
+            if (ptr) to_retire_.push_back(ptr);
             ptr = nullptr;
         }
 

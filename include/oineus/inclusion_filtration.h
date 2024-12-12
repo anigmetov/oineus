@@ -101,7 +101,7 @@ public:
                 col.reserve(d + 1);
 
                 for(const auto& tau_vertices: sigma.boundary()) {
-                    col.push_back(fil_domain_.get_sorted_id_by_vertices(tau_vertices));
+                    col.push_back(fil_domain_.get_sorted_id_by_uid(tau_vertices));
                 }
 
                 std::sort(col.begin(), col.end());

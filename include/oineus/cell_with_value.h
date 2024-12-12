@@ -15,7 +15,7 @@ struct CellWithValue {
 
     using Int = typename Cell::Int;
     using Uid = typename Cell::Uid;
-    using UidHasher = typename Cell::UidHasher;
+    using UidSet = typename Cell::UidSet;
     using Boundary = typename Cell::Boundary;
 
     static constexpr Int k_invalid_id = Int(-1);
@@ -35,7 +35,7 @@ struct CellWithValue {
 //            : cell_(std::forward(args)...), value_(value) { }
 
     CellWithValue(const Cell& cell, Real value) : cell_(cell), value_(value) {}
-    CellWithValue(Cell&& cell, Real value) : cell_(cell), value_(value) {}
+    CellWithValue(Cell&& cell, Real value) : cell_(std::move(cell)), value_(value) {}
 
     dim_type dim() const { return cell_.dim(); }
 
@@ -43,13 +43,13 @@ struct CellWithValue {
     void set_value(Real new_value) { value_ = new_value; }
 
     Int get_id() const { return cell_.get_id(); }
-    void set_id(Int new_id) { return cell_.set_id(new_id); }
+    void set_id(Int new_id) { cell_.set_id(new_id); }
 
     Int get_sorted_id() const { return sorted_id_; }
     void set_sorted_id(Int sorted_id) { sorted_id_ = sorted_id; }
 
     Uid get_uid() const { return cell_.get_uid(); }
-    void set_uid(const Uid& new_uid) { return cell_.set_uid(new_uid); }
+    void set_uid() { cell_.set_uid(); }
 
     const Cell& get_cell() const { return cell_; }
 

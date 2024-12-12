@@ -29,7 +29,7 @@ def sample_data():
 
 def topological_loss(pts: torch.Tensor, dim: int=1, n: int=2):
     pts_as_numpy = pts.clone().detach().numpy().astype(np.float64)
-    fil, longest_edges = oin.get_vr_filtration_and_critical_edges(pts_as_numpy, max_dim=2, max_radius=9.0, n_threads=1)
+    fil, edges = oin.vr_filtration(pts_as_numpy, with_critical_edges=True, n_threads=4)
     top_opt = oin.TopologyOptimizer(fil)
 
     # dgm = top_opt.compute_diagram(include_inf_points=False)
@@ -45,12 +45,12 @@ def topological_loss(pts: torch.Tensor, dim: int=1, n: int=2):
 
     crit_indices = np.array(crit_indices, dtype=np.int32)
 
-    dgm_method_edges = longest_edges[indices, :]
+    dgm_method_edges = edges[indices, :]
     dgm_method_edges_x, dgm_method_edges_y = dgm_method_edges[:, 0], dgm_method_edges[:, 1]
 
     dgm_method_values = torch.Tensor(values)
 
-    crit_method_edges = longest_edges[crit_indices, :]
+    crit_method_edges = edges[crit_indices, :]
     crit_method_edges_x, crit_method_edges_y = crit_method_edges[:, 0], crit_method_edges[:, 1]
 
     crit_method_values = torch.Tensor(crit_method_values)
@@ -69,7 +69,7 @@ def topological_loss(pts: torch.Tensor, dim: int=1, n: int=2):
 
 if __name__ == "__main__":
     draw = False
-    use_critical_sets = False
+    use_critical_sets = True
 
     pts = sample_data()
 

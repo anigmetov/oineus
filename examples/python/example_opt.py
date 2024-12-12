@@ -21,7 +21,7 @@ X, Y, Z = np.meshgrid(x, y, z)
 # Evaluate the function on the grid
 f = evaluate_func(X, Y, Z)
 
-fil, max_value_vertices = oin.get_freudenthal_filtration_and_critical_vertices(f, negate=False, wrap=False, max_dim=2, n_threads=8)
+fil, max_value_vertices = oin.freudenthal_filtration(f, with_critical_vertices=True)
 
 top_opt = oin.TopologyOptimizer(fil)
 

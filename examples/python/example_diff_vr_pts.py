@@ -4,6 +4,9 @@ import numpy as np
 import torch
 
 import oineus as oin
+import oineus.diff
+
+from icecream import ic
 
 # sample points from the unit circle
 np.random.seed(1)
@@ -23,7 +26,7 @@ pts.requires_grad_(True)
 
 # start with topological part
 
-fil = oin.diff.vietoris_rips_pts(pts, max_dim=2, max_radius=2.0, n_threads=1)
+fil = oin.diff.vr_filtration(pts, max_dim=2, n_threads=4)
 top_opt = oin.diff.TopologyOptimizer(fil)
 
 dim = 1
@@ -41,3 +44,5 @@ top_loss = torch.mean((fil.values[crit_indices] - crit_values) ** 2)
 
 # let Torch figure the gradient on the coordinates
 top_loss.backward()
+ic(top_loss)
+

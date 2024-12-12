@@ -51,13 +51,11 @@ dgm_xmax = 8
 
 print(f"{input_points.shape = }")
 
-max_dim = 2
-max_radius = 20.0 * high_r
-n_threads = 1
+n_threads = 4
 
 init_dim = 1
 
-fil, crit_edges = oin.get_vr_filtration_and_critical_edges(input_points, max_dim, max_radius, n_threads)
+fil, crit_edges = oin.vr_filtration(input_points, with_critical_edges=True, n_threads=n_threads)
 
 print(f"{fil.size() = }")
 
@@ -122,7 +120,7 @@ def get_triangles_crit(x, y, change_coord, dim):
 
     triangles = []
     for t_idx in simplex_inds:
-        t_vertices = fil.get_cell(t_idx).vertices
+        t_vertices = fil[t_idx].vertices
         triangles.append((input_points[t_vertices[0]], input_points[t_vertices[1]], input_points[t_vertices[2]]))
 
     return triangles
@@ -141,7 +139,7 @@ def get_triangles_dgm(x, y, change_coord, dim):
     triangles = []
 
     for t_idx in [death_idx]:
-        t_vertices = fil.get_cell(t_idx).vertices
+        t_vertices = fil[t_idx].vertices
         triangles.append((input_points[t_vertices[0]], input_points[t_vertices[1]], input_points[t_vertices[2]]))
 
     return triangles

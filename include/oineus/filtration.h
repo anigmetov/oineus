@@ -9,7 +9,9 @@
 #include <algorithm>
 
 #include <taskflow/taskflow.hpp>
+#include <taskflow/core/flow_builder.hpp>
 #include <taskflow/algorithm/sort.hpp>
+#include <taskflow/algorithm/for_each.hpp>
 
 #include "timer.h"
 #include "simplex.h"
@@ -29,19 +31,17 @@ namespace oineus {
         std::vector<L> critical_value_locations;
     };
 
-
     template<class UnderCell_, class Real_>
     class Filtration {
     public:
         using Real = Real_;
         using Cell = CellWithValue<UnderCell_, Real>;
+        using UidHasher = typename UnderCell_::UidHasher;
         using Int = typename Cell::Int;
         using CellVector = std::vector<Cell>;
         using BoundaryMatrix = typename VRUDecomposition<Int>::MatrixData;
 
         using CellUid = typename Cell::Uid;
-        using UidHasher = typename Cell::UidHasher;
-
 
         Filtration() = default;
         Filtration(const Filtration&) = default;
@@ -50,26 +50,25 @@ namespace oineus {
         Filtration& operator=(Filtration&&) = default;
 
         // use move constructor to move cells
-        Filtration(CellVector&& _simplices, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false, bool _set_ids=true)
+        Filtration(CellVector&& _simplices, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false, bool _set_uids=true)
                 :
                 negate_(_negate),
-                cells_(_simplices)
-        {
-            init(n_threads, _sort_only_by_dim, _set_ids);
-        }
-
-        void init(int n_threads, bool sort_only_by_dim, bool _set_ids)
+                cells_(std::move(_simplices)),
+                id_to_sorted_id_(cells_.size()),
+                sorted_id_to_id_(cells_.size())
         {
             CALI_CXX_MARK_FUNCTION;
+            init(n_threads, _sort_only_by_dim, _set_uids);
+        }
 
-            if (_set_ids) {
-                set_ids();
-            }
+        void init(int n_threads, bool sort_only_by_dim, bool _set_uids)
+        {
+            CALI_CXX_MARK_FUNCTION;
 
             if (sort_only_by_dim) {
                 sort_dim_only();
             } else {
-                sort(n_threads);
+                sort_and_set(n_threads, _set_uids);
             }
 
             set_dim_info();
@@ -80,6 +79,7 @@ namespace oineus {
 
         void reset_ids_to_sorted_ids()
         {
+            CALI_CXX_MARK_FUNCTION;
             for(auto& sigma : cells_) {
                 sigma.set_id(sigma.get_sorted_id());
             }
@@ -93,7 +93,9 @@ namespace oineus {
         Filtration(const CellVector& cells, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false, bool _set_ids=true)
                 :
                 negate_(_negate),
-                cells_(cells)
+                cells_(cells),
+                id_to_sorted_id_(cells.size()),
+                sorted_id_to_id_(cells.size())
         {
             init(n_threads, _sort_only_by_dim, _set_ids);
         }
@@ -122,53 +124,98 @@ namespace oineus {
 
         dim_type max_dim() const { return dim_last_.size() - 1; }
 
-        BoundaryMatrix boundary_matrix_full() const
+        BoundaryMatrix boundary_matrix(int n_threads=1) const
         {
             CALI_CXX_MARK_FUNCTION;
+            BoundaryMatrix result(size());
 
-            BoundaryMatrix result;
-            result.reserve(size());
+            bool missing_ok = is_subfiltration();
 
-            for(dim_type d = 0; d <= max_dim(); ++d) {
-                auto m = boundary_matrix_in_dimension(d);
-                result.insert(result.end(), std::make_move_iterator(m.begin()), std::make_move_iterator(m.end()));
-            }
+            // boundary of vertex is empty, need to do something in positive dimension only
+            tf::Executor executor(n_threads);
+            tf::Taskflow taskflow;
+            taskflow.for_each_index((size_t)0, size(), (size_t)1,
+                    [this, missing_ok, &result](size_t col_idx) {
+                        // skip 0-dim simplices
+                        if (col_idx <= dim_last(0))
+                            return;
+                        const auto& sigma = cells_[col_idx];
+                        auto& col = result[col_idx];
+                        col.reserve(sigma.dim() + 1);
 
+                        for(const auto& tau_vertices: sigma.boundary()) {
+                            if (missing_ok) {
+                                auto iter = uid_to_sorted_id.find(tau_vertices);
+                                if (iter != uid_to_sorted_id.end()) {
+                                    col.push_back(iter->second);
+                                }
+                            } else {
+                                col.push_back(uid_to_sorted_id.at(tau_vertices));
+                            }
+                        }
+                        std::sort(col.begin(), col.end());
+                    });
+            executor.run(taskflow).wait();
             return result;
         }
 
-        BoundaryMatrix boundary_matrix_in_dimension(dim_type d) const
+        BoundaryMatrix boundary_matrix_in_dimension(dim_type d, int n_threads) const
         {
+            CALI_CXX_MARK_FUNCTION;
             bool missing_ok = is_subfiltration();
 
             BoundaryMatrix result(size_in_dimension(d));
             // fill D with empty vectors
 
             // boundary of vertex is empty, need to do something in positive dimension only
-            if (d > 0)
-                for(size_t col_idx = 0; col_idx < size_in_dimension(d); ++col_idx) {
-                    auto& sigma = cells_[col_idx + dim_first(d)];
-                    auto& col = result[col_idx];
-                    col.reserve(d + 1);
+            if (d > 0) {
+                if (n_threads > 1) {
+                    tf::Executor executor(n_threads);
+                    tf::Taskflow taskflow;
+                    tf::Task fill_bdry_matrix = taskflow.for_each_index(0, size_in_dimension(d), (size_t)1,
+                            [this, d, missing_ok, &result](size_t col_idx) {
+                                auto& sigma = cells_[col_idx + dim_first(d)];
+                                auto& col = result[col_idx];
+                                col.reserve(d + 1);
 
-                    for(const auto& tau_vertices: sigma.boundary()) {
-                        if (missing_ok) {
-                            auto iter = uid_to_sorted_id.find(tau_vertices);
-                            if (iter != uid_to_sorted_id.end()) {
-                                col.push_back(iter->second);
+                                for(const auto& tau_vertices: sigma.boundary()) {
+                                    if (missing_ok) {
+                                        auto iter = uid_to_sorted_id.find(tau_vertices);
+                                        if (iter != uid_to_sorted_id.end()) {
+                                            col.push_back(iter->second);
+                                        }
+                                    } else {
+                                        col.push_back(uid_to_sorted_id.at(tau_vertices));
+                                    }
+                                }
+                                std::sort(col.begin(), col.end());
+                            });
+                    executor.run(taskflow).wait();
+                } else {
+                    for(size_t col_idx = 0; col_idx < size_in_dimension(d); ++col_idx) {
+                        auto& sigma = cells_[col_idx + dim_first(d)];
+                        auto& col = result[col_idx];
+                        col.reserve(d + 1);
+
+                        for(const auto& tau_vertices: sigma.boundary()) {
+                            if (missing_ok) {
+                                auto iter = uid_to_sorted_id.find(tau_vertices);
+                                if (iter != uid_to_sorted_id.end()) {
+                                    col.push_back(iter->second);
+                                }
+                            } else {
+                                col.push_back(uid_to_sorted_id.at(tau_vertices));
                             }
-                        } else {
-                            col.push_back(uid_to_sorted_id.at(tau_vertices));
                         }
+
+                        std::sort(col.begin(), col.end());
                     }
-
-                    std::sort(col.begin(), col.end());
                 }
-
+            }
             return result;
         }
 
-        BoundaryMatrix boundary_matrix_full_rel(const std::unordered_set<typename Cell::Uid, typename Cell::UidHasher>& relative) const
+        BoundaryMatrix boundary_matrix_rel(const typename Cell::UidSet& relative) const
         {
             CALI_CXX_MARK_FUNCTION;
 
@@ -176,15 +223,16 @@ namespace oineus {
             result.reserve(size());
 
             for(dim_type d = 0; d <= max_dim(); ++d) {
-                auto m = boundary_matrix_in_dimension(d, relative);
+                auto m = boundary_matrix_in_dimension_rel(d, relative);
                 result.insert(result.end(), std::make_move_iterator(m.begin()), std::make_move_iterator(m.end()));
             }
 
             return result;
         }
 
-        BoundaryMatrix boundary_matrix_in_dimension(dim_type d, const std::unordered_set<typename Cell::Uid, typename Cell::UidHasher>& relative) const
+        BoundaryMatrix boundary_matrix_in_dimension_rel(dim_type d, const typename Cell::UidSet& relative) const
         {
+            CALI_CXX_MARK_FUNCTION;
             BoundaryMatrix result(size_in_dimension(d));
             // fill D with empty vectors
 
@@ -205,15 +253,30 @@ namespace oineus {
                             col.push_back(uid_to_sorted_id.at(tau_vertices));
                     }
 
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                    if (col_idx % 100 == 0) {
+                      OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                    }
+#endif
+
                     std::sort(col.begin(), col.end());
+
+#ifndef NDEBUG
+                    // verify that there are no duplicates
+                    std::set<Int> col_check {col.begin(), col.end()};
+                    if (col_check.size() != col.size())
+                        throw std::runtime_error("Bad uid computation");
+#endif
+
                 }
 
             return result;
         }
 
-        BoundaryMatrix coboundary_matrix() const
+        BoundaryMatrix coboundary_matrix(int n_threads=1) const
         {
-            return antitranspose(boundary_matrix_full(), size());
+            CALI_CXX_MARK_FUNCTION;
+            return antitranspose(boundary_matrix(n_threads), size());
         }
 
         template<typename I, typename R, size_t D>
@@ -233,17 +296,12 @@ namespace oineus {
 
         Real value_by_sorted_id(Int sorted_id) const
         {
-            return sorted_id_to_value_[sorted_id];
+            return cells_[sorted_id].get_value();
         }
 
-        Real value_by_vertices(const CellUid& vs) const
+        Real value_by_uid(const CellUid& vs) const
         {
-            return sorted_id_to_value_.at(uid_to_sorted_id.at(vs));
-        }
-
-        auto get_sorted_id_by_vertices(const CellUid& vs) const
-        {
-            return uid_to_sorted_id.at(vs);
+            return cells_[uid_to_sorted_id.at(vs)].get_value();
         }
 
         auto get_sorted_id_by_uid(const CellUid& uid) const
@@ -316,7 +374,7 @@ namespace oineus {
         [[nodiscard]] size_t index_in_matrix(size_t cell_idx, bool dualize) const { return dualize ? size() - cell_idx - 1 : cell_idx; }
         [[nodiscard]] size_t index_in_filtration(size_t matrix_idx, bool dualize) const { return dualize ? size() - matrix_idx - 1 : matrix_idx; }
 
-        void set_values(const std::vector<Real>& new_values)
+        void set_values(const std::vector<Real>& new_values, int n_threads=1)
         {
             if (new_values.size() != cells_.size())
                 throw std::runtime_error("new_values.size() != cells_.size()");
@@ -324,14 +382,8 @@ namespace oineus {
             for(size_t i = 0; i < new_values.size(); ++i)
                 cells_[i].value_ = new_values[i];
 
-            sort(1);
+            sort_and_set(n_threads, false);
         }
-
-        std::vector<Real> all_values() const
-        {
-            return sorted_id_to_value_;
-        }
-
 
         // return true, if it's a subfiltration (subset) of a true filtration
         // if so, the
@@ -354,7 +406,6 @@ namespace oineus {
                     result.uid_to_sorted_id[cell.get_uid()] = sorted_id;
                     result.id_to_sorted_id_[cell.get_id()] = sorted_id;
                     result.sorted_id_to_id_.push_back(cell.get_id());
-                    result.sorted_id_to_value_.push_back(cell.get_value());
                     result.cells_.back().sorted_id_ = sorted_id;
                     sorted_id++;
                 }
@@ -380,21 +431,11 @@ namespace oineus {
         bool is_subfiltration_ {false};
 
         std::unordered_map<CellUid, Int, UidHasher> uid_to_sorted_id;
-        std::unordered_map<Int, Int> id_to_sorted_id_;
+        std::vector<Int> id_to_sorted_id_;
         std::vector<Int> sorted_id_to_id_;
-
-        std::vector<Real> sorted_id_to_value_;
 
         std::vector<Int> dim_first_;
         std::vector<Int> dim_last_;
-
-        // private methods
-        void set_ids()
-        {
-            for(size_t id = 0; id < cells_.size(); ++id) {
-                cells_[id].set_id(static_cast<Int>(id));
-            }
-        }
 
         void set_dim_info()
         {
@@ -458,9 +499,8 @@ namespace oineus {
                 dim_to_cells[cell.dim()].push_back(cell);
             }
 
-            sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
             uid_to_sorted_id.clear();
-            sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
+            uid_to_sorted_id.reserve(cells_.size());
 
             size_t sorted_id = 0;
 
@@ -472,7 +512,6 @@ namespace oineus {
                     sorted_id_to_id_.at(sorted_id) = cell.get_id();
                     cell.sorted_id_ = sorted_id;
                     uid_to_sorted_id[cell.get_uid()] = sorted_id;
-                    sorted_id_to_value_.at(sorted_id) = cell.get_value();
 
                     cells_.push_back(cell);
 
@@ -482,41 +521,51 @@ namespace oineus {
         }
 
         // sort cells and assign sorted_ids
-        void sort([[maybe_unused]] int n_threads = 1)
+        void sort_and_set(int n_threads, bool set_uid)
         {
             CALI_CXX_MARK_FUNCTION;
 
-            sorted_id_to_id_ = std::vector<Int>(size(), Int(-1));
             uid_to_sorted_id.clear();
-            sorted_id_to_value_ = std::vector<Real>(size(), std::numeric_limits<Real>::max());
+            uid_to_sorted_id.reserve(cells_.size());
 
-            // sort by dimension first, then by value, then by id
-            auto cmp = [this](const Cell& sigma, const Cell& tau) {
-              auto v_sigma = this->negate_ ? -sigma.get_value() : sigma.get_value();
-              auto v_tau = this->negate_ ? -tau.get_value() : tau.get_value();
-              auto d_sigma = sigma.dim(), d_tau = tau.dim();
-              auto sigma_id = sigma.get_id(), tau_id = tau.get_id();
-              return std::tie(d_sigma, v_sigma, sigma_id) < std::tie(d_tau, v_tau, tau_id);
-            };
+            auto cmp = [this](const Cell& sigma, const Cell& tau)
+                {
+                      Real v_sigma = negate() ? -sigma.get_value() : sigma.get_value();
+                      Real v_tau = negate() ? -tau.get_value() : tau.get_value();
+                      dim_type d_sigma = sigma.dim(), d_tau = tau.dim();
+                      auto sigma_id = sigma.get_id(), tau_id = tau.get_id();
+                      return std::tie(d_sigma, v_sigma, sigma_id) < std::tie(d_tau, v_tau, tau_id);
+                };
 
-            if (n_threads > 1) {
-                tf::Executor executor(n_threads);
-                tf::Taskflow taskflow;
-                tf::Task sort = taskflow.sort(cells_.begin(), cells_.end(), cmp);
-                executor.run(taskflow).wait();
-            } else {
-                std::sort(cells_.begin(), cells_.end(), cmp);
-            }
+            CALI_MARK_BEGIN("TF_SORT_AND_SET");
+            tf::Executor executor(n_threads);
+            tf::Taskflow taskflow;
+            tf::Task set_id_and_uid = taskflow.for_each_index(static_cast<Int>(0), static_cast<Int>(size()), static_cast<Int>(1),
+                    [this, set_uid](Int sorted_id){
+                    auto& sigma = this->cells_[sorted_id];
+                    if (set_uid) sigma.set_uid();
+                    sigma.set_id(sorted_id);
+                    });
+            tf::Task sort_task = taskflow.sort(cells_.begin(), cells_.end(), cmp);
+            tf::Task post_sort = taskflow.for_each_index(static_cast<Int>(0), static_cast<Int>(size()), static_cast<Int>(1),
+                    [this](Int sorted_id){
+                    auto& sigma = this->cells_[sorted_id];
+                    this->id_to_sorted_id_[sigma.get_id()] = sorted_id;
+                    this->sorted_id_to_id_[sorted_id] = sigma.get_id();
+                    sigma.sorted_id_ = sorted_id;
+                    });
+            sort_task.succeed(set_id_and_uid);
+            post_sort.succeed(sort_task);
+            executor.run(taskflow).wait();
+            CALI_MARK_END("TF_SORT_AND_SET");
 
+            // unordered_set is not thread-safe, cannot do in parallel
+            CALI_MARK_BEGIN("filtration_init_housekeeping-uid");
             for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
                 auto& sigma = cells_[sorted_id];
-
-                id_to_sorted_id_[sigma.get_id()] = sorted_id;
-                sorted_id_to_id_[sorted_id] = sigma.get_id();
-                sigma.sorted_id_ = sorted_id;
                 uid_to_sorted_id[sigma.get_uid()] = sorted_id;
-                sorted_id_to_value_[sorted_id] = sigma.get_value();
             }
+            CALI_MARK_END("filtration_init_housekeeping-uid");
         }
 
         template<typename C, typename R>
@@ -584,9 +633,6 @@ namespace oineus {
 
         bool negate = fil_1.negate();
 
-        std::vector<Real> values_1 = fil_1.all_values();
-        std::vector<Real> values_2 = fil_2.all_values();
-
         const std::vector<Cell>& cells = fil_1.cells();
 
         std::vector<std::tuple<Real, dim_type, size_t, size_t>> to_sort;
@@ -596,8 +642,8 @@ namespace oineus {
         for(size_t idx_1 = 0; idx_1 < fil_1.size(); ++idx_1) {
             size_t idx_2 = fil_2.get_sorted_id_by_uid(cells[idx_1].get_uid());
 
-            Real value_1 = values_1[idx_1];
-            Real value_2 = values_2[idx_2];
+            Real value_1 = fil_1.get_cell_value(idx_1);
+            Real value_2 = fil_2.get_cell_value(idx_2);
 
             Real min_value = negate ? std::min(-value_1, -value_2) : std::min(value_1, value_2);
             to_sort.emplace_back(min_value, cells[idx_1].dim(), idx_1, idx_2);

@@ -2,35 +2,62 @@
 
 import numpy as np
 import oineus as oin
+import time
+import sys
+
+from icecream import ic
+
 
 # random points in space
 np.random.seed(1)
-n_points = 20
+n_points = 50
 dim = 3
 points = np.random.uniform(size=(n_points, dim))
 
-# triangulate domain via Freudenthal and create lower star filtration
-# negate: set to True to get upper-star filtration
-# wrap: set to True to work on torus (periodic boundary conditions)
-fil = oin.get_vr_filtration(points=points, max_dim=3, max_radius=2, n_threads=1)
+# create Vietoris--Rips filtration
+n_threads = 8
+fil = oin.vr_filtration(points, n_threads=n_threads)
 
+# we can specify max_dim and max_diameter manually,
+# if we need to.
+# max_dim default value is the dimension of the points,
+# max_diameter default value is same minimax as in Ripser (after that the complex becomes contractible)
+
+fil = oin.vr_filtration(points, max_dim=1, max_diameter=0.5)
+
+# if we want to get parallel array of critical edges,
+# just specify with_critical_edges = True
+# function will return a tuple: (filtration, edges)
+
+fil, edges = oin.vr_filtration(points, with_critical_edges=True, n_threads=n_threads)
+
+# edges is NumPy array of shape (N, 2)
+# it contains indices of simplices in the filtration order (sorted_ids)
+
+# we can subscript filtration
+print(f"Filtration with {len(fil)} cells created,\nvertex 0: {fil[0]}, edge {edges[0]},\nlast simplex: {fil[-1]}, edge {edges[-1]}")
+
+# we can also get a copy of sorted cells:
 cells = fil.cells()
 
-# Vertices in cells are ids, not sorted_ids
-print(f"Filtration with {len(cells)} cells created,\nvertex 0: {cells[0]},\nlast simplex: {cells[-1]}")
+# we can access boundary matrix
+bm = fil.boundary_matrix()
 
-# no cohomology
-dualize = False
 # create VRU decomposition object, does not perform reduction yet
+# we want to use cohomology:
+dualize = True
 dcmp = oin.Decomposition(fil, dualize)
+
 
 # reduction parameters
 # relevant members:
 # rp.clearing_opt --- whether you want to use clearing, True by default
-# rp.compute_v: True by default
+# rp.compute_v: False by default
 # rp.n_threads: number of threads to use, default is 1
 # rp. compute_u: False by default (cannot do it in multi-threaded mode, so switch off just to be on the safe side)
 rp = oin.ReductionParams()
+rp.compute_v = True
+rp.n_threads = 4
 
 # perform reduction
 dcmp.reduce(rp)

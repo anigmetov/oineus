@@ -4,6 +4,7 @@ import numpy as np
 import torch
 
 import oineus as oin
+import oineus.diff
 
 # sample points from the unit circle
 np.random.seed(1)
@@ -33,7 +34,7 @@ dists = torch.sqrt(sq_dists + epsilon)
 
 # start with topological part
 
-fil = oin.diff.vietoris_rips_pwdists(dists, max_dim=2, max_radius=2.0, n_threads=1)
+fil = oin.diff.vr_filtration(dists, from_pwdists=True, max_dim=2, n_threads=4)
 top_opt = oin.diff.TopologyOptimizer(fil)
 
 print(f"{len(fil) = }")
@@ -49,7 +50,6 @@ crit_indices, crit_values = top_opt.combine_loss(critical_sets, oin.ConflictStra
 crit_indices = np.array(crit_indices, dtype=np.int32)
 crit_values = torch.Tensor(crit_values)
 
-help(top_opt.simplify)
 
 print(f"{indices=}, {values=}, {crit_indices=}, {crit_values=}")
 

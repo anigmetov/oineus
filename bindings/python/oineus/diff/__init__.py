@@ -4,6 +4,7 @@ import numpy as np
 import eagerpy as epy
 
 from .. import _oineus
+from .. import vr_filtration as non_diff_vr_filtration
 
 # to copy docstring and name from the wrapped _oineus (C++) methods
 
@@ -19,75 +20,79 @@ class DiffFiltration:
     def __repr__(self):
         return f"DiffFil(under_fil={self.under_fil}, values={self.values})"
 
-    #@ft.wraps(_oineus.Filtration_double.max_dim)
+    def __iter__(self):
+        return iter(self.under_fil)
+
+    #@ft.wraps(_oineus.Filtration.max_dim)
     def max_dim(self):
         return self.under_fil.max_dim()
 
-    #@ft.wraps(_oineus.Filtration_double.size)
+    #@ft.wraps(_oineus.Filtration.size)
     def size(self):
         return self.under_fil.size()
 
-    #@ft.wraps(_oineus.Filtration_double.size_in_dimension)
+    #@ft.wraps(_oineus.Filtration.size_in_dimension)
     def size_in_dimension(self, dim):
         return self.under_fil.size(dim)
 
-    #@ft.wraps(_oineus.Filtration_double.n_vertices)
+    #@ft.wraps(_oineus.Filtration.n_vertices)
     def n_vertices(self):
         return self.under_fil.n_vertices()
 
-    #@ft.wraps(_oineus.Filtration_double.cells)
+    #@ft.wraps(_oineus.Filtration.cells)
     def cells(self):
         return self.under_fil.cells()
 
-    #@ft.wraps(_oineus.Filtration_double.get_id_by_sorted_id)
-    def get_id_by_sorted_id(self, sorted_id):
-        return self.under_fil.get_id_by_sorted_id(sorted_id)
+    #@ft.wraps(_oineus.Filtration.get_id_by_sorted_id)
+    def id_by_sorted_id(self, sorted_id):
+        return self.under_fil.id_by_sorted_id(sorted_id)
 
-    #@ft.wraps(_oineus.Filtration_double.get_sorted_id_by_id)
-    def get_sorted_id_by_id(self, id):
-        return self.under_fil.get_sorted_id_by_id(id)
+    #@ft.wraps(_oineus.Filtration.get_sorted_id_by_id)
+    def sorted_id_by_id(self, id):
+        return self.under_fil.sorted_id_by_id(id)
 
-    #@ft.wraps(_oineus.Filtration_double.get_cell)
-    def get_cell(self, sorted_idx):
-        return self.under_fil.get_cell(sorted_idx)
+    #@ft.wraps(_oineus.Filtration.get_cell)
+    def cell(self, sorted_idx):
+        return self.under_fil.cell(sorted_idx)
 
-    #@ft.wraps(_oineus.Filtration_double.get_simplex)
-    def get_simplex(self, sorted_idx):
-        return self.under_fil.get_simplex(sorted_idx)
+    #@ft.wraps(_oineus.Filtration.get_simplex)
+    def simplex(self, sorted_idx):
+        return self.under_fil.simplex(sorted_idx)
 
-    #@ft.wraps(_oineus.Filtration_double.get_sorting_permutation)
-    def get_sorting_permutation(self):
-        return self.under_fil.get_sorting_permutation()
+    #@ft.wraps(_oineus.Filtration.get_sorting_permutation)
+    def sorting_permutation(self):
+        return self.under_fil.sorting_permutation()
 
-    #@ft.wraps(_oineus.Filtration_double.get_inv_sorting_permutation)
+    #@ft.wraps(_oineus.Filtration.get_inv_sorting_permutation)
     def get_inv_sorting_permutation(self):
-        return self.under_fil.get_inv_sorting_permutation()
+        return self.under_fil.inv_sorting_permutation()
 
-    #@ft.wraps(_oineus.Filtration_double.cell_by_uid)
+    #@ft.wraps(_oineus.Filtration.cell_by_uid)
     def cell_by_uid(self, uid):
         return self.under_fil.cell_by_uid(uid)
 
-    #@ft.wraps(_oineus.Filtration_double.boundary_matrix)
+    #@ft.wraps(_oineus.Filtration.boundary_matrix)
     def boundary_matrix(self, uid):
         return self.under_fil.boundary_matrix(uid)
 
-    #@ft.wraps(_oineus.Filtration_double.simplex_value_by_sorted_id)
+    #@ft.wraps(_oineus.Filtration.simplex_value_by_sorted_id)
     def simplex_value_by_sorted_id(self, sorted_id):
         return self.under_fil.simplex_value_by_sorted_id(sorted_id)
 
-    #@ft.wraps(_oineus.Filtration_double.simplex_value_by_vertices)
-    def simplex_value_by_vertices(self, vertices):
-        return self.under_fil.simplex_value_by_vertices(vertices)
+    #@ft.wraps(_oineus.Filtration.simplex_value_by_vertices)
+    def simplex_value_by_uid(self, uid):
+        return self.under_fil.simplex_value_by_uid(uid)
 
-    #@ft.wraps(_oineus.Filtration_double.get_sorted_id_by_vertices)
-    def get_sorted_id_by_vertices(self, vertices):
-        return self.under_fil.get_sorted_id_by_vertices(vertices)
+    def cell_value_by_uid(self, uid):
+        return self.under_fil.cell_value_by_uid(uid)
 
-    #@ft.wraps(_oineus.Filtration_double.reset_ids_to_sorted_ids)
+    #@ft.wraps(_oineus.Filtration.get_sorted_id_by_vertices)
+    def sorted_id_by_uid(self, uid):
+        return self.under_fil.sorted_id_by_uid(uid)
+
+    #@ft.wraps(_oineus.Filtration.reset_ids_to_sorted_ids)
     def reset_ids_to_sorted_ids(self):
         self.under_fil.reset_ids_to_sorted_ids()
-
-
 
 
 class TopologyOptimizer:
@@ -98,11 +103,11 @@ class TopologyOptimizer:
     not to worry about the type of a filtration
     """
     def __init__(self, fil):
-        if isinstance(fil,DiffFiltration): 
+        if isinstance(fil, DiffFiltration):
             fil = fil.under_fil
-        if type(fil) is _oineus.Filtration_double:
+        if type(fil) is _oineus.Filtration:
             self.under_opt = _oineus.TopologyOptimizer(fil)
-        elif type(fil) is _oineus.ProdFiltration_double:
+        elif type(fil) is _oineus.ProdFiltration:
             self.under_opt = _oineus.TopologyOptimizerProd(fil)
         else:
             raise RuntimeError("unknown filtration type in oineus.diff.TopologyOptimizer constructor")
@@ -173,7 +178,7 @@ def min_filtration(fil_1: DiffFiltration, fil_2: DiffFiltration) -> DiffFiltrati
     fil_1_under = fil_1.under_fil
     fil_2_under = fil_2.under_fil
 
-    min_fil_under, inds_1, inds_2 = _oineus.min_filtration_with_indices(fil_1_under, fil_2_under)
+    min_fil_under, inds_1, inds_2 = _oineus._min_filtration_with_indices(fil_1_under, fil_2_under)
 
     inds_1 = np.array(inds_1)
     inds_2 = np.array(inds_2)
@@ -186,7 +191,7 @@ def min_filtration(fil_1: DiffFiltration, fil_2: DiffFiltration) -> DiffFiltrati
     return DiffFiltration(min_fil_under, min_fil_values)
 
 
-def lower_star_freudenthal(data, negate, wrap, max_dim, n_threads):
+def freudenthal_filtration(data, negate, wrap, max_dim, n_threads):
     data = epy.astensor(data)
     dim_part = data.ndim
     np_data = data.float64().numpy()
@@ -198,47 +203,40 @@ def lower_star_freudenthal(data, negate, wrap, max_dim, n_threads):
     return DiffFiltration(fil, values)
 
 
-def vietoris_rips_pts(pts, max_dim, max_radius, eps=1e-6, n_threads=1) -> DiffFiltration:
-    pts = epy.astensor(pts)
+def vr_filtration(data, from_pwdists: bool=False, max_dim: int=-1, max_diameter: float=-1.0, eps=1e-6, n_threads=8) -> DiffFiltration:
 
-    pts_np = pts.float64().numpy()
+    data = epy.astensor(data)
+    data_np = data.float64().numpy()
+    assert(data.ndim == 2)
 
-    type_part = "double"
-    assert(pts.ndim == 2)
-    dim_part = pts.shape[1]
+    fil, edges = non_diff_vr_filtration(data=data_np, from_pwdists=from_pwdists, with_critical_edges=True,
+                                        max_dim=max_dim, max_diameter=max_diameter, n_threads=n_threads)
 
-    func = getattr(_oineus, f"get_vr_filtration_and_critical_edges_{type_part}_{dim_part}")
+    if not from_pwdists:
+        sqdists = epy.sum((data[edges[:, 0].flatten()] - data[edges[:, 1].flatten()]) ** 2 + eps, axis=1)
+        diff_dists = epy.sqrt(sqdists).raw
 
-    fil, edges = func(pts_np, max_dim, max_radius, n_threads)
-    edges_s = np.array([e.x for e in edges])
-    edges_t = np.array([e.y for e in edges])
-
-    sqdists = epy.sum((pts[edges_s] - pts[edges_t]) ** 2 + eps, axis=1)
-    dists = epy.sqrt(sqdists).raw
-
-    return DiffFiltration(fil, dists)
-
-
-def vietoris_rips_pwdists(pwdists, max_dim, max_radius, eps=1e-6, n_threads=1):
-    pwdists = epy.astensor(pwdists)
-    assert(pwdists.ndim == 2 and pwdists.shape[0] == pwdists.shape[1])
-    pwdists_np = pwdists.float64().numpy()
-    type_part = "double"
-    func = getattr(_oineus, f"get_vr_filtration_and_critical_edges_from_pwdists_{type_part}")
-    fil, edges = func(pwdists_np, max_dim, max_radius, n_threads)
-    edges = epy.astensor(np.array([[e.x, e.y] for e in edges], dtype=np.int64))
-    dists = pwdists[edges[:, 0], edges[:, 1]].raw
-    return DiffFiltration(fil, dists)
+        return DiffFiltration(fil, diff_dists)
+    else:
+        edges = epy.astensor(edges)
+        diff_dists = data[edges[:, 0], edges[:, 1]].raw
+        return DiffFiltration(fil, diff_dists)
 
 
 def mapping_cylinder_filtration(fil_domain: DiffFiltration, fil_codomain: DiffFiltration, v_domain, v_codomain) -> DiffFiltration:
     assert(type(fil_domain) is DiffFiltration)
     assert(type(fil_codomain) is DiffFiltration)
 
+    if isinstance(v_domain, _oineus.Simplex):
+        v_domain = v_domain.combinatorial_cell()
+
+    if isinstance(v_codomain, _oineus.Simplex):
+        v_codomain = v_codomain.combinatorial_cell()
+
     under_fil_dom = fil_domain.under_fil
     under_fil_cod = fil_codomain.under_fil
 
-    under_cyl_fil, cyl_val_inds = _oineus.mapping_cylinder_with_indices(under_fil_dom, under_fil_cod, v_domain, v_codomain)
+    under_cyl_fil, cyl_val_inds = _oineus._mapping_cylinder_with_indices(under_fil_dom, under_fil_cod, v_domain, v_codomain)
 
     cyl_val_inds = epy.astensor(np.array(cyl_val_inds, dtype=np.int64))
 
