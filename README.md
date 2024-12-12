@@ -13,9 +13,19 @@ from
 arXiv preprint arXiv:2203.16748 (2022)."*](https://arxiv.org/abs/2203.16748)
 
 Currently it supports computation of lower-star persistence
-of scalar functions on regular grids or of user-defined
+of scalar functions on regular grids, Vietoris-Rips filtrations or of user-defined
 filtrations (where each simplex needs to be created manually).
+It can compute image, kernel and cokernel persistence.
+Oineus provides differentiable filtrations to simplify topological
+optimization. It can compute zero-persistence diagrams. It provides
+a convenience function for mapping cylinder construction.
 It is written in C++ with python bindings (pybind11).
+
+## Installation
+
+```shell
+pip install oineus
+```
 
 ## Compilation
 
