@@ -138,6 +138,8 @@ public:
         params_coh_.compute_v = true;
         params_hom_.compute_u = true;
         params_coh_.compute_u = true;
+        params_hom_.clearing_opt = false;
+        params_coh_.clearing_opt = false;
     }
 
     TopologyOptimizer(const Fil& fil, const ComputeFlags& hints)
@@ -149,6 +151,8 @@ public:
     {
         params_hom_.compute_u = hints.compute_homology_u;
         params_coh_.compute_u = hints.compute_cohomology_u;
+        params_hom_.clearing_opt = false;
+        params_coh_.clearing_opt = false;
     }
 
     bool cmp(Real a, Real b) const
