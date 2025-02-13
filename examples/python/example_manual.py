@@ -10,16 +10,16 @@ import oineus as oin
 # edges: e1 = [v0, v1]
 #
 
-v0 = oin.Simplex_double([0], 0.2)
-v1 = oin.Simplex_double([1], 0.1)
-v2 = oin.Simplex_double([2], 0.3)
+v0 = oin.Simplex([0], 0.2)
+v1 = oin.Simplex([1], 0.1)
+v2 = oin.Simplex([2], 0.3)
 
 # indices of vertices should be sorted
-e1 = oin.Simplex_double([0, 1], 0.9)
-e2 = oin.Simplex_double([0, 2], 0.5)
-e3 = oin.Simplex_double([1, 2], 0.8)
+e1 = oin.Simplex([0, 1], 0.9)
+e2 = oin.Simplex([0, 2], 0.5)
+e3 = oin.Simplex([1, 2], 0.8)
 
-t = oin.Simplex_double([0, 1, 2], 1.0)
+t = oin.Simplex([0, 1, 2], 1.0)
 
 simplices = [v0, v1, v2, e1, e2, e3, t]
 
@@ -27,7 +27,7 @@ negate = False
 n_threads = 1
 
 # constructor will sort simplices and assign sorted_ids
-fil = oin.Filtration_double(simplices, negate, n_threads)
+fil = oin.Filtration(simplices, negate, n_threads)
 
 fil_simplices = fil.simplices()
 

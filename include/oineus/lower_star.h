@@ -265,7 +265,7 @@ public:
         vertices.reserve(total_size);
 
         for(dim_type d = 0 ; d <= top_d ; ++d) {
-            add_freudenthal_simplices(d, negate, simplices, vertices);
+            add_freudenthal_simplices(d, negate, simplices, vertices, true);
         }
 
         auto fil = GridFiltration(simplices, negate, n_threads);
@@ -281,7 +281,26 @@ public:
 
     GridFiltration freudenthal_filtration(size_t top_d, bool negate, int n_threads = 1) const
     {
-        return freudenthal_filtration_and_critical_vertices(top_d, negate, n_threads).first;
+        if (top_d > dim)
+            throw std::runtime_error("bad dimension, top_d = " + std::to_string(top_d) + ", dim = " + std::to_string(dim));
+
+        SimplexVec simplices;
+        CriticalVertices dummy_vertices;
+
+        // calculate total number of cells to allocate memory once
+        size_t total_size = 0;
+        for(dim_type d = 0 ; d <= top_d ; ++d) {
+            total_size += get_fr_displacements(d).size() * size();
+        }
+
+        simplices.reserve(total_size);
+
+        for(dim_type d = 0 ; d <= top_d ; ++d) {
+            add_freudenthal_simplices(d, negate, simplices, dummy_vertices, false);
+        }
+
+        auto fil = GridFiltration(simplices, negate, n_threads);
+        return fil;
     }
 
     Real value_at_vertex(Int vertex) const
@@ -317,7 +336,13 @@ private:
     bool wrap_ {false};
     Real* data_ {nullptr};
 
-    void add_freudenthal_simplices_from_vertex(const GridPoint& v, size_t d, bool negate, const GridPointVecVec& disps, SimplexVec& simplices, CriticalVertices& critical_vertices) const
+    void add_freudenthal_simplices_from_vertex(const GridPoint& v,
+            size_t d,
+            bool negate,
+            const GridPointVecVec& disps,
+            SimplexVec& simplices,
+            CriticalVertices& critical_vertices,
+            bool return_critical_vertices) const
     {
         IdxVector v_ids(d + 1, 0);
 
@@ -340,21 +365,33 @@ private:
             if (is_valid_simplex) {
                 ValueVertex vv = simplex_value_and_vertex(v_ids, negate);
                 simplices.emplace_back(v_ids, vv.value);
-                critical_vertices.emplace_back(vv.vertex);
+                if (return_critical_vertices) {
+                    critical_vertices.emplace_back(vv.vertex);
+                }
             }
         }
     }
 
-    void add_freudenthal_simplices(dim_type d, bool negate, SimplexVec& simplices, CriticalVertices& critical_vertices) const
+    void add_freudenthal_simplices(dim_type d,
+                                   bool negate,
+                                   SimplexVec& simplices,
+                                   CriticalVertices& critical_vertices,
+                                   bool return_critical_vertices) const
     {
         auto disps = get_fr_displacements(d);
 
         for(Int i = 0 ; i < size() ; ++i) {
             GridPoint v = id_to_point(i);
-            add_freudenthal_simplices_from_vertex(v, d, negate, disps, simplices, critical_vertices);
+            add_freudenthal_simplices_from_vertex(v, d, negate, disps, simplices, critical_vertices, return_critical_vertices);
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+            if (i % 100 == 0) {
+                OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+            }
+#endif
+
         }
     }
-
 }; // class Grid
 
 template<typename Int, typename Real, size_t D>

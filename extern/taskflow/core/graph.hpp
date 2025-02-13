@@ -398,18 +398,8 @@ class Runtime {
   @brief co-runs the given target and waits until it completes
   
   A target can be one of the following forms:
-    + a subflow task to spawn a subflow or
     + a composable graph object with `tf::Graph& T::graph()` defined
 
-  @code{.cpp}
-  // co-run a subflow and wait until all tasks complete
-  taskflow.emplace([](tf::Runtime& rt){
-    rt.corun([](tf::Subflow& sf){
-      tf::Task A = sf.emplace([](){});
-      tf::Task B = sf.emplace([](){});
-    }); 
-  });
-  
   // co-run a taskflow and wait until all tasks complete
   tf::Taskflow taskflow1, taskflow2;
   taskflow1.emplace([](){ std::cout << "running taskflow1\n"; });
@@ -725,8 +715,7 @@ class Node {
   // state bit flag
   constexpr static int CONDITIONED = 1;
   constexpr static int DETACHED    = 2;
-  constexpr static int READY       = 4;
-  constexpr static int EXCEPTION   = 8;
+  constexpr static int EXCEPTION   = 4;
 
   using Placeholder = std::monostate;
 
@@ -1233,124 +1222,6 @@ Node* Graph::_emplace_back(ArgsT&&... args) {
   _nodes.push_back(animate(std::forward<ArgsT>(args)...));
   return _nodes.back();
 }
-
-// ============================================================================
-// Freelist
-// ============================================================================
-//
-///**
-//@private
-//*/
-//template <typename T>
-//class Freelist {
-//
-//  struct HeadPtr {
-//    T* ptr  {nullptr};
-//    int tag {0};
-//  };
-//
-//  public:
-//
-//  void push(T* node) {
-//    HeadPtr c_head = _head.load(std::memory_order_relaxed);
-//    HeadPtr n_head = { node };
-//    do {
-//      n_head.tag = c_head.tag + 1;
-//      node->_freelist_next = c_head.ptr;
-//    } while(!_head.compare_exchange_weak(c_head, n_head, 
-//                                         std::memory_order_release, 
-//                                         std::memory_order_relaxed));
-//  }
-//
-//  T* pop() {
-//    HeadPtr c_head = _head.load(std::memory_order_acquire);
-//    HeadPtr n_head;  // new head
-//    while (c_head.ptr != nullptr) {
-//      n_head.ptr = c_head.ptr->_freelist_next;
-//      n_head.tag = c_head.tag + 1;
-//      if(_head.compare_exchange_weak(c_head, n_head, 
-//                                     std::memory_order_release, 
-//                                     std::memory_order_acquire)) {
-//        break;
-//      }
-//    }
-//    return c_head.ptr;
-//  }
-//  
-//  T* steal() {
-//    HeadPtr c_head = _head.load(std::memory_order_acquire);
-//    HeadPtr n_head;  // new head
-//
-//    if(c_head.ptr != nullptr) {
-//      // TODO: bug - here c_head.ptr may die already so accessing its freelist next
-//      // will cause memory segmentation fault
-//      n_head.ptr = c_head.ptr->_freelist_next;
-//      n_head.tag = c_head.tag + 1;
-//      if(_head.compare_exchange_weak(c_head, n_head, 
-//                                     std::memory_order_release, 
-//                                     std::memory_order_relaxed) == false) {
-//        return nullptr;
-//      }
-//    }
-//    return c_head.ptr;
-//  }
-//
-//  bool empty() const {
-//    return _head.load(std::memory_order_relaxed).ptr == nullptr;
-//  }
-//
-//  private:
-//
-//  //static_assert(std::atomic<HeadPtr>::is_always_lock_free);
-//
-//  std::atomic<HeadPtr> _head;
-//};
-//
-///**
-//@private
-//*/
-//template <typename T>
-//class Freelists {
-//
-//  public:
-//
-//  Freelists(size_t W) : _heads(W) {
-//  }
-//
-//  void push(size_t w, T* node) {
-//    // assert(w < _heads.size());
-//    _heads[w].push(node);  
-//  }
-//
-//  void push(T* node) {
-//    _heads[reinterpret_cast<uintptr_t>(node) % _heads.size()].push(node);
-//  }
-//
-//  T* steal(size_t w) {
-//    // assert(w < _heads.size());
-//    for(size_t i=0; i<_heads.size(); i++, w=(w+1)%_heads.size()) {
-//      if(T* ptr = _heads[w].steal(); ptr) {
-//        return ptr;
-//      }
-//    }
-//    return nullptr;
-//  }
-//
-//  bool empty() const {
-//    for(const auto& h : _heads) {
-//      if(!h.empty()) {
-//        return false;
-//      }
-//    }
-//    return true;
-//  }
-//
-//  private:
-//
-//  std::vector<Freelist<T>> _heads;
-//
-//};
-
 
 }  // end of namespace tf. ----------------------------------------------------
 

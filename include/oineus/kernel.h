@@ -230,7 +230,7 @@ public:
 
         //set up the reduction for F  on K
         CALI_MARK_BEGIN("dcmp_F.reduce");
-        dcmp_F_ = VRUDecomp(fil_K_.boundary_matrix_full());
+        dcmp_F_ = VRUDecomp(fil_K_.boundary_matrix());
         dcmp_F_.reduce(params_.params_f);
         if (params_.verbose) { std::cerr << "dcmp_F_ reduced with params = " << params_.params_f << std::endl; }
         CALI_MARK_END("dcmp_F.reduce");
@@ -238,7 +238,7 @@ public:
         //set up reduction for G on L
         CALI_MARK_BEGIN("dcmp_G.reduce");
         params_.params_g.compute_v = params_.params_g.compute_v or params_.cokernel;
-        dcmp_G_ = VRUDecomp(fil_L_.boundary_matrix_full());
+        dcmp_G_ = VRUDecomp(fil_L_.boundary_matrix());
         dcmp_G_.reduce(params_.params_g);
         if (params_.verbose) { std::cerr << "dcmp_G_ reduced with params = " << params_.params_g << std::endl; }
         CALI_MARK_END("dcmp_G.reduce");

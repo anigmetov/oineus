@@ -8,8 +8,6 @@
 
 #include <algorithm>
 
-#include <icecream/icecream.hpp>
-
 #include "timer.h"
 #include "simplex.h"
 #include "filtration.h"

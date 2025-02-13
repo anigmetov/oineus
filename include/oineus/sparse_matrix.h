@@ -66,6 +66,8 @@ struct SimpleSparseMatrixTraits {
 
     static void add_column(const Column* col_a, const Column* col_b, Column* sum);
 
+    static Column& r_data(Column* col) { return *col; }
+
     // get identity matrix
     static Matrix eye(size_t n)
     {
@@ -111,7 +113,10 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
 
     static CachedColumn load_to_cache(Column* col)
     {
-        return load_to_cache(*col);
+        if (col == nullptr)
+            return CachedColumn();
+        else
+            return load_to_cache(*col);
     }
 
     static void add_to_cached(const Column& pivot, CachedColumn& reduced)
@@ -127,36 +132,14 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
 
     static void add_to_cached(const Column* pivot, CachedColumn& reduced)
     {
-        //{
-        //    std::stringstream ss;
-        //    ss << "ENTER add_to_cached, pivots = [";
-        //    for(auto x : *pivot)
-        //        ss << x << ", ";
-        //    ss << "], reduced = [";
-        //    for(auto x : reduced)
-        //        ss << x << ", ";
-        //    ss << "]";
-        //    std::cerr << ss.str() << std::endl;
-        //}
-
         for(auto e : *pivot) {
             auto iter_exists = reduced.insert(e);
             if (!iter_exists.second)
                 reduced.erase(iter_exists.first);
         }
-
-        //{
-        //    std::stringstream ss;
-        //    ss << "EXIT add_to_cached, pivots = [";
-        //    for(auto x : *pivot)
-        //        ss << x << ", ";
-        //    ss << "], reduced = [";
-        //    for(auto x : reduced)
-        //        ss << x << ", ";
-        //    ss << "]";
-        //    std::cerr << ss.str() << std::endl;
-        //}
     }
+
+    static Column& r_data(Column* col) { return *col; }
 
     static bool is_zero(const CachedColumn& col)
     {
@@ -170,7 +153,10 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
 
     static PColumn load_from_cache(const CachedColumn& col)
     {
-        return new Column(col.begin(), col.end());
+        if (col.empty())
+            return nullptr;
+        else
+            return new Column(col.begin(), col.end());
     }
 
     static void load_from_cache(const CachedColumn& cached_col, Column& col)
@@ -188,6 +174,25 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
         return cols;
     }
 
+    // return empty string, if there are no duplicates
+    // otherwise return error message with column content
+    static std::string check_col_duplicates(PColumn col)
+    {
+        if (col == nullptr) return "";
+        std::set<Entry> seen;
+        for(const Entry& e : *col) {
+            if (seen.find(e) != seen.end()) {
+                std::stringstream ss;
+                ss << " ERROR DUPLICATES in " << (void*) col << ", [";
+                for(auto x : *col)
+                    ss << x << ", ";
+                ss << "] ";
+                return ss.str();
+            }
+            seen.insert(e);
+        }
+        return "";
+    }
 };
 
 template<typename Int_, int P>
@@ -373,14 +378,29 @@ struct SimpleRVMatrixTraits<Int_, 2> {
 
     static CachedColumn load_to_cache(Column* col)
     {
-        return load_to_cache(*col);
+        if (col == nullptr)
+            return {{}, {}};
+        else
+            return load_to_cache(*col);
     }
 
     static PColumn load_from_cache(const CachedColumn& col)
     {
-        return new Column({col.first.begin(), col.first.end()}, {col.second.begin(), col.second.end()});
+        if (is_zero(col))
+            return nullptr;
+        else
+            return new Column({col.first.begin(), col.first.end()}, {col.second.begin(), col.second.end()});
     }
 
+    static auto& r_data(Column* col) { return col->r_column; }
+
+    static std::string check_col_duplicates(PColumn col)
+    {
+        if (col == nullptr) return "";
+        std::string s_r = SimpleSparseMatrixTraits<Int, 2>::check_col_duplicates(&(col->r_column));
+        std::string s_v = SimpleSparseMatrixTraits<Int, 2>::check_col_duplicates(&(col->v_column));
+        return s_r + s_v;
+    }
 //    // get identity matrix
 //    static Matrix eye(size_t n)
 //    {
@@ -640,6 +660,7 @@ SparseMatrix<Int> mat_multiply_2(const SparseMatrix<Int>& a, const SparseMatrix<
 template<typename Int>
 SparseMatrix<Int> antitranspose(const SparseMatrix<Int>& a)
 {
+    CALI_CXX_MARK_FUNCTION;
     SparseMatrix<Int> result(a.n_cols(), a.n_rows());
 
     for(size_t row_idx = 0 ; row_idx < a.size() ; ++row_idx) {

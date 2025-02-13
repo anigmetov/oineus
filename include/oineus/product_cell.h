@@ -41,6 +41,7 @@ struct ProductCell {
 
     Int get_id() const { return id_; }
     void set_id(Int new_id) { id_ = new_id; }
+    void set_uid() { cell_1_.set_uid(); cell_2_.set_uid(); }
 
     dim_type dim() const { return cell_1_.dim() + cell_2_.dim(); }
 

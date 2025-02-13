@@ -36,10 +36,11 @@ def sample_data(num_points, noise_std_dev=0.1):
 # points in plane, orthogonal embedding in space, embedding matrix
 pts_2, pts_3, B = sample_data(10)
 
-max_radius = 3.0
-fil_2, edges_2 = oin.get_vr_filtration_and_critical_edges(pts_2, max_dim = 2, max_radius=max_radius, n_threads=1)
-fil_3, edges_3 = oin.get_vr_filtration_and_critical_edges(pts_3, max_dim = 2, max_radius = max_radius, n_threads=1)
-print("fils ok")
+max_diameter = 4.0
+
+fil_2, edges_2 = oin.vr_filtration(pts_2, max_dim=2, with_critical_edges=True, max_diameter=max_diameter)
+fil_3, edges_3 = oin.vr_filtration(pts_3, max_dim=2, with_critical_edges=True, max_diameter=max_diameter)
+print(f"fils ok, {len(fil_2)=}, {len(fil_3)=}")
 
 fil_min = oin.min_filtration(fil_2, fil_3)
 print("min fil ok")
@@ -52,8 +53,8 @@ id_codomain = id_domain + 1
 # id_codomain: id of vertex at the bottom of the cylinder
 # i.e, we multiply fil_min with id_codomain
 
-v0 = oin.Simplex(id_domain, [id_domain])
-v1 = oin.Simplex(id_codomain, [id_codomain])
+v0 = oin.Simplex([id_domain])
+v1 = oin.Simplex([id_codomain])
 fil_cyl = oin.mapping_cylinder(fil_3, fil_min, v0, v1)
 
 print("cyl ok")
@@ -61,10 +62,10 @@ print("cyl ok")
 fil_3_prod = oin.multiply_filtration(fil_3, v0)
 
 print("prod ok")
-params = oin.ReductionParams()
+params = oin.KICRParams()
 params.kernel = params.cokernel = True
 params.image = False
-params.verbose = True
+params.verbose = False
 
 print(f"{fil_cyl.max_dim() = }")
 print(f"{fil_cyl.size() = }")
@@ -72,7 +73,7 @@ print(f"{fil_3_prod.max_dim() = }")
 print(f"{fil_3_prod.size() = }")
 
 hdim = 1
-kicr_reduction = oin.KerImCokReducedProd_double(fil_cyl, fil_3_prod, params)
+kicr_reduction = oin.compute_kernel_image_cokernel_reduction(fil_cyl, fil_3_prod, params)
 print("kicr ok")
 ker_dgms = kicr_reduction.kernel_diagrams()
 coker_dgms = kicr_reduction.cokernel_diagrams()
@@ -83,19 +84,19 @@ for pt in ker_dgms.in_dimension(hdim, as_numpy=False):
 
     # birth: comes from codomain (cylinder) complex
     # can be either in fil_3 or in fil_cyl
-    c_birth = fil_cyl.get_cell(b)
+    c_birth = fil_cyl[b]
     birth_simplex = c_birth.cell_1
     if c_birth.cell_2 == v1:
-        true_birth_simplex = fil_min.cell_by_uid(birth_simplex.get_uid())
+        true_birth_simplex = fil_min.cell_by_uid(birth_simplex.uid)
     else:
-        true_birth_simplex = fil_3.cell_by_uid(birth_simplex.get_uid())
+        true_birth_simplex = fil_3.cell_by_uid(birth_simplex.uid)
 
     # death: comes from included complex L, i.e., fil_3
     if d < fil_cyl.size():
         # point is finite
         c_death = fil_cyl.get_cell(d)
         death_simplex = c_death.cell_1
-        true_death_simplex = fil_3.cell_by_uid(death_simplex.get_uid())
+        true_death_simplex = fil_3.cell_by_uid(death_simplex.uid)
         print(f"{true_birth_simplex = }, {true_death_simplex = }")
 
     # true_birth_simplex.sorted_id and true_death_simplex.sorted_id are indices
@@ -109,7 +110,7 @@ for pt in coker_dgms.in_dimension(hdim, as_numpy=False):
 
     # birth: comes from codomain (cylinder) complex
     # can be either in fil_3 or in fil_cyl
-    c_birth = fil_cyl.get_cell(b)
+    c_birth = fil_cyl[b]
     birth_simplex = c_birth.cell_1
     if c_birth.cell_2 == v1:
         true_birth_simplex = fil_min.cell_by_uid(birth_simplex.get_uid())
@@ -119,7 +120,7 @@ for pt in coker_dgms.in_dimension(hdim, as_numpy=False):
     # death: comes from included complex L, i.e., fil_3
     if d < fil_cyl.size():
         # point is finite
-        c_death = fil_cyl.get_cell(d)
+        c_death = fil_cyl[d]
         death_simplex = c_death.cell_1
         if c_death.cell_2 == v1:
             true_death_simplex = fil_min.cell_by_uid(death_simplex.get_uid())

@@ -21,9 +21,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package (Threads REQUIRED)
 find_package (Boost REQUIRED)
-find_package (Python3 COMPONENTS Interpreter Development REQUIRED)
-
-message(WARNING "executable ${Python3_EXECUTABLE}, ${Python_EXECUTABLE} ")
 
 include_directories(${Boost_INCLUDE_DIRS})
 

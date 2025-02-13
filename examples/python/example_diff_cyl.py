@@ -4,6 +4,7 @@ import numpy as np
 import torch
 
 import oineus as oin
+import oineus.diff
 
 # sample points from the unit circle
 np.random.seed(1)
@@ -29,14 +30,14 @@ pts_2.requires_grad_(True)
 
 # start with topological part
 
-fil_dom = oin.diff.vietoris_rips_pts(pts_1, max_dim=2, max_radius=20.0, n_threads=1)
-fil_cod = oin.diff.vietoris_rips_pts(pts_2, max_dim=2, max_radius=20.0, n_threads=1)
+fil_dom = oin.diff.vr_filtration(pts_1, max_dim=2, max_diameter=20.0, n_threads=1)
+fil_cod = oin.diff.vr_filtration(pts_2, max_dim=2, max_diameter=20.0, n_threads=1)
 
 v_dom_id = fil_dom.size() + fil_cod.size()
 v_cod_id = v_dom_id + 1
 
-v_dom = oin.Simplex(v_dom_id, [v_dom_id])
-v_cod = oin.Simplex(v_cod_id, [v_cod_id])
+v_dom = oin.Simplex([v_dom_id])
+v_cod = oin.Simplex([v_cod_id])
 
 fil = oin.diff.mapping_cylinder_filtration(fil_dom, fil_cod, v_dom, v_cod)
 

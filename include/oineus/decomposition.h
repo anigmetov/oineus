@@ -16,8 +16,6 @@
 #include <cstdlib>
 #include <stdexcept>
 
-#include "icecream/icecream.hpp"
-
 #include "common_defs.h"
 #include "timer.h"
 #include "diagram.h"
@@ -32,10 +30,66 @@ namespace oineus {
     using Idx = int;
     using AtomicIdxVector = std::vector<std::atomic<Idx>>;
 
-    template<class MatrixTraits, class Int, class MemoryReclaimC>
-    void parallel_reduction(typename MatrixTraits::AMatrix& rv, AtomicIdxVector& pivots, std::atomic<Int>& next_free_chunk,
-            const Params params, int thread_idx, MemoryReclaimC* mm, ThreadStats& stats, bool go_down)
+    template<class MatrixTraits, class MemoryReclaimC>
+    void update_column(bool& needs_update,
+            MemoryReclaimC* mm,
+            typename MatrixTraits::CachedColumn& cached_reduced_col,
+            typename MatrixTraits::PColumn orig_col,
+            typename MatrixTraits::AMatrix& rv,
+            Idx current_column_idx)
     {
+        if (needs_update) {
+            // orig_col and new_col can be nullptr for zero columns, other functions can handle that
+            typename MatrixTraits::PColumn new_col = MatrixTraits::load_from_cache(cached_reduced_col);
+
+            assert(MatrixTraits::check_col_duplicates(new_col).empty());
+
+            rv[current_column_idx].store(new_col, std::memory_order_seq_cst);
+
+            mm->retire(orig_col);
+        }
+        needs_update = false;
+    }
+
+    template<class Int, class PLogger>
+    void get_next_chunk(const bool clearing, std::atomic<int>& next_free_chunk, const int chunk_size, const int n_cols,
+                        int&my_chunk, int& chunk_begin, int& chunk_end, bool& done, PLogger& logger,
+                        // these are only used if clearing is true
+                        std::vector<std::atomic<int>>& next_free_chunks, const std::vector<Int>& dim_first, const std::vector<Int>& dim_last, Int& current_dim)
+    {
+        static_assert(std::is_signed_v<Int>, "Int must be signed: current_dim can go below 0 to signal done");
+        done = false;
+        if (clearing) {
+            while(true) {
+                if (current_dim < 0) {
+                    done = true;
+                    return;
+                }
+                my_chunk = next_free_chunks[current_dim].fetch_add(1, std::memory_order_seq_cst);
+                chunk_begin = dim_first.at(current_dim) + my_chunk * chunk_size;
+                if (chunk_begin > dim_last.at(current_dim)) {
+                    current_dim--;
+                    continue;
+                }
+                chunk_end = std::min(dim_last.at(current_dim) + 1, dim_first.at(current_dim) + (my_chunk + 1) * chunk_size);
+                logger->debug("exiting get_next_chunk, clearing = {}, done = {}, my_chunk = {}, chunk_begin = {}, chunk_end = {}, current_dim ={}", clearing, done, my_chunk, chunk_begin, chunk_end, current_dim);
+                break;
+            }
+        } else {
+            my_chunk = next_free_chunk.fetch_add(1, std::memory_order_seq_cst);
+            chunk_begin = my_chunk * chunk_size;
+            chunk_end = std::min(n_cols, (my_chunk + 1) * chunk_size);
+            done = (chunk_begin >= n_cols || chunk_end <= 0);
+            logger->debug("exiting get_next_chunk, clearing = {}, done = {}, my_chunk = {}, chunk_begin = {}, chunk_end = {}", clearing, done, my_chunk, chunk_begin, chunk_end);
+        }
+    }
+
+    template<class MatrixTraits, class Int, class MemoryReclaimC>
+    void parallel_reduction(typename MatrixTraits::AMatrix& rv, AtomicIdxVector& pivots, std::atomic<int>& next_free_chunk,
+            const Params params, int thread_idx, MemoryReclaimC* mm, ThreadStats& stats,
+            std::vector<std::atomic<int>>& next_free_chunks, std::vector<Int>& dim_first, std::vector<Int>& dim_last)
+    {
+        // set logger
         bool log_each_thread_to_file = true;
         std::shared_ptr<spd::logger> logger;
         std::string logger_name = "oineus_log_thread_" + std::to_string(thread_idx);
@@ -52,32 +106,30 @@ namespace oineus {
         using Column = typename MatrixTraits::Column;
         using PColumn = typename MatrixTraits::PColumn;
 
-        std::memory_order acq = params.acq_rel ? std::memory_order_acquire : std::memory_order_seq_cst;
-        std::memory_order rel = params.acq_rel ? std::memory_order_release : std::memory_order_seq_cst;
-        std::memory_order relax = params.acq_rel ? std::memory_order_relaxed : std::memory_order_seq_cst;
+        std::memory_order acq = std::memory_order_seq_cst;
+        std::memory_order rel =  std::memory_order_seq_cst;
+        std::memory_order relax = std::memory_order_seq_cst;
 
-        logger->debug("thread {} started, mm = {}", thread_idx, (void*) (mm));
+        logger->debug("thread {} started, mm = {}, next_free_chunk = {}", thread_idx, (void*) (mm), (void*)(&next_free_chunk));
 
         const int n_cols = rv.size();
 
+        int my_chunk, chunk_begin, chunk_end;
+        Int current_dim = params.clearing_opt ? dim_first.size() - 1 : 0;
+        bool done;
+
         do {
-            int my_chunk;
+            get_next_chunk(params.clearing_opt, next_free_chunk, params.chunk_size, n_cols,
+                        my_chunk, chunk_begin, chunk_end, done, logger,
+                        // the following are only used if clearing is true
+                        next_free_chunks, dim_first, dim_last, current_dim);
 
-            if (go_down) {
-                my_chunk = next_free_chunk--;
-            } else {
-                my_chunk = next_free_chunk++;
-            }
-
-            int chunk_begin = std::max(0, my_chunk * params.chunk_size);
-            int chunk_end = std::min(n_cols, (my_chunk + 1) * params.chunk_size);
-
-            if (chunk_begin >= n_cols || chunk_end <= 0) {
+            if (done) {
                 logger->debug("Thread {} finished", thread_idx);
                 break;
             }
 
-            logger->debug("thread {}, processing chunk {}, from {} to {}, n_cols = {}", thread_idx, my_chunk, chunk_begin, chunk_end, n_cols);
+            logger->debug("thread {}, processing chunk {}, from {} to {}, n_cols = {}, current_dim = {}", thread_idx, my_chunk, chunk_begin, chunk_end, n_cols, current_dim);
 
             Idx current_column_idx = chunk_begin;
             int next_column = current_column_idx + 1;
@@ -91,6 +143,12 @@ namespace oineus {
                 logger->debug("thread {}, started reducing column = {}", thread_idx, current_column_idx);
 
                 PColumn orig_col = rv[current_column_idx].load(acq);
+
+                if (orig_col == nullptr)
+                    continue;
+
+                assert(MatrixTraits::check_col_duplicates(orig_col).empty());
+
                 auto cached_reduced_col = MatrixTraits::load_to_cache(orig_col);
 
 #ifndef NDEBUG
@@ -105,13 +163,11 @@ namespace oineus {
                             int c_current_low = MatrixTraits::low(cached_reduced_col);
                             Idx c_current_column_idx = current_column_idx;
 
-                            pivots[c_current_low].compare_exchange_weak(c_current_column_idx, -1, rel, relax);
+                            pivots[c_current_low].compare_exchange_strong(c_current_column_idx, -1, rel, relax);
                             // if CAS fails here, it's totally fine, just means
                             // that this column is not set as pivot
 
-                            // zero current column
-                            auto zero_col = new Column();
-                            rv[current_column_idx].store(zero_col, rel);
+                            rv[current_column_idx].store(nullptr, rel);
                             mm->retire(orig_col);
 
                             stats.n_cleared++;
@@ -129,7 +185,7 @@ namespace oineus {
                     }
                 }
 
-                bool update_column = false;
+                bool needs_update = false;
                 bool start_over = false;
 
                 Idx pivot_idx;
@@ -146,11 +202,14 @@ namespace oineus {
                         if (pivot_idx >= 0) {
                             pivot_col = rv[pivot_idx].load(acq);
                         }
-                    }
-                    while(pivot_idx >= 0 && MatrixTraits::low(pivot_col) != current_low);
+                    } while(pivot_idx >= 0 && pivot_col != nullptr && MatrixTraits::low(pivot_col) != current_low);
 
                     logger->debug("thread {}, column = {}, loaded pivot column, pivot_idx = {}", thread_idx, current_column_idx, pivot_idx);
+
                     if (pivot_idx == -1) {
+
+                        update_column<MatrixTraits, MemoryReclaimC>(needs_update, mm, cached_reduced_col, orig_col, rv, current_column_idx);
+
                         if (!pivots[current_low].compare_exchange_weak(pivot_idx, current_column_idx, rel, relax)) {
                             start_over = true;
                         }
@@ -164,24 +223,16 @@ namespace oineus {
 #endif
                         // pivot to the left: kill lowest one in current column
                         MatrixTraits::add_to_cached(pivot_col, cached_reduced_col);
-
-                        logger->debug("thread {}, column = {}, added pivot to the left OK, size = {}", thread_idx, current_column_idx, MatrixTraits::r_column_size(cached_reduced_col));
-                        update_column = true;
+                        logger->debug("thread {}, column = {}, added pivot to the left OK", thread_idx, current_column_idx);
+                        needs_update = true;
                     } else if (pivot_idx > current_column_idx) {
-
-                        stats.n_right_pivots++;
-
                         // pivot to the right: switch to reducing r[pivot_idx]
-                        if (update_column) {
-                            // create copy of reduced column and write in into matrix
-                            PColumn new_col = MatrixTraits::load_from_cache(cached_reduced_col);
-                            rv[current_column_idx].store(new_col, rel);
-                            // original column can be deleted
-                            mm->retire(orig_col);
-                            update_column = false;
-                        }
 
                         logger->debug("Pivot to the right, current_column_idx = {}, next_column = {}, pivot_idx = {}", current_column_idx, next_column, pivot_idx);
+                        stats.n_right_pivots++;
+
+                        // store current column, if needed
+                        update_column<MatrixTraits, MemoryReclaimC>(needs_update, mm, cached_reduced_col, orig_col, rv, current_column_idx);
 
                         // set current column as new pivot, start reducing column r[pivot_idx]
                         if (pivots[current_low].compare_exchange_weak(pivot_idx, current_column_idx, rel, relax)) {
@@ -197,16 +248,10 @@ namespace oineus {
                     }
                 } // reduction loop
 
-                logger->debug("Exited reduction loop, update_column = {}, start_over = {}", update_column, start_over);
-
-                if (update_column and not start_over) {
-                    // write copy of reduced column to matrix
-                    PColumn col = MatrixTraits::load_from_cache(cached_reduced_col);
-                    rv[current_column_idx].store(col, rel);
-                    mm->retire(orig_col);
-                }
+                logger->debug("Exited reduction loop, needs_update = {}, start_over = {}", needs_update, start_over);
 
                 if (not start_over) {
+                    update_column<MatrixTraits, MemoryReclaimC>(needs_update, mm, cached_reduced_col, orig_col, rv, current_column_idx);
                     current_column_idx = next_column;
                     next_column = current_column_idx + 1;
                     logger->debug("not starting over, advanced to next column, current_column_idx = {}, next_column = {}, chunk_end = {}", current_column_idx, next_column, chunk_end);
@@ -214,7 +259,7 @@ namespace oineus {
                         logger->debug("exiting loop over chunk columns");
                         break;
                     }
-                } // else we start with the same current_column_idx re-reading
+                } // else we re-start with the same current_column_idx re-reading
                 // the column, because one of CAS operations failed
 
             } //loop over columns
@@ -226,9 +271,16 @@ namespace oineus {
                 throw std::runtime_error("some columns in chunk not processed");
             }
 #endif
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL
+            if (my_chunk % 100 == 0) {
+                logger->debug("checking for Ctrl-C in Python...");
+                OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL;
+                logger->debug("checking for Ctrl-C in Python... done");
+            }
+#endif
             mm->quiescent();
-        }
-        while(true); // loop over chunks
+        } while(true); // loop over chunks
         logger->debug("thread {}, EXIT reduction, stats = {}", thread_idx, stats);
     }
 
@@ -260,9 +312,9 @@ namespace oineus {
         VRUDecomposition& operator=(const VRUDecomposition&) = default;
 
         template<class C, class R>
-        VRUDecomposition(const Filtration<C, R>& fil, bool _dualize)
+        VRUDecomposition(const Filtration<C, R>& fil, bool _dualize, int n_threads=8)
                 :
-                d_data(!_dualize ? fil.boundary_matrix_full() : fil.coboundary_matrix()),
+                d_data(_dualize ? fil.coboundary_matrix(n_threads) : fil.boundary_matrix(n_threads)),
                 r_data(d_data),
                 dualize_(_dualize),
                 dim_first(fil.dim_first()),
@@ -332,8 +384,6 @@ namespace oineus {
         Diagrams<Real> diagram_general(const Filtration<Cell, Real>& fil,
                 const typename Cell::UidSet& relative,
                 bool include_all, bool include_inf_points, bool only_zero_persistence) const;
-
-
 
         template<typename Cell, typename Real>
         Diagrams<Real> diagram(const Filtration<Cell, Real>& fil, bool include_inf_points) const;
@@ -506,6 +556,7 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::reduce(Params& params)
     {
+        CALI_CXX_MARK_FUNCTION;
         if (d_data.empty()) {
             is_reduced = true;
             return;
@@ -593,6 +644,12 @@ namespace oineus {
                         if (params.compute_u)
                             u_data_t[pivot].push_back(i);
                     }
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                    if (i % 1000 == 0) {
+                        OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL;
+                    }
+#endif
                 } // reduction loop
                 MatrixTraits::load_from_cache(cached_r_col, r_data[i]);
                 if (params.compute_v)
@@ -627,23 +684,33 @@ namespace oineus {
         std::atomic<typename MemoryReclaimC::EpochCounter> counter;
         counter = 0;
 
-        std::atomic<Int> next_free_chunk;
+        std::atomic<int> next_free_chunk = 0;
+        std::vector<std::atomic<int>> next_free_chunks(dim_first.size());
+        for(auto& nfc : next_free_chunks) {
+            nfc.store(0, std::memory_order_relaxed);
+        }
+
+        const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
 
         AMatrix ar_matrix(n_cols);
-
-        // move data to ar_matrix
-        for(size_t i = 0; i < n_cols; ++i) {
-            ar_matrix[i] = new Column(std::move(r_data[i]));
-        }
-        spd::debug("Matrix moved");
-
         AtomicIdxVector pivots(n_cols);
-        for(auto& p: pivots) {
-            p.store(-1, std::memory_order_relaxed);
+
+        tf::Executor executor(n_threads);
+
+        // move data to ar_matrix and set pivots in parallel
+        {
+            tf::Taskflow taskflow_prepare;
+            taskflow_prepare.for_each_index((size_t)0, n_cols, (size_t)1,
+                    [this, &ar_matrix, &pivots](size_t col_idx) {
+                        pivots[col_idx].store(-1, std::memory_order_relaxed);
+                        ar_matrix[col_idx] = new Column(std::move(r_data[col_idx]));
+                        assert(MatrixTraits::check_col_duplicates(ar_matrix[col_idx]).empty());
+                    });
+            executor.run(taskflow_prepare).wait();
         }
+
         spd::debug("Pivots initialized");
 
-        int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
 
         std::vector<std::thread> ts;
         std::vector<std::unique_ptr<MemoryReclaimC>> mms;
@@ -651,14 +718,6 @@ namespace oineus {
 
         mms.reserve(n_threads);
         stats.reserve(n_threads);
-
-        bool go_down = params.clearing_opt;
-
-        if (go_down) {
-            next_free_chunk = n_cols / params.chunk_size;
-        } else {
-            next_free_chunk = 0;
-        }
 
         Timer timer;
 
@@ -669,7 +728,8 @@ namespace oineus {
 
             ts.emplace_back(parallel_reduction<MatrixTraits, Int, MemoryReclaimC>,
                     std::ref(ar_matrix), std::ref(pivots), std::ref(next_free_chunk),
-                    params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]), go_down);
+                    params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]),
+                    std::ref(next_free_chunks), std::ref(dim_first), std::ref(dim_last));
 
 #ifdef __linux__
             cpu_set_t cpuset;
@@ -700,12 +760,19 @@ namespace oineus {
 #ifdef OINEUS_GATHER_ADD_STATS
         write_add_stats_file(stats);
 #endif
-
-        // write reduced matrix back, collect V matrix, mark as reduced
-        for(size_t i = 0; i < n_cols; ++i) {
-            auto p = ar_matrix[i].load(std::memory_order_relaxed);
-            r_data[i] = std::move(*p);
-            delete p;
+        {
+            tf::Taskflow taskflow_finish;
+            taskflow_finish.for_each_index((size_t)0, n_cols, (size_t)1,
+                    [this, &ar_matrix, &pivots](size_t col_idx) {
+                        auto p = ar_matrix[col_idx].load(std::memory_order_relaxed);
+                        if (p) {
+                            r_data[col_idx] = std::move(*p);
+                            delete p;
+                        } else {
+                            r_data[col_idx].clear();
+                        }
+                    });
+            executor.run(taskflow_finish).wait();
         }
 
         is_reduced = true;
@@ -714,13 +781,15 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::reduce_parallel_rv(Params& params)
     {
+        CALI_CXX_MARK_FUNCTION;
         using namespace std::placeholders;
 
-        int c = 0;
         size_t n_cols = size();
 
         if (n_cols == 0)
             return;
+
+        int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
 
         v_data = std::vector<IntSparseColumn>(n_cols);
 
@@ -732,25 +801,30 @@ namespace oineus {
 
         RVMatrix r_v_matrix(n_cols);
 
-        // move data to r_v_matrix
-        for(size_t i = 0; i < n_cols; ++i) {
-            IntSparseColumn v_column = {static_cast<Int>(i)};
-            r_v_matrix[i] = new RVColumn(r_data[i], v_column);
-        }
-        spd::debug("Matrix moved");
-
         std::atomic<typename MemoryReclaimC::EpochCounter> counter;
         counter = 0;
 
-        std::atomic<Int> next_free_chunk;
+        std::atomic<int> next_free_chunk = 0;
+        std::vector<std::atomic<int>> next_free_chunks(dim_first.size());
+        for(auto& nfc : next_free_chunks) {
+            nfc.store(0, std::memory_order_seq_cst);
+        }
 
         AtomicIdxVector pivots(n_rows);
-        for(auto& p: pivots) {
-            p.store(-1, std::memory_order_relaxed);
-        }
-        spd::debug("Pivots initialized");
 
-        int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+        tf::Executor executor(n_threads);
+
+        // move data to ar_matrix and set pivots in parallel
+        {
+            tf::Taskflow taskflow_prepare;
+            taskflow_prepare.for_each_index((size_t)0, n_cols, (size_t)1,
+                    [this, &r_v_matrix, &pivots](size_t col_idx) {
+                        pivots[col_idx].store(-1, std::memory_order_relaxed);
+                        IntSparseColumn v_column = {static_cast<Int>(col_idx)};
+                        r_v_matrix[col_idx] = new RVColumn(r_data[col_idx], v_column);
+                    });
+            executor.run(taskflow_prepare).wait();
+        }
 
         std::vector<std::thread> ts;
         std::vector<std::unique_ptr<MemoryReclaimC>> mms;
@@ -759,13 +833,7 @@ namespace oineus {
         mms.reserve(n_threads);
         stats.reserve(n_threads);
 
-        bool go_down = params.clearing_opt;
-
-        if (go_down) {
-            next_free_chunk = n_cols / params.chunk_size;
-        } else {
-            next_free_chunk = 0;
-        }
+        next_free_chunk = 0;
 
         Timer timer;
 
@@ -776,7 +844,8 @@ namespace oineus {
 
             ts.emplace_back(parallel_reduction<MatrixTraits, Int, MemoryReclaimC>,
                     std::ref(r_v_matrix), std::ref(pivots), std::ref(next_free_chunk),
-                    params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]), go_down);
+                    params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]),
+                    std::ref(next_free_chunks), std::ref(dim_first), std::ref(dim_last));
 
 #ifdef __linux__
             cpu_set_t cpuset;
@@ -807,13 +876,22 @@ namespace oineus {
 #ifdef OINEUS_GATHER_ADD_STATS
         write_add_stats_file(stats);
 #endif
-
-        // write reduced matrix back, collect V matrix, mark as reduced
-        for(size_t i = 0; i < n_cols; ++i) {
-            auto p = r_v_matrix[i].load(std::memory_order_relaxed);
-            r_data[i] = std::move(p->r_column);
-            v_data[i] = std::move(p->v_column);
-            delete p;
+        {
+            tf::Taskflow taskflow_finish;
+            taskflow_finish.for_each_index((size_t)0, n_cols, (size_t)1,
+                    [this, &r_v_matrix, &pivots](size_t col_idx) {
+                        auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+                        if (p) {
+                            r_data[col_idx] = std::move(p->r_column);
+                            v_data[col_idx] = std::move(p->v_column);
+                            delete p;
+                        } else {
+                            r_data[col_idx].clear();
+                            // TODO: Bauer's trick with filling V
+                            v_data[col_idx].clear();
+                        }
+                    });
+            executor.run(taskflow_finish).wait();
         }
 
         is_reduced = true;
@@ -838,9 +916,17 @@ namespace oineus {
         }
 
         if (include_inf_points)
-            for(size_t i = 0; i < r_data.size(); ++i)
+            for(size_t i = 0; i < r_data.size(); ++i) {
                 if (!is_zero(&r_data[i]))
                     rows_with_lowest_one.insert(low(&r_data[i]));
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                if (i % 100 == 0) {
+                    OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+                }
+#endif
+
+            }
 
         for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
             auto col = &r_data[col_idx];
@@ -876,6 +962,13 @@ namespace oineus {
                     result.add_point(dim, birth, death, birth_idx, death_idx, birth_idx_us, death_idx_us);
                 }
             }
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+            if (col_idx % 100 == 0) {
+                OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+            }
+#endif
+
         }
 
         return result;
@@ -912,6 +1005,13 @@ namespace oineus {
 
                 if (!is_zero(&r_data[i]))
                     rows_with_lowest_one.insert(low(&r_data[i]));
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                if (i % 100 == 0) {
+                    OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+                }
+#endif
+
             }
 
         for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
@@ -958,6 +1058,12 @@ namespace oineus {
                     result.add_point(dim, birth, death, birth_idx, death_idx, birth_idx_us, death_idx_us);
                 }
             }
+
+#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+            if (col_idx % 100 == 0) {
+                OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+            }
+#endif
         }
 
         return result;
