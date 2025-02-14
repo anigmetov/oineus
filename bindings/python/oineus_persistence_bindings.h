@@ -14,8 +14,8 @@
 
 namespace py = pybind11;
 
-#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT {if (PyErr_CheckSignals() != 0) throw py::error_already_set();}
-#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL { py::gil_scoped_acquire acq; {if (PyErr_CheckSignals() != 0) throw py::error_already_set();} }
+//#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT {if (PyErr_CheckSignals() != 0) throw py::error_already_set();}
+//#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL { py::gil_scoped_acquire acq; if (PyErr_CheckSignals() != 0) throw py::error_already_set(); }
 
 #include <oineus/timer.h>
 #include <oineus/oineus.h>

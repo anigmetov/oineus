@@ -388,10 +388,7 @@ struct SimpleRVMatrixTraits<Int_, 2> {
 
     static PColumn load_from_cache(const CachedColumn& col)
     {
-        if (is_zero(col))
-            return nullptr;
-        else
-            return new Column({col.first.begin(), col.first.end()}, {col.second.begin(), col.second.end()});
+        return new Column({col.first.begin(), col.first.end()}, {col.second.begin(), col.second.end()});
     }
 
     static auto& r_data(Column* col) { return col->r_column; }

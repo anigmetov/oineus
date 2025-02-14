@@ -296,12 +296,12 @@ namespace oineus {
 
         Real value_by_sorted_id(Int sorted_id) const
         {
-            return cells_[sorted_id].get_value();
+            return cells_.at(sorted_id).get_value();
         }
 
         Real value_by_uid(const CellUid& vs) const
         {
-            return cells_[uid_to_sorted_id.at(vs)].get_value();
+            return cells_.at(uid_to_sorted_id.at(vs)).get_value();
         }
 
         auto get_sorted_id_by_uid(const CellUid& uid) const

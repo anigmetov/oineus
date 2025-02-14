@@ -5,6 +5,8 @@
 #include <fstream>
 #include <iostream>
 
+#include "log_wrapper.h"
+
 namespace oineus {
     struct Params {
 
@@ -20,6 +22,7 @@ namespace oineus {
         bool do_sanity_check{false};
         double elapsed{0.0};
         bool verbose{false};
+        spd::level::level_enum spdlog_level {spd::level::level_enum::info};
     };
 
     inline std::ostream& operator<<(std::ostream& out, const Params& p)

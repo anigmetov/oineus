@@ -122,6 +122,7 @@ template<class CWV>
 void append_products(const std::vector<CWV>& cells, const Simplex<typename CWV::Int>& sigma,
         std::vector<CellWithValue<ProductCell<typename CWV::Cell, Simplex<typename CWV::Int>>, typename CWV::Real>>& result)
 {
+    CALI_CXX_MARK_FUNCTION;
     using ProdCell = ProductCell<typename CWV::Cell, Simplex<typename CWV::Int>>;
 
     for(const auto& cell: cells) {
@@ -133,6 +134,7 @@ template<class Cell, class Real>
 Filtration<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>
 multiply_filtration(const Filtration<Cell, Real>& fil, const Simplex<typename Cell::Int>& sigma)
 {
+    CALI_CXX_MARK_FUNCTION;
     using ProdCWV = CellWithValue<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>;
 
     std::vector<ProdCWV> result_simplices;
@@ -156,6 +158,7 @@ build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtratio
  * @return Filtration of a mapping cylinder of the inclusion L \to K. Type of cells in the returned filtration is Cell \times Simplex.
  */
 {
+    CALI_CXX_MARK_FUNCTION;
     using Int = typename Cell::Int;
     using ProdCell = ProductCell<Cell, Simplex<Int>>;
     using ResultCell = CellWithValue<ProdCell, Real>;
@@ -208,6 +211,7 @@ build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain, co
  * of critical values of fil_domain and fil_codomain (in this order).
  */
 {
+    CALI_CXX_MARK_FUNCTION;
     using Int = typename Cell::Int;
     using ProdCell = ProductCell<Cell, Simplex<Int>>;
     using ResultCell = CellWithValue<ProdCell, Real>;

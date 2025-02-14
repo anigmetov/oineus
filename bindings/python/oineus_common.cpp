@@ -81,11 +81,14 @@ void init_oineus_common(py::module& m)
 
     py::class_<KICRParams>(m, "KICRParams")
             .def(py::init<>())
+            .def_readwrite("codomain", &KICRParams::codomain)
             .def_readwrite("kernel", &KICRParams::kernel)
             .def_readwrite("image", &KICRParams::image)
             .def_readwrite("cokernel", &KICRParams::cokernel)
             .def_readwrite("include_zero_persistence", &KICRParams::include_zero_persistence)
             .def_readwrite("verbose", &KICRParams::verbose)
+            .def_readwrite("sanity_check", &KICRParams::sanity_check)
+            .def_readwrite("n_threads", &KICRParams::n_threads)
             .def_readwrite("params_f", &KICRParams::params_f)
             .def_readwrite("params_g", &KICRParams::params_g)
             .def_readwrite("params_ker", &KICRParams::params_ker)
@@ -96,23 +99,26 @@ void init_oineus_common(py::module& m)
                     // __getstate__
 
                     [](const KICRParams& p) {
-                      return py::make_tuple(p.kernel, p.image, p.cokernel, p.include_zero_persistence, p.verbose,
-                              p.params_f, p.params_g, p.params_ker, p.params_im, p.params_cok);
+                      return py::make_tuple(p.codomain, p.kernel, p.image, p.cokernel, p.include_zero_persistence, p.verbose, p.sanity_check,
+                              p.n_threads, p.params_f, p.params_g, p.params_ker, p.params_im, p.params_cok);
                     },
                     // __setstate__
                     [](py::tuple t) {
-                      if (t.size() != 10)
+                      if (t.size() != 13)
                           throw std::runtime_error("Invalid tuple for KICRParams");
 
                       KICRParams p;
 
                       int i = 0;
 
+                      p.codomain = t[i++].cast<decltype(p.codomain)>();
                       p.kernel = t[i++].cast<decltype(p.kernel)>();
                       p.image = t[i++].cast<decltype(p.image)>();
                       p.cokernel = t[i++].cast<decltype(p.cokernel)>();
                       p.include_zero_persistence = t[i++].cast<decltype(p.include_zero_persistence)>();
                       p.verbose = t[i++].cast<decltype(p.verbose)>();
+                      p.sanity_check = t[i++].cast<decltype(p.sanity_check)>();
+                      p.n_threads = t[i++].cast<decltype(p.n_threads)>();
                       p.params_f = t[i++].cast<decltype(p.params_f)>();
                       p.params_g = t[i++].cast<decltype(p.params_g)>();
                       p.params_ker = t[i++].cast<decltype(p.params_ker)>();

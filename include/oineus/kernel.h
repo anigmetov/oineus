@@ -6,6 +6,9 @@
 #include <numeric>
 #include <ostream>
 
+#include "taskflow/taskflow.hpp"
+#include "taskflow/algorithm/for_each.hpp"
+
 #include "simplex.h"
 #include "sparse_matrix.h"
 #include "decomposition.h"
@@ -13,17 +16,22 @@
 #include "diagram.h"
 #include "profile.h"
 
+#include <icecream/icecream.hpp>
+
 // suppress pragma message from boost
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
 namespace oineus {
 
 struct KICRParams {
+    bool codomain {false}; // compute dcmp_F (diagrams of the ambient filtration) --- redundant for ker-im-cok
     bool kernel {true};
     bool image  {true};
     bool cokernel {true};
     bool include_zero_persistence {false};
     bool verbose {false};
+    bool sanity_check {false};
+    int n_threads {1};
     Params params_f;
     Params params_g;
     Params params_ker;
@@ -38,6 +46,7 @@ inline std::ostream& operator<<(std::ostream& out, const KICRParams& p)
     out << ", compute_cokernel = " << p.cokernel;
     out << ", include_zero_persistence = " << p.include_zero_persistence;
     out << ", verbose = " << p.verbose;
+    out << ", n_threads = " << p.n_threads;
     out << ", params_f = " << p.params_f;
     out << ", params_g = " << p.params_g;
     if (p.kernel) out << ", params_ker = " << p.params_ker;
@@ -64,6 +73,7 @@ public:
     Fil fil_K_;          //Full complex with the function values for F
     Fil fil_L_;          //Sub complex with the function values for G
     VRUDecomp dcmp_F_;   //the reduced triple for F0
+    typename VRUDecomp::MatrixData dcmp_F_D_;   //the reduced triple for F0
     VRUDecomp dcmp_G_;   //reduced triple for G
     VRUDecomp dcmp_im_;  //reduced image triple
     VRUDecomp dcmp_ker_; //reduced kernel triple
@@ -99,7 +109,8 @@ private:
 
     Matrix compute_d_im() const
     {
-        const Matrix& m = dcmp_F_.get_D();
+        CALI_CXX_MARK_FUNCTION;
+        const Matrix& m = dcmp_F_D_;
 
         Matrix result;
 
@@ -117,39 +128,63 @@ private:
     // return the matrix comprised of the resulting columns
     Matrix compute_d_ker()
     {
+        CALI_CXX_MARK_FUNCTION;
         const Matrix& v = dcmp_im_.get_V();
         const Matrix& r = dcmp_im_.get_R();
 
         Matrix result;
 
-        size_t result_col_idx = 0;
+        size_t result_col_idx {0}, n_cycles {0}, n_non_cycles {0};
 
-        int n_cycles = 0;
-        int n_non_cycles = 0;
-
-        for(size_t col_idx = 0 ; col_idx < v.size() ; ++col_idx) {
-            if (not is_zero(r[col_idx])) {
-                n_non_cycles++;
-                continue;
+        if (params_.params_ker.n_threads > 1) {
+            // can do with prefix sum, but this should be fast enough to keep serial
+            for(size_t col_idx = 0 ; col_idx < v.size() ; ++col_idx) {
+                if (is_zero(r[col_idx])) {
+                    n_cycles++;
+                    K_to_ker_column_index_[col_idx] = result_col_idx;
+                    result_col_idx++;
+                }
             }
 
-            n_cycles++;
+            n_non_cycles = v.size() - n_cycles;
 
-            result.emplace_back(reindex_to_new_order(v[col_idx]));
+            tf::Executor executor(params_.params_ker.n_threads);
+            tf::Taskflow taskflow_d_ker;
 
-            K_to_ker_column_index_[col_idx] = result_col_idx;
+            result = Matrix(n_cycles, Column());
 
-            result_col_idx++;
+            taskflow_d_ker.for_each_index((size_t)0, v.size(), (size_t)1,
+                    [this, &v, &result](size_t col_idx) {
+                        size_t result_idx = K_to_ker_column_index_[col_idx];
+                        if (result_idx != k_invalid_index)
+                            result[K_to_ker_column_index_[col_idx]] = reindex_to_new_order(v[col_idx]);
+                    });
+
+            executor.run(taskflow_d_ker).wait();
+        } else {
+            for(size_t col_idx = 0 ; col_idx < v.size() ; ++col_idx) {
+                if (not is_zero(r[col_idx])) {
+                    n_non_cycles++;
+                    continue;
+                }
+
+                n_cycles++;
+
+                result.emplace_back(reindex_to_new_order(v[col_idx]));
+
+                K_to_ker_column_index_[col_idx] = result_col_idx;
+
+                result_col_idx++;
+            }
         }
-
         if (params_.verbose) std::cerr << "compute_d_ker: n_non_cycles = " << n_non_cycles << ", n_cycles = " << n_cycles << std::endl;
-
         return result;
     }
 
     Matrix compute_d_cok()
     {
-        Matrix d_cok = dcmp_F_.get_D();
+        CALI_CXX_MARK_FUNCTION;
+        Matrix d_cok = dcmp_F_D_;
 
         for(size_t i = 0 ; i < d_cok.size() ; i++) {
             auto index_in_L = sorted_K_to_sorted_L_[i];
@@ -207,11 +242,20 @@ public:
         if (params_.verbose) { std::cerr << "Performing kernel, image, cokernel reduction, reduction parameters: " << params << std::endl; }
 
         // all cells in L must be present in K
-        assert(std::all_of(fil_L_.cells().begin(), fil_L_.cells().end(), [&](const typename Fil::Cell& cell) { return fil_K_.contains_cell_with_uid(cell.get_uid()); }));
+        if (params_.sanity_check) {
+            if (!std::all_of(fil_L_.cells().begin(), fil_L_.cells().end(), [&](const typename Fil::Cell& cell) { return fil_K_.contains_cell_with_uid(cell.get_uid()); }))
+                throw std::runtime_error("Ker-Im-Cok: L is not a subcomplex of K");
+        } else
+            assert(std::all_of(fil_L_.cells().begin(), fil_L_.cells().end(), [&](const typename Fil::Cell& cell) { return fil_K_.contains_cell_with_uid(cell.get_uid()); }));
 
         // rough counting check, also in Release mode
         if (fil_K_.size() < fil_L_.size())
             throw std::runtime_error("second argument L must be a subcomplex of the first argument K");
+
+        if (params_.n_threads > 1) {
+            params_.params_f.n_threads = params_.params_g.n_threads = params_.n_threads;
+            params_.params_ker.n_threads = params_.params_cok.n_threads = params_.params_im.n_threads = params_.n_threads;
+        }
 
         CALI_MARK_BEGIN("sorted_L_to_sorted_K");
         for(size_t fil_L_idx = 0 ; fil_L_idx < fil_L_.size() ; fil_L_idx++) {//getting sorted L to sorted K is relatively easy
@@ -228,12 +272,20 @@ public:
 
         if (params_.verbose) { std::cerr << "K_to_L and L_to_K computed" << std::endl; }
 
+        CALI_MARK_BEGIN("fil_K_.boundary_matrix");
+        dcmp_F_D_ = fil_K_.boundary_matrix();
+        CALI_MARK_END("fil_K_.boundary_matrix");
+
         //set up the reduction for F  on K
-        CALI_MARK_BEGIN("dcmp_F.reduce");
-        dcmp_F_ = VRUDecomp(fil_K_.boundary_matrix());
-        dcmp_F_.reduce(params_.params_f);
-        if (params_.verbose) { std::cerr << "dcmp_F_ reduced with params = " << params_.params_f << std::endl; }
-        CALI_MARK_END("dcmp_F.reduce");
+        if (params.codomain) {
+            CALI_MARK_BEGIN("dcmp_F.reduce");
+            dcmp_F_ = VRUDecomp(dcmp_F_D_);
+            dcmp_F_.reduce(params_.params_f);
+            if (params_.verbose) { std::cerr << "dcmp_F_ reduced with params = " << params_.params_f << std::endl; }
+            CALI_MARK_END("dcmp_F.reduce");
+        }
+
+        if (params_.verbose) std::cerr << "starting dcmpG" << std::endl;
 
         //set up reduction for G on L
         CALI_MARK_BEGIN("dcmp_G.reduce");
@@ -243,10 +295,13 @@ public:
         if (params_.verbose) { std::cerr << "dcmp_G_ reduced with params = " << params_.params_g << std::endl; }
         CALI_MARK_END("dcmp_G.reduce");
 
-        CALI_MARK_BEGIN("dcmp_F.diagram");
-        cod_diagrams_ = dcmp_F_.diagram(fil_K_, true);
-        if (params_.verbose) { std::cerr << "cod_diagrams computed" << std::endl; }
-        CALI_MARK_END("dcmp_F.diagram");
+        if (params.codomain) {
+            if (params_.verbose) std::cerr << "starting dcmp_F diagram" << std::endl;
+            CALI_MARK_BEGIN("dcmp_F.diagram");
+            cod_diagrams_ = dcmp_F_.diagram(fil_K_, true);
+            if (params_.verbose) { std::cerr << "cod_diagrams computed" << std::endl; }
+            CALI_MARK_END("dcmp_F.diagram");
+        }
 
         CALI_MARK_BEGIN("dcmp_G.diagram");
         dom_diagrams_ = dcmp_G_.diagram(fil_L_, true);
@@ -276,8 +331,10 @@ public:
             old_order_to_new_[new_order_to_old_[i]] = i;
         }
 
+        if (params_.verbose) std::cerr << "starting dcmp_im" << std::endl;
         // step 2 of the algorithm
         CALI_MARK_BEGIN("dcmp_im");
+        // TODO: add clearing here; requires more refined L-before-K order (partitioned by dimension)
         params_.params_im.clearing_opt = false;
         // if user wants to compute v, keep it, but if we need ker, we must compute it anyway
         params_.params_im.compute_v = params_.params_im.compute_v or params_.kernel;
@@ -289,6 +346,7 @@ public:
 
         // step 3 of the algorithm
 
+        if (params_.verbose) std::cerr << "starting dcmp_ker" << std::endl;
         if (params_.kernel) {
             CALI_MARK_BEGIN("dcmp_ker");
             params_.params_ker.clearing_opt = false;
@@ -302,6 +360,7 @@ public:
 
         if (params_.cokernel) {
             // step 4 of the algorithm
+            if (params_.verbose) std::cerr << "starting dcmp_cok" << std::endl;
             CALI_MARK_BEGIN("dcmp_cok");
             params_.params_cok.clearing_opt = false;
             Matrix d_cok = compute_d_cok();
@@ -312,9 +371,115 @@ public:
             CALI_MARK_END("dcmp_cok");
         }
 
+//        if (params_.verbose) {
+//            IC(new_order_to_old_, old_order_to_new_);
+//            IC(dcmp_F_.r_data);
+//            IC(dcmp_G_.d_data);
+//            IC(dcmp_G_.r_data);
+//            IC(dcmp_im_.r_data);
+//            IC(dcmp_ker_.r_data);
+//            IC(dcmp_cok_.r_data);
+//        }
+
+        if (params_.verbose and params_.sanity_check) {
+            std::cerr << "starting sanity check..." << std::endl;
+            sanity_check();
+            std::cerr << "sanity check OK" << std::endl;
+        }
+
+
+        if (params_.verbose) std::cerr << "starting kic diagrams" << std::endl;
+
         if (params_.kernel) generate_ker_diagrams();
         if (params_.cokernel) generate_cok_diagrams();
         if (params_.image) generate_im_diagrams();
+    }
+
+    void sanity_check()
+    {
+        const auto& R_g = dcmp_G_.get_R();
+        const auto& R_f = dcmp_F_.get_R();
+        const auto& R_im = dcmp_im_.get_R();
+        const auto& R_ker = dcmp_ker_.get_R();
+
+        if (params_.codomain and params_.kernel) {
+            for(size_t r_g_idx = 0; r_g_idx < R_g.size(); ++r_g_idx) {
+                if (is_zero(R_g.at(r_g_idx))) {
+                    auto r_f_idx = sorted_L_to_sorted_K_.at(r_g_idx);
+                    if (not is_zero(R_f.at(r_f_idx))) {
+                        std::cerr << "r_f_idx = " << r_f_idx << ", r_g_idx = " << r_g_idx << std::endl;
+                        throw std::runtime_error("condition R_g.at(i) = 0 -> R_f.at(i) =  0 violated");
+                    }
+                }
+            }
+        }
+        std::cerr << "condition (i) ok" << std::endl;
+
+        if (params_.codomain) {
+            for(size_t r_f_idx = 0; r_f_idx < R_f.size(); ++r_f_idx) {
+                if (is_zero(R_f.at(r_f_idx)) and not is_zero(R_im.at(r_f_idx))) {
+                    std::cerr << "r_f_idx = " << r_f_idx << std::endl;
+                    throw std::runtime_error("condition R_f.at(i) = 0 <-> R_f.at(i) =  0 violated: zero in R_f, not zero in R_im");
+                }
+                if (not is_zero(R_f.at(r_f_idx)) and is_zero(R_im.at(r_f_idx))) {
+                    std::cerr << "r_f_idx = " << r_f_idx << std::endl;
+                    throw std::runtime_error("condition R_f.at(i) = 0 <-> R_f.at(i) =  0 violated: not zero in R_f, zero in R_im");
+                }
+            }
+        }
+        if (params_.verbose) std::cerr << "condition (ii) ok" << std::endl;
+
+        if (params_.kernel) {
+            for(size_t r_ker_idx = 0; r_ker_idx < R_ker.size(); ++r_ker_idx) {
+                if (is_zero(R_ker.at(r_ker_idx))) {
+                    std::cerr << r_ker_idx << std::endl;
+                    throw std::runtime_error("zero column in R_ker");
+                }
+            }
+        }
+
+        if (params_.verbose) std::cerr << "condition (iv) ok" << std::endl;
+
+        if (params_.codomain) {
+            for(size_t sigma_L_idx = 0; sigma_L_idx < fil_L_.size(); ++sigma_L_idx) {
+                size_t index_in_K = sorted_L_to_sorted_K_[sigma_L_idx];
+
+                if (not is_zero(R_f[index_in_K])) {
+                    size_t low_in_im = low(R_im[index_in_K]);
+                    if (low_in_im >= fil_L_.size()) {
+                        IC(sigma_L_idx, index_in_K, low_in_im);
+                        throw std::runtime_error("condition (iii) violated, lowest one in R_im[i] not in L");
+                    }
+                }
+
+                if (not is_zero(R_g[sigma_L_idx]) and is_zero(R_f[index_in_K])) {
+                    size_t low_ker = low(R_ker[K_to_ker_column_index_.at(index_in_K)]);
+                    if (low_ker < fil_L_.size()) {
+                        IC(sigma_L_idx, index_in_K, low_ker, fil_L_.size(), fil_K_.size());
+                        throw std::runtime_error("condition (vi) violated, lowest one in R_ker[i] is not in K-L");
+                    }
+                }
+            }
+        }
+        if (params_.verbose) std::cerr << "conditions (iii), (vi) ok" << std::endl;
+
+        if (params_.kernel) {
+            for(size_t sigma_K_idx = 0; sigma_K_idx < fil_K_.size(); ++sigma_K_idx) {
+                if (is_in_L(sigma_K_idx))
+                    continue;
+
+                size_t r_ker_idx = K_to_ker_column_index_.at(sigma_K_idx);
+                if (r_ker_idx == k_invalid_index)
+                    continue;
+
+                size_t low_ker = low(R_ker.at(r_ker_idx));
+                if (low_ker != old_order_to_new_.at(sigma_K_idx)) {
+                    IC(sigma_K_idx, old_order_to_new_[sigma_K_idx], low_ker);
+                    throw std::runtime_error("condition (v) violated, lowest one in R_ker[i] is not sigma_i");
+                }
+            }
+        }
+        std::cerr << "condition (v) ok" << std::endl;
     }
 
     void generate_ker_diagrams(bool inf_points = true)
@@ -331,7 +496,7 @@ public:
         for(size_t tau_idx = 0 ; tau_idx < dcmp_G_.get_R().size() ; ++tau_idx) {
             // tau is positive -> skip it
             if (dcmp_G_.is_positive(tau_idx)) {
-                if (params_.verbose) std::cerr << "tau_idx not in ker: positive in G" << std::endl;
+//                if (params_.verbose) std::cerr << "tau_idx not in ker: positive in G" << std::endl;
                 continue;
             }
 
@@ -339,7 +504,7 @@ public:
             size_t death_idx = sorted_L_to_sorted_K_[tau_idx];
 
             // tau is not positive in R_f -> skip it
-            if (dcmp_F_.is_negative(death_idx)) {
+            if (dcmp_im_.is_negative(death_idx)) {
                 continue;
             }
 
@@ -347,12 +512,12 @@ public:
             // corresponds to a simplex σ ∈ K − L that gives birth in Ker(g -> f).
             //Then (σ, τ ) is a pair.
 
-            size_t tau_in_ker_idx = K_to_ker_column_index_[death_idx];
+            size_t tau_in_ker_idx = K_to_ker_column_index_.at(death_idx);
             if (tau_in_ker_idx == k_invalid_index) {
                 continue;
             }
             size_t sigma_in_ker_idx = low(dcmp_ker_.get_R()[tau_in_ker_idx]);
-            size_t birth_idx = new_order_to_old_[sigma_in_ker_idx];
+            size_t birth_idx = new_order_to_old_.at(sigma_in_ker_idx);
 
             Real birth = fil_K_.value_by_sorted_id(birth_idx);
             Real death = fil_K_.value_by_sorted_id(death_idx);
@@ -375,7 +540,7 @@ public:
         if (params_.verbose) std::cerr << "finite points in kernel diagram generated, found " << matched_positive_cells.size() << std::endl;
 
         if (inf_points) {
-            for(size_t birth_idx = 0 ; birth_idx < dcmp_F_.get_R().size() ; ++birth_idx) {
+            for(size_t birth_idx = 0 ; birth_idx < dcmp_im_.get_R().size() ; ++birth_idx) {
                 // sigma is in L, skip it
                 if (is_in_L(birth_idx))
                     continue;
@@ -385,7 +550,7 @@ public:
                     continue;
 
                 // sigma is positive in R_f, skip it
-                if (dcmp_F_.is_positive(birth_idx))
+                if (dcmp_im_.is_positive(birth_idx))
                     continue;
 
                 size_t low_idx = low(dcmp_im_.get_R()[birth_idx]);
@@ -402,16 +567,16 @@ public:
             }
         }
 
-        if (params_.verbose) {
-            std::cerr << "The kernel diagrams are: " << std::endl;
-            for(int i = 0 ; i <= max_dim_ ; i++) {
-                std::cerr << "Diagram in dimension " << i << " is: [" << std::endl;
-                for(int j = 0 ; j < ker_diagrams_[i].size() ; j++) {
-                    std::cerr << ker_diagrams_[i][j] << std::endl;
-                }
-                std::cerr << "]";
-            }
-        }
+//        if (params_.verbose) {
+//            std::cerr << "The kernel diagrams are: " << std::endl;
+//            for(int i = 0 ; i <= max_dim_ ; i++) {
+//                std::cerr << "Diagram in dimension " << i << " is: [" << std::endl;
+//                for(int j = 0 ; j < ker_diagrams_[i].size() ; j++) {
+//                    std::cerr << ker_diagrams_[i][j] << std::endl;
+//                }
+//                std::cerr << "]";
+//            }
+//        }
     }
 
     void generate_cok_diagrams(bool inf_points = true)
@@ -423,25 +588,19 @@ public:
         // all unmatched kernel birth cells will give a point at infinity
         std::unordered_set<size_t> matched_positive_cells;
 
+        const auto& R_im = dcmp_im_.get_R();
+        const auto& R_cok = dcmp_cok_.get_R();
+
         // simplex τ gives death in Cok(g -> f) iff τ is
         // negative in R_f and the lowest one in its column in R_im
         // corresponds to a simplex in K − L
-        for(size_t death_idx = 0 ; death_idx < dcmp_im_.get_R().size() ; ++death_idx) {
+        for(size_t death_idx = 0 ; death_idx < R_im.size() ; ++death_idx) {
             // tau is positive -> skip it
             if (dcmp_im_.is_positive(death_idx)) {
                 continue;
             }
 
-            const auto& tau_col_R_im = dcmp_im_.get_R()[death_idx];
-
-            // TODO: get rid of this if
-            // tau is positive in R_f -> skip it
-            if (dcmp_im_.is_positive(death_idx)) {
-                throw std::runtime_error("probably should not happen: negative in R_f implies negative in R_im");
-                continue;
-            }
-
-            auto im_low = low(tau_col_R_im);
+            auto im_low = low(R_im.at(death_idx));
 
             // lowest one in the column of tau in R_im is in L, skip it
             if (im_low < fil_L_.size()) {
@@ -451,9 +610,9 @@ public:
             // In this case, the lowest one in the column of τ in R_cok corresponds to a
             // simplex σ that gives birth in Cok(g -> f). Then (σ, τ) is a pair.
             // row and column order in R_cok, D_cok is the same as in K
-            if (is_zero(dcmp_cok_.get_R()[death_idx]))
+            if (is_zero(R_cok.at(death_idx)))
                 continue;
-            auto birth_idx = low(dcmp_cok_.get_R()[death_idx]);
+            auto birth_idx = low(R_cok[death_idx]);
 
             Real birth = fil_K_.value_by_sorted_id(birth_idx);
             Real death = fil_K_.value_by_sorted_id(death_idx);
@@ -476,21 +635,21 @@ public:
 
         if (inf_points) {
             // A simplex σ gives birth in Cok(g -> f) iff σ is positive
-            // in R_f and it is either in K − L or negative in R_g .
-            for(size_t birth_idx = 0 ; birth_idx < dcmp_im_.get_R().size() ; ++birth_idx) {
+            // in R_f (eqv.: R_im) and it is either in K − L or negative in R_g .
+            for(size_t birth_idx = 0 ; birth_idx < R_im.size() ; ++birth_idx) {
                 // sigma is paired, skip it
                 if (matched_positive_cells.count(birth_idx)) {
                     continue;
                 }
 
-                // sigma is negative in R_f, skip it
+                // sigma is negative in R_im, skip it
                 if (dcmp_im_.is_negative(birth_idx)) {
                     continue;
                 }
 
                 if (not is_in_K_only(birth_idx)) {
                     // sigma is in K and in L, and sigma is positive in R_g, skip it
-                    if (dcmp_G_.is_positive(sorted_K_to_sorted_L_[birth_idx]))
+                    if (dcmp_G_.is_positive(sorted_K_to_sorted_L_.at(birth_idx)))
                         continue;
                 }
 
@@ -509,26 +668,23 @@ public:
         CALI_CXX_MARK_FUNCTION;
         std::unordered_set<size_t> matched_positive_cells;
 
+        const auto& R_im = dcmp_im_.get_R();
+
         // Death. A simplex τ gives death in Im(g →f ) iff τ is negative in Rf
         // and the lowest one in its column in R_im corresponds to a simplex σ ∈ L.
         // Then (σ, τ ) is a pair.
-        for(size_t death_idx = 0 ; death_idx < dcmp_F_.get_R().size() ; ++death_idx) {
+        for(size_t death_idx = 0 ; death_idx < R_im.size() ; ++death_idx) {
             // tau is positive in R_f -> skip it
-            if (dcmp_F_.is_positive(death_idx))
+            if (dcmp_im_.is_positive(death_idx))
                 continue;
 
-            // tau is positive in R_f -> skip it
-            if (dcmp_im_.is_positive(death_idx)) {
-                throw std::runtime_error("should not happen: negative in R_f implies negative in R_im");
-            }
-
-            auto im_low = low(dcmp_im_.get_R()[death_idx]);
+            auto im_low = low(R_im.at(death_idx));
 
             // lowest one in the column of tau in R_im is not in L, skip it
             if (im_low >= fil_L_.size())
                 continue;
 
-            auto birth_idx = new_order_to_old_[im_low];
+            auto birth_idx = new_order_to_old_.at(im_low);
 
             if (birth_idx == k_invalid_index)
                 throw std::runtime_error("indexing error in generate_im_diagrams");
@@ -555,7 +711,7 @@ public:
             int n_inf_points = 0;
             //Birth. A simplex σ gives birth in Im(g →f ) iff σ ∈ L and σ is positive in Rg .
             for(size_t sigma_L_idx = 0 ; sigma_L_idx < dcmp_G_.get_R().size() ; ++sigma_L_idx) {
-                size_t birth_idx = sorted_L_to_sorted_K_[sigma_L_idx];
+                size_t birth_idx = sorted_L_to_sorted_K_.at(sigma_L_idx);
                 // sigma is paired, skip it
                 if (matched_positive_cells.count(birth_idx))
                     continue;
@@ -598,11 +754,14 @@ public:
 
     const Dgms& get_domain_diagrams() const
     {
+        // these are always computed
         return dom_diagrams_;
     }
 
     const Dgms& get_codomain_diagrams() const
     {
+        if (not params_.codomain)
+            throw std::runtime_error("codomain diagrams were not computed because params.cokernel was false in constructor");
         return cod_diagrams_;
     }
 
