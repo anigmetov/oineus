@@ -729,7 +729,7 @@ namespace oineus {
                     [&pivots](size_t col_idx) {
                         pivots[col_idx].store(-1, std::memory_order_relaxed);
                     });
-            executor.run(taskflow_prepare).wait();
+            executor.run(taskflow_prepare).get();
         }
 
         spd::debug("Pivots initialized");
@@ -795,7 +795,7 @@ namespace oineus {
                             r_data[col_idx].clear();
                         }
                     });
-            executor.run(taskflow_finish).wait();
+            executor.run(taskflow_finish).get();
         }
 
         is_reduced = true;
@@ -850,7 +850,7 @@ namespace oineus {
                     [&pivots](size_t col_idx) {
                         pivots[col_idx].store(-1, std::memory_order_relaxed);
                     });
-            executor.run(taskflow_prepare).wait();
+            executor.run(taskflow_prepare).get();
         }
 
         std::vector<std::thread> ts;
@@ -918,7 +918,7 @@ namespace oineus {
                             v_data[col_idx].clear();
                         }
                     });
-            executor.run(taskflow_finish).wait();
+            executor.run(taskflow_finish).get();
         }
 
         is_reduced = true;

@@ -160,7 +160,7 @@ private:
                             result[K_to_ker_column_index_[col_idx]] = reindex_to_new_order(v[col_idx]);
                     });
 
-            executor.run(taskflow_d_ker).wait();
+            executor.run(taskflow_d_ker).get();
         } else {
             for(size_t col_idx = 0 ; col_idx < v.size() ; ++col_idx) {
                 if (not is_zero(r[col_idx])) {

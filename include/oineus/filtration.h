@@ -155,7 +155,7 @@ namespace oineus {
                         }
                         std::sort(col.begin(), col.end());
                     });
-            executor.run(taskflow).wait();
+            executor.run(taskflow).get();
             return result;
         }
 
@@ -190,7 +190,7 @@ namespace oineus {
                                 }
                                 std::sort(col.begin(), col.end());
                             });
-                    executor.run(taskflow).wait();
+                    executor.run(taskflow).get();
                 } else {
                     for(size_t col_idx = 0; col_idx < size_in_dimension(d); ++col_idx) {
                         auto& sigma = cells_[col_idx + dim_first(d)];
@@ -538,6 +538,7 @@ namespace oineus {
                 };
 
             CALI_MARK_BEGIN("TF_SORT_AND_SET");
+            IC(n_threads);
             tf::Executor executor(n_threads);
             tf::Taskflow taskflow;
             tf::Task set_id_and_uid = taskflow.for_each_index(static_cast<Int>(0), static_cast<Int>(size()), static_cast<Int>(1),
@@ -556,7 +557,7 @@ namespace oineus {
                     });
             sort_task.succeed(set_id_and_uid);
             post_sort.succeed(sort_task);
-            executor.run(taskflow).wait();
+            executor.run(taskflow).get();
             CALI_MARK_END("TF_SORT_AND_SET");
 
             // unordered_set is not thread-safe, cannot do in parallel
