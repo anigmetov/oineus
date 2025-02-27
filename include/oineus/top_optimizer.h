@@ -129,10 +129,10 @@ public:
 
     TopologyOptimizer(const Fil& fil)
             :
-            decmp_hom_(fil, false),
-            decmp_coh_(fil, true),
+            negate_(fil.negate()),
             fil_(fil),
-            negate_(fil.negate())
+            decmp_hom_(fil, false),
+            decmp_coh_(fil, true)
     {
         params_hom_.compute_v = true;
         params_coh_.compute_v = true;
@@ -171,8 +171,6 @@ public:
                 [this](bool x, auto kv) { return x or kv.second.decrease_birth(negate_); });
         bool increase_death = std::accumulate(target.begin(), target.end(), false,
                 [this](bool x, auto kv) { return x or kv.second.increase_death(negate_); });
-        bool decrease_death = std::accumulate(target.begin(), target.end(), false,
-                [this](bool x, auto kv) { return x or kv.second.decrease_death(negate_); });
 
         ComputeFlags result;
 
@@ -188,7 +186,6 @@ public:
         bool increase_birth = false;
         bool increase_death = false;
         bool decrease_birth = false;
-        bool decrease_death = false;
 
         for(const auto& [point, target_point]: target) {
 
@@ -200,8 +197,6 @@ public:
 
             if (cmp(point.death, target_point.death)) {
                 increase_death = true;
-            } else if (cmp(target_point.death, point.death)) {
-                decrease_death = true;
             }
         }
 
@@ -219,7 +214,6 @@ public:
         bool increase_birth = false;
         bool increase_death = false;
         bool decrease_birth = false;
-        bool decrease_death = false;
 
         for(size_t i = 0 ; i < indices.size() ; ++i) {
             auto simplex_idx = indices[i];
@@ -233,8 +227,6 @@ public:
                 decrease_birth = true;
             } else if (not is_positive and cmp(current_value, target_value)) {
                 increase_death = true;
-            } else if (not is_positive and cmp(target_value, current_value)) {
-                decrease_death = true;
             }
         }
 
@@ -291,8 +283,8 @@ public:
     {
         fil_.set_values(new_values);
 
-        decmp_hom_ = Decomposition(fil_, false);
-        decmp_coh_ = Decomposition(fil_, true);
+        decmp_hom_ = Decomposition(fil_, false, n_threads);
+        decmp_coh_ = Decomposition(fil_, true, n_threads);
     }
 
     decltype(auto) convert_critical_sets(const CriticalSets& critical_sets) const
@@ -375,7 +367,7 @@ public:
     std::pair<IndicesValues, Real> match_and_distance(typename Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q)
     {
         // set ids in template diagram
-        for(auto i = 0 ; i < template_dgm.size() ; ++i) {
+        for(size_t i = 0 ; i < template_dgm.size() ; ++i) {
             template_dgm[i].id = i;
 
             if (template_dgm[i].is_inf())
@@ -396,7 +388,7 @@ public:
 
         Diagram current_dgm = decmp_hom_.diagram(fil_, false).get_diagram_in_dimension(d);
 
-        for(auto i = 0 ; i < current_dgm.size() ; ++i) {
+        for(size_t i = 0 ; i < current_dgm.size() ; ++i) {
             current_dgm[i].id = i;
         }
 
@@ -524,8 +516,7 @@ public:
 
     Indices increase_birth(size_t positive_simplex_idx, Real target_birth) const
     {
-        if (not fil_.cmp(fil_.get_cell_value(positive_simplex_idx), target_birth))
-            throw std::runtime_error("target_birth cannot precede current value");
+        assert(fil_.cmp(fil_.get_cell_value(positive_simplex_idx), target_birth));
 
         Indices result;
 
@@ -539,8 +530,7 @@ public:
             result.push_back(fil_idx);
         }
 
-        if (result.empty())
-            throw std::runtime_error("increase_birth: empty");
+        assert(not result.empty());
 
         return result;
     }
@@ -552,8 +542,7 @@ public:
 
     Indices decrease_birth(size_t positive_simplex_idx, Real target_birth) const
     {
-        if (not fil_.cmp(target_birth, fil_.get_cell_value(positive_simplex_idx)))
-            throw std::runtime_error("target_birth cannot precede current value");
+        assert(fil_.cmp(target_birth, fil_.get_cell_value(positive_simplex_idx)));
 
         Indices result;
 
@@ -567,8 +556,7 @@ public:
             result.push_back(fil_idx);
         }
 
-        if (result.empty())
-            throw std::runtime_error("decrease_birth: empty");
+        assert(not result.empty());
 
         return result;
     }
@@ -585,11 +573,9 @@ public:
         const auto& u_rows = decmp_hom_.u_data_t;
         const auto& r_cols = decmp_hom_.r_data;
 
-        size_t n_cols = decmp_hom_.v_data.size();
         Int sigma = low(r_cols[negative_simplex_idx]);
 
-        if (not(sigma >= 0 and sigma < r_cols.size()))
-            throw std::runtime_error("expected negative simplex");
+        assert(sigma >= 0 and sigma < static_cast<Int>(r_cols.size()));
 
         for(auto tau_idx: u_rows.at(negative_simplex_idx)) {
             if (fil_.cmp(target_death, fil_.get_cell_value(tau_idx))) {
@@ -601,8 +587,7 @@ public:
             }
         }
 
-        if (result.empty())
-            throw std::runtime_error("increase_death: empty");
+        assert(not result.empty());
 
         return result;
     }
@@ -621,8 +606,7 @@ public:
         auto& r_cols = decmp_hom_.r_data;
         Int sigma = low(r_cols[negative_simplex_idx]);
 
-        if (not(sigma >= 0 and sigma < r_cols.size()))
-            throw std::runtime_error("expected negative simplex");
+        assert(sigma >= 0 and sigma < static_cast<Int>(r_cols.size()));
 
         auto& v_col = decmp_hom_.v_data[negative_simplex_idx];
 
@@ -639,8 +623,7 @@ public:
             result.push_back(tau_idx);
         }
 
-        if (result.empty())
-            throw std::runtime_error("decrease_death: empty");
+        assert(not result.empty());
 
         return result;
     }

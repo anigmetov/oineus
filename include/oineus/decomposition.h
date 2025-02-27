@@ -25,8 +25,6 @@
 #include "mem_reclamation.h"
 #include "sparse_matrix.h"
 
-#include <icecream/icecream.hpp>
-
 namespace oineus {
 
     template<typename Cell, typename Real>
@@ -108,7 +106,6 @@ namespace oineus {
         logger->set_level(params.spdlog_level);
         logger->flush_on(params.spdlog_level);
 
-        using Column = typename MatrixTraits::Column;
         using PColumn = typename MatrixTraits::PColumn;
 
         std::memory_order acq = std::memory_order_seq_cst;
@@ -360,10 +357,10 @@ namespace oineus {
                 d_data(d),
                 r_data(d),
                 dualize_(dualize),
-                n_rows(n_rows == std::numeric_limits<decltype(n_rows)>::max() ? d_data.size() : n_rows),
                 // TODO: think about dimensions here
                 dim_first(std::vector<Int>({0})),
-                dim_last(std::vector<Int>({static_cast<Int>(d.size() - 1)}))
+                dim_last(std::vector<Int>({static_cast<Int>(d.size() - 1)})),
+                n_rows(n_rows == std::numeric_limits<decltype(n_rows)>::max() ? d_data.size() : n_rows)
         {
         }
 
@@ -605,8 +602,6 @@ namespace oineus {
         ThreadStats stats {0};
         int n_cleared = 0;
 
-        Int n_cols = d_data.size();
-
         if (params.compute_v)
             v_data = MatrixTraits::eye(d_data.size());
 
@@ -777,7 +772,7 @@ namespace oineus {
                 total_cleared += s.n_cleared;
                 spd::info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
             }
-            spd::info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
+            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, params.elapsed);
         }
 
 #ifdef OINEUS_GATHER_ADD_STATS
@@ -786,7 +781,7 @@ namespace oineus {
         {
             tf::Taskflow taskflow_finish;
             taskflow_finish.for_each_index((size_t)0, n_cols, (size_t)1,
-                    [this, &ar_matrix, &pivots](size_t col_idx) {
+                    [this, &ar_matrix](size_t col_idx) {
                         auto p = ar_matrix[col_idx].load(std::memory_order_relaxed);
                         if (p) {
                             r_data[col_idx] = std::move(*p);
@@ -893,11 +888,11 @@ namespace oineus {
 
         if (params.print_time) {
             long total_cleared = 0;
-            for(auto& s: stats) {
+            for(const auto& s: stats) {
                 total_cleared += s.n_cleared;
                 spd::info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
             }
-            spd::info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
+            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, params.elapsed);
         }
 
 #ifdef OINEUS_GATHER_ADD_STATS

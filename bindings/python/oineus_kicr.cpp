@@ -4,17 +4,10 @@ void init_oineus_kicr(py::module& m)
 {
     using namespace pybind11::literals;
 
-    using DgmPoint = typename oin::Diagrams<oin_real>::Point;
-    using DgmPtVec = typename oin::Diagrams<oin_real>::Dgm;
-    using IndexDgmPtVec = typename oin::Diagrams<oin_real>::IndexDgm;
-    using Diagram = PyOineusDiagrams<oin_real>;
-
     using Simplex = oin::Simplex<oin_int>;
-    using SimplexValue = oin::CellWithValue<oin::Simplex<oin_int>, oin_real>;
     using Filtration = oin::Filtration<Simplex, oin_real>;
 
     using ProdSimplex = oin::ProductCell<Simplex, Simplex>;
-    using ProdSimplexValue = oin::CellWithValue<ProdSimplex, oin_real>;
     using ProdFiltration = oin::Filtration<ProdSimplex, oin_real>;
 
     using KerImCokRedSimplex = oin::KerImCokReduced<Simplex, oin_real>;

@@ -181,7 +181,7 @@ decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::
 
     Real* pdata {static_cast<Real*>(data_buf.ptr)};
 
-    for(size_t i = 0 ; i < data.size() ; ++i)
+    for(ssize_t i = 0 ; i < data.size() ; ++i)
         points[i / D][i % D] = pdata[i];
 
     return points;
@@ -251,21 +251,17 @@ get_ls_filtration(const py::list& simplices, const py::array_t<Real>& vertex_val
     for(auto&& item: simplices) {
         IdxVector vertices = item.cast<IdxVector>();
 
-        Int critical_vertex;
         Real critical_value = negate ? std::numeric_limits<Real>::max() : std::numeric_limits<Real>::lowest();
 
         for(auto v: vertices) {
             Real vv = p_vertex_values[v];
             if (cmp(critical_value, vv)) {
-                critical_vertex = v;
                 critical_value = vv;
             }
         }
 
         fil_simplices.emplace_back(vertices, critical_value);
     }
-
-//    std::cerr << "without filtration ctor, in get_ls_filtration elapsed: " << timer.elapsed_reset() << std::endl;
 
     return Fil(std::move(fil_simplices), negate, n_threads);
 }
@@ -426,8 +422,6 @@ compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array
 template<typename C, typename Real>
 oin::KerImCokReduced<C, Real, 2> compute_kernel_image_cokernel_reduction(const oin::Filtration<C, Real>& K, const oin::Filtration<C, Real>& L, oin::Params& params)
 {
-    using Int = typename C::Int;
-    using Filtration = oin::Filtration<C, Real>;
     using KICR = oin::KerImCokReduced<C, Real, 2>;
 
     params.sort_dgms = false;

@@ -96,7 +96,7 @@ namespace dnn
             friend  class   boost::serialization::access;
 
             template<class Archive>
-            void serialize(Archive& ar, const unsigned int version)     {  ar & boost::serialization::base_object< boost::array<Real,D> >(*this) & id_; }
+            void serialize(Archive& ar, [[maybe_unused]] const unsigned int version)     {  ar & boost::serialization::base_object< boost::array<Real,D> >(*this) & id_; }
 
         private:
             size_t          id_;
@@ -162,7 +162,7 @@ namespace dnn
             friend  class   boost::serialization::access;
 
             template<class Archive>
-            void serialize(Archive& ar, const unsigned int version)         {}
+            void serialize([[maybe_unused]] Archive& ar, [[maybe_unused]] const unsigned int version)         {}
 
         };
 
@@ -250,7 +250,7 @@ namespace dnn
             friend  class   boost::serialization::access;
 
             template<class Archive>
-            void serialize(Archive& ar, const unsigned int version)     {  ar & boost::serialization::base_object< boost::array<Real,D> >(*this) & id_; }
+            void serialize(Archive& ar, [[maybe_unused]] const unsigned int version)     {  ar & boost::serialization::base_object< boost::array<Real,D> >(*this) & id_; }
 
         private:
             size_t          id_;
@@ -311,7 +311,7 @@ namespace dnn
             friend  class   boost::serialization::access;
 
             template<class Archive>
-            void serialize(Archive& ar, const unsigned int version)         {}
+            void serialize([[maybe_unused]] Archive& ar, [[maybe_unused]] const unsigned int version)         {}
     };
 
     template<class PointContainer>

@@ -39,7 +39,7 @@ IntOut simplex_uid(const std::vector<IntIn>& vertices)
 {
     IntOut dim_info = (vertices.size() + 1) << (8 * sizeof(IntOut) - 4);
     IntOut uid = 0;
-    for(IntIn i = 0; i < vertices.size(); i++) {
+    for(IntIn i = 0; i < static_cast<IntIn>(vertices.size()); i++) {
         uid += comb<IntIn, IntOut>(vertices[i], i + 1);
     }
     return uid | dim_info;
@@ -109,7 +109,7 @@ struct Simplex {
     void set_id(Int new_id) { id_ = new_id; }
 
     Simplex(const Int _id, const IdxVector& _vertices, bool set_uid_immediately = true)
-            :vertices_(_vertices), id_(_id)
+            :id_(_id), vertices_(_vertices)
     {
         if (vertices_.empty())
             throw std::runtime_error("Empty simplex not allowed");

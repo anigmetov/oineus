@@ -100,7 +100,7 @@ inline float parse_real_from_str<float>(const std::string& s)
 
 
 template<class RealType>
-inline RealType parse_real_from_str(const std::string& s)
+inline RealType parse_real_from_str([[maybe_unused]] const std::string& s)
 {
     static_assert(sizeof(RealType) != sizeof(RealType), "Must be specialized for each type you want to use, see above");
 }

@@ -73,7 +73,7 @@ class DynamicPointVector
         friend  class   boost::serialization::access;
 
         template<class Archive>
-        void serialize(Archive& ar, const unsigned int version)         { ar & point_capacity_ & storage_; }
+        void serialize(Archive& ar, [[maybe_unused]] const unsigned int version)         { ar & point_capacity_ & storage_; }
 };
 
 template<class Real_>
@@ -157,7 +157,7 @@ struct DynamicPointTraits
         friend  class   boost::serialization::access;
 
         template<class Archive>
-        void serialize(Archive& ar, const unsigned int version)         { ar & dim_; }
+        void serialize(Archive& ar, [[maybe_unused]] const unsigned int version)         { ar & dim_; }
 };
 
 } // dnn
@@ -239,12 +239,12 @@ dnn::DynamicPointTraits<R>::container(size_t n, const PointType& p) const
 
 template<typename R>
 typename dnn::DynamicPointTraits<R>::PointContainer::iterator
-dnn::DynamicPointTraits<R>::iterator(PointContainer& c, PointHandle ph) const
+dnn::DynamicPointTraits<R>::iterator([[maybe_unused]] PointContainer& c, PointHandle ph) const
 { return typename PointContainer::iterator(ph.p, capacity()); }
 
 template<typename R>
 typename dnn::DynamicPointTraits<R>::PointContainer::const_iterator
-dnn::DynamicPointTraits<R>::iterator(const PointContainer& c, PointHandle ph) const
+dnn::DynamicPointTraits<R>::iterator([[maybe_unused]] const PointContainer& c, PointHandle ph) const
 { return typename PointContainer::const_iterator(ph.p, capacity()); }
 
 } // ws

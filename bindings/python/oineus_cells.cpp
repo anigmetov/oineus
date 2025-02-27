@@ -9,7 +9,6 @@ void init_oineus_cells(py::module& m)
 
     using ProdSimplex = oin::ProductCell<Simplex, Simplex>;
     using ProdSimplexValue = oin::CellWithValue<ProdSimplex, oin_real>;
-    using ProdFiltration = oin::Filtration<ProdSimplex, oin_real>;
 
     // Simplex and product of two simplices without value, vertices only
     const std::string pure_simplex_class_name = "CombinatorialSimplex";

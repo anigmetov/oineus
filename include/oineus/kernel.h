@@ -16,8 +16,6 @@
 #include "diagram.h"
 #include "profile.h"
 
-#include <icecream/icecream.hpp>
-
 // suppress pragma message from boost
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
@@ -228,15 +226,15 @@ public:
             :
             fil_K_(K),
             fil_L_(L),
+            max_dim_(K.max_dim()),
+            ker_diagrams_(K.max_dim() + 1),
+            im_diagrams_(K.max_dim() + 1),
+            cok_diagrams_(K.max_dim() + 1),
             sorted_K_to_sorted_L_(K.size(), k_invalid_index),
             sorted_L_to_sorted_K_(L.size(), k_invalid_index),
             new_order_to_old_(K.size(), k_invalid_index),
             old_order_to_new_(K.size(), k_invalid_index),
             K_to_ker_column_index_(K.size(), k_invalid_index),
-            max_dim_(K.max_dim()),
-            ker_diagrams_(K.max_dim() + 1),
-            im_diagrams_(K.max_dim() + 1),
-            cok_diagrams_(K.max_dim() + 1),
             params_(params)
     {
         if (params_.verbose) { std::cerr << "Performing kernel, image, cokernel reduction, reduction parameters: " << params << std::endl; }
@@ -327,7 +325,7 @@ public:
         // map from old order to new order so that we know which cells correspond to which rows.
         // This could be done by just shuffling the row indices, but as we create a new reduction isntance, we need to create a new matrix anyway.
 
-        for(int i = 0 ; i < fil_K_.size() ; i++) {
+        for(size_t i = 0 ; i < fil_K_.size(); i++) {
             old_order_to_new_[new_order_to_old_[i]] = i;
         }
 
@@ -370,16 +368,6 @@ public:
             if (params_.verbose) { std::cerr << "dcmp_cok reduced, size=" << dcmp_cok_.size() << std::endl; }
             CALI_MARK_END("dcmp_cok");
         }
-
-//        if (params_.verbose) {
-//            IC(new_order_to_old_, old_order_to_new_);
-//            IC(dcmp_F_.r_data);
-//            IC(dcmp_G_.d_data);
-//            IC(dcmp_G_.r_data);
-//            IC(dcmp_im_.r_data);
-//            IC(dcmp_ker_.r_data);
-//            IC(dcmp_cok_.r_data);
-//        }
 
         if (params_.verbose and params_.sanity_check) {
             std::cerr << "starting sanity check..." << std::endl;
@@ -447,7 +435,7 @@ public:
                 if (not is_zero(R_f[index_in_K])) {
                     size_t low_in_im = low(R_im[index_in_K]);
                     if (low_in_im >= fil_L_.size()) {
-                        IC(sigma_L_idx, index_in_K, low_in_im);
+//                        IC(sigma_L_idx, index_in_K, low_in_im);
                         throw std::runtime_error("condition (iii) violated, lowest one in R_im[i] not in L");
                     }
                 }
@@ -455,7 +443,7 @@ public:
                 if (not is_zero(R_g[sigma_L_idx]) and is_zero(R_f[index_in_K])) {
                     size_t low_ker = low(R_ker[K_to_ker_column_index_.at(index_in_K)]);
                     if (low_ker < fil_L_.size()) {
-                        IC(sigma_L_idx, index_in_K, low_ker, fil_L_.size(), fil_K_.size());
+//                        IC(sigma_L_idx, index_in_K, low_ker, fil_L_.size(), fil_K_.size());
                         throw std::runtime_error("condition (vi) violated, lowest one in R_ker[i] is not in K-L");
                     }
                 }
@@ -474,7 +462,7 @@ public:
 
                 size_t low_ker = low(R_ker.at(r_ker_idx));
                 if (low_ker != old_order_to_new_.at(sigma_K_idx)) {
-                    IC(sigma_K_idx, old_order_to_new_[sigma_K_idx], low_ker);
+//                    IC(sigma_K_idx, old_order_to_new_[sigma_K_idx], low_ker);
                     throw std::runtime_error("condition (v) violated, lowest one in R_ker[i] is not sigma_i");
                 }
             }
@@ -603,7 +591,7 @@ public:
             auto im_low = low(R_im.at(death_idx));
 
             // lowest one in the column of tau in R_im is in L, skip it
-            if (im_low < fil_L_.size()) {
+            if (im_low < static_cast<Int>(fil_L_.size())) {
                 continue;
             }
 
@@ -681,7 +669,7 @@ public:
             auto im_low = low(R_im.at(death_idx));
 
             // lowest one in the column of tau in R_im is not in L, skip it
-            if (im_low >= fil_L_.size())
+            if (im_low >= static_cast<Int>(fil_L_.size()))
                 continue;
 
             auto birth_idx = new_order_to_old_.at(im_low);

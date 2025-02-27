@@ -64,7 +64,7 @@ struct SimpleSparseMatrixTraits {
     }
 
     static size_t r_column_size(const Column& col) { return col.size(); }
-    static size_t v_column_size(const Column& col) { return 0; }
+    static size_t v_column_size([[maybe_unused]] const Column& col) { return 0; }
 
     static void add_column(const Column* col_a, const Column* col_b, Column* sum);
 
@@ -98,10 +98,10 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
     static bool is_zero(const Column& c) { return c.empty(); }
 
     static size_t r_column_size(const Column& col) { return col.size(); }
-    static size_t v_column_size(const Column& col) { return 0; }
+    static size_t v_column_size([[maybe_unused]] const Column& col) { return 0; }
 
     static size_t r_column_size(const CachedColumn& col) { return col.size(); }
-    static size_t v_column_size(const CachedColumn& col) { return 0; }
+    static size_t v_column_size([[maybe_unused]] const CachedColumn& col) { return 0; }
 
     static Int low(const Column* c)
     {
@@ -171,7 +171,7 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
     {
         Matrix cols{n};
 
-        for(Int i = 0 ; i < n ; ++i)
+        for(Int i = 0 ; i < static_cast<Int>(n); ++i)
             cols[i].emplace_back(i);
         return cols;
     }
@@ -426,14 +426,14 @@ struct SparseMatrix {
     //methods
 
     SparseMatrix(size_t n_rows, size_t n_cols)
-            :n_rows_(n_rows), n_cols_(n_cols), col_data_(n_cols), row_data_(n_rows) { }
+            :n_rows_(n_rows), n_cols_(n_cols), row_data_(n_rows), col_data_(n_cols) { }
 
     SparseMatrix(const Data& data, size_t n_other, bool is_col)
             :
             n_rows_(is_col ? n_other : data.size()),
             n_cols_(is_col ? data.size() : n_other),
-            col_data_(is_col ? data : Data()),
-            row_data_(is_col ? Data() : data) { if (is_col) compute_rows(); else compute_cols(); }
+            row_data_(is_col ? Data() : data),
+            col_data_(is_col ? data : Data()) { if (is_col) compute_rows(); else compute_cols(); }
 
     SparseMatrix(Data&& col_data, size_t n_rows)
             :n_rows_(n_rows), n_cols_(col_data.size()), col_data_(col_data) { compute_rows(); }
@@ -515,13 +515,13 @@ struct SparseMatrix {
 
         if (not std::all_of(col_data_.begin(), col_data_.end(),
                 [this](const Column& v) {
-                  return std::all_of(v.begin(), v.end(), [this](Int e) { return e >= 0 and e < this->n_rows(); });
+                  return std::all_of(v.begin(), v.end(), [this](Int e) { return e >= 0 and e < static_cast<Int>(this->n_rows()); });
                 }))
             return false;
 
         if (not std::all_of(row_data_.begin(), row_data_.end(),
                 [this](const Column& v) {
-                  return std::all_of(v.begin(), v.end(), [this](Int e) { return e >= 0 and e < this->n_cols(); });
+                  return std::all_of(v.begin(), v.end(), [this](Int e) { return e >= 0 and e < static_cast<Int>(this->n_cols()); });
                 }))
             return false;
 
@@ -555,7 +555,7 @@ struct SparseMatrix {
 
     void delete_cols(std::vector<int> cols_to_del)
     {
-        for(int i = 0 ; i < cols_to_del.size() ; i++) {
+        for(size_t i = 0 ; i < cols_to_del.size() ; i++) {
             delete_col(cols_to_del[i]);
         }
 
@@ -586,7 +586,7 @@ struct SparseMatrix {
     {
         for(size_t col_idx = 0 ; col_idx < n_cols() ; ++col_idx) {
             auto& col = col_data_[col_idx];
-            if (not col.empty() and col.back() > col_idx)
+            if (not col.empty() and col.back() > static_cast<Int>(col_idx))
                 return false;
         }
         return true;
