@@ -360,8 +360,9 @@ namespace oineus {
         }
 
         bool negate() const { return negate_; }
-
+        // if a < b , return true
         bool cmp(Real a, Real b) const { return negate() ? (a > b) : (a < b); }
+        bool cmp_less(Real a, Real b) const { return negate() ? (a > b) : (a < b); }
 
         Real infinity() const
         {
