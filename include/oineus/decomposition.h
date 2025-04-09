@@ -602,6 +602,8 @@ namespace oineus {
         ThreadStats stats {0};
         int n_cleared = 0;
 
+        std::unordered_set<Int> cleared_cols;
+
         if (params.compute_v)
             v_data = MatrixTraits::eye(d_data.size());
 
@@ -624,6 +626,10 @@ namespace oineus {
                     if (pivots[i] >= 0) {
                         r_data[i].clear();
                         n_cleared++;
+                        // U. Bauer's trick to get a valid V column for cleared columns
+                        if (params.compute_v) {
+                            v_data[i] = r_data[pivots[i]];
+                        }
                         continue;
                     }
                 }
