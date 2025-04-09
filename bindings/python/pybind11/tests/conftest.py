@@ -4,12 +4,16 @@ Extends output capture as needed by pybind11: ignore constructors, optional unor
 Adds docstring and exceptions message sanitizers.
 """
 
+from __future__ import annotations
+
 import contextlib
 import difflib
 import gc
+import importlib.metadata
 import multiprocessing
 import re
 import sys
+import sysconfig
 import textwrap
 import traceback
 
@@ -26,8 +30,8 @@ except Exception:
 
 @pytest.fixture(scope="session", autouse=True)
 def use_multiprocessing_forkserver_on_linux():
-    if sys.platform != "linux":
-        # The default on Windows and macOS is "spawn": If it's not broken, don't fix it.
+    if sys.platform != "linux" or sys.implementation.name == "graalpy":
+        # The default on Windows, macOS and GraalPy is "spawn": If it's not broken, don't fix it.
         return
 
     # Full background: https://github.com/pybind/pybind11/issues/4105#issuecomment-1301004592
@@ -134,7 +138,7 @@ class Capture:
         return Output(self.err)
 
 
-@pytest.fixture()
+@pytest.fixture
 def capture(capsys):
     """Extended `capsys` with context manager and custom equality operators"""
     return Capture(capsys)
@@ -170,7 +174,7 @@ def _sanitize_docstring(thing):
     return _sanitize_general(s)
 
 
-@pytest.fixture()
+@pytest.fixture
 def doc():
     """Sanitize docstrings and add custom failure explanation"""
     return SanitizedString(_sanitize_docstring)
@@ -182,7 +186,7 @@ def _sanitize_message(thing):
     return _hexadecimal.sub("0", s)
 
 
-@pytest.fixture()
+@pytest.fixture
 def msg():
     """Sanitize messages and add custom failure explanation"""
     return SanitizedString(_sanitize_message)
@@ -196,8 +200,9 @@ def pytest_assertrepr_compare(op, left, right):  # noqa: ARG001
 
 
 def gc_collect():
-    """Run the garbage collector twice (needed when running
+    """Run the garbage collector three times (needed when running
     reference counting tests with PyPy)"""
+    gc.collect()
     gc.collect()
     gc.collect()
 
@@ -207,15 +212,33 @@ def pytest_configure():
     pytest.gc_collect = gc_collect
 
 
-def pytest_report_header(config):
-    del config  # Unused.
-    assert (
-        pybind11_tests.compiler_info is not None
-    ), "Please update pybind11_tests.cpp if this assert fails."
-    return (
-        "C++ Info:"
-        f" {pybind11_tests.compiler_info}"
-        f" {pybind11_tests.cpp_std}"
-        f" {pybind11_tests.PYBIND11_INTERNALS_ID}"
-        f" PYBIND11_SIMPLE_GIL_MANAGEMENT={pybind11_tests.PYBIND11_SIMPLE_GIL_MANAGEMENT}"
+def pytest_report_header():
+    assert pybind11_tests.compiler_info is not None, (
+        "Please update pybind11_tests.cpp if this assert fails."
     )
+    interesting_packages = ("pybind11", "numpy", "scipy", "build")
+    valid = []
+    for package in sorted(interesting_packages):
+        with contextlib.suppress(ModuleNotFoundError):
+            valid.append(f"{package}=={importlib.metadata.version(package)}")
+    reqs = " ".join(valid)
+
+    cpp_info = [
+        "C++ Info:",
+        f"{pybind11_tests.compiler_info}",
+        f"{pybind11_tests.cpp_std}",
+        f"{pybind11_tests.PYBIND11_INTERNALS_ID}",
+        f"PYBIND11_SIMPLE_GIL_MANAGEMENT={pybind11_tests.PYBIND11_SIMPLE_GIL_MANAGEMENT}",
+    ]
+    if "__graalpython__" in sys.modules:
+        cpp_info.append(
+            f"GraalPy version: {sys.modules['__graalpython__'].get_graalvm_version()}"
+        )
+    lines = [
+        f"installed packages of interest: {reqs}",
+        " ".join(cpp_info),
+    ]
+    if sysconfig.get_config_var("Py_GIL_DISABLED"):
+        lines.append("free-threaded Python build")
+
+    return lines

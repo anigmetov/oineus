@@ -1,7 +1,13 @@
 /**
+ * Copyright 2014-2019 Dmitriy Morozov
+ * SPDX-License-Identifier: MIT
+ *
  * Author: Dmitriy Morozov <dmitriy@mrzv.org>
+ *
  * The interface is heavily influenced by GetOptPP (https://code.google.com/p/getoptpp/).
  * The parsing logic is from ProgramOptions.hxx (https://github.com/Fytch/ProgramOptions.hxx).
+ *
+ * ProgramOptions.hxx: Copyright (c) 2017-2018 Josua Rieder, licensed under MIT
  *
  * History:
  *  - 2015-06-01: added Traits<...>::type_string() for long, unsigned long

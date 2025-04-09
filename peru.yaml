@@ -5,13 +5,14 @@ imports:
 
 git module pybind11:
     url: https://github.com/pybind/pybind11
-    rev: 849322806cd4b3697ad1d35eedd6d0352c5f267a
+    rev: 708ce4d9c7bf55075608eb3cfcb5fa0dc43e070f
 
 git module Catch2:
     url: https://github.com/catchorg/Catch2
-    rev: devel
+    rev: 2b60af89e23d28eefc081bc930831ee9d45ea58b
+    reup: devel
 
 git module opts:
     url: git@github.com:mrzv/opts.git
-    rev: 3f6a6637ac841f8f867fc0cba3e13258f6dc3300
+    rev: 8b30b61e1a66ef4a675fbe8260f2ebf117a9f2e3
     pick: include/opts
