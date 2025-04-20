@@ -115,7 +115,7 @@ struct Simplex {
             throw std::runtime_error("Empty simplex not allowed");
 
         if (vertices_.size() > 1)
-            std::sort(vertices_.begin(), vertices_.end(), std::greater<Int>());
+            std::sort(vertices_.begin(), vertices_.end());
 
         if (set_uid_immediately) set_uid();
     }

@@ -29,6 +29,8 @@ void init_oineus_kicr(py::module& m)
             .def_readwrite("decomposition_im", &KerImCokRedSimplex::dcmp_im_)
             .def_readwrite("decomposition_ker", &KerImCokRedSimplex::dcmp_ker_)
             .def_readwrite("decomposition_cok", &KerImCokRedSimplex::dcmp_cok_)
+            .def_readwrite("fil_K", &KerImCokRedSimplex::fil_K_)
+            .def_readwrite("fil_L", &KerImCokRedSimplex::fil_L_)
             ;
 
      py::class_<KerImCokRedProdSimplex>(m, ker_im_cok_reduced_prod_class_name.c_str())
@@ -42,5 +44,7 @@ void init_oineus_kicr(py::module& m)
             .def_readwrite("decomposition_im", &KerImCokRedProdSimplex::dcmp_im_)
             .def_readwrite("decomposition_ker", &KerImCokRedProdSimplex::dcmp_ker_)
             .def_readwrite("decomposition_cok", &KerImCokRedProdSimplex::dcmp_cok_)
+            .def_readwrite("fil_K", &KerImCokRedProdSimplex::fil_K_)
+            .def_readwrite("fil_L", &KerImCokRedProdSimplex::fil_L_)
             ;
 }
