@@ -352,7 +352,7 @@ namespace oineus {
             }
         }
 
-        VRUDecomposition(const MatrixData& d, size_t n_rows = std::numeric_limits<decltype(n_rows)>::max(), bool dualize=false)
+        VRUDecomposition(const MatrixData& d, size_t n_rows = std::numeric_limits<decltype(n_rows)>::max(), bool dualize=false, bool skip_check=false)
                 :
                 d_data(d),
                 r_data(d),
@@ -362,6 +362,15 @@ namespace oineus {
                 dim_last(std::vector<Int>({static_cast<Int>(d.size() - 1)})),
                 n_rows(n_rows == std::numeric_limits<decltype(n_rows)>::max() ? d_data.size() : n_rows)
         {
+            if (!skip_check) {
+                for(auto&& col : d) {
+                    for(auto&& e: col) {
+                        if (static_cast<decltype(n_rows)>(e) >= n_rows) {
+                            throw std::runtime_error("Row index out of range, specify a bigger value for n_rows");
+                        }
+                    }
+                }
+            }
         }
 
         [[nodiscard]] size_t size() const { return r_data.size(); }
