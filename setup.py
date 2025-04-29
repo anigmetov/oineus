@@ -4,7 +4,7 @@ import sys
 import platform
 import subprocess
 
-from setuptools import setup, Extension
+from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext
 from distutils.version import LooseVersion
 
@@ -81,8 +81,8 @@ setup(
     license='BSD',
     long_description=long_description,
     ext_modules=[CMakeExtension('oineus')],
-    packages=['oineus'],
-    package_dir = { 'oineus' : 'bindings/python/oineus' },
+    packages=['oineus', 'oineus.diff'],  # Added oineus.diff
+    package_dir={'oineus': 'bindings/python/oineus'},
     cmdclass=dict(build_ext=CMakeBuild),
     classifiers=[
         'Development Status :: 4 - Beta',
@@ -95,8 +95,17 @@ setup(
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
-        'License :: OSI Approved :: BSD License'
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
+        'License :: OSI Approved :: BSD License',
+        'Operating System :: POSIX :: Linux',
+        'Operating System :: MacOS',
     ],
     install_requires=["numpy", "scipy", "eagerpy"],
+    python_requires='>=3.5',
     zip_safe=False,
 )
