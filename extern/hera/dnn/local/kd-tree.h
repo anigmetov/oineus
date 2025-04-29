@@ -39,8 +39,6 @@ namespace dnn
             typedef         std::vector<DistanceType>                       DistanceContainer;
             typedef         std::unordered_map<PointHandle, size_t>         HandleMap;
 
-            BOOST_STATIC_ASSERT_MSG(hera::dnn::has_coordinates<Traits, PointHandle, int>::value, "KDTree requires coordinates");
-
         public:
                             KDTree(const Traits& traits):
                                 traits_(traits)                             {}
@@ -117,8 +115,6 @@ namespace dnn
             typedef     typename HandleContainer::iterator                  HCIterator;
             typedef     std::tuple<HCIterator, HCIterator, size_t, ssize_t>     KDTreeNode;
             typedef     std::tuple<HCIterator, HCIterator>          KDTreeNodeNoCut;
-
-            //BOOST_STATIC_ASSERT_MSG(has_coordinates<Traits, PointHandle, int>::value, "KDTree requires coordinates");
 
         public:
                             KDTree(const Traits& traits):
