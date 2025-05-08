@@ -8,9 +8,9 @@ on:
 jobs:
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
-    fail-fast: false
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           # Linux 64 bit manylinux2014
