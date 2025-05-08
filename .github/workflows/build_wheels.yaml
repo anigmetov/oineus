@@ -8,10 +8,86 @@ on:
 jobs:
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    fail-fast: false
     strategy:
       matrix:
-        os: [macos-latest]
+        include:
+          # Linux 64 bit manylinux2014
+          - os: ubuntu-latest
+            python: 310
+            platform_id: manylinux_x86_64
+            manylinux_image: manylinux2014
+          - os: ubuntu-latest
+            python: 311
+            platform_id: manylinux_x86_64
+            manylinux_image: manylinux2014
+          - os: ubuntu-latest
+            python: 312
+            platform_id: manylinux_x86_64
+            manylinux_image: manylinux2014
+          - os: ubuntu-latest
+            python: 313
+            platform_id: manylinux_x86_64
+            manylinux_image: manylinux2014
+          - os: ubuntu-latest
+            python: 313t
+            platform_id: manylinux_x86_64
+            manylinux_image: manylinux2014
+            free_threaded_support: True
+
+          # # Linux 64 bit manylinux2014
+          - os: ubuntu-24.04-arm
+            python: 310
+            platform_id: manylinux_aarch64
+            manylinux_image: manylinux2014
+          - os: ubuntu-24.04-arm
+            python: 311
+            platform_id: manylinux_aarch64
+            manylinux_image: manylinux2014
+          - os: ubuntu-24.04-arm
+            python: 312
+            platform_id: manylinux_aarch64
+            manylinux_image: manylinux2014
+          - os: ubuntu-24.04-arm
+            python: 313
+            platform_id: manylinux_aarch64
+            manylinux_image: manylinux2014
+
+          # MacOS x86_64
+          - os: macos-13
+            python: 310
+            platform_id: macosx_x86_64
+          - os: macos-13
+            python: 311
+            platform_id: macosx_x86_64
+          - os: macos-13
+            python: 312
+            platform_id: macosx_x86_64
+          - os: macos-13
+            python: 313
+            platform_id: macosx_x86_64
+          - os: macos-13
+            python: 313t
+            platform_id: macosx_x86_64
+            free_threaded_support: True
+
+          # MacOS arm64
+          - os: macos-14
+            python: 310
+            platform_id: macosx_arm64
+          - os: macos-14
+            python: 311
+            platform_id: macosx_arm64
+          - os: macos-14
+            python: 312
+            platform_id: macosx_arm64
+          - os: macos-14
+            python: 313
+            platform_id: macosx_arm64
+          - os: macos-14
+            python: 313t
+            platform_id: macosx_arm64
+            free_threaded_support: True
 
     steps:
       - uses: actions/checkout@v3
@@ -29,12 +105,13 @@ jobs:
       - name: Build wheels
         run: python -m cibuildwheel --output-dir wheelhouse
         env:
-          CIBW_ARCHS_MACOS: "x86_64 arm64"
-          CIBW_ARCHS_LINUX: "x86_64"
+          CIBW_ARCHS: "all"
           CIBW_SKIP: "*musllinux*"
+          CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
           CIBW_BEFORE_ALL_LINUX: "yum install -y boost-devel"
           CIBW_BEFORE_ALL_MACOS: "brew install boost"
           CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+          CIBW_BUILD_VERBOSITY: 1
 
       - name: List built wheels
         run: ls -l wheelhouse
