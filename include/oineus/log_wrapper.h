@@ -38,44 +38,44 @@ struct logger {
 
     static void flush() {}
 
-    static void set_level(level::level_enum lvl) {}
-    static void flush_on(level::level_enum lvl) {}
+    static void set_level([[maybe_unused]] level::level_enum lvl) {}
+    static void flush_on([[maybe_unused]] level::level_enum lvl) {}
 
     template<class... Args>
-    static void trace(Args... args) {}
+    static void trace([[maybe_unused]] Args... args) {}
 
     template<class... Args>
-    static void debug(Args... args) {}
+    static void debug([[maybe_unused]] Args... args) {}
 
     template<class... Args>
-    static void info(Args... args) {}
+    static void info([[maybe_unused]] Args... args) {}
 
     template<class... Args>
-    static void warn(Args... args) {}
+    static void warn([[maybe_unused]] Args... args) {}
 
     template<class... Args>
-    static void err(Args... args) {}
+    static void err([[maybe_unused]] Args... args) {}
 
     template<class... Args>
-    static void critical(Args... args) {}
+    static void critical([[maybe_unused]] Args... args) {}
 };
 
 
 template<class... T>
-std::shared_ptr<logger> basic_logger_mt(T...)
+std::shared_ptr<logger> basic_logger_mt([[maybe_unused]] T...)
 {
     return nullptr;
 }
 
 
 template<class... T>
-std::shared_ptr<logger> stderr_color_mt(T...)
+std::shared_ptr<logger> stderr_color_mt([[maybe_unused]] T...)
 {
     return nullptr;
 }
 
 template<class... T>
-std::shared_ptr<logger> get(T...)
+std::shared_ptr<logger> get([[maybe_unused]] T...)
 {
     return nullptr;
 }
@@ -111,8 +111,6 @@ inline void info([[maybe_unused]] const Args& ... args)
 {
     ;
 }
-
-
 
 } // namespace spdlog
 

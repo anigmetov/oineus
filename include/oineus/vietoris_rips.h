@@ -88,7 +88,6 @@ namespace oineus {
     template<class Int, class Real, std::size_t D>
     std::pair<CellWithValue<Simplex<Int>, Real>, VREdge<Int>> vr_simplex_with_edge(const std::vector<Point<Real, D>>& points, const typename Simplex<Int>::IdxVector& vertices_)
     {
-        using IdxVector = typename Simplex<Int>::IdxVector;
         using Simplex = CellWithValue<Simplex<Int>, Real>;
 
         assert(not vertices_.empty());
@@ -153,13 +152,13 @@ namespace oineus {
         if (current.size() == max_dim + 1)
             return;
 
-        size_t cur_idx = 0;
+        [[maybe_unused]] size_t cur_idx = 0;
         for(auto cur = excluded_end; cur != candidates.end(); ++cur) {
             current.push_back(*cur);
 
             VertexContainer new_candidates;
 
-            size_t i = 0;
+            [[maybe_unused]] size_t i = 0;
 
             for(auto ccur = candidates.begin(); ccur != cur; ++ccur) {
                 if (neighbor(*ccur, *cur))
@@ -392,7 +391,7 @@ namespace oineus {
         std::vector<VREdge<Int>> edges;
 
         for(size_t v_idx = 0; v_idx < points.size(); ++v_idx) {
-            std::vector<Int> vertices {v_idx};
+            std::vector<Int> vertices {static_cast<Int>(v_idx)};
             auto [simplex, edge] = vr_simplex_with_edge<Int, Real, D>(points, vertices);
             simplices.emplace_back(simplex);
             edges.emplace_back(edge);

@@ -62,7 +62,7 @@ def test_kernel_2():
 	if (kicr.image_diagrams().in_dimension(0) != [[10., math.inf]]).any():
 		print("Error in kernel_test_1: image diagram in dimenion 0 incorrect.")
 		errors = True
-  	if (kicr.image_diagrams().in_dimension(1) != []).any():
+	if (kicr.image_diagrams().in_dimension(1) != []).any():
 		print("Error in kernel_test_1: image diagram in dimenion 0 incorrect.")
 		errors = True
 	if errors:

@@ -4,17 +4,10 @@ void init_oineus_kicr(py::module& m)
 {
     using namespace pybind11::literals;
 
-    using DgmPoint = typename oin::Diagrams<oin_real>::Point;
-    using DgmPtVec = typename oin::Diagrams<oin_real>::Dgm;
-    using IndexDgmPtVec = typename oin::Diagrams<oin_real>::IndexDgm;
-    using Diagram = PyOineusDiagrams<oin_real>;
-
     using Simplex = oin::Simplex<oin_int>;
-    using SimplexValue = oin::CellWithValue<oin::Simplex<oin_int>, oin_real>;
     using Filtration = oin::Filtration<Simplex, oin_real>;
 
     using ProdSimplex = oin::ProductCell<Simplex, Simplex>;
-    using ProdSimplexValue = oin::CellWithValue<ProdSimplex, oin_real>;
     using ProdFiltration = oin::Filtration<ProdSimplex, oin_real>;
 
     using KerImCokRedSimplex = oin::KerImCokReduced<Simplex, oin_real>;
@@ -40,6 +33,8 @@ void init_oineus_kicr(py::module& m)
             .def_readwrite("decomposition_im", &KerImCokRedSimplex::dcmp_im_)
             .def_readwrite("decomposition_ker", &KerImCokRedSimplex::dcmp_ker_)
             .def_readwrite("decomposition_cok", &KerImCokRedSimplex::dcmp_cok_)
+            .def_readwrite("fil_K", &KerImCokRedSimplex::fil_K_)
+            .def_readwrite("fil_L", &KerImCokRedSimplex::fil_L_)
             ;
 
      py::class_<KerImCokRedProdSimplex>(m, ker_im_cok_reduced_prod_class_name.c_str())
@@ -53,5 +48,7 @@ void init_oineus_kicr(py::module& m)
             .def_readwrite("decomposition_im", &KerImCokRedProdSimplex::dcmp_im_)
             .def_readwrite("decomposition_ker", &KerImCokRedProdSimplex::dcmp_ker_)
             .def_readwrite("decomposition_cok", &KerImCokRedProdSimplex::dcmp_cok_)
+            .def_readwrite("fil_K", &KerImCokRedProdSimplex::fil_K_)
+            .def_readwrite("fil_L", &KerImCokRedProdSimplex::fil_L_)
             ;
 }

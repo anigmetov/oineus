@@ -6,8 +6,6 @@ void init_oineus_functions(py::module& m)
 
     using Simp = oin::Simplex<oin_int>;
     using SimpProd = oin::ProductCell<Simp, Simp>;
-    using Filtration = oin::Filtration<Simp, oin_real>;
-
     using oin::VREdge;
 
     std::string func_name;

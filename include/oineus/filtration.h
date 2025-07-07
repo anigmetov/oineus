@@ -83,7 +83,7 @@ namespace oineus {
             for(auto& sigma : cells_) {
                 sigma.set_id(sigma.get_sorted_id());
             }
-            for(Int i = 0; i < id_to_sorted_id_.size(); ++i) {
+            for(size_t i = 0; i < id_to_sorted_id_.size(); ++i) {
                 id_to_sorted_id_[i] = i;
                 sorted_id_to_id_[i] = i;
             }
@@ -137,7 +137,7 @@ namespace oineus {
             taskflow.for_each_index((size_t)0, size(), (size_t)1,
                     [this, missing_ok, &result](size_t col_idx) {
                         // skip 0-dim simplices
-                        if (col_idx <= dim_last(0))
+                        if (col_idx <= static_cast<size_t>(dim_last(0)))
                             return;
                         const auto& sigma = cells_[col_idx];
                         auto& col = result[col_idx];
@@ -155,7 +155,7 @@ namespace oineus {
                         }
                         std::sort(col.begin(), col.end());
                     });
-            executor.run(taskflow).wait();
+            executor.run(taskflow).get();
             return result;
         }
 
@@ -172,7 +172,7 @@ namespace oineus {
                 if (n_threads > 1) {
                     tf::Executor executor(n_threads);
                     tf::Taskflow taskflow;
-                    tf::Task fill_bdry_matrix = taskflow.for_each_index(0, size_in_dimension(d), (size_t)1,
+                    taskflow.for_each_index((size_t)0, size_in_dimension(d), (size_t)1,
                             [this, d, missing_ok, &result](size_t col_idx) {
                                 auto& sigma = cells_[col_idx + dim_first(d)];
                                 auto& col = result[col_idx];
@@ -190,7 +190,7 @@ namespace oineus {
                                 }
                                 std::sort(col.begin(), col.end());
                             });
-                    executor.run(taskflow).wait();
+                    executor.run(taskflow).get();
                 } else {
                     for(size_t col_idx = 0; col_idx < size_in_dimension(d); ++col_idx) {
                         auto& sigma = cells_[col_idx + dim_first(d)];
@@ -296,12 +296,12 @@ namespace oineus {
 
         Real value_by_sorted_id(Int sorted_id) const
         {
-            return cells_[sorted_id].get_value();
+            return cells_.at(sorted_id).get_value();
         }
 
         Real value_by_uid(const CellUid& vs) const
         {
-            return cells_[uid_to_sorted_id.at(vs)].get_value();
+            return cells_.at(uid_to_sorted_id.at(vs)).get_value();
         }
 
         auto get_sorted_id_by_uid(const CellUid& uid) const
@@ -439,14 +439,14 @@ namespace oineus {
 
         void set_dim_info()
         {
-            Int curr_dim = 0;
+            dim_type curr_dim = 0;
             dim_first_.push_back(0);
-            for(Int i = 0; i < size(); ++i)
+            for(size_t i = 0; i < size(); ++i)
                 if (cells_[i].dim() != curr_dim) {
                     if (cells_[i].dim() != curr_dim + 1)
                         throw std::runtime_error("Wrong dimension");
                     assert(i >= 1 and cells_[i].dim() == curr_dim + 1);
-                    dim_last_.push_back(i - 1);
+                    dim_last_.push_back(static_cast<Int>(i) - 1);
                     dim_first_.push_back(i);
                     curr_dim = cells_[i].dim();
                 }
@@ -556,7 +556,7 @@ namespace oineus {
                     });
             sort_task.succeed(set_id_and_uid);
             post_sort.succeed(sort_task);
-            executor.run(taskflow).wait();
+            executor.run(taskflow).get();
             CALI_MARK_END("TF_SORT_AND_SET");
 
             // unordered_set is not thread-safe, cannot do in parallel

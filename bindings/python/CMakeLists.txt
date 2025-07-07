@@ -48,3 +48,7 @@ if(oin_build_tests)
             ${CMAKE_COMMAND} -E copy_directory ${MODULE_OUTPUT_DIRECTORY}/oineus "${CMAKE_CURRENT_BINARY_DIR}/../../tests/oineus"
             DEPENDS _oineus oineus)
 endif()
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(_oineus PRIVATE -Wall -Wextra -Wpedantic)
+endif()

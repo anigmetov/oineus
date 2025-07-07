@@ -126,67 +126,67 @@ namespace oineus {
 
     using Permutation = std::map<size_t, size_t>;
 
-    template<class Cell, class Real>
-    void match_diagonal_points(const typename oineus::Filtration<Cell, Real>& current_fil,
-            const typename Diagrams<Real>::Dgm& current_dgm,
-            typename Diagrams<Real>::Dgm& template_dgm,
-            typename hera::AuctionResult<Real>& hera_res,
-            DiagramToValues<Real>& result)
-    {
-        using Int = typename Cell::Int;
-        using Diagram = typename Diagrams<Real>::Dgm;
-        using DgmPt = typename Diagrams<Real>::DgmPoint;
-        // diagonal point with id
-        using DiagP = std::tuple<Real, size_t>;
-        using VecDiagP = std::vector<DiagP>;
-        VecDiagP current_diagonal_points;
+    //template<class Cell, class Real>
+    //void match_diagonal_points(const typename oineus::Filtration<Cell, Real>& current_fil,
+    //        const typename Diagrams<Real>::Dgm& current_dgm,
+    //        typename Diagrams<Real>::Dgm& template_dgm,
+    //        typename hera::AuctionResult<Real>& hera_res,
+    //        DiagramToValues<Real>& result)
+    //{
+    //    using Int = typename Cell::Int;
+    //    using Diagram = typename Diagrams<Real>::Dgm;
+    //    using DgmPt = typename Diagrams<Real>::DgmPoint;
+    //    // diagonal point with id
+    //    using DiagP = std::tuple<Real, size_t>;
+    //    using VecDiagP = std::vector<DiagP>;
+    //    VecDiagP current_diagonal_points;
 
-        for(size_t current_dgm_id = 0; current_dgm_id < current_dgm.size(); ++current_dgm_id) {
-            const DgmPt& current_point = current_dgm[current_dgm.id];
+    //    for(size_t current_dgm_id = 0; current_dgm_id < current_dgm.size(); ++current_dgm_id) {
+    //        const DgmPt& current_point = current_dgm[current_dgm.id];
 
-            if (current_point.is_diagonal() and not current_point.is_inf())
-                current_diagonal_points.emplace_back(current_point.birth, current_dgm_id);
-        }
+    //        if (current_point.is_diagonal() and not current_point.is_inf())
+    //            current_diagonal_points.emplace_back(current_point.birth, current_dgm_id);
+    //    }
 
-        // get unmatched template points
-        Diagram unmatched_template_points;
-        for(auto curr_template: hera_res.matching_b_to_a_) {
-            auto current_id = curr_template.first;
-            auto template_id = curr_template.second;
+    //    // get unmatched template points
+    //    Diagram unmatched_template_points;
+    //    for(auto curr_template: hera_res.matching_b_to_a_) {
+    //        auto current_id = curr_template.first;
+    //        auto template_id = curr_template.second;
 
-            if (current_id < 0 and template_id >= 0)
-                unmatched_template_points.emplace_back(template_dgm[template_id]);
-        }
+    //        if (current_id < 0 and template_id >= 0)
+    //            unmatched_template_points.emplace_back(template_dgm[template_id]);
+    //    }
 
-        if (unmatched_template_points.size() < current_diagonal_points.size())
-            throw std::runtime_error("Not implemented");
+    //    if (unmatched_template_points.size() < current_diagonal_points.size())
+    //        throw std::runtime_error("Not implemented");
 
-        if (unmatched_template_points.size() > current_diagonal_points.size()) {
-            // keep most persistent points, operator < for points sorts by persistence first
-            std::sort(unmatched_template_points.begin(), unmatched_template_points.end(), std::greater<DgmPoint<Real>>());
-            unmatched_template_points.resize(current_diagonal_points.size());
-        }
+    //    if (unmatched_template_points.size() > current_diagonal_points.size()) {
+    //        // keep most persistent points, operator < for points sorts by persistence first
+    //        std::sort(unmatched_template_points.begin(), unmatched_template_points.end(), std::greater<DgmPoint<Real>>());
+    //        unmatched_template_points.resize(current_diagonal_points.size());
+    //    }
 
-        std::vector<std::tuple<Real, size_t>> diag_unmatched_template;
+    //    std::vector<std::tuple<Real, size_t>> diag_unmatched_template;
 
-        for(auto p: unmatched_template_points)
-            diag_unmatched_template.emplace_back((p.birth + p.death) / 2, p.id);
+    //    for(auto p: unmatched_template_points)
+    //        diag_unmatched_template.emplace_back((p.birth + p.death) / 2, p.id);
 
-        throw std::runtime_error("todo");
-        //hera_params.clear_matching();
+    //    throw std::runtime_error("todo");
+    //    //hera_params.clear_matching();
 
-        //hera::ws::get_one_dimensional_cost(diag_unmatched_template, current_diagonal_points, hera_params);
+    //    //hera::ws::get_one_dimensional_cost(diag_unmatched_template, current_diagonal_points, hera_params);
 
-        //for(auto curr_template: hera_res.matching_b_to_a_) {
-        //    auto current_id = curr_template.first;
-        //    auto template_id = curr_template.second;
+    //    //for(auto curr_template: hera_res.matching_b_to_a_) {
+    //    //    auto current_id = curr_template.first;
+    //    //    auto template_id = curr_template.second;
 
-        //    if (current_id < 0 or template_id < 0)
-        //        throw std::runtime_error("negative ids in one-dimensional call");
+    //    //    if (current_id < 0 or template_id < 0)
+    //    //        throw std::runtime_error("negative ids in one-dimensional call");
 
-        //    result[current_index_dgm.at(current_id)] = template_dgm.at(template_id);
-        //}
-    }
+    //    //    result[current_index_dgm.at(current_id)] = template_dgm.at(template_id);
+    //    //}
+    //}
 
 //    template<class Cell>
 //    DiagramToValues<Real> get_barycenter_target(const Filtration<Cell, Real>& fil, VRUDecomposition<typename Cell::Int>& rv, dim_type d, bool is_vr)
@@ -256,41 +256,6 @@ namespace oineus {
 //        return result;
 //    }
 //
-//// if point is in quadrant defined by (t, t),
-// move it to horizontal or vertical quadrant border, whichever is closer
-    template<class Cell, class Real>
-    DiagramToValues<Real> get_well_group_target(dim_type d,
-            const Filtration<Cell, Real>& current_fil,
-            VRUDecomposition<typename Cell::Int>& rv,
-            Real t,
-            bool is_vr)
-    {
-        DiagramToValues<Real> result;
-
-        auto dgm = rv.diagram(current_fil, false).get_diagram_in_dimension(d);
-
-        for(auto p: dgm) {
-            // check if in quadrant
-            if (current_fil.negate() and (p.birth <= t or p.death >= t))
-                continue;
-            if (not current_fil.negate() and (p.birth >= t or p.death <= t))
-                continue;
-
-            Real target_birth, target_death;
-
-            if (abs(p.birth - t) < abs(p.death - t)) {
-                target_birth = t;
-                target_death = p.death;
-            } else {
-                target_birth = p.birth;
-                target_death = t;
-            }
-
-            result[p] = {target_birth, target_death};
-        }
-
-        return result;
-    }
 
     template<class Real>
     Real clamp(Real a, Real min, Real max)
@@ -320,7 +285,7 @@ namespace oineus {
 
         auto diagram = rv_matrix.diagram(fil, false).get_diagram_in_dimension(d);
 
-        if (diagram.size() >= n) {
+        if (diagram.size() >= static_cast<size_t>(n)) {
             std::nth_element(diagram.begin(), diagram.begin() + n - 1, diagram.end(), std::greater<DPoint>());
             return diagram[n - 1].persistence();
         } else {
@@ -361,7 +326,7 @@ namespace oineus {
     }
 
     template<class Cell, class Real>
-    std::vector<typename Cell::Int> increase_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_birth)
+    std::vector<typename Cell::Int> increase_birth_x([[maybe_unused]] dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_birth)
     {
         if (not decmp.dualize())
             throw std::runtime_error("increase_birth_x: expected cohomology");
@@ -392,12 +357,10 @@ namespace oineus {
     }
 
     template<class Cell, class Real>
-    std::vector<typename Cell::Int> decrease_birth_x(dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_birth)
+    std::vector<typename Cell::Int> decrease_birth_x([[maybe_unused]] dim_type d, size_t positive_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_birth)
     {
         if (not decmp.dualize())
             throw std::runtime_error("expected cohomology");
-
-        //IC(positive_simplex_idx);
 
         if (not fil.cmp(target_birth, fil.cells()[positive_simplex_idx].get_value()))
             throw std::runtime_error("target_birth cannot preceed current value");
@@ -405,9 +368,6 @@ namespace oineus {
         using Int = typename Cell::Int;
 
         std::vector<Int> result;
-        //IC(fil.index_in_matrix(positive_simplex_idx, decmp.dualize()));
-        //IC(decmp.u_data_t.size());
-        //IC(decmp.u_data_t[fil.index_in_matrix(positive_simplex_idx, decmp.dualize())]);
 
         for(auto index_in_matrix: decmp.u_data_t.at(fil.index_in_matrix(positive_simplex_idx, decmp.dualize()))) {
             auto fil_idx = fil.index_in_filtration(index_in_matrix, decmp.dualize());
@@ -427,7 +387,7 @@ namespace oineus {
     }
 
     template<class Cell, class Real>
-    std::vector<typename Cell::Int> increase_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_death)
+    std::vector<typename Cell::Int> increase_death_x([[maybe_unused]] dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_death)
     {
         if (decmp.dualize())
             throw std::runtime_error("increase_death_x: expected homology, got cohomology");
@@ -440,7 +400,6 @@ namespace oineus {
         const auto& r_cols = decmp.r_data;
         const auto& simplices = fil.cells();
 
-        size_t n_cols = decmp.v_data.size();
         Int sigma = low(r_cols[negative_simplex_idx]);
 
         if (not(sigma >= 0 and sigma < r_cols.size()))
@@ -464,7 +423,7 @@ namespace oineus {
     }
 
     template<class Cell, class Real>
-    std::vector<typename Cell::Int> decrease_death_x(dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_death)
+    std::vector<typename Cell::Int> decrease_death_x([[maybe_unused]] dim_type d, size_t negative_simplex_idx, const oineus::Filtration<Cell, Real>& fil, const oineus::VRUDecomposition<typename Cell::Int>& decmp, Real target_death)
     {
         if (decmp.dualize())
             throw std::runtime_error("decrease_death_x: expected homology, got cohomology");
@@ -480,12 +439,9 @@ namespace oineus {
 
 
         auto& v_col = decmp.v_data[negative_simplex_idx];
-        //IC(negative_simplex_idx);
-        //IC(v_col);
 
         for(auto tau_idx_it = v_col.rbegin(); tau_idx_it != v_col.rend(); ++tau_idx_it) {
             auto tau_idx = *tau_idx_it;
-            //IC(tau_idx);
             const auto& tau = fil.cells()[tau_idx];
             assert(tau.dim() == d + 1);
 
@@ -544,8 +500,6 @@ namespace oineus {
 
         if (not decmp_coh.dualize())
             throw std::runtime_error("this parameter must be cohomology");
-
-        using Int = typename Cell::Int;
 
         std::unordered_map<size_t, std::vector<Real>> result;
 

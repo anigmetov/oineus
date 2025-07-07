@@ -16,6 +16,9 @@
 #include <cstdlib>
 #include <stdexcept>
 
+#include "taskflow/taskflow.hpp"
+#include "taskflow/algorithm/for_each.hpp"
+
 #include "common_defs.h"
 #include "timer.h"
 #include "diagram.h"
@@ -100,10 +103,9 @@ namespace oineus {
             else
                 logger = spd::stderr_color_mt(logger_name.c_str());
         }
-        logger->set_level(spd::level::level_enum::debug);
-        logger->flush_on(spd::level::level_enum::debug);
+        logger->set_level(params.spdlog_level);
+        logger->flush_on(params.spdlog_level);
 
-        using Column = typename MatrixTraits::Column;
         using PColumn = typename MatrixTraits::PColumn;
 
         std::memory_order acq = std::memory_order_seq_cst;
@@ -144,8 +146,18 @@ namespace oineus {
 
                 PColumn orig_col = rv[current_column_idx].load(acq);
 
-                if (orig_col == nullptr)
-                    continue;
+                if (orig_col == nullptr) {
+                    // this column has already been zeroed by someone else, continue to next one
+                    current_column_idx = next_column;
+                    next_column = current_column_idx + 1;
+
+                    logger->debug("current column is already 0, advancing to next in chunk, current_column_idx = {}, next_column = {}", current_column_idx, next_column);
+
+                    if (current_column_idx < chunk_end)
+                        continue;
+                    else
+                        break;
+                }
 
                 assert(MatrixTraits::check_col_duplicates(orig_col).empty());
 
@@ -202,6 +214,7 @@ namespace oineus {
                         if (pivot_idx >= 0) {
                             pivot_col = rv[pivot_idx].load(acq);
                         }
+//                      logger->trace("thread {}, column = {}, low = {}, pivot_idx = {}, pivolt_col = {}", thread_idx, current_column_idx, current_low, pivot_idx, (void*) pivot_col);
                     } while(pivot_idx >= 0 && pivot_col != nullptr && MatrixTraits::low(pivot_col) != current_low);
 
                     logger->debug("thread {}, column = {}, loaded pivot column, pivot_idx = {}", thread_idx, current_column_idx, pivot_idx);
@@ -271,7 +284,6 @@ namespace oineus {
                 throw std::runtime_error("some columns in chunk not processed");
             }
 #endif
-
 #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL
             if (my_chunk % 100 == 0) {
                 logger->debug("checking for Ctrl-C in Python...");
@@ -340,16 +352,25 @@ namespace oineus {
             }
         }
 
-        VRUDecomposition(const MatrixData& d, size_t n_rows = std::numeric_limits<decltype(n_rows)>::max(), bool dualize=false)
+        VRUDecomposition(const MatrixData& d, size_t n_rows = std::numeric_limits<decltype(n_rows)>::max(), bool dualize=false, bool skip_check=false)
                 :
                 d_data(d),
                 r_data(d),
                 dualize_(dualize),
-                n_rows(n_rows == std::numeric_limits<decltype(n_rows)>::max() ? d_data.size() : n_rows),
                 // TODO: think about dimensions here
                 dim_first(std::vector<Int>({0})),
-                dim_last(std::vector<Int>({static_cast<Int>(d.size() - 1)}))
+                dim_last(std::vector<Int>({static_cast<Int>(d.size() - 1)})),
+                n_rows(n_rows == std::numeric_limits<decltype(n_rows)>::max() ? d_data.size() : n_rows)
         {
+            if (!skip_check) {
+                for(auto&& col : d) {
+                    for(auto&& e: col) {
+                        if (static_cast<decltype(n_rows)>(e) >= n_rows) {
+                            throw std::runtime_error("Row index out of range, specify a bigger value for n_rows");
+                        }
+                    }
+                }
+            }
         }
 
         [[nodiscard]] size_t size() const { return r_data.size(); }
@@ -590,7 +611,7 @@ namespace oineus {
         ThreadStats stats {0};
         int n_cleared = 0;
 
-        Int n_cols = d_data.size();
+        std::unordered_set<Int> cleared_cols;
 
         if (params.compute_v)
             v_data = MatrixTraits::eye(d_data.size());
@@ -614,6 +635,10 @@ namespace oineus {
                     if (pivots[i] >= 0) {
                         r_data[i].clear();
                         n_cleared++;
+                        // U. Bauer's trick to get a valid V column for cleared columns
+                        if (params.compute_v) {
+                            v_data[i] = r_data[pivots[i]];
+                        }
                         continue;
                     }
                 }
@@ -698,7 +723,7 @@ namespace oineus {
         const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
 
         AMatrix ar_matrix(n_cols);
-        AtomicIdxVector pivots(n_cols);
+        AtomicIdxVector pivots(n_rows);
 
         tf::Executor executor(n_threads);
 
@@ -706,12 +731,15 @@ namespace oineus {
         {
             tf::Taskflow taskflow_prepare;
             taskflow_prepare.for_each_index((size_t)0, n_cols, (size_t)1,
-                    [this, &ar_matrix, &pivots](size_t col_idx) {
-                        pivots[col_idx].store(-1, std::memory_order_relaxed);
+                    [this, &ar_matrix](size_t col_idx) {
                         ar_matrix[col_idx] = new Column(std::move(r_data[col_idx]));
                         assert(MatrixTraits::check_col_duplicates(ar_matrix[col_idx]).empty());
                     });
-            executor.run(taskflow_prepare).wait();
+            taskflow_prepare.for_each_index((size_t)0, n_rows, (size_t)1,
+                    [&pivots](size_t col_idx) {
+                        pivots[col_idx].store(-1, std::memory_order_relaxed);
+                    });
+            executor.run(taskflow_prepare).get();
         }
 
         spd::debug("Pivots initialized");
@@ -759,7 +787,7 @@ namespace oineus {
                 total_cleared += s.n_cleared;
                 spd::info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
             }
-            spd::info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
+            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, params.elapsed);
         }
 
 #ifdef OINEUS_GATHER_ADD_STATS
@@ -768,7 +796,7 @@ namespace oineus {
         {
             tf::Taskflow taskflow_finish;
             taskflow_finish.for_each_index((size_t)0, n_cols, (size_t)1,
-                    [this, &ar_matrix, &pivots](size_t col_idx) {
+                    [this, &ar_matrix](size_t col_idx) {
                         auto p = ar_matrix[col_idx].load(std::memory_order_relaxed);
                         if (p) {
                             r_data[col_idx] = std::move(*p);
@@ -777,7 +805,7 @@ namespace oineus {
                             r_data[col_idx].clear();
                         }
                     });
-            executor.run(taskflow_finish).wait();
+            executor.run(taskflow_finish).get();
         }
 
         is_reduced = true;
@@ -822,13 +850,17 @@ namespace oineus {
         // move data to ar_matrix and set pivots in parallel
         {
             tf::Taskflow taskflow_prepare;
+
             taskflow_prepare.for_each_index((size_t)0, n_cols, (size_t)1,
-                    [this, &r_v_matrix, &pivots](size_t col_idx) {
-                        pivots[col_idx].store(-1, std::memory_order_relaxed);
+                    [this, &r_v_matrix](size_t col_idx) {
                         IntSparseColumn v_column = {static_cast<Int>(col_idx)};
                         r_v_matrix[col_idx] = new RVColumn(r_data[col_idx], v_column);
                     });
-            executor.run(taskflow_prepare).wait();
+            taskflow_prepare.for_each_index((size_t)0, n_rows, (size_t)1,
+                    [&pivots](size_t col_idx) {
+                        pivots[col_idx].store(-1, std::memory_order_relaxed);
+                    });
+            executor.run(taskflow_prepare).get();
         }
 
         std::vector<std::thread> ts;
@@ -871,11 +903,11 @@ namespace oineus {
 
         if (params.print_time) {
             long total_cleared = 0;
-            for(auto& s: stats) {
+            for(const auto& s: stats) {
                 total_cleared += s.n_cleared;
                 spd::info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
             }
-            spd::info("n_threads = {}, chunk = {}, elapsed = {} sec", n_threads, params.chunk_size, params.elapsed);
+            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, params.elapsed);
         }
 
 #ifdef OINEUS_GATHER_ADD_STATS
@@ -884,7 +916,7 @@ namespace oineus {
         {
             tf::Taskflow taskflow_finish;
             taskflow_finish.for_each_index((size_t)0, n_cols, (size_t)1,
-                    [this, &r_v_matrix, &pivots](size_t col_idx) {
+                    [this, &r_v_matrix](size_t col_idx) {
                         auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
                         if (p) {
                             r_data[col_idx] = std::move(p->r_column);
@@ -896,7 +928,7 @@ namespace oineus {
                             v_data[col_idx].clear();
                         }
                     });
-            executor.run(taskflow_finish).wait();
+            executor.run(taskflow_finish).get();
         }
 
         is_reduced = true;

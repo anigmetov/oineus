@@ -4,8 +4,6 @@ void init_oineus_filtration(py::module& m)
 {
     using namespace pybind11::literals;
 
-    using DgmPoint = typename oin::Diagrams<oin_real>::Point;
-
     using Simplex = oin::Simplex<oin_int>;
     using Filtration = oin::Filtration<Simplex, oin_real>;
 

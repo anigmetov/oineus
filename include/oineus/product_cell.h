@@ -122,6 +122,7 @@ template<class CWV>
 void append_products(const std::vector<CWV>& cells, const Simplex<typename CWV::Int>& sigma,
         std::vector<CellWithValue<ProductCell<typename CWV::Cell, Simplex<typename CWV::Int>>, typename CWV::Real>>& result)
 {
+    CALI_CXX_MARK_FUNCTION;
     using ProdCell = ProductCell<typename CWV::Cell, Simplex<typename CWV::Int>>;
 
     for(const auto& cell: cells) {
@@ -133,6 +134,7 @@ template<class Cell, class Real>
 Filtration<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>
 multiply_filtration(const Filtration<Cell, Real>& fil, const Simplex<typename Cell::Int>& sigma)
 {
+    CALI_CXX_MARK_FUNCTION;
     using ProdCWV = CellWithValue<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>;
 
     std::vector<ProdCWV> result_simplices;
@@ -156,10 +158,10 @@ build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtratio
  * @return Filtration of a mapping cylinder of the inclusion L \to K. Type of cells in the returned filtration is Cell \times Simplex.
  */
 {
+    CALI_CXX_MARK_FUNCTION;
     using Int = typename Cell::Int;
     using ProdCell = ProductCell<Cell, Simplex<Int>>;
     using ResultCell = CellWithValue<ProdCell, Real>;
-    using UidSet = typename Cell::UidSet;
 
     if (fil_domain.negate() != fil_codomain.negate()) {
         throw std::runtime_error("different negate values not supported");
@@ -174,8 +176,6 @@ build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtratio
     }
 
     auto f = get_inclusion_mapping<Cell, Real>(fil_domain, fil_codomain);
-
-    bool is_surjective = fil_domain.size() == fil_codomain.size();
 
     Simplex<Int> edge {std::max(v_domain.get_id(), v_codomain.get_id()) + 1, {v_domain.vertices_[0], v_codomain.vertices_[0]}};
 
@@ -208,6 +208,7 @@ build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain, co
  * of critical values of fil_domain and fil_codomain (in this order).
  */
 {
+    CALI_CXX_MARK_FUNCTION;
     using Int = typename Cell::Int;
     using ProdCell = ProductCell<Cell, Simplex<Int>>;
     using ResultCell = CellWithValue<ProdCell, Real>;
@@ -217,14 +218,14 @@ build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain, co
     std::vector<Int> crit_val_indices;
     crit_val_indices.reserve(fil.size());
     for(const ResultCell& cell : fil.cells()) {
-        auto cell_id = cell.get_id();
-        if (cell_id < fil_domain.size()) {
+        Int cell_id = cell.get_id();
+        if (cell_id < static_cast<Int>(fil_domain.size())) {
             // domain simplex x v_domain, critical value comes from domain
             assert(cell.get_factor_2().vertices_ == std::vector({v_domain.get_id()}));
             assert(cell.get_value() == fil_domain.get_cell_value(cell_id));
 
             crit_val_indices.push_back(cell_id);
-        } else if (cell_id < fil_domain.size() + fil_codomain.size()) {
+        } else if (cell_id < static_cast<Int>(fil_domain.size() + fil_codomain.size())) {
             // codomain simplex x v_codomain, critical value comes from codomain
             // in the concatenated tensor, it's still cell_id
             assert(cell.get_factor_2().vertices_ == std::vector({v_codomain.get_id()}));
@@ -234,7 +235,7 @@ build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain, co
         } else {
             // domain simplex x [v_domain, v_codomain] critical value comes from domain
             assert(cell.get_factor_2().vertices_ == std::vector({v_domain.get_id(), v_codomain.get_id()}) or cell.get_factor_2().vertices_ == std::vector({v_codomain.get_id(), v_domain.get_id()}) );
-            assert(cell_id >= fil_domain.size() + fil_codomain.size());
+            assert(cell_id >= static_cast<Int>(fil_domain.size() + fil_codomain.size()));
 
             Int domain_id = cell_id - fil_domain.size() - fil_codomain.size();
 
