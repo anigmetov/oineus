@@ -37,7 +37,7 @@ namespace oineus {
 
             if (vertices_.size() > 1)
                 id_ = vertices_[0];
-            else
+            elsez
                 std::sort(vertices_.begin(), vertices_.end());
         }
 
