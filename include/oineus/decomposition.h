@@ -498,7 +498,7 @@ namespace oineus {
         if (verbose) std::cerr << "V sorted" << std::endl;
 
         // U is sorted
-        if (not are_matrix_columns_sorted(u_data_t)) {
+        if (has_matrix_u() and not are_matrix_columns_sorted(u_data_t)) {
             std::cerr << "sanity_check: U not sorted!" << std::endl;
             return false;
         }
@@ -526,20 +526,25 @@ namespace oineus {
         }
         if (verbose) std::cerr << "V upper-triangular" << std::endl;
 
-        if (not uu.is_upper_triangular()) {
+        if (has_matrix_u() and not uu.is_upper_triangular()) {
             std::cerr << "U not upper-triangular" << std::endl;
             return false;
         }
         if (verbose) std::cerr << "U upper-triangular" << std::endl;
 
-        if (dv != rr) {
-            std::cerr << "R = " << rr << std::endl;
-            std::cerr << "D = " << dd << std::endl;
-            std::cerr << "V = " << vv << std::endl;
-            std::cerr << "U = " << uu << std::endl;
-            std::cerr << "R != DV" << std::endl;
-            return false;
+        dv.compute_cols();
+
+        for(size_t i = 0; i < rr.n_cols(); ++ i) {
+            if (not rr.is_col_zero(i) and rr.col(i) != dv.col(i)) {
+                std::cerr << "R = " << rr << std::endl;
+                std::cerr << "D = " << dd << std::endl;
+                std::cerr << "V = " << vv << std::endl;
+                std::cerr << "U = " << uu << std::endl;
+                std::cerr << "R != DV" << std::endl;
+                return false;
+            }
         }
+
         if (verbose) std::cerr << "R = DV" << std::endl;
 
 

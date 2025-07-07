@@ -223,7 +223,7 @@ namespace oineus {
 
         // vertices are added manually to preserve order (id == index)
         for(Int v = 0; v < static_cast<Int>(points.size()); ++v) {
-            auto [simplex, edge] = vr_simplex_with_edge<Int, Real>(points, {v});
+            auto [simplex, edge] = vr_simplex_with_edge<Int, Real, D>(points, {v});
             simplices.emplace_back(simplex);
             edges.emplace_back(edge);
         }
@@ -392,7 +392,7 @@ namespace oineus {
         std::vector<VREdge<Int>> edges;
 
         for(size_t v_idx = 0; v_idx < points.size(); ++v_idx) {
-            std::vector<size_t> vertices {v_idx};
+            std::vector<Int> vertices {v_idx};
             auto [simplex, edge] = vr_simplex_with_edge<Int, Real, D>(points, vertices);
             simplices.emplace_back(simplex);
             edges.emplace_back(edge);
@@ -401,7 +401,7 @@ namespace oineus {
         if (max_dim >= 1)
             for(size_t u_idx = 0; u_idx < points.size(); ++u_idx)
                 for(size_t v_idx = u_idx + 1; v_idx < points.size(); ++v_idx) {
-                    auto [s, e] = vr_simplex_with_edge<Int, Real, D>(points, {u_idx, v_idx});
+                    auto [s, e] = vr_simplex_with_edge<Int, Real, D>(points, {(Int)u_idx, (Int)v_idx});
                     if (s.get_value() <= max_diameter) {
                         simplices.emplace_back(s);
                         edges.emplace_back(e);
@@ -412,7 +412,7 @@ namespace oineus {
             for(size_t u_idx = 0; u_idx < points.size(); ++u_idx)
                 for(size_t v_idx = u_idx + 1; v_idx < points.size(); ++v_idx)
                     for(size_t w_idx = v_idx + 1; w_idx < points.size(); ++w_idx) {
-                        auto [s, e] = vr_simplex_with_edge<Int, Real, D>(points, {u_idx, v_idx, w_idx});
+                        auto [s, e] = vr_simplex_with_edge<Int, Real, D>(points, {(Int)u_idx, (Int)v_idx, (Int)w_idx});
                         if (s.get_value() <= max_diameter) {
                             simplices.emplace_back(s);
                             edges.emplace_back(e);
@@ -424,7 +424,7 @@ namespace oineus {
                 for(size_t v_idx = u_idx + 1; v_idx < points.size(); ++v_idx)
                     for(size_t w_idx = v_idx + 1; w_idx < points.size(); ++w_idx)
                         for(size_t t_idx = w_idx + 1; t_idx < points.size(); ++t_idx) {
-                            auto [s, e] = vr_simplex_with_edge<Int, Real, D>(points, {u_idx, v_idx, w_idx, t_idx});
+                            auto [s, e] = vr_simplex_with_edge<Int, Real, D>(points, {(Int)u_idx, (Int)v_idx, (Int)w_idx, (Int)t_idx});
                             if (s.get_value() <= max_diameter) {
                                 simplices.emplace_back(s);
                                 edges.emplace_back(e);

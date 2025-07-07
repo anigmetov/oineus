@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <atomic>
 
+#include "profile.h"
+
 namespace oineus {
 
 template<class Int>
