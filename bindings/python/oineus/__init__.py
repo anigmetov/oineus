@@ -15,13 +15,13 @@ from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizer, Topolo
 from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise_target, get_induced_matching
 from ._oineus import get_nth_persistence, get_permutation_dtv, list_to_filtration
 
-# import warnings
-#
-# try:
-#     from . import diff
-# except:
-#     warnings.warn("oineus.diff import failed, probably, because eagerpy is not installed")
-#
+import warnings
+
+try:
+    from . import diff
+except:
+    warnings.warn("oineus.diff import failed, probably, because eagerpy is not installed")
+
 
 __all__ = ["compute_diagrams_ls", "compute_diagrams_vr", "get_boundary_matrix", "is_reduced"]
 

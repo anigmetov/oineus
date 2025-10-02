@@ -85,7 +85,7 @@ public:
 private:
     std::vector<size_t> sorted_K_to_sorted_L_; // given sorted_id i of cell in K, sorted_K_to_sorted_L_[i] is its sorted_id in L; for cells not in K, stores k_invalid_index
     std::vector<size_t> sorted_L_to_sorted_K_; // given sorted_id i of cell in L, sorted_L_to_sorted_K_[i] is its sorted_id in K
-    std::vector<size_t> new_order_to_old_;     //given sorted_id i of cell in K, new_order_to_old[i] is its index in the ordering 'first L, then K-L', used in D_im
+    std::vector<size_t> new_order_to_old_;     // given sorted_id i of cell in K, new_order_to_old[i] is its index in the ordering 'first L, then K-L', used in D_im
     std::vector<size_t> old_order_to_new_;     // the inverse of the above
     std::vector<size_t> K_to_ker_column_index_;
     KICRParams params_;
@@ -752,6 +752,16 @@ public:
             throw std::runtime_error("codomain diagrams were not computed because params.cokernel was false in constructor");
         return cod_diagrams_;
     }
+
+	const std::vector<size_t>& get_old_order_to_new() const
+	{
+		return old_order_to_new_;
+	}
+
+	const std::vector<size_t>& get_new_order_to_old() const
+	{
+		return new_order_to_old_;
+	}
 
 };
 } // namespace oineus

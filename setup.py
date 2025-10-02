@@ -105,6 +105,6 @@ setup(
         'Operating System :: MacOS',
     ],
     install_requires=["numpy", "scipy", "eagerpy"],
-    python_requires='>=3.5',
+    python_requires='>=3.11',
     zip_safe=False,
 )
