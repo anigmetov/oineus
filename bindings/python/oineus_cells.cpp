@@ -13,9 +13,12 @@ void init_oineus_cells(py::module& m)
     // Simplex and product of two simplices without value, vertices only
     const std::string pure_simplex_class_name = "CombinatorialSimplex";
     const std::string pure_prod_simplex_class_name = "CombinatorialProdSimplex";
+    const std::string pure_cube_class_name = "CombinatorialCube";
 
     const std::string simplex_class_name = "Simplex";
     const std::string prod_simplex_class_name = "ProdSimplex";
+    const std::string domain_class_name = "Grid";
+    const std::string cube_class_name = "CubeValue";
 
     py::class_<Simplex>(m, pure_simplex_class_name.c_str())
         .def(py::init([](Simplex::IdxVector vs) -> Simplex { return Simplex(vs, true); }), py::arg("vertices"))
@@ -110,4 +113,38 @@ void init_oineus_cells(py::module& m)
               ss << sigma;
               return ss.str();
             });
+
+
+    // for cubes, we need domains (1D, 2D, 3D)
+    using GridDomain_1D = oin::GridDomain<oin_int, 1>;
+    using Grid_1D = oin::Grid<oin_int, oin_real, 1>;
+    // using Grid_2D = oin::CubicalDomain<oin_int, 2>;
+    // using Grid_3D = oin::CubicalDomain<oin_int, 3>;
+
+    py::class_<GridDomain_1D>(m, "GridDomain_1D", "1D grid domain")
+    .def(py::init([](int x)  -> GridDomain_1D { GridDomain_1D::GridPoint shape; shape[0] = x; return GridDomain_1D(shape, false); }), py::arg("x"))
+    .def_property_readonly("shape", [](const GridDomain_1D& g) { return g.shape(); });
+
+    py::class_<Grid_1D>(m, "Grid_1D", "1D grid with data")
+    .def(py::init([](py::array_t<oin_real, py::array::c_style | py::array::forcecast> data, bool wrap)  -> Grid_1D
+        {
+            py::buffer_info data_buf = data.request();
+            oin_real* pdata {static_cast<oin_real*>(data_buf.ptr)};
+            size_t x = data_buf.shape[0];
+
+
+        Grid_1D::GridPoint shape;
+           shape[0] = x;
+           return Grid_1D(shape, false, ); }), py::arg("data"), py::arg("wrap") = false)
+    .def_property_readonly("shape", [](const Grid_1D& g) { return g.domain_.shape(); });
+
+    using Cube_1D = oin::Cube<oin_int, 1>;
+    // using Cube_2D = oin::Cube<oin_int, 2>;
+    // using Cube_3D = oin::Cube<oin_int, 3>;
+
+    py::class_<Cube_1D>(m, cube_class_name.c_str())
+    .def(py::init([](const Grid_1D& g, oin_int x)  -> Cube_1D { return Cube_1D(x, g); }), py::arg("grid"), py::arg("x"))
+    .def_property_readonly("dim", [](const Cube_1D& c) { return c.dim(); })
+    ;
+
 }

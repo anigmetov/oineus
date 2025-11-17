@@ -222,3 +222,16 @@ def compute_ker_cok_reduction_cyl(fil_2, fil_3):
     kicr_reduction = _oineus.KerImCokReducedProd(fil_cyl, fil_3_prod, params)
 
     return kicr_reduction
+
+
+def cube_filtration(data: np.ndarray,
+                    negate: bool=False,
+                    wrap: bool=False,
+                    max_dim: typing.Optional[int]=None,
+                    n_threads: int=1,):
+    if wrap:
+        raise RuntimeError("cube_filtration: wrap=True is not implemented yet")
+    if max_dim is None:
+        max_dim = data.ndim
+    fil = _oineus.get_cube_filtration(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
+    return fil

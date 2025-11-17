@@ -82,9 +82,9 @@ struct Simplex {
 
     Simplex() = default;
     Simplex(const Simplex&) = default;
-    Simplex(Simplex&&) = default;
+    Simplex(Simplex&&) noexcept = default;
     Simplex& operator=(const Simplex&) = default;
-    Simplex& operator=(Simplex&&) = default;
+    Simplex& operator=(Simplex&&) noexcept = default;
 
     Simplex(const IdxVector& _vertices, bool set_uid_immediately = true)
             :vertices_(_vertices)

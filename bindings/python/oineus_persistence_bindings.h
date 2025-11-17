@@ -167,6 +167,24 @@ get_fr_filtration_and_critical_vertices(py::array_t<Real, py::array::c_style | p
     }
 }
 
+// template<class Int, class Real>
+// decltype(auto)
+// get_cube_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
+// {
+//     dim_type d = data.ndim();
+//     if (d == 1) {
+//         return get_grid<Int, Real, 1>(data, wrap).cube_filtration(max_dim, negate, n_threads);
+//     } else if (d == 2) {
+//         return get_grid<Int, Real, 2>(data, wrap).cube_filtration(max_dim, negate, n_threads);
+//     } else if (d == 3) {
+//         return get_grid<Int, Real, 3>(data, wrap).cube_filtration(max_dim, negate, n_threads);
+//     } else if (d == 4) {
+//         return get_grid<Int, Real, 4>(data, wrap).cube_filtration(max_dim, negate, n_threads);
+//     } else {
+//         throw std::runtime_error("get_fr_filtration: dimension not supported by default, manual modification needed");
+//     }
+// }
+
 template<class Real, size_t D>
 decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::array::forcecast> data)
 {

@@ -30,6 +30,9 @@ struct CellWithValue {
     CellWithValue& operator=(const CellWithValue&) = default;
     CellWithValue& operator=(CellWithValue&&) = default;
 
+    // static_assert(std::is_nothrow_move_constructible<CellWithValue<Cell, Real>>::value,
+                  // "CellWithValue must be nothrow move constructible");
+
 //    template<class... Args>
 //    CellWithValue(Real value, Args&&... args)
 //            : cell_(std::forward(args)...), value_(value) { }
