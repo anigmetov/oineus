@@ -193,13 +193,10 @@ def min_filtration(fil_1: DiffFiltration, fil_2: DiffFiltration) -> DiffFiltrati
 
 def freudenthal_filtration(data, negate, wrap, max_dim, n_threads):
     data = epy.astensor(data)
-    dim_part = data.ndim
     np_data = data.float64().numpy()
-    type_part = "double"
-    func = getattr(_oineus, f"get_fr_filtration_and_critical_vertices_{type_part}_{dim_part}")
-    fil, cv = func(np_data, negate, wrap, max_dim, n_threads)
+    fil, cv = _oineus.get_freudenthal_filtration_and_crit_vertices(np_data, negate, wrap, max_dim, n_threads)
     cv = np.array(cv, dtype=np.int64)
-    values = data[cv].raw
+    values = data.flatten()[cv].raw
     return DiffFiltration(fil, values)
 
 

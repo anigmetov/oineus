@@ -1,14 +1,76 @@
 [build-system]
-requires = ["setuptools>=42", "wheel", "cmake>=3.14"]
-build-backend = "setuptools.build_meta"
+requires = ["scikit-build-core>=0.10", "pybind11>=2.6"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "oineus"
+dynamic = ["version"]
+authors = [
+    {name = "Arnur Nigmetov", email = "anigmetov@lbl.gov"}
+]
+description = "Library for computing persistent homology"
+readme = "description.rst"
+license = {text = "BSD"}
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+]
+dependencies = [
+    "numpy",
+    "scipy",
+    "eagerpy",
+]
+
+[project.urls]
+Homepage = "https://github.com/anigmetov/oineus"
+
+# Configure scikit-build-core
+
+[tool.scikit-build]
+cmake.source-dir = "."
+
+cmake.args = [
+    "-Doin_build_examples=OFF",
+    "-Doin_build_tests=OFF",
+    "-Doin_use_spdlog=OFF",
+    "-Doin_caliper=OFF",
+    "-Doin_gather_add_stats=OFF",
+]
+
+cmake.build-type = "Release"
+
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.regex"
+input = "bindings/python/oineus/__init__.py"
+regex = '__version__ = "(?P<value>[^"]+)"'
+
+# Don't specify wheel.packages - let scikit-build-core handle it via install()
+# The install() commands in CMake will place everything correctly
 
 [tool.cibuildwheel]
-# Skip Python 2.7 and PyPy
-#skip = ["cp27-*", "pp*", "cp35-*", "cp36-*", "cp37-*", "cp38-", "cp39-*", "cp310-*"]
-skip = ["cp27-*", "pp*", "cp35-*", "cp36-*", "cp37-*", "cp38-", "cp39-*", "cp310-*", "cp311-*", "cp312-*"]
-# Build for these Python versions
-#build = ["cp37-*", "cp38-*", "cp39-*", "cp310-*", "cp311-*", "cp312-*", "cp313-*"]
-#build = ["cp311-*", "cp312-*", "cp313-*"]
-build = ["cp313-*"]
-# Set environment variables
-environment = { CMAKE_BUILD_PARALLEL_LEVEL = "4" }
+build = "cp310-* cp311-* cp312-* cp313-*"
+skip = "*-win32 *-manylinux_i686 *-musllinux_*"
+
+test-requires = ["pytest", "numpy", "scipy"]
+test-command = "python -c 'import oineus; print(oineus.__version__)'"
+
+[tool.cibuildwheel.macos]
+build = "cp312-*"
+archs = ["arm64"]
+
+[tool.cibuildwheel.linux]
+before-all = "yum install -y boost-devel"
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"

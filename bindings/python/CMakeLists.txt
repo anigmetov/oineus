@@ -52,3 +52,11 @@ endif()
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(_oineus PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+# Install the compiled C++ module
+install(TARGETS _oineus DESTINATION oineus)
+
+# Install the Python wrapper files
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/oineus/
+        DESTINATION oineus
+        FILES_MATCHING PATTERN "*.py")

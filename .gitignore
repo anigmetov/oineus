@@ -49,7 +49,10 @@ cmake-build-debug/
 cmake-build-release/
 cmake-build-relwithdebinfo/
 build_*/
+*venv*/
+wheelhouse/
 killme/
+dist/
 .peru/
 .vscode/settings.json
 include/.DS_Store
