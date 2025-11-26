@@ -37,6 +37,9 @@ struct ProductCell {
     ProductCell(CellA&& cell_1, CellB&& cell_2)
             :cell_1_(cell_1), cell_2_(cell_2) { }
 
+    bool operator==(const ProductCell& other) const { return cell_1_ == other.cell_1_ && cell_2_ == other.cell_2_; }
+    bool operator!=(const ProductCell& other) const { return !(*this == other); }
+
     Uid get_uid() const { return {cell_1_.get_uid(), cell_2_.get_uid()}; }
 
     Int get_id() const { return id_; }
@@ -249,3 +252,16 @@ build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain, co
 }
 
 } // end of namespace oineus
+
+namespace std {
+    template<class CellA, class CellB>
+    struct hash<oineus::ProductCell<CellA, CellB>> {
+        std::size_t operator()(const oineus::ProductCell<CellA, CellB>& sigma) const
+        {
+            std::size_t seed = 0;
+            oineus::hash_combine(seed, std::hash<CellA>()(sigma.get_factor_1()));
+            oineus::hash_combine(seed, std::hash<CellB>()(sigma.get_factor_2()));
+            return seed;
+        }
+    };
+} //end of namespace std

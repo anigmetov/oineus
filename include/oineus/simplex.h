@@ -230,4 +230,15 @@ struct hash<oineus::VREdge<Int>> {
         return seed;
     }
 };
+
+template<class Int>
+struct hash<oineus::Simplex<Int>> {
+    std::size_t operator()(const oineus::Simplex<Int>& sigma) const
+    {
+        std::size_t seed = 0;
+        oineus::hash_combine(seed, sigma.get_id());
+        oineus::hash_combine(seed, sigma.get_uid());
+        return seed;
+    }
 };
+} // namespace std

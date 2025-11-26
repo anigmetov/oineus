@@ -36,6 +36,9 @@ void init_oineus_cells(py::module& m)
                 },
                 py::arg("new_vertex"),
                 py::arg("new_id") = Simplex::k_invalid_id)
+        .def(py::self == py::self)
+        .def(py::self != py::self)
+        .def(py::hash(py::self))
         .def("__repr__", [](const Simplex& sigma) {
           std::stringstream ss;
           ss << sigma;
@@ -51,6 +54,9 @@ void init_oineus_cells(py::module& m)
         .def_property_readonly("uid", &ProdSimplex::get_uid)
         .def("dim", &ProdSimplex::dim)
         .def("boundary", &ProdSimplex::boundary)
+        .def(py::self == py::self)
+        .def(py::self != py::self)
+        .def(py::hash(py::self))
         .def("__repr__", [](const ProdSimplex& sigma) {
           std::stringstream ss;
           ss << sigma;
@@ -81,11 +87,14 @@ void init_oineus_cells(py::module& m)
                     py::arg("new_vertex"),
                     py::arg("value"),
                     py::arg("new_id") = SimplexValue::k_invalid_id)
+            .def(py::self == py::self)
+            .def(py::self != py::self)
+            .def(py::hash(py::self))
             .def("__repr__", [](const SimplexValue& sigma) {
-              std::stringstream ss;
-              ss << sigma;
-              return ss.str();
-            });
+                  std::stringstream ss;
+                  ss << sigma;
+                  return ss.str();
+                });
 
     py::class_<ProdSimplexValue>(m, prod_simplex_class_name.c_str())
             .def(py::init([](const SimplexValue& sigma, const SimplexValue& tau, oin_real value) -> ProdSimplexValue {
@@ -109,11 +118,14 @@ void init_oineus_cells(py::module& m)
             .def("dim", &ProdSimplexValue::dim)
             .def("boundary", &ProdSimplexValue::boundary)
             .def("combinatorial_cell", &ProdSimplexValue::get_cell)
+            .def(py::self == py::self)
+            .def(py::self != py::self)
+            .def(py::hash(py::self))
             .def("__repr__", [](const ProdSimplexValue& sigma) {
-              std::stringstream ss;
-              ss << sigma;
-              return ss.str();
-            });
+                      std::stringstream ss;
+                      ss << sigma;
+                      return ss.str();
+                    });
 
     using GridDomain_1D = oin::GridDomain<oin_int, 1>;
     using GridDomain_2D = oin::GridDomain<oin_int, 2>;
@@ -141,7 +153,8 @@ void init_oineus_cells(py::module& m)
             .def_property_readonly("shape", [](const GridDomain_##DIM##D& g) { return g.shape(); }) \
             .def(py::self == py::self) \
             .def(py::self != py::self) \
-            .def(py::hash(py::self))
+            .def(py::hash(py::self)) \
+
 
     BIND_GRID_DOMAIN(1);
     BIND_GRID_DOMAIN(2);
@@ -166,6 +179,7 @@ void init_oineus_cells(py::module& m)
             .def_property_readonly("shape", [](const Grid_##DIM##D& g) { return g.domain().shape(); }) \
             .def("cube_filtration", [](const Grid_##DIM##D& g, size_t top_d, bool negate, bool cell_centric, int n_threads) { return g.cube_filtration(top_d, negate, cell_centric, n_threads); }, \
                   py::arg("max_dim"), py::arg("negate") = false, py::arg("cell_centric") = false, py::arg("n_threads") = 1) \
+
 
     BIND_GRID(1);
     BIND_GRID(2);
@@ -195,6 +209,7 @@ void init_oineus_cells(py::module& m)
             .def(py::self == py::self) \
             .def(py::self != py::self) \
             .def(py::hash(py::self)) \
+
 
     BIND_CUBE(1);
     BIND_CUBE(2);

@@ -169,8 +169,9 @@ public:
                 Int v_part = v << dim;
                 for(Int face_part = 0; face_part < (1 << dim); ++face_part) {
                     Int cube_id = v_part | face_part;
+                    GridCube cube = GridCube(cube_id, domain());
 
-                    auto [is_valid, cube_value] = get_cube_validity_and_value(cube_id, negate, cell_centric);
+                    auto [is_valid, cube_value] = get_cube_validity_and_value(cube, negate, cell_centric);
 
                     if (not is_valid)
                         continue;
@@ -317,7 +318,7 @@ private:
         }
     }
 
-    std::pair<bool, Real> get_cube_validity_and_value(Int cube_id, bool negate, bool cell_centric) const
+    std::pair<bool, Real> get_cube_validity_and_value(const GridCube& cube, bool negate, bool cell_centric) const
     {
         auto cmp = [negate](Real a, Real b) { return negate ? a > b : a < b; };
 
@@ -326,8 +327,13 @@ private:
 
         if (cell_centric) {
             throw std::runtime_error("Cell centric grid value is not implemented");
+
+            for(auto top_cube: cube.top_cofaces()) {
+            }
+
+
         } else {
-            for(auto u_local : cube_private::get_cube_vertices<Int, D>(cube_id, domain())) {
+            for(auto u_local : cube.vertices()) {
 
                 if (not contains(u_local)) {
                     is_valid = false;
