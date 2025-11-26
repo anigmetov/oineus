@@ -4,11 +4,13 @@
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
+#include <thread>
 
 #include "grid_domain.h"
 #include "filtration.h"
 #include "simplex.h"
 #include "cube.h"
+#include "timer.h"
 
 namespace oineus {
 
@@ -66,6 +68,13 @@ public:
         return *(data_ + vertex);
     }
 
+    Real value_at_vertex(const GridPoint& vertex) const
+    {
+        // assumes C order
+        auto vertex_idx = domain_.point_to_id(vertex);
+        return *(data_ + vertex_idx);
+    }
+
     std::pair<GridFiltration, CriticalVertices> freudenthal_filtration_and_critical_vertices(size_t top_d, bool negate, int n_threads = 1) const
     {
         if (top_d > dim)
@@ -121,6 +130,8 @@ public:
         return GridFiltration(simplices, negate, n_threads);
     }
 
+    const Domain& domain() const { return domain_; }
+
     ValueVertex simplex_value_and_vertex(const IdxVector& vertices, bool negate) const
     {
         auto cmp = [negate](Real a, Real b) { return negate ? a > b : a < b; };
@@ -136,44 +147,111 @@ public:
         return result;
     }
 
-    GridCubeFiltration cube_filtration(size_t top_d, bool negate, int n_threads = 1) const
+    GridCubeFiltration cube_filtration(size_t top_d, bool negate, bool cell_centric=false, int n_threads = 1) const
     {
+        Timer timer;
         if (top_d > dim)
             throw std::runtime_error("bad dimension, top_d = " + std::to_string(top_d) + ", dim = " + std::to_string(dim));
 
         GridCubeVec cubes;
-        CriticalVertices dummy_vertices;
 
-        // calculate total number of cells to allocate memory once
         size_t total_size = 0;
+
         for(dim_type d = 0 ; d <= top_d ; ++d) {
-            total_size += get_n_cubes_in_dimension(dim, d) * size();
+            total_size += get_n_cubes_in_dimension(d) * size();
         }
 
-        cubes.reserve(total_size);
+        if (n_threads == 1) {
+            // calculate total number of cells to allocate memory once
+            cubes.reserve(total_size);
 
-        Domain global_domain = domain_;
+            for(Int v = 0 ; v < size() ; ++v) {
+                Int v_part = v << dim;
+                for(Int face_part = 0; face_part < (1 << dim); ++face_part) {
+                    Int cube_id = v_part | face_part;
 
-        for(Int v = 0 ; v < size() ; ++v) {
-            Int v_part = v << dim;
-            for(Int face_part = 0; face_part < (1 << dim); ++face_part) {
-                Int cube_id = v_part | face_part;
+                    auto [is_valid, cube_value] = get_cube_validity_and_value(cube_id, negate, cell_centric);
 
-                auto [is_valid, cube_value] = get_cube_validity_and_value(cube_id, negate);
+                    if (not is_valid)
+                        continue;
 
-                if (not is_valid)
-                    continue;
-
-                cubes.emplace_back(cube_id, cube_value);
+                    cubes.emplace_back(Cube<Int, D>(cube_id, domain()), cube_value);
 
 #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-                if (i % 100 == 0) {
-                    OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-                }
+                    if (v % 100 == 0) {
+                        OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+                    }
 #endif
+                }
             }
+        } else {
+            timer.reset();
+            // Multi-threaded version
+            Int n_vertices = size();
+            std::vector<GridCubeVec> thread_cubes(n_threads);
+
+            // Pre-allocate approximate memory for each thread
+            size_t approx_per_thread = total_size / n_threads + 1;
+            for (auto& tc : thread_cubes) {
+                tc.reserve(approx_per_thread);
+            }
+
+            // Launch threads
+            std::vector<std::thread> threads;
+            threads.reserve(n_threads);
+
+            for (int t = 0; t < n_threads; ++t) {
+                threads.emplace_back([this, t, n_threads, n_vertices, negate, cell_centric, &thread_cubes]() {
+                    auto& local_cubes = thread_cubes[t];
+
+                    // Calculate contiguous chunk for this thread
+                    Int chunk_size = n_vertices / n_threads;
+                    Int v_start = t * chunk_size;
+                    Int v_end = (t == n_threads - 1) ? n_vertices : (t + 1) * chunk_size;
+
+                    for (Int v = v_start; v < v_end; ++v) {
+                        Int v_part = v << dim;
+                        for(Int face_part = 0; face_part < (1 << dim); ++face_part) {
+                            Int cube_id = v_part | face_part;
+                            auto [is_valid, cube_value] = get_cube_validity_and_value(cube_id, negate, cell_centric);
+                            if (is_valid) {
+                                local_cubes.emplace_back(Cube<Int, D>(cube_id, domain()), cube_value);
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Wait for all threads to complete
+            for (auto& thread : threads) {
+                thread.join();
+            }
+
+            auto cube_elapsed = timer.elapsed_reset();
+
+            // Combine all thread-local vectors
+            size_t final_size = 0;
+            for (const auto& tc : thread_cubes) {
+                final_size += tc.size();
+            }
+            cubes.reserve(final_size);
+
+            for (auto& tc : thread_cubes) {
+                cubes.insert(cubes.end(),
+                            std::make_move_iterator(tc.begin()),
+                            std::make_move_iterator(tc.end()));
+            }
+
+            auto move_elapsed = timer.elapsed_reset();
+            std::cerr << "cube_elapsed : " << cube_elapsed << "\n";
+            std::cerr << "move_elapsed : " << move_elapsed << "\n";
         }
-        return GridCubeFiltration(cubes, negate, n_threads);
+
+        timer.reset();
+        auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads, false, false);
+        auto fil_elapsed = timer.elapsed_reset();
+        std::cerr << "fil_elapsed : " << fil_elapsed << "\n";
+        return fil;
     }
 
     template<typename I, typename R, size_t DD>
@@ -239,24 +317,28 @@ private:
         }
     }
 
-    std::pair<bool, Real> get_cube_validity_and_value(Int cube_id, bool negate)
+    std::pair<bool, Real> get_cube_validity_and_value(Int cube_id, bool negate, bool cell_centric) const
     {
         auto cmp = [negate](Real a, Real b) { return negate ? a > b : a < b; };
 
         bool is_valid = true;
-        Real value = -std::numeric_limits<Real>::max();
+        Real value = negate ? std::numeric_limits<Real>::max() : -std::numeric_limits<Real>::max();
 
-        for(auto u_local : oineus::cube_private::get_cube_vertices(cube_id)) {
+        if (cell_centric) {
+            throw std::runtime_error("Cell centric grid value is not implemented");
+        } else {
+            for(auto u_local : cube_private::get_cube_vertices<Int, D>(cube_id, domain())) {
 
-            if (not contains(u_local)) {
-                is_valid = false;
-                break;
+                if (not contains(u_local)) {
+                    is_valid = false;
+                    break;
+                }
+
+                Real u_value = value_at_vertex(u_local);
+
+                if (cmp(value, u_value))
+                    value = u_value;
             }
-
-            Real u_value = value_at_vertex(u_local);
-
-            if (cmp(value, u_value))
-                value = u_value;
         }
         return {is_valid, value};
     }

@@ -1,3 +1,4 @@
+#include "pybind11/operators.h"
 #include "oineus_persistence_bindings.h"
 
 void init_oineus_cells(py::module& m)
@@ -114,37 +115,90 @@ void init_oineus_cells(py::module& m)
               return ss.str();
             });
 
-
-    // for cubes, we need domains (1D, 2D, 3D)
     using GridDomain_1D = oin::GridDomain<oin_int, 1>;
+    using GridDomain_2D = oin::GridDomain<oin_int, 2>;
+    using GridDomain_3D = oin::GridDomain<oin_int, 3>;
+
     using Grid_1D = oin::Grid<oin_int, oin_real, 1>;
-    // using Grid_2D = oin::CubicalDomain<oin_int, 2>;
-    // using Grid_3D = oin::CubicalDomain<oin_int, 3>;
-
-    py::class_<GridDomain_1D>(m, "GridDomain_1D", "1D grid domain")
-    .def(py::init([](int x)  -> GridDomain_1D { GridDomain_1D::GridPoint shape; shape[0] = x; return GridDomain_1D(shape, false); }), py::arg("x"))
-    .def_property_readonly("shape", [](const GridDomain_1D& g) { return g.shape(); });
-
-    py::class_<Grid_1D>(m, "Grid_1D", "1D grid with data")
-    .def(py::init([](py::array_t<oin_real, py::array::c_style | py::array::forcecast> data, bool wrap)  -> Grid_1D
-        {
-            py::buffer_info data_buf = data.request();
-            oin_real* pdata {static_cast<oin_real*>(data_buf.ptr)};
-            size_t x = data_buf.shape[0];
-
-
-        Grid_1D::GridPoint shape;
-           shape[0] = x;
-           return Grid_1D(shape, false, ); }), py::arg("data"), py::arg("wrap") = false)
-    .def_property_readonly("shape", [](const Grid_1D& g) { return g.domain_.shape(); });
+    using Grid_2D = oin::Grid<oin_int, oin_real, 2>;
+    using Grid_3D = oin::Grid<oin_int, oin_real, 3>;
 
     using Cube_1D = oin::Cube<oin_int, 1>;
-    // using Cube_2D = oin::Cube<oin_int, 2>;
-    // using Cube_3D = oin::Cube<oin_int, 3>;
+    using Cube_2D = oin::Cube<oin_int, 2>;
+    using Cube_3D = oin::Cube<oin_int, 3>;
 
-    py::class_<Cube_1D>(m, cube_class_name.c_str())
-    .def(py::init([](const Grid_1D& g, oin_int x)  -> Cube_1D { return Cube_1D(x, g); }), py::arg("grid"), py::arg("x"))
-    .def_property_readonly("dim", [](const Cube_1D& c) { return c.dim(); })
-    ;
+    // ============ GridDomain bindings ============
+    #define BIND_GRID_DOMAIN(DIM) \
+        py::class_<GridDomain_##DIM##D>(m, "GridDomain_" #DIM "D", #DIM "D grid domain") \
+            .def(py::init([](py::args args) -> GridDomain_##DIM##D { \
+                    if (args.size() != DIM) \
+                        throw std::runtime_error("Expected " #DIM " arguments"); \
+                    GridDomain_##DIM##D::GridPoint shape; \
+                    for (size_t i = 0; i < DIM; ++i) \
+                        shape[i] = args[i].cast<int>(); \
+                    return GridDomain_##DIM##D(shape, false); \
+                })) \
+            .def_property_readonly("shape", [](const GridDomain_##DIM##D& g) { return g.shape(); }) \
+            .def(py::self == py::self) \
+            .def(py::self != py::self) \
+            .def(py::hash(py::self))
 
+    BIND_GRID_DOMAIN(1);
+    BIND_GRID_DOMAIN(2);
+    BIND_GRID_DOMAIN(3);
+
+    #undef BIND_GRID_DOMAIN
+
+    // ============ Grid bindings ============
+    #define BIND_GRID(DIM) \
+        py::class_<Grid_##DIM##D>(m, "Grid_" #DIM "D", #DIM "D grid with data") \
+            .def(py::init([](py::array_t<oin_real, py::array::c_style | py::array::forcecast> data, bool wrap) -> Grid_##DIM##D \
+                { \
+                    py::buffer_info data_buf = data.request(); \
+                    if (data_buf.ndim != DIM) \
+                        throw std::runtime_error("Array must be " #DIM "D"); \
+                    oin_real* pdata {static_cast<oin_real*>(data_buf.ptr)}; \
+                    Grid_##DIM##D::GridPoint shape; \
+                    for (size_t i = 0; i < DIM; ++i) \
+                        shape[i] = data_buf.shape[i]; \
+                    return Grid_##DIM##D(shape, wrap, pdata); \
+                }), py::arg("data"), py::arg("wrap") = false) \
+            .def_property_readonly("shape", [](const Grid_##DIM##D& g) { return g.domain().shape(); }) \
+            .def("cube_filtration", [](const Grid_##DIM##D& g, size_t top_d, bool negate, bool cell_centric, int n_threads) { return g.cube_filtration(top_d, negate, cell_centric, n_threads); }, \
+                  py::arg("max_dim"), py::arg("negate") = false, py::arg("cell_centric") = false, py::arg("n_threads") = 1) \
+
+    BIND_GRID(1);
+    BIND_GRID(2);
+    BIND_GRID(3);
+
+    #undef BIND_GRID
+
+    // ============ Cube bindings ============
+    #define BIND_CUBE(DIM) \
+        py::class_<Cube_##DIM##D>(m, "Cube_" #DIM "D") \
+            .def(py::init([](const GridDomain_##DIM##D& g, oin_int x) -> Cube_##DIM##D { \
+                    return Cube_##DIM##D(x, g); \
+                }), py::arg("domain"), py::arg("x")) \
+            .def(py::init<const Cube_##DIM##D::Point&, const std::vector<oin_int>&, const GridDomain_##DIM##D&>(), \
+                 py::arg("anchor_vertex"), py::arg("spanning_dims"), py::arg("domain")) \
+            .def_property_readonly("dim", &Cube_##DIM##D::dim) \
+            .def_property_readonly("uid", &Cube_##DIM##D::get_uid, "Get UID of a cube") \
+            .def_property_readonly("vertices", &Cube_##DIM##D::vertices, "Get all vertices of a cube") \
+            .def_property_readonly("anchor_vertex", &Cube_##DIM##D::get_vertex, "Get anchor vertex of a cube") \
+            .def_property("id", &Cube_##DIM##D::get_id, &Cube_##DIM##D::set_id, "User ID of a cube") \
+            .def_property_readonly("domain", &Cube_##DIM##D::global_domain) \
+            .def("boundary", &Cube_##DIM##D::boundary_cubes, "boundary of a cube") \
+            .def("coboundary", &Cube_##DIM##D::coboundary_cubes, "coboundary of a cube") \
+            .def("top_cofaces", &Cube_##DIM##D::top_cofaces_cubes, "top cofaces of a cube") \
+            .def("__repr__", &Cube_##DIM##D::pretty_print) \
+            .def("__str__", &Cube_##DIM##D::pretty_print) \
+            .def(py::self == py::self) \
+            .def(py::self != py::self) \
+            .def(py::hash(py::self)) \
+
+    BIND_CUBE(1);
+    BIND_CUBE(2);
+    BIND_CUBE(3);
+
+    #undef BIND_CUBE
 }
