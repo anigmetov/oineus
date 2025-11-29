@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-__version__ = "0.9.20"
+__version__ = "0.9.21"
 
 import typing
 import numpy as np
@@ -16,6 +16,9 @@ from ._oineus import ReductionParams, KICRParams, KerImCokReduced, KerImCokReduc
 from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizer, TopologyOptimizerProd
 from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise_target, get_induced_matching
 from ._oineus import get_nth_persistence, get_permutation_dtv, list_to_filtration
+from ._oineus import GridDomain_1D, Grid_1D, Cube_1D, CubeFiltration_1D
+from ._oineus import GridDomain_2D, Grid_2D, Cube_2D, CubeFiltration_2D
+from ._oineus import GridDomain_3D, Grid_3D, Cube_3D, CubeFiltration_3D
 
 
 __all__ = ["compute_diagrams_ls", "compute_diagrams_vr", "get_boundary_matrix", "is_reduced"]
@@ -222,3 +225,26 @@ def compute_ker_cok_reduction_cyl(fil_2, fil_3):
     kicr_reduction = _oineus.KerImCokReducedProd(fil_cyl, fil_3_prod, params)
 
     return kicr_reduction
+
+
+def cube_filtration(data: np.ndarray,
+                    negate: bool=False,
+                    wrap: bool=False,
+                    max_dim: typing.Optional[int]=None,
+                    values_on: str="vertices",
+                    n_threads: int=1,):
+    if wrap:
+        raise RuntimeError("cube_filtration: wrap=True is not implemented yet")
+    if max_dim is None:
+        max_dim = data.ndim
+    dim = data.ndim
+    if dim == 1:
+        grid = _oineus.Grid_1D(data, wrap=wrap, values_on=values_on)
+    elif dim == 2:
+        grid = _oineus.Grid_2D(data, wrap=wrap, values_on=values_on)
+    elif dim == 3:
+        grid = _oineus.Grid_3D(data, wrap=wrap, values_on=values_on)
+    else:
+        raise RuntimeError(f"cube_filtration: dim={data.ndim} not supported, recompile from sources")
+    fil = grid.cube_filtration(max_dim=max_dim, n_threads=n_threads, negate=negate)
+    return fil

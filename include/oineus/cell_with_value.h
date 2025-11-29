@@ -30,6 +30,9 @@ struct CellWithValue {
     CellWithValue& operator=(const CellWithValue&) = default;
     CellWithValue& operator=(CellWithValue&&) = default;
 
+    // static_assert(std::is_nothrow_move_constructible<CellWithValue<Cell, Real>>::value,
+                  // "CellWithValue must be nothrow move constructible");
+
 //    template<class... Args>
 //    CellWithValue(Real value, Args&&... args)
 //            : cell_(std::forward(args)...), value_(value) { }
@@ -101,3 +104,14 @@ std::ostream& operator<<(std::ostream& out, const CellWithValue<C, R>& s)
 }
 
 } // namespace oineus
+
+namespace std {
+    template<class Cell, class Real>
+    struct hash<oineus::CellWithValue<Cell, Real>> {
+        size_t operator()(const oineus::CellWithValue<Cell, Real>& cell_with_value) const {
+            size_t seed = std::hash<Cell>{}(cell_with_value.get_cell());
+            oineus::hash_combine(seed, std::hash<Real>{}(cell_with_value.get_value()));
+            return seed;
+        }
+    };
+}

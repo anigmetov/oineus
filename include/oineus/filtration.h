@@ -8,15 +8,15 @@
 
 #include <algorithm>
 
+#include <icecream/icecream.hpp>
+
 #include <taskflow/taskflow.hpp>
 #include <taskflow/core/flow_builder.hpp>
 #include <taskflow/algorithm/sort.hpp>
 #include <taskflow/algorithm/for_each.hpp>
 
 #include "timer.h"
-#include "simplex.h"
 #include "decomposition.h"
-#include "params.h"
 namespace oineus {
 
     template<typename Int_, typename Real_, size_t D>

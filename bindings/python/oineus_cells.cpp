@@ -1,3 +1,4 @@
+#include "pybind11/operators.h"
 #include "oineus_persistence_bindings.h"
 
 void init_oineus_cells(py::module& m)
@@ -13,9 +14,12 @@ void init_oineus_cells(py::module& m)
     // Simplex and product of two simplices without value, vertices only
     const std::string pure_simplex_class_name = "CombinatorialSimplex";
     const std::string pure_prod_simplex_class_name = "CombinatorialProdSimplex";
+    const std::string pure_cube_class_name = "CombinatorialCube";
 
     const std::string simplex_class_name = "Simplex";
     const std::string prod_simplex_class_name = "ProdSimplex";
+    const std::string domain_class_name = "Grid";
+    const std::string cube_class_name = "CubeValue";
 
     py::class_<Simplex>(m, pure_simplex_class_name.c_str())
         .def(py::init([](Simplex::IdxVector vs) -> Simplex { return Simplex(vs, true); }), py::arg("vertices"))
@@ -32,6 +36,9 @@ void init_oineus_cells(py::module& m)
                 },
                 py::arg("new_vertex"),
                 py::arg("new_id") = Simplex::k_invalid_id)
+        .def(py::self == py::self)
+        .def(py::self != py::self)
+        .def(py::hash(py::self))
         .def("__repr__", [](const Simplex& sigma) {
           std::stringstream ss;
           ss << sigma;
@@ -47,6 +54,9 @@ void init_oineus_cells(py::module& m)
         .def_property_readonly("uid", &ProdSimplex::get_uid)
         .def("dim", &ProdSimplex::dim)
         .def("boundary", &ProdSimplex::boundary)
+        .def(py::self == py::self)
+        .def(py::self != py::self)
+        .def(py::hash(py::self))
         .def("__repr__", [](const ProdSimplex& sigma) {
           std::stringstream ss;
           ss << sigma;
@@ -77,11 +87,14 @@ void init_oineus_cells(py::module& m)
                     py::arg("new_vertex"),
                     py::arg("value"),
                     py::arg("new_id") = SimplexValue::k_invalid_id)
+            .def(py::self == py::self)
+            .def(py::self != py::self)
+            .def(py::hash(py::self))
             .def("__repr__", [](const SimplexValue& sigma) {
-              std::stringstream ss;
-              ss << sigma;
-              return ss.str();
-            });
+                  std::stringstream ss;
+                  ss << sigma;
+                  return ss.str();
+                });
 
     py::class_<ProdSimplexValue>(m, prod_simplex_class_name.c_str())
             .def(py::init([](const SimplexValue& sigma, const SimplexValue& tau, oin_real value) -> ProdSimplexValue {
@@ -105,9 +118,116 @@ void init_oineus_cells(py::module& m)
             .def("dim", &ProdSimplexValue::dim)
             .def("boundary", &ProdSimplexValue::boundary)
             .def("combinatorial_cell", &ProdSimplexValue::get_cell)
+            .def(py::self == py::self)
+            .def(py::self != py::self)
+            .def(py::hash(py::self))
             .def("__repr__", [](const ProdSimplexValue& sigma) {
-              std::stringstream ss;
-              ss << sigma;
-              return ss.str();
-            });
+                      std::stringstream ss;
+                      ss << sigma;
+                      return ss.str();
+                    });
+
+    using GridDomain_1D = oin::GridDomain<oin_int, 1>;
+    using GridDomain_2D = oin::GridDomain<oin_int, 2>;
+    using GridDomain_3D = oin::GridDomain<oin_int, 3>;
+
+    using Grid_1D = oin::Grid<oin_int, oin_real, 1>;
+    using Grid_2D = oin::Grid<oin_int, oin_real, 2>;
+    using Grid_3D = oin::Grid<oin_int, oin_real, 3>;
+
+    using Cube_1D = oin::Cube<oin_int, 1>;
+    using Cube_2D = oin::Cube<oin_int, 2>;
+    using Cube_3D = oin::Cube<oin_int, 3>;
+
+    // ============ GridDomain bindings ============
+    #define BIND_GRID_DOMAIN(DIM) \
+        py::class_<GridDomain_##DIM##D>(m, "GridDomain_" #DIM "D", #DIM "D grid domain") \
+            .def(py::init([](py::args args) -> GridDomain_##DIM##D { \
+                    if (args.size() != DIM) \
+                        throw std::runtime_error("Expected " #DIM " arguments"); \
+                    GridDomain_##DIM##D::GridPoint shape; \
+                    for (size_t i = 0; i < DIM; ++i) \
+                        shape[i] = args[i].cast<int>(); \
+                    return GridDomain_##DIM##D(shape, false); \
+                })) \
+            .def_property_readonly("shape", [](const GridDomain_##DIM##D& g) { return g.shape(); }) \
+            .def(py::self == py::self) \
+            .def(py::self != py::self) \
+            .def(py::hash(py::self)) \
+
+
+    BIND_GRID_DOMAIN(1);
+    BIND_GRID_DOMAIN(2);
+    BIND_GRID_DOMAIN(3);
+
+    #undef BIND_GRID_DOMAIN
+
+    // ============ Grid bindings ============
+    #define BIND_GRID(DIM) \
+        py::class_<Grid_##DIM##D>(m, "Grid_" #DIM "D", #DIM "D grid with data") \
+            .def(py::init([](py::array_t<oin_real, py::array::c_style | py::array::forcecast> data, bool wrap, std::string values_on) -> Grid_##DIM##D \
+                { \
+                    py::buffer_info data_buf = data.request(); \
+                    if (data_buf.ndim != DIM) \
+                        throw std::runtime_error("Array must be " #DIM "D"); \
+                    oin_real* pdata {static_cast<oin_real*>(data_buf.ptr)}; \
+                    Grid_##DIM##D::GridPoint shape; \
+                    for (size_t i = 0; i < DIM; ++i) \
+                        shape[i] = data_buf.shape[i]; \
+                    Grid_##DIM##D::DataLocation data_loc; \
+                    if (values_on == "cells") \
+                        data_loc = Grid_##DIM##D::DataLocation::CELL ; \
+                    else if (values_on == "vertices") \
+                        data_loc = Grid_##DIM##D::DataLocation::VERTEX ; \
+                    else \
+                        throw std::runtime_error("values_on must be either 'vertices' or 'cells'"); \
+                    return Grid_##DIM##D(shape, wrap, pdata, data_loc); \
+                }), py::arg("data"), py::arg("wrap") = false, py::arg("values_on") = "vertices") \
+            /*.def_property_readonly("shape", [](const Grid_##DIM##D& g) { return g.domain().shape(); }) */ \
+            .def_property_readonly("data_location", &Grid_##DIM##D::data_location_as_string) \
+            .def("cube_filtration", &Grid_##DIM##D::cube_filtration, \
+                  py::arg("max_dim") = DIM, py::arg("negate") = false, py::arg("n_threads") = 1) \
+            .def("cube_filtration_and_critical_indices", &Grid_##DIM##D::cube_filtration_and_critical_indices, \
+                  py::arg("max_dim") = DIM, py::arg("negate") = false, py::arg("n_threads") = 1) \
+            .def("freudenthal_filtration", &Grid_##DIM##D::freudenthal_filtration, \
+                  py::arg("max_dim") = DIM, py::arg("negate") = false, py::arg("n_threads") = 1) \
+            .def("freudenthal_filtration_and_critical_vertices", &Grid_##DIM##D::freudenthal_filtration_and_critical_vertices, \
+                  py::arg("max_dim") = DIM, py::arg("negate") = false, py::arg("n_threads") = 1) \
+
+
+    BIND_GRID(1);
+    BIND_GRID(2);
+    BIND_GRID(3);
+
+    #undef BIND_GRID
+
+    // ============ Cube bindings ============
+    #define BIND_CUBE(DIM) \
+        py::class_<Cube_##DIM##D>(m, "Cube_" #DIM "D") \
+            .def(py::init([](const GridDomain_##DIM##D& g, oin_int x) -> Cube_##DIM##D { \
+                    return Cube_##DIM##D(x, g); \
+                }), py::arg("domain"), py::arg("x")) \
+            .def(py::init<const Cube_##DIM##D::Point&, const std::vector<oin_int>&, const GridDomain_##DIM##D&>(), \
+                 py::arg("anchor_vertex"), py::arg("spanning_dims"), py::arg("domain")) \
+            .def_property_readonly("dim", &Cube_##DIM##D::dim) \
+            .def_property_readonly("uid", &Cube_##DIM##D::get_uid, "Get UID of a cube") \
+            .def_property_readonly("vertices", &Cube_##DIM##D::vertices, "Get all vertices of a cube") \
+            .def_property_readonly("anchor_vertex", &Cube_##DIM##D::anchor_vertex, "Get anchor vertex of a cube") \
+            .def_property("id", &Cube_##DIM##D::get_id, &Cube_##DIM##D::set_id, "User ID of a cube") \
+            .def_property_readonly("domain", &Cube_##DIM##D::global_domain) \
+            .def("boundary", &Cube_##DIM##D::boundary_cubes, "boundary of a cube") \
+            .def("coboundary", &Cube_##DIM##D::coboundary_cubes, "coboundary of a cube") \
+            .def("top_cofaces", &Cube_##DIM##D::top_cofaces_cubes, "top cofaces of a cube") \
+            .def("__repr__", &Cube_##DIM##D::pretty_print) \
+            .def("__str__", &Cube_##DIM##D::pretty_print) \
+            .def(py::self == py::self) \
+            .def(py::self != py::self) \
+            .def(py::hash(py::self)) \
+
+
+    BIND_CUBE(1);
+    BIND_CUBE(2);
+    BIND_CUBE(3);
+
+    #undef BIND_CUBE
 }

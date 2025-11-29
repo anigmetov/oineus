@@ -82,9 +82,9 @@ struct Simplex {
 
     Simplex() = default;
     Simplex(const Simplex&) = default;
-    Simplex(Simplex&&) = default;
+    Simplex(Simplex&&) noexcept = default;
     Simplex& operator=(const Simplex&) = default;
-    Simplex& operator=(Simplex&&) = default;
+    Simplex& operator=(Simplex&&) noexcept = default;
 
     Simplex(const IdxVector& _vertices, bool set_uid_immediately = true)
             :vertices_(_vertices)
@@ -230,4 +230,15 @@ struct hash<oineus::VREdge<Int>> {
         return seed;
     }
 };
+
+template<class Int>
+struct hash<oineus::Simplex<Int>> {
+    std::size_t operator()(const oineus::Simplex<Int>& sigma) const
+    {
+        std::size_t seed = 0;
+        oineus::hash_combine(seed, sigma.get_id());
+        oineus::hash_combine(seed, sigma.get_uid());
+        return seed;
+    }
 };
+} // namespace std
