@@ -165,7 +165,7 @@ void init_oineus_cells(py::module& m)
     // ============ Grid bindings ============
     #define BIND_GRID(DIM) \
         py::class_<Grid_##DIM##D>(m, "Grid_" #DIM "D", #DIM "D grid with data") \
-            .def(py::init([](py::array_t<oin_real, py::array::c_style | py::array::forcecast> data, bool wrap) -> Grid_##DIM##D \
+            .def(py::init([](py::array_t<oin_real, py::array::c_style | py::array::forcecast> data, bool wrap, std::string values_on) -> Grid_##DIM##D \
                 { \
                     py::buffer_info data_buf = data.request(); \
                     if (data_buf.ndim != DIM) \
@@ -174,11 +174,25 @@ void init_oineus_cells(py::module& m)
                     Grid_##DIM##D::GridPoint shape; \
                     for (size_t i = 0; i < DIM; ++i) \
                         shape[i] = data_buf.shape[i]; \
-                    return Grid_##DIM##D(shape, wrap, pdata); \
-                }), py::arg("data"), py::arg("wrap") = false) \
-            .def_property_readonly("shape", [](const Grid_##DIM##D& g) { return g.domain().shape(); }) \
-            .def("cube_filtration", [](const Grid_##DIM##D& g, size_t top_d, bool negate, bool cell_centric, int n_threads) { return g.cube_filtration(top_d, negate, cell_centric, n_threads); }, \
-                  py::arg("max_dim"), py::arg("negate") = false, py::arg("cell_centric") = false, py::arg("n_threads") = 1) \
+                    Grid_##DIM##D::DataLocation data_loc; \
+                    if (values_on == "cells") \
+                        data_loc = Grid_##DIM##D::DataLocation::CELL ; \
+                    else if (values_on == "vertices") \
+                        data_loc = Grid_##DIM##D::DataLocation::VERTEX ; \
+                    else \
+                        throw std::runtime_error("values_on must be either 'vertices' or 'cells'"); \
+                    return Grid_##DIM##D(shape, wrap, pdata, data_loc); \
+                }), py::arg("data"), py::arg("wrap") = false, py::arg("values_on") = "vertices") \
+            /*.def_property_readonly("shape", [](const Grid_##DIM##D& g) { return g.domain().shape(); }) */ \
+            .def_property_readonly("data_location", &Grid_##DIM##D::data_location_as_string) \
+            .def("cube_filtration", &Grid_##DIM##D::cube_filtration, \
+                  py::arg("max_dim") = DIM, py::arg("negate") = false, py::arg("n_threads") = 1) \
+            .def("cube_filtration_and_critical_indices", &Grid_##DIM##D::cube_filtration_and_critical_indices, \
+                  py::arg("max_dim") = DIM, py::arg("negate") = false, py::arg("n_threads") = 1) \
+            .def("freudenthal_filtration", &Grid_##DIM##D::freudenthal_filtration, \
+                  py::arg("max_dim") = DIM, py::arg("negate") = false, py::arg("n_threads") = 1) \
+            .def("freudenthal_filtration_and_critical_vertices", &Grid_##DIM##D::freudenthal_filtration_and_critical_vertices, \
+                  py::arg("max_dim") = DIM, py::arg("negate") = false, py::arg("n_threads") = 1) \
 
 
     BIND_GRID(1);
@@ -198,7 +212,7 @@ void init_oineus_cells(py::module& m)
             .def_property_readonly("dim", &Cube_##DIM##D::dim) \
             .def_property_readonly("uid", &Cube_##DIM##D::get_uid, "Get UID of a cube") \
             .def_property_readonly("vertices", &Cube_##DIM##D::vertices, "Get all vertices of a cube") \
-            .def_property_readonly("anchor_vertex", &Cube_##DIM##D::get_vertex, "Get anchor vertex of a cube") \
+            .def_property_readonly("anchor_vertex", &Cube_##DIM##D::anchor_vertex, "Get anchor vertex of a cube") \
             .def_property("id", &Cube_##DIM##D::get_id, &Cube_##DIM##D::set_id, "User ID of a cube") \
             .def_property_readonly("domain", &Cube_##DIM##D::global_domain) \
             .def("boundary", &Cube_##DIM##D::boundary_cubes, "boundary of a cube") \

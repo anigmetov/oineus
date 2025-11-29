@@ -231,6 +231,7 @@ def cube_filtration(data: np.ndarray,
                     negate: bool=False,
                     wrap: bool=False,
                     max_dim: typing.Optional[int]=None,
+                    values_on: str="vertices",
                     n_threads: int=1,):
     if wrap:
         raise RuntimeError("cube_filtration: wrap=True is not implemented yet")
@@ -238,11 +239,11 @@ def cube_filtration(data: np.ndarray,
         max_dim = data.ndim
     dim = data.ndim
     if dim == 1:
-        grid = _oineus.Grid_1D(data)
+        grid = _oineus.Grid_1D(data, wrap=wrap, values_on=values_on)
     elif dim == 2:
-        grid = _oineus.Grid_2D(data)
+        grid = _oineus.Grid_2D(data, wrap=wrap, values_on=values_on)
     elif dim == 3:
-        grid = _oineus.Grid_3D(data)
+        grid = _oineus.Grid_3D(data, wrap=wrap, values_on=values_on)
     else:
         raise RuntimeError(f"cube_filtration: dim={data.ndim} not supported, recompile from sources")
     fil = grid.cube_filtration(max_dim=max_dim, n_threads=n_threads, negate=negate)

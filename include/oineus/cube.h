@@ -134,7 +134,7 @@ namespace oineus {
             // pick one displacement vector, move vertex along it
             // add face defined by the remaining vectors
             for (size_t k = 0; k < disps.size(); ++k) {
-                Point p = get_vertex();
+                Point p = anchor_vertex();
                 p[disps[k]] += 1;
                 Int face_id = global_domain_.point_to_id(p) << OINEUS_MAX_CUBE_DIM;
                 // set the bits corresponding to other displacements
@@ -154,16 +154,20 @@ namespace oineus {
         {
             std::vector<Int> result;
             Int vertex_id = cube_private::get_vertex_part(get_uid());
-            Point vertex = get_vertex();
+            Point vertex = anchor_vertex();
             Int cube_bits = get_uid() & ((1 << OINEUS_MAX_CUBE_DIM) - 1);
 
             // Case 1: Add a basis vector without moving vertex
             for (unsigned d = 0; d < D; ++d) {
                 if (!(cube_bits & (1 << d))) {  // if bit d is not set
-                    // Check if adding this basis vector keeps us in domain
-                    Point test_vertex = vertex;
-                    test_vertex[d] += 1;
-                    if (global_domain_.contains(test_vertex)) {
+                    // Check if the entire new cube fits in domain
+                    Point opposite_corner = vertex;
+                    for (unsigned dd = 0; dd < D; ++dd) {
+                        if ((cube_bits & (1 << dd)) || dd == d) {  // existing dims + new dim
+                            opposite_corner[dd] += 1;
+                        }
+                    }
+                    if (global_domain_.contains(opposite_corner)) {
                         Int coface_id = (vertex_id << OINEUS_MAX_CUBE_DIM) | cube_bits | (1 << d);
                         result.push_back(coface_id);
                     }
@@ -175,10 +179,20 @@ namespace oineus {
                 if (!(cube_bits & (1 << d))) {  // if bit d is not set
                     Point shifted_vertex = vertex;
                     shifted_vertex[d] -= 1;
+
                     if (global_domain_.contains(shifted_vertex)) {
-                        Int shifted_vertex_id = global_domain_.point_to_id(shifted_vertex);
-                        Int coface_id = (shifted_vertex_id << OINEUS_MAX_CUBE_DIM) | cube_bits | (1 << d);
-                        result.push_back(coface_id);
+                        // Check if the entire new cube fits in domain
+                        Point opposite_corner = shifted_vertex;
+                        for (unsigned dd = 0; dd < D; ++dd) {
+                            if ((cube_bits & (1 << dd)) || dd == d) {  // existing dims + new dim
+                                opposite_corner[dd] += 1;
+                            }
+                        }
+                        if (global_domain_.contains(opposite_corner)) {
+                            Int shifted_vertex_id = global_domain_.point_to_id(shifted_vertex);
+                            Int coface_id = (shifted_vertex_id << OINEUS_MAX_CUBE_DIM) | cube_bits | (1 << d);
+                            result.push_back(coface_id);
+                        }
                     }
                 }
             }
@@ -197,7 +211,7 @@ namespace oineus {
                 return result;
             }
 
-            Point vertex = get_vertex();
+            Point vertex = anchor_vertex();
             Int cube_bits = get_uid() & ((1 << OINEUS_MAX_CUBE_DIM) - 1);
 
             // Find which dimensions are missing
@@ -269,14 +283,14 @@ namespace oineus {
         bool operator==(const Cube &other) const { return get_uid() == other.get_uid() && global_domain_ == other.global_domain_ ;}
         bool operator!=(const Cube &other) const { return !(*this == other);}
 
-        Point get_vertex() const
+        Point anchor_vertex() const
         {
             // extract last OINEUS_MAX_CUBE_DIM bits of id
             Int v_idx = cube_private::get_vertex_part(id_);
             return global_domain_.id_to_point(v_idx);
         }
 
-        decltype(auto) vertices() const { return cube_private::get_cube_vertices<Int, D>(get_uid(), global_domain()); }
+        std::vector<std::array<Int, D>> vertices() const { return cube_private::get_cube_vertices<Int, D>(get_uid(), global_domain()); }
 
         std::string pretty_print() const
         {
@@ -294,7 +308,7 @@ namespace oineus {
             std::stringstream ss;
             ss << "Cube([";
             ss << "uid=" << get_uid() << ", user_id = " << get_id() << ", domain = " << global_domain_ << ",";
-            ss << "anchor = " << get_vertex() << ", vertices=[";
+            ss << "anchor = " << anchor_vertex() << ", vertices=[";
             auto vs = vertices();
             for(size_t i = 0; i < vs.size() - 1; ++i)
                 ss << vs[i] << ", ";

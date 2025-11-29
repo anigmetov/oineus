@@ -113,7 +113,7 @@ using DiagramRV = std::tuple<PyOineusDiagrams<Real>, typename oin::VRUDecomposit
 
 template<class Int, class Real, size_t D>
 typename oin::Grid<Int, Real, D>
-get_grid(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool wrap)
+get_grid(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool wrap, bool cell_centric)
 {
     using Grid = oin::Grid<Int, Real, D>;
     using GridPoint = typename Grid::GridPoint;
@@ -129,7 +129,9 @@ get_grid(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool
     for(dim_type d = 0 ; d < D ; ++d)
         dims[d] = data.shape(d);
 
-    return Grid(dims, wrap, pdata);
+    typename Grid::DataLocation data_location = cell_centric ? Grid::DataLocation::CELL : Grid::DataLocation::VERTEX;
+
+    return Grid(dims, wrap, pdata, data_location);
 }
 
 template<class Int, class Real>
@@ -138,13 +140,13 @@ get_fr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> d
 {
     dim_type d = data.ndim();
     if (d == 1) {
-        return get_grid<Int, Real, 1>(data, wrap).freudenthal_filtration(max_dim, negate, n_threads);
+        return get_grid<Int, Real, 1>(data, wrap, false).freudenthal_filtration(max_dim, negate, n_threads);
     } else if (d == 2) {
-        return get_grid<Int, Real, 2>(data, wrap).freudenthal_filtration(max_dim, negate, n_threads);
+        return get_grid<Int, Real, 2>(data, wrap, false).freudenthal_filtration(max_dim, negate, n_threads);
     } else if (d == 3) {
-        return get_grid<Int, Real, 3>(data, wrap).freudenthal_filtration(max_dim, negate, n_threads);
+        return get_grid<Int, Real, 3>(data, wrap, false).freudenthal_filtration(max_dim, negate, n_threads);
     } else if (d == 4) {
-        return get_grid<Int, Real, 4>(data, wrap).freudenthal_filtration(max_dim, negate, n_threads);
+        return get_grid<Int, Real, 4>(data, wrap, false).freudenthal_filtration(max_dim, negate, n_threads);
     } else {
         throw std::runtime_error("get_fr_filtration: dimension not supported by default, manual modification needed");
     }
@@ -155,13 +157,13 @@ decltype(auto)
 get_fr_filtration_and_critical_vertices(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {    dim_type d = data.ndim();
     if (d == 1) {
-        return get_grid<Int, Real, 1>(data, wrap).freudenthal_filtration_and_critical_vertices(max_dim, negate, n_threads);
+        return get_grid<Int, Real, 1>(data, wrap, false).freudenthal_filtration_and_critical_vertices(max_dim, negate, n_threads);
     } else if (d == 2) {
-        return get_grid<Int, Real, 2>(data, wrap).freudenthal_filtration_and_critical_vertices(max_dim, negate, n_threads);
+        return get_grid<Int, Real, 2>(data, wrap, false).freudenthal_filtration_and_critical_vertices(max_dim, negate, n_threads);
     } else if (d == 3) {
-        return get_grid<Int, Real, 3>(data, wrap).freudenthal_filtration_and_critical_vertices(max_dim, negate, n_threads);
+        return get_grid<Int, Real, 3>(data, wrap, false).freudenthal_filtration_and_critical_vertices(max_dim, negate, n_threads);
     } else if (d == 4) {
-        return get_grid<Int, Real, 4>(data, wrap).freudenthal_filtration_and_critical_vertices(max_dim, negate, n_threads);
+        return get_grid<Int, Real, 4>(data, wrap, false).freudenthal_filtration_and_critical_vertices(max_dim, negate, n_threads);
     } else {
         throw std::runtime_error("get_fr_filtration: dimension not supported by default, manual modification needed");
     }
