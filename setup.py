@@ -8,10 +8,14 @@ from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext
 from distutils.version import LooseVersion
 
-# Read Version
-with open('version.txt', 'r') as f:
-    lines = f.readlines()
-version = ".".join([line.split(' ')[1].strip() for line in lines if line])
+# Read Version from __init__.py
+version_file_path = 'bindings/python/oineus/__init__.py'
+with open(version_file_path, 'r') as f:
+    for line in f:
+        if line.startswith('__version__'):
+            version = line.split('=')[1].strip().strip('"').strip("'")
+            break
+
 __version__ = version
 print("The version is {}".format(version))
 

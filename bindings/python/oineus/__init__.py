@@ -19,6 +19,7 @@ from ._oineus import get_nth_persistence, get_permutation_dtv, list_to_filtratio
 from ._oineus import GridDomain_1D, Grid_1D, Cube_1D, CubeFiltration_1D
 from ._oineus import GridDomain_2D, Grid_2D, Cube_2D, CubeFiltration_2D
 from ._oineus import GridDomain_3D, Grid_3D, Cube_3D, CubeFiltration_3D
+from ._oineus import Z2_Column, Z2_Matrix
 
 
 __all__ = ["compute_diagrams_ls", "compute_diagrams_vr", "get_boundary_matrix", "is_reduced"]

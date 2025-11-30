@@ -19,11 +19,6 @@ void init_oineus_functions(py::module& m)
     m.def(func_name.c_str(), &get_fr_filtration_and_critical_vertices<oin_int, oin_real>,
             py::arg("data"), py::arg("negate") = false, py::arg("wrap") = false, py::arg("max_dim") = 3, py::arg("n_threads") = 1);
 
-    // Lower-star cube filtration
-    // func_name = "get_cube_filtration";
-    // m.def(func_name.c_str(), &get_cube_filtration<oin_int, oin_real>,
-    //         py::arg("data"), py::arg("negate") = false, py::arg("wrap") = false, py::arg("max_dim") = 3, py::arg("n_threads") = 1);
-
     // Vietoris--Rips filtration
     // Reasonable default (dimension of points) for max_dim is provided in Python
     // in C++, max_diameter is +\infty by default

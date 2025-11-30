@@ -399,6 +399,15 @@ namespace oineus {
         bool has_matrix_u() const { return u_data_t.size() > 0; }
         bool has_matrix_v() const { return v_data.size() > 0; }
 
+        int is_column_elz(size_t col_idx) const;
+
+        bool is_elz(int n_threads=8) const;
+        size_t n_elz_violators(int n_threads) const;
+        size_t n_elz_violators_in_dim(dim_type dim, int n_threads) const;
+
+        void restore_elz();
+
+
         template<typename Cell, typename Real>
         Diagrams<Real> diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const;
 
@@ -493,7 +502,6 @@ namespace oineus {
 
         return e_cols == e_rows;
     }
-
     template<class Int>
     bool VRUDecomposition<Int>::sanity_check()
     {
@@ -578,6 +586,195 @@ namespace oineus {
         //}
         //if (verbose) std::cerr << "UV = I" << std::endl;
         return true;
+    }
+
+    template<class Int>
+    int VRUDecomposition<Int>::is_column_elz(size_t col_idx) const
+    {
+        assert(has_matrix_v());
+        bool is_death = not is_R_column_zero(col_idx);
+        for(auto row_idx : v_data[col_idx]) {
+            if (row_idx == col_idx)
+                continue;
+            // we added column that was eventually zeroed
+            if (is_R_column_zero(row_idx))
+                return 0;
+            // in the ELZ reduction, this column would not be added: it's low is higher than ours,
+            // so it does not kill anything
+            if (is_death and r_data[col_idx].back() > r_data[row_idx].back())
+                return 0;
+        }
+        return 1;
+    }
+
+    template<class Int>
+    bool VRUDecomposition<Int>::is_elz(int n_threads) const
+    {
+        if (not has_matrix_v()) {
+            throw std::runtime_error("VRUDecomposition: cannot check ELZ without V matrix");
+        }
+
+        size_t n_cols = r_data.size();
+
+        // Don't use multithreading if too few columns
+        if (n_threads == 1 or n_cols < static_cast<size_t>(8 * n_threads)) {
+            // Serial version
+            for (size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
+                if (not is_column_elz(col_idx)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Parallel version
+        std::atomic<bool> found_violator{false};
+
+        tf::Executor executor(n_threads);
+        tf::Taskflow taskflow;
+
+        taskflow.for_each_index(size_t(0), n_cols, size_t(1),
+            [this, &found_violator](size_t col_idx) {
+                // Check flag before processing each column
+                if (found_violator.load(std::memory_order_relaxed)) {
+                    return;
+                }
+
+                if (not is_column_elz(col_idx)) {
+                    found_violator.store(true, std::memory_order_relaxed);
+                }
+            });
+
+        executor.run(taskflow).wait();
+
+        return !found_violator.load();
+    }
+
+    template<class Int>
+    size_t VRUDecomposition<Int>::n_elz_violators(int n_threads) const
+    {
+        size_t result = 0;
+        for(dim_type d = 0; d < dim_first.size(); ++ d) {
+            result += n_elz_violators_in_dim(d, n_threads);
+        }
+        return result;
+    }
+
+    template<class Int>
+    size_t VRUDecomposition<Int>::n_elz_violators_in_dim(dim_type dim, int n_threads) const
+    {
+        if (not has_matrix_v()) {
+            throw std::runtime_error("VRUDecomposition: cannot check ELZ without V matrix");
+        }
+
+        size_t start_idx = dim_first.at(dim);
+        size_t end_idx = dim_last.at(dim) + 1;
+
+        size_t n_cols_to_check = end_idx - start_idx;
+
+        // Don't use multithreading if too few columns
+        if (n_threads == 1 or n_cols_to_check < static_cast<size_t>(8 * n_threads)) {
+            // Serial version
+            size_t count = 0;
+            for (size_t col_idx = start_idx; col_idx < end_idx; ++col_idx) {
+                if (!is_column_elz(col_idx)) {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        // Parallel version - each thread maintains its own counter
+        std::vector<size_t> thread_counts(n_threads, 0);
+
+        tf::Executor executor(n_threads);
+        tf::Taskflow taskflow;
+
+        // Calculate chunk size for each thread
+        size_t chunk_size = (n_cols_to_check + n_threads - 1) / n_threads;
+
+        for (int tid = 0; tid < n_threads; ++tid) {
+            taskflow.emplace([this, tid, start_idx, end_idx, chunk_size, n_cols_to_check, &thread_counts]() {
+                size_t thread_start = start_idx + tid * chunk_size;
+                size_t thread_end = std::min(thread_start + chunk_size, end_idx);
+
+                size_t local_count = 0;
+                for (size_t col_idx = thread_start; col_idx < thread_end; ++col_idx) {
+                    if (!is_column_elz(col_idx)) {
+                        local_count++;
+                    }
+                }
+                thread_counts[tid] = local_count;
+            });
+        }
+
+        executor.run(taskflow).wait();
+
+        // Sum up counts from all threads
+        size_t total_count = 0;
+        for (size_t count : thread_counts) {
+            total_count += count;
+        }
+
+        return total_count;
+    }
+
+
+    template<class Int>
+    void VRUDecomposition<Int>::restore_elz()
+    {
+        using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
+
+        if (not has_matrix_v()) {
+            throw std::runtime_error("VRUDecomposition: cannot restore ELZ without V matrix");
+        }
+
+        if (has_matrix_u()) {
+            throw std::runtime_error("VRUDecomposition: cannot restore ELZ with U matrix (not implemented)");
+        }
+
+        size_t n_cols = r_data.size();
+
+        for (size_t current_col = 0; current_col < n_cols; ++current_col) {
+            // Keep processing column j until no more violations are found
+            bool made_changes = true;
+
+            while (made_changes) {
+                made_changes = false;
+
+                // Check each entry in V column from highest to lowest
+                for (int v_idx = static_cast<int>(v_data[current_col].size()) - 1; v_idx >= 0; v_idx--) {
+                    size_t added_col = v_data[current_col][v_idx];
+
+                    bool is_current_col_death = not MatrixTraits::is_zero(r_data[current_col]);
+                    bool is_added_col_zero = MatrixTraits::is_zero(r_data[added_col]);
+
+                    // Check for ELZ violations:
+                    // 1. We added a zero column that comes before j
+                    bool added_zero_column = (added_col < current_col && is_added_col_zero);
+
+                    // 2. Column j is a death and we added a column whose lowest one
+                    //    is smaller (this addition wouldn't kill anything in ELZ)
+                    bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
+                                                    (MatrixTraits::low(&r_data[current_col]) > MatrixTraits::low(&r_data[added_col])));
+
+                    if (added_zero_column || added_non_killing_column) {
+                        // Undo the addition by adding again (Z/2 arithmetic)
+                        MatrixTraits::add_to_column(v_data[current_col], v_data[added_col]);
+                        MatrixTraits::add_to_column(r_data[current_col], r_data[added_col]);
+                        made_changes = true;
+                        break;  // Restart checking this column from the beginning
+                        // TODO: make this more efficient
+                    }
+                }
+            }
+
+    #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+            if (current_col % 100 == 0) {
+                OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+            }
+    #endif
+        }
     }
 
     template<class Int>

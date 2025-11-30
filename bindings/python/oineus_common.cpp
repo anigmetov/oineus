@@ -1,5 +1,8 @@
 #include "oineus_persistence_bindings.h"
 
+#include <pybind11/operators.h>
+#include <pybind11/stl_bind.h>
+
 void init_oineus_common(py::module& m)
 {
     using namespace pybind11::literals;
@@ -11,6 +14,9 @@ void init_oineus_common(py::module& m)
     using ReductionParams = oin::Params;
     using KICRParams = oin::KICRParams;
     std::string vr_edge_name = "VREdge";
+
+    py::bind_vector<Z2_Column>(m, "Z2_Column");
+    py::bind_vector<Z2_Matrix>(m, "Z2_Matrix");
 
     py::class_<VREdge>(m, vr_edge_name.c_str())
             .def(py::init<oin_int>())

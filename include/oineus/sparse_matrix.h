@@ -195,6 +195,14 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
         }
         return "";
     }
+
+    // add col_b to col_a
+    static void add_to_column(Column& col_a, const Column& col_b)
+    {
+        Column result;
+        std::set_symmetric_difference(col_a.begin(), col_a.end(), col_b.begin(), col_b.end(), std::back_inserter(result));
+        col_a.swap(result);
+    }
 };
 
 template<typename Int_, int P>
