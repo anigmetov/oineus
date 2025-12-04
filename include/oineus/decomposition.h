@@ -407,6 +407,7 @@ namespace oineus {
 
         void restore_elz();
 
+        void compute_u_column(size_t col_idx);
 
         template<typename Cell, typename Real>
         Diagrams<Real> diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const;
@@ -448,6 +449,16 @@ namespace oineus {
         size_t filtration_index(size_t matrix_idx) const
         {
             return dualize() ? size() - matrix_idx - 1 : matrix_idx;
+        }
+
+        decltype(auto) densify_v_for_selinv(const std::vector<Int>& rows_to_invert) const
+        {
+            if (not has_matrix_v())
+                throw std::runtime_error("densify_v_for_selinv called on matrix without V");
+            if (not is_reduced)
+                throw std::runtime_error("densify_v_for_selinv called on unreduced decomposition");
+            std::unordered_set<Int> rows_to_invert_set(rows_to_invert.begin(), rows_to_invert.end());
+            return transpose_and_densify_for_targets(v_data, rows_to_invert_set, r_data.size());
         }
 
         bool is_R_column_zero(size_t col_idx) const { return r_data[col_idx].empty(); }
@@ -729,10 +740,6 @@ namespace oineus {
             throw std::runtime_error("VRUDecomposition: cannot restore ELZ without V matrix");
         }
 
-        if (has_matrix_u()) {
-            throw std::runtime_error("VRUDecomposition: cannot restore ELZ with U matrix (not implemented)");
-        }
-
         size_t n_cols = r_data.size();
 
         for (size_t current_col = 0; current_col < n_cols; ++current_col) {
@@ -762,6 +769,8 @@ namespace oineus {
                         // Undo the addition by adding again (Z/2 arithmetic)
                         MatrixTraits::add_to_column(v_data[current_col], v_data[added_col]);
                         MatrixTraits::add_to_column(r_data[current_col], r_data[added_col]);
+                        if (has_matrix_u())
+                            MatrixTraits::add_to_column(u_data_t[added_col], u_data_t[current_col]);
                         made_changes = true;
                         break;  // Restart checking this column from the beginning
                         // TODO: make this more efficient
@@ -775,6 +784,12 @@ namespace oineus {
             }
     #endif
         }
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::compute_u_column(size_t col_idx)
+    {
+        ;
     }
 
     template<class Int>

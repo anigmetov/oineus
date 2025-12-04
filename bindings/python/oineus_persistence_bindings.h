@@ -33,10 +33,10 @@ using oin_real = OINEUS_PYTHON_REAL;
 
 
 
-using Z2_Column = oineus::SimpleSparseMatrixTraits<oin_int, 2>::Column;
-using Z2_Matrix = oineus::SimpleSparseMatrixTraits<oin_int, 2>::Matrix;
-PYBIND11_MAKE_OPAQUE(Z2_Column);
-PYBIND11_MAKE_OPAQUE(Z2_Matrix);
+// using Z2_Column = oineus::SimpleSparseMatrixTraits<oin_int, 2>::Column;
+// using Z2_Matrix = oineus::SimpleSparseMatrixTraits<oin_int, 2>::Matrix;
+// PYBIND11_MAKE_OPAQUE(Z2_Column);
+// PYBIND11_MAKE_OPAQUE(Z2_Matrix);
 
 
 static_assert(std::is_same<oin_int, int>::value ||

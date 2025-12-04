@@ -32,6 +32,7 @@ void init_oineus_common_decomposition(py::module& m)
             .def("n_elz_violators_in_dim", &Decomposition::n_elz_violators_in_dim, py::arg("dim"), py::arg("n_threads")=8, py::call_guard<py::gil_scoped_release>())
             .def("is_column_elz", &Decomposition::is_column_elz, py::arg("column_idx"))
             .def("restore_elz", &Decomposition::restore_elz)
+            .def("densify_v_for_selinv", &Decomposition::densify_v_for_selinv, py::arg("rows_to_invert"))
             .def("sanity_check", &Decomposition::sanity_check, py::call_guard<py::gil_scoped_release>())
             .def("diagram", [](const Decomposition& self, const SimplexFiltration& fil, bool include_inf_points)
                             { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points)); },

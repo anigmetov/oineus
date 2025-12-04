@@ -15,8 +15,8 @@ void init_oineus_common(py::module& m)
     using KICRParams = oin::KICRParams;
     std::string vr_edge_name = "VREdge";
 
-    py::bind_vector<Z2_Column>(m, "Z2_Column");
-    py::bind_vector<Z2_Matrix>(m, "Z2_Matrix");
+    // py::bind_vector<Z2_Column>(m, "Z2_Column");
+    // py::bind_vector<Z2_Matrix>(m, "Z2_Matrix");
 
     py::class_<VREdge>(m, vr_edge_name.c_str())
             .def(py::init<oin_int>())

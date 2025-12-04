@@ -11,6 +11,8 @@
 #include <cassert>
 #include <algorithm>
 #include <atomic>
+#include <taskflow/taskflow.hpp>
+#include <taskflow/algorithm/for_each.hpp>
 
 #include "profile.h"
 
@@ -720,6 +722,137 @@ std::vector<std::vector<Int>> antitranspose(const std::vector<std::vector<Int>>&
         }
     }
     return result;
+}
+
+template<typename Int>
+std::vector<std::vector<Int>> transpose(const std::vector<std::vector<Int>>& col_format, int num_rows = -1, int n_threads = 1)
+{
+    if (col_format.empty()) {
+        return {};
+    }
+
+    // Determine the number of rows needed, if not given as parameter
+    if (num_rows < 0) {
+        num_rows = 0;
+        for (const auto& col : col_format) {
+            if (!col.empty()) {
+                num_rows = std::max(num_rows, col.back() + 1);
+            }
+        }
+    }
+
+    std::vector<std::vector<Int>> row_format(num_rows);
+
+    if (n_threads <= 1 or col_format.size() < 20 * n_threads) {
+        // Iterate through each column
+        for (int col_idx = 0; col_idx < col_format.size(); ++col_idx) {
+            // For each non-zero entry in this column
+            for (int row_idx : col_format[col_idx]) {
+                row_format[row_idx].push_back(col_idx);
+            }
+        }
+    } else {
+        const int num_cols = static_cast<int>(col_format.size());
+
+        // Create a temporary structure: for each thread, store data for each row
+        // This avoids race conditions during parallel insertion
+        std::vector<std::vector<std::vector<int>>> temp_storage(n_threads);
+        for (auto& storage : temp_storage) {
+            storage.resize(num_rows);
+        }
+
+        // Create executor with specified number of threads
+        tf::Executor executor(n_threads);
+        tf::Taskflow taskflow;
+
+        // Parallel phase: each thread processes a subset of columns
+        taskflow.for_each_index(0, num_cols, 1,
+            [&](int col_idx) {
+                int worker_id = executor.this_worker_id();
+                if (worker_id < 0) worker_id = 0; // fallback
+
+                // Add column index to appropriate rows in this thread's local storage
+                for (int row_idx : col_format[col_idx]) {
+                    temp_storage[worker_id][row_idx].push_back(col_idx);
+                }
+            }
+        );
+
+        executor.run(taskflow).wait();
+
+        // Merge phase: combine results from all threads
+        std::vector<std::vector<int>> row_format(num_rows);
+
+        tf::Taskflow merge_taskflow;
+        merge_taskflow.for_each_index(0, num_rows, 1,
+            [&](int row_idx) {
+                // Calculate total size for this row
+                size_t total_size = 0;
+                for (const auto& storage : temp_storage) {
+                    total_size += storage[row_idx].size();
+                }
+
+                // Reserve space and merge
+                row_format[row_idx].reserve(total_size);
+                for (const auto& storage : temp_storage) {
+                    row_format[row_idx].insert(
+                        row_format[row_idx].end(),
+                        storage[row_idx].begin(),
+                        storage[row_idx].end()
+                    );
+                }
+
+                // Sort to maintain sorted order
+                std::sort(row_format[row_idx].begin(), row_format[row_idx].end());
+            }
+        );
+        executor.run(merge_taskflow).wait();
+    }
+
+    return row_format;
+}
+
+template<typename Int>
+std::vector<std::vector<std::pair<Int, Int>>> transpose_and_densify_for_targets(const std::vector<std::vector<Int>>& r_col_data, const std::unordered_set<Int>& row_indices, int num_rows = -1)
+{
+    int n_threads = 1;
+    if (r_col_data.empty()) {
+        return {};
+    }
+
+    // Determine the number of rows needed, if not given as parameter
+    if (num_rows < 0) {
+        num_rows = 0;
+        for (const auto& col : r_col_data) {
+            if (!col.empty()) {
+                num_rows = std::max(num_rows, static_cast<decltype(num_rows)>(col.back() + 1));
+            }
+        }
+    }
+
+    std::vector<std::vector<std::pair<Int, Int>>> row_format(num_rows);
+
+    if (n_threads <= 1 or r_col_data.size() < 20 * n_threads) {
+        // Iterate through each column
+        for (int col_idx = 0; col_idx < r_col_data.size(); ++col_idx) {
+            // For each non-zero entry in this column
+            if (row_indices.find(col_idx) == row_indices.end()) {
+                // we don't want that row of U back from Pardiso, just normal transformation to row format
+                for (int row_idx : r_col_data[col_idx]) {
+                    row_format[row_idx].emplace_back(col_idx, 1);
+                }
+            } else {
+                std::unordered_set<Int> row_indices_in_col(r_col_data[col_idx].begin(), r_col_data[col_idx].end());
+                for(Int row_idx = col_idx; row_idx < r_col_data.size(); row_idx++) {
+                        Int entry = row_indices_in_col.find(row_idx) != row_indices_in_col.end();
+                        row_format[row_idx].emplace_back(col_idx, entry);
+                }
+            }
+        }
+    } else {
+        throw std::runtime_error("not implemented yet");
+    }
+    return row_format;
 }
 
 } // namespace oineus
