@@ -50,7 +50,7 @@ namespace oineus {
         Filtration& operator=(Filtration&&) = default;
 
         // use move constructor to move cells
-        Filtration(CellVector&& _simplices, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false, bool _set_uids=true)
+        Filtration(CellVector&& _simplices, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false)
                 :
                 negate_(_negate),
                 cells_(std::move(_simplices)),
@@ -58,17 +58,17 @@ namespace oineus {
                 sorted_id_to_id_(cells_.size())
         {
             CALI_CXX_MARK_FUNCTION;
-            init(n_threads, _sort_only_by_dim, _set_uids);
+            init(n_threads, _sort_only_by_dim);
         }
 
-        void init(int n_threads, bool sort_only_by_dim, bool _set_uids)
+        void init(int n_threads, bool sort_only_by_dim)
         {
             CALI_CXX_MARK_FUNCTION;
 
             if (sort_only_by_dim) {
                 sort_dim_only();
             } else {
-                sort_and_set(n_threads, _set_uids);
+                sort_and_set(n_threads);
             }
 
             set_dim_info();
@@ -90,14 +90,14 @@ namespace oineus {
         }
 
         // copy cells
-        Filtration(const CellVector& cells, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false, bool _set_ids=true)
+        Filtration(const CellVector& cells, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false)
                 :
                 negate_(_negate),
                 cells_(cells),
                 id_to_sorted_id_(cells.size()),
                 sorted_id_to_id_(cells.size())
         {
-            init(n_threads, _sort_only_by_dim, _set_ids);
+            init(n_threads, _sort_only_by_dim);
         }
 
         size_t size() const { return cells_.size(); }
@@ -382,7 +382,7 @@ namespace oineus {
             for(size_t i = 0; i < new_values.size(); ++i)
                 cells_[i].value_ = new_values[i];
 
-            sort_and_set(n_threads, false);
+            sort_and_set(n_threads);
         }
 
         // return true, if it's a subfiltration (subset) of a true filtration
@@ -521,7 +521,7 @@ namespace oineus {
         }
 
         // sort cells and assign sorted_ids
-        void sort_and_set(int n_threads, bool set_uid)
+        void sort_and_set(int n_threads)
         {
             CALI_CXX_MARK_FUNCTION;
 
@@ -541,9 +541,8 @@ namespace oineus {
             tf::Executor executor(n_threads);
             tf::Taskflow taskflow;
             tf::Task set_id_and_uid = taskflow.for_each_index(static_cast<Int>(0), static_cast<Int>(size()), static_cast<Int>(1),
-                    [this, set_uid](Int sorted_id){
+                    [this](Int sorted_id){
                     auto& sigma = this->cells_[sorted_id];
-                    if (set_uid) sigma.set_uid();
                     sigma.set_id(sorted_id);
                     });
             tf::Task sort_task = taskflow.sort(cells_.begin(), cells_.end(), cmp);
@@ -617,7 +616,7 @@ namespace oineus {
         }
 
         // retain ids from fil_1
-        return Filtration<C, R>(cells, fil_1.negate(), 1, false, false);
+        return Filtration<C, R>(cells, fil_1.negate(), 1, false);
     }
 
 

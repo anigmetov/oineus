@@ -1,7 +1,7 @@
 #include "oineus_persistence_bindings.h"
 
 template<class Cell>
-void init_oineus_top_optimizer_class(py::module& m, std::string opt_name, std::string ind_vals_name)
+void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::string ind_vals_name)
 {
     using Filtration = oin::Filtration<Cell, oin_real>;
     using TopologyOptimizer = oin::TopologyOptimizer<Cell, oin_real>;
@@ -15,7 +15,7 @@ void init_oineus_top_optimizer_class(py::module& m, std::string opt_name, std::s
     using Indices = typename TopologyOptimizer::Indices;
     using Values = typename TopologyOptimizer::Values;
 
-    py::class_<IndicesValues>(m, ind_vals_name.c_str())
+    nb::class_<IndicesValues>(m, ind_vals_name.c_str())
             .def("__getitem__", [](const IndicesValues& iv, int i) -> std::variant<Indices, Values> {
               if (i == 0)
                   return {iv.indices};
@@ -31,17 +31,17 @@ void init_oineus_top_optimizer_class(py::module& m, std::string opt_name, std::s
             });
 
     // optimization
-    py::class_<TopologyOptimizer>(m, opt_name.c_str())
-            .def(py::init<const Filtration&>())
+    nb::class_<TopologyOptimizer>(m, opt_name.c_str())
+            .def(nb::init<const Filtration&>())
             .def("compute_diagram", [](TopologyOptimizer& opt, bool include_inf_points) { return PyOineusDiagrams<oin_real>(opt.compute_diagram(include_inf_points)); },
-                    py::arg("include_inf_points"),
+                    nb::arg("include_inf_points"),
                     "compute diagrams in all dimensions")
             .def("simplify", &TopologyOptimizer::simplify,
-                    py::arg("epsilon"),
-                    py::arg("strategy"),
-                    py::arg("dim"), "make points with persistence less than epsilon go to the diagonal")
+                    nb::arg("epsilon"),
+                    nb::arg("strategy"),
+                    nb::arg("dim"), "make points with persistence less than epsilon go to the diagonal")
             .def("get_nth_persistence", &TopologyOptimizer::get_nth_persistence,
-                    py::arg("dim"), py::arg("n"), "return n-th persistence value in d-dimensional persistence diagram")
+                    nb::arg("dim"), nb::arg("n"), "return n-th persistence value in d-dimensional persistence diagram")
             .def("match", [](TopologyOptimizer& opt, Diagram& template_dgm, dim_type d, oin_real wasserstein_q, bool return_wasserstein_distance) -> std::variant<IndicesValues, std::pair<IndicesValues, oin_real>>
                     {
                       if (return_wasserstein_distance)
@@ -49,30 +49,30 @@ void init_oineus_top_optimizer_class(py::module& m, std::string opt_name, std::s
                       else
                           return opt.match(template_dgm, d, wasserstein_q);
                     },
-                    py::arg("template_dgm"),
-                    py::arg("dim"),
-                    py::arg("wasserstein_q")=1.0,
-                    py::arg("return_wasserstein_distance")=false,
+                    nb::arg("template_dgm"),
+                    nb::arg("dim"),
+                    nb::arg("wasserstein_q")=1.0,
+                    nb::arg("return_wasserstein_distance")=false,
                     "return target from Wasserstein matching"
             )
-            .def_property_readonly("homology_decomposition", &TopologyOptimizer::get_homology_decompostion)
-            .def_property_readonly("cohomology_decomposition", &TopologyOptimizer::get_cohomology_decompostion)
+            .def_prop_ro("homology_decomposition", &TopologyOptimizer::get_homology_decompostion)
+            .def_prop_ro("cohomology_decomposition", &TopologyOptimizer::get_cohomology_decompostion)
             .def("singleton", &TopologyOptimizer::singleton)
             .def("singletons", &TopologyOptimizer::singletons)
             .def("reduce_all", &TopologyOptimizer::reduce_all)
-            .def("increase_death", py::overload_cast<size_t>(&TopologyOptimizer::increase_death, py::const_), py::arg("negative_simplex_idx"), "return critical set for increasing death to inf")
-            .def("decrease_death", py::overload_cast<size_t>(&TopologyOptimizer::decrease_death, py::const_), py::arg("negative_simplex_idx"), "return critical set for decreasing death to -inf")
-            .def("increase_birth", py::overload_cast<size_t>(&TopologyOptimizer::increase_birth, py::const_), py::arg("negative_simplex_idx"), "return critical set for increasing birth to inf")
-            .def("decrease_birth", py::overload_cast<size_t>(&TopologyOptimizer::decrease_birth, py::const_), py::arg("negative_simplex_idx"), "return critical set for decreasing birth to -inf")
+            .def("increase_death", nb::overload_cast<size_t>(&TopologyOptimizer::increase_death, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for increasing death to inf")
+            .def("decrease_death", nb::overload_cast<size_t>(&TopologyOptimizer::decrease_death, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for decreasing death to -inf")
+            .def("increase_birth", nb::overload_cast<size_t>(&TopologyOptimizer::increase_birth, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for increasing birth to inf")
+            .def("decrease_birth", nb::overload_cast<size_t>(&TopologyOptimizer::decrease_birth, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for decreasing birth to -inf")
             .def("combine_loss", static_cast<IndicesValues (TopologyOptimizer::*)(const CriticalSets&, ConflictStrategy)>(&TopologyOptimizer::combine_loss),
-                    py::arg("critical_sets"),
-                    py::arg("strategy"),
+                    nb::arg("critical_sets"),
+                    nb::arg("strategy"),
                     "combine critical sets into well-defined assignment of new values to indices")
             .def("update", &TopologyOptimizer::update);
 
 }
 
-void init_oineus_top_optimizer(py::module& m)
+void init_oineus_top_optimizer(nb::module_& m)
 {
     using Simp = oin::Simplex<oin_int>;
     using SimpProd = oin::ProductCell<Simp, Simp>;
@@ -83,8 +83,8 @@ void init_oineus_top_optimizer(py::module& m)
     // induced matching
     m.def("get_induced_matching", &oin::get_induced_matching<Simp, oin_real>,
             "Compute induced matching for two filtrations of the same complex",
-            py::arg("included_filtration"),
-            py::arg("containing_filtration"),
-            py::arg("dim")=static_cast<dim_type >(-1),
-            py::arg("n_threads")=1);
+            nb::arg("included_filtration"),
+            nb::arg("containing_filtration"),
+            nb::arg("dim")=static_cast<dim_type >(-1),
+            nb::arg("n_threads")=1);
 }

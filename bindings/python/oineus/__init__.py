@@ -15,7 +15,7 @@ from ._oineus import Decomposition, IndexDiagramPoint, DiagramPoint, Diagrams
 from ._oineus import ReductionParams, KICRParams, KerImCokReduced, KerImCokReducedProd
 from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizer, TopologyOptimizerProd
 from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise_target, get_induced_matching
-from ._oineus import get_nth_persistence, get_permutation_dtv, list_to_filtration
+from ._oineus import get_nth_persistence, get_permutation_dtv
 from ._oineus import GridDomain_1D, Grid_1D, Cube_1D, CubeFiltration_1D
 from ._oineus import GridDomain_2D, Grid_2D, Cube_2D, CubeFiltration_2D
 from ._oineus import GridDomain_3D, Grid_3D, Cube_3D, CubeFiltration_3D
@@ -164,6 +164,11 @@ def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d: int, q: float, mi
         dgm = dgm_1
 
     return func(dgm, fil, rv, d, q, mip, mdp)
+
+
+def list_to_filtration(data: typing.List[typing.Tuple[int, typing.List[int], float]]):
+    simplices = [ Simplex(id, vertices, val) for id, vertices, val in data ]
+    return Filtration(simplices)
 
 
 def compute_kernel_image_cokernel_reduction(K, L, params=None, reduction_params=None):

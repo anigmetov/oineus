@@ -8,14 +8,20 @@
 #include <functional>
 #include <type_traits>
 
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
-#include <pybind11/numpy.h>
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/vector.h>
+#include <nanobind/nb_python.h>
+#include <nanobind/ndarray.h>
+#include "nanobind/operators.h"
+#include "nanobind/make_iterator.h"
 
-namespace py = pybind11;
+namespace nb = nanobind;
 
-//#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT {if (PyErr_CheckSignals() != 0) throw py::error_already_set();}
-//#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL { py::gil_scoped_acquire acq; if (PyErr_CheckSignals() != 0) throw py::error_already_set(); }
+using namespace nb::literals;
+
+
+//#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT {if (PyErr_CheckSignals() != 0) throw nb::error_already_set();}
+//#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL { nb::gil_scoped_acquire acq; if (PyErr_CheckSignals() != 0) throw nb::error_already_set(); }
 
 #include <oineus/timer.h>
 #include <oineus/oineus.h>
@@ -30,7 +36,6 @@ namespace py = pybind11;
 
 using oin_int = OINEUS_PYTHON_INT;
 using oin_real = OINEUS_PYTHON_REAL;
-
 
 
 // using Z2_Column = oineus::SimpleSparseMatrixTraits<oin_int, 2>::Column;
@@ -65,7 +70,7 @@ public:
             :diagrams_(_diagrams) { }
 
     template<class R>
-    py::array_t<R> diagram_to_numpy(const typename oin::Diagrams<R>::Dgm& dgm) const
+    nb::ndarray<R> diagram_to_numpy(const typename oin::Diagrams<R>::Dgm& dgm) const
     {
         size_t arr_sz = dgm.size() * 2;
         R* ptr = new R[arr_sz];
@@ -74,19 +79,15 @@ public:
             ptr[2 * i + 1] = dgm[i].death;
         }
 
-        py::capsule free_when_done(ptr, [](void* p) {
+        nb::capsule free_when_done(ptr, [](void* p) noexcept {
           R* pp = reinterpret_cast<R*>(p);
           delete[] pp;
         });
 
-        py::array::ShapeContainer shape {static_cast<long int>(dgm.size()), 2L};
-        py::array::StridesContainer strides {static_cast<long int>(2 * sizeof(R)),
-                                             static_cast<long int>(sizeof(R))};
-
-        return py::array_t<R>(shape, strides, ptr, free_when_done);
+        return nb::ndarray<R>(ptr, {dgm.size(), static_cast<size_t>(2)});
     }
 
-    py::array_t<Real> get_diagram_in_dimension_as_numpy(dim_type d)
+    nb::ndarray<Real> get_diagram_in_dimension_as_numpy(dim_type d)
     {
         auto dgm = diagrams_.get_diagram_in_dimension(d);
         return diagram_to_numpy<Real>(dgm);
@@ -102,7 +103,7 @@ public:
         return diagrams_.get_index_diagram_in_dimension(d, sorted);
     }
 
-    py::array_t<size_t> get_index_diagram_in_dimension_as_numpy(dim_type d, bool sorted = true)
+    nb::ndarray<size_t> get_index_diagram_in_dimension_as_numpy(dim_type d, bool sorted = true)
     {
         auto index_dgm = diagrams_.get_index_diagram_in_dimension(d, sorted);
         return diagram_to_numpy<size_t>(index_dgm);
@@ -120,17 +121,15 @@ using DiagramRV = std::tuple<PyOineusDiagrams<Real>, typename oin::VRUDecomposit
 
 template<class Int, class Real, size_t D>
 typename oin::Grid<Int, Real, D>
-get_grid(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool wrap, bool cell_centric)
+get_grid(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> data, bool wrap, bool cell_centric)
 {
     using Grid = oin::Grid<Int, Real, D>;
     using GridPoint = typename Grid::GridPoint;
 
-    py::buffer_info data_buf = data.request();
-
     if (data.ndim() != D)
-        throw std::runtime_error("Dimension mismatch");
+        throw std::runtime_error("get_grid: expected array of dimension " + std::to_string(D));
 
-    Real* pdata {static_cast<Real*>(data_buf.ptr)};
+    const Real* const pdata {static_cast<const Real* const>(data.data())};
 
     GridPoint dims;
     for(dim_type d = 0 ; d < D ; ++d)
@@ -143,7 +142,7 @@ get_grid(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool
 
 template<class Int, class Real>
 decltype(auto)
-get_fr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
+get_fr_filtration(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
     dim_type d = data.ndim();
     if (d == 1) {
@@ -161,8 +160,9 @@ get_fr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> d
 
 template<class Int, class Real>
 decltype(auto)
-get_fr_filtration_and_critical_vertices(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
-{    dim_type d = data.ndim();
+get_fr_filtration_and_critical_vertices(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
+{
+    dim_type d = data.ndim();
     if (d == 1) {
         return get_grid<Int, Real, 1>(data, wrap, false).freudenthal_filtration_and_critical_vertices(max_dim, negate, n_threads);
     } else if (d == 2) {
@@ -178,18 +178,16 @@ get_fr_filtration_and_critical_vertices(py::array_t<Real, py::array::c_style | p
 
 
 template<class Real, size_t D>
-decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::array::forcecast> data)
+decltype(auto) numpy_to_point_vector(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> data)
 {
+    if (data.ndim() != D)
+        throw std::runtime_error("numpy_to_point_vector: expected array of dimension " + std::to_string(D));
+
     using PointVector = std::vector<oin::Point<Real, D>>;
-
-    if (data.ndim() != 2 or data.shape(1) != D)
-        throw std::runtime_error("Dimension mismatch");
-
-    py::buffer_info data_buf = data.request();
 
     PointVector points(data.shape(0));
 
-    Real* pdata {static_cast<Real*>(data_buf.ptr)};
+    const Real* pdata {static_cast<const Real*>(data.data())};
 
     for(ssize_t i = 0 ; i < data.size() ; ++i)
         points[i / D][i % D] = pdata[i];
@@ -197,88 +195,56 @@ decltype(auto) numpy_to_point_vector(py::array_t<Real, py::array::c_style | py::
     return points;
 }
 
-template<typename Int, typename Real>
-decltype(auto)
-list_to_filtration(py::list data) //take a list of cells and turn it into a filtration for oineus. The list should contain cells in the form '[id, [boundary], filtration value]'.
-{
-    using Fil = oin::Filtration<oin::Simplex<Int>, Real>;
-    using Simplex = oin::Simplex<Int>;
-    using SimplexVector = typename Fil::CellVector;
 
-    int n_simps = data.size();
-    SimplexVector FSV;
-
-    for(int i = 0 ; i < n_simps ; i++) {
-        auto data_i = data[i];
-        int count = 0;
-        Int id;
-        std::vector<Int> vertices;
-        Real val;
-        for(auto item: data_i) {
-            if (count == 0) {
-                id = item.cast<Int>();
-            } else if (count == 1) {
-                vertices = item.cast<std::vector<Int>>();
-            } else if (count == 2) {
-                val = item.cast<Real>();
-            }
-            count++;
-        }
-        FSV.emplace_back(Simplex(id, vertices), val);
-    }
-
-    return Fil(FSV, false, 1);
-}
-
-template<typename Int, typename Real>
-decltype(auto)
-get_ls_filtration(const py::list& simplices, const py::array_t<Real>& vertex_values, bool negate, int n_threads)
-// take a list of cells and a numpy array of their values and turn it into a filtration for oineus.
-// The list should contain cells, each simplex is a list of vertices,
-// e.g., triangulation of one segment is [[0], [1], [0, 1]]
-{
-    using Fil = oin::Filtration<oin::Simplex<Int>, Real>;
-    using Simplex = typename Fil::Cell;
-    using IdxVector = typename Simplex::Cell::IdxVector;
-    using SimplexVector = std::vector<Simplex>;
-
-    Timer timer;
-    timer.reset();
-
-    SimplexVector fil_simplices;
-    fil_simplices.reserve(simplices.size());
-
-    if (vertex_values.ndim() != 1) {
-        std::cerr << "get_ls_filtration: expected 1-dimensional array in get_ls_filtration, got " << vertex_values.ndim() << std::endl;
-        throw std::runtime_error("Expected 1-dimensional array in get_ls_filtration");
-    }
-
-    auto cmp = negate ? [](Real x, Real y) { return x > y; } : [](Real x, Real y) { return x < y; };
-
-    auto vv_buf = vertex_values.request();
-    Real* p_vertex_values = static_cast<Real*>(vv_buf.ptr);
-
-    for(auto&& item: simplices) {
-        IdxVector vertices = item.cast<IdxVector>();
-
-        Real critical_value = negate ? std::numeric_limits<Real>::max() : std::numeric_limits<Real>::lowest();
-
-        for(auto v: vertices) {
-            Real vv = p_vertex_values[v];
-            if (cmp(critical_value, vv)) {
-                critical_value = vv;
-            }
-        }
-
-        fil_simplices.emplace_back(vertices, critical_value);
-    }
-
-    return Fil(std::move(fil_simplices), negate, n_threads);
-}
+// template<typename Int, typename Real>
+// decltype(auto)
+// get_ls_filtration(const nb::list& simplices, const nb::ndarray<Real, nb::device::cpu, nb::c_contig, nb::ro>& vertex_values, bool negate, int n_threads)
+// // take a list of cells and a numpy array of their values and turn it into a filtration for oineus.
+// // The list should contain cells, each simplex is a list of vertices,
+// // e.g., triangulation of one segment is [[0], [1], [0, 1]]
+// {
+//     using Fil = oin::Filtration<oin::Simplex<Int>, Real>;
+//     using Simplex = typename Fil::Cell;
+//     using IdxVector = typename Simplex::Cell::IdxVector;
+//     using SimplexVector = std::vector<Simplex>;
+//
+//     Timer timer;
+//     timer.reset();
+//
+//     SimplexVector fil_simplices;
+//     fil_simplices.reserve(simplices.size());
+//
+//     if (vertex_values.ndim() != 1) {
+//         std::cerr << "get_ls_filtration: expected 1-dimensional array in get_ls_filtration, got " << vertex_values.ndim() << std::endl;
+//         throw std::runtime_error("Expected 1-dimensional array in get_ls_filtration");
+//     }
+//
+//     auto cmp = negate ? [](Real x, Real y) { return x > y; } : [](Real x, Real y) { return x < y; };
+//
+//     auto vv_buf = vertex_values.request();
+//     Real* p_vertex_values = static_cast<Real*>(vv_buf.ptr);
+//
+//     for(auto&& item: simplices) {
+//         IdxVector vertices = item.cast<IdxVector>();
+//
+//         Real critical_value = negate ? std::numeric_limits<Real>::max() : std::numeric_limits<Real>::lowest();
+//
+//         for(auto v: vertices) {
+//             Real vv = p_vertex_values[v];
+//             if (cmp(critical_value, vv)) {
+//                 critical_value = vv;
+//             }
+//         }
+//
+//         fil_simplices.emplace_back(vertices, critical_value);
+//     }
+//
+//     return Fil(std::move(fil_simplices), negate, n_threads);
+// }
 
 template<class Int, class Real>
 decltype(auto)
-get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> points, dim_type max_dim, Real max_diameter, int n_threads)
+get_vr_filtration(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> points, dim_type max_dim, Real max_diameter, int n_threads)
 {
      if (points.ndim() != 2)
         throw std::runtime_error("get_vr_filtration: expected 2D array");
@@ -301,14 +267,12 @@ get_vr_filtration(py::array_t<Real, py::array::c_style | py::array::forcecast> p
 }
 
 template<class Int, class Real>
-decltype(auto) get_vr_filtration_and_critical_edges_from_pwdists(py::array_t<Real, py::array::c_style | py::array::forcecast> pw_dists, dim_type max_dim, Real max_diameter, int n_threads)
+decltype(auto) get_vr_filtration_and_critical_edges_from_pwdists(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> pw_dists, dim_type max_dim, Real max_diameter, int n_threads)
 {
     if (pw_dists.ndim() != 2 or pw_dists.shape(0) != pw_dists.shape(1))
         throw std::runtime_error("Dimension mismatch");
 
-    py::buffer_info pw_dists_buf = pw_dists.request();
-
-    Real* pdata {static_cast<Real*>(pw_dists_buf.ptr)};
+    const Real* pdata {static_cast<const Real*>(pw_dists.data())};
 
     size_t n_points = pw_dists.shape(1);
 
@@ -318,7 +282,7 @@ decltype(auto) get_vr_filtration_and_critical_edges_from_pwdists(py::array_t<Rea
 }
 
 template<class Int, class Real>
-decltype(auto) get_vr_filtration_from_pwdists(py::array_t<Real, py::array::c_style | py::array::forcecast> pw_dists, dim_type max_dim, Real max_diameter, int n_threads)
+decltype(auto) get_vr_filtration_from_pwdists(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> pw_dists, dim_type max_dim, Real max_diameter, int n_threads)
 {
     return get_vr_filtration_and_critical_edges_from_pwdists<Int, Real>(pw_dists, max_dim, max_diameter, n_threads).first;
 }
@@ -368,7 +332,7 @@ compute_relative_diagrams(const oineus::Filtration<Cell, Real>& fil, const oineu
 
 template<class Int, class Real>
 decltype(auto)
-get_vr_filtration_and_critical_edges(py::array_t<Real, py::array::c_style | py::array::forcecast> points, dim_type max_dim, Real max_diameter, int n_threads)
+get_vr_filtration_and_critical_edges(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> points, dim_type max_dim, Real max_diameter, int n_threads)
 {
     if (points.ndim() != 2)
         throw std::runtime_error("get_vr_filtration_and_critical_edges: expected 2D array");
@@ -392,7 +356,7 @@ get_vr_filtration_and_critical_edges(py::array_t<Real, py::array::c_style | py::
 
 template<class Int, class Real>
 typename oin::VRUDecomposition<Int>::MatrixData
-get_boundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
+get_boundary_matrix(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
     auto fil = get_fr_filtration<Int, Real>(data, negate, wrap, max_dim, n_threads);
     return fil.boundary_matrix();
@@ -400,7 +364,7 @@ get_boundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast>
 
 template<class Int, class Real, size_t D>
 typename oin::VRUDecomposition<Int>::MatrixData
-get_coboundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
+get_coboundary_matrix(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
 {
     auto fil = get_fr_filtration<Int, Real, D>(data, negate, wrap, max_dim, n_threads);
     auto bm = fil.boundary_matrix();
@@ -409,7 +373,7 @@ get_coboundary_matrix(py::array_t<Real, py::array::c_style | py::array::forcecas
 
 template<class Int, class Real>
 PyOineusDiagrams<Real>
-compute_diagrams_ls_freudenthal(py::array_t<Real, py::array::c_style | py::array::forcecast> data, bool negate, bool wrap, dim_type max_dim, oin::Params& params, bool include_inf_points, bool dualize)
+compute_diagrams_ls_freudenthal(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> data, bool negate, bool wrap, dim_type max_dim, oin::Params& params, bool include_inf_points, bool dualize)
 {
     // for diagram in dimension d, we need (d+1)-cells
     Timer timer;
@@ -449,13 +413,13 @@ oin::KerImCokReduced<C, Real, 2> compute_kernel_image_cokernel_reduction(const o
 }
 
 
-void init_oineus_common(py::module& m);
-void init_oineus_common_decomposition(py::module& m);
-void init_oineus_diagram(py::module& m);
-void init_oineus_functions(py::module& m);
-void init_oineus_filtration(py::module& m);
-void init_oineus_cells(py::module& m);
-void init_oineus_kicr(py::module& m);
-void init_oineus_top_optimizer(py::module& m);
+void init_oineus_common(nb::module_& m);
+void init_oineus_common_decomposition(nb::module_& m);
+void init_oineus_diagram(nb::module_& m);
+void init_oineus_functions(nb::module_& m);
+void init_oineus_filtration(nb::module_& m);
+void init_oineus_cells(nb::module_& m);
+void init_oineus_kicr(nb::module_& m);
+void init_oineus_top_optimizer(nb::module_& m);
 
 #endif //OINEUS_OINEUS_PERSISTENCE_BINDINGS_H

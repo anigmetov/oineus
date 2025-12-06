@@ -12,7 +12,7 @@ namespace oineus {
 
     template<class Real>
     struct DistMatrix {
-        Real* distances;
+        const Real * const distances;
         size_t n_points;
         Real get_distance(size_t i, size_t j) const { return distances[n_points*i + j]; }
     };
@@ -57,8 +57,7 @@ namespace oineus {
             }
         }
 
-        // false: do not compute uid immediately, set it in filtration ctor in parallel
-        return {SimplexWithValue(Simplex(vertices, false), crit_value), crit_edge};
+        return {SimplexWithValue(Simplex(vertices), crit_value), crit_edge};
     }
 
     template<class Int, class Real>

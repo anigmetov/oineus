@@ -86,7 +86,7 @@ struct Simplex {
     Simplex& operator=(const Simplex&) = default;
     Simplex& operator=(Simplex&&) noexcept = default;
 
-    Simplex(const IdxVector& _vertices, bool set_uid_immediately = true)
+    Simplex(const IdxVector& _vertices)
             :vertices_(_vertices)
     {
         if (vertices_.empty())
@@ -97,7 +97,7 @@ struct Simplex {
         else
             std::sort(vertices_.begin(), vertices_.end());
 
-        if (set_uid_immediately) set_uid();
+        set_uid();
     }
 
     // uids are set in parallel
@@ -108,7 +108,7 @@ struct Simplex {
     Int get_id() const { return id_; }
     void set_id(Int new_id) { id_ = new_id; }
 
-    Simplex(const Int _id, const IdxVector& _vertices, bool set_uid_immediately = true)
+    Simplex(const Int _id, const IdxVector& _vertices)
             :id_(_id), vertices_(_vertices)
     {
         if (vertices_.empty())
@@ -117,7 +117,7 @@ struct Simplex {
         if (vertices_.size() > 1)
             std::sort(vertices_.begin(), vertices_.end());
 
-        if (set_uid_immediately) set_uid();
+        set_uid();
     }
 
     Boundary boundary() const
@@ -176,17 +176,6 @@ struct Simplex {
     friend std::ostream& operator<<(std::ostream&, const Simplex<I>&);
 
     Uid get_uid() const { return uid_; }
-
-    // struct UidHasher {
-    //     std::size_t operator()(const Uid& vs) const
-    //     {
-    //         // TODO: replace with better hash function
-    //         std::size_t seed = 0;
-    //         for(auto v: vs)
-    //             oineus::hash_combine(seed, v);
-    //         return seed;
-    //     }
-    // };
 
     std::string repr() const
     {

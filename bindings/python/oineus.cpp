@@ -1,10 +1,6 @@
-#include <pybind11/pybind11.h>
-
-namespace py = pybind11;
-
 #include "oineus_persistence_bindings.h"
 
-PYBIND11_MODULE(_oineus, m)
+NB_MODULE(_oineus, m)
 {
     m.doc() = "Oineus python bindings";
 

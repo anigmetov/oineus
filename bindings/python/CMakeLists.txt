@@ -1,4 +1,18 @@
-add_subdirectory(pybind11)
+if (CMAKE_VERSION VERSION_LESS 3.18)
+  set(DEV_MODULE Development)
+else()
+  set(DEV_MODULE Development.Module)
+endif()
+
+find_package(Python 3.10 COMPONENTS Interpreter ${DEV_MODULE} REQUIRED)
+
+# Detect the installed nanobind package and import it into CMake
+#execute_process(
+#  COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+#  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
+#find_package(nanobind CONFIG REQUIRED)
+
+add_subdirectory(nanobind)
 
 if (CMAKE_LIBRARY_OUTPUT_DIRECTORY)        # to work with pip
     set (MODULE_OUTPUT_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
@@ -19,16 +33,16 @@ set_property(CACHE OINEUS_PYTHON_INT PROPERTY STRINGS "int" "long int" "long lon
 set(OINEUS_PYTHON_REAL "double" CACHE STRING "Choose the Real type in Python bindings, options are: float, double." FORCE)
 set_property(CACHE OINEUS_PYTHON_REAL PROPERTY STRINGS "float" "double")
 
-pybind11_add_module         (_oineus oineus.cpp
-                                     oineus_common.cpp
-                                     oineus_decomposition.cpp
-                                     oineus_diagram.cpp
-                                     oineus_cells.cpp
-                                     oineus_filtration.cpp
-                                     oineus_kicr.cpp
-                                     oineus_functions.cpp
-                                     oineus_top_optimizer.cpp
-                            )
+nanobind_add_module(_oineus NOMINSIZE oineus.cpp
+                                      oineus_common.cpp
+                                      oineus_decomposition.cpp
+                                      oineus_diagram.cpp
+                                      oineus_cells.cpp
+                                      oineus_filtration.cpp
+                                      oineus_kicr.cpp
+                                      oineus_functions.cpp
+                                      oineus_top_optimizer.cpp
+                             )
 target_compile_definitions(_oineus PRIVATE OINEUS_PYTHON_REAL=${OINEUS_PYTHON_REAL} OINEUS_PYTHON_INT=${OINEUS_PYTHON_INT})
 target_link_libraries       (_oineus PRIVATE ${libraries})
 target_include_directories  (_oineus PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include"

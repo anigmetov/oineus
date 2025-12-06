@@ -33,9 +33,9 @@ struct CellWithValue {
     // static_assert(std::is_nothrow_move_constructible<CellWithValue<Cell, Real>>::value,
                   // "CellWithValue must be nothrow move constructible");
 
-//    template<class... Args>
-//    CellWithValue(Real value, Args&&... args)
-//            : cell_(std::forward(args)...), value_(value) { }
+    // template<class... Args>
+    // CellWithValue(Real value, Args&&... args)
+    //         : cell_(std::forward(args)...), value_(value) { }
 
     CellWithValue(const Cell& cell, Real value) : cell_(cell), value_(value) {}
     CellWithValue(Cell&& cell, Real value) : cell_(std::move(cell)), value_(value) {}

@@ -1,12 +1,7 @@
 #include "oineus_persistence_bindings.h"
 
-#include <pybind11/operators.h>
-#include <pybind11/stl_bind.h>
-
-void init_oineus_common(py::module& m)
+void init_oineus_common(nb::module_& m)
 {
-    using namespace pybind11::literals;
-
     using VREdge = oin::VREdge<oin_int>;
 
     using oin::DenoiseStrategy;
@@ -15,13 +10,13 @@ void init_oineus_common(py::module& m)
     using KICRParams = oin::KICRParams;
     std::string vr_edge_name = "VREdge";
 
-    // py::bind_vector<Z2_Column>(m, "Z2_Column");
-    // py::bind_vector<Z2_Matrix>(m, "Z2_Matrix");
+    // nb::bind_vector<Z2_Column>(m, "Z2_Column");
+    // nb::bind_vector<Z2_Matrix>(m, "Z2_Matrix");
 
-    py::class_<VREdge>(m, vr_edge_name.c_str())
-            .def(py::init<oin_int>())
-            .def_readwrite("x", &VREdge::x)
-            .def_readwrite("y", &VREdge::y)
+    nb::class_<VREdge>(m, vr_edge_name.c_str())
+            .def(nb::init<oin_int>())
+            .def_rw("x", &VREdge::x)
+            .def_rw("y", &VREdge::y)
             .def("__getitem__", [](const VREdge& p, int i) {
               if (i == 0)
                   return p.x;
@@ -36,116 +31,111 @@ void init_oineus_common(py::module& m)
               return ss.str();
             });
 
-    py::class_<ReductionParams>(m, "ReductionParams")
-            .def(py::init<>())
-            .def_readwrite("n_threads", &ReductionParams::n_threads)
-            .def_readwrite("chunk_size", &ReductionParams::chunk_size)
-            .def_readwrite("write_dgms", &ReductionParams::write_dgms)
-            .def_readwrite("sort_dgms", &ReductionParams::sort_dgms)
-            .def_readwrite("clearing_opt", &ReductionParams::clearing_opt)
-            .def_readwrite("acq_rel", &ReductionParams::acq_rel)
-            .def_readwrite("print_time", &ReductionParams::print_time)
-            .def_readwrite("elapsed", &ReductionParams::elapsed)
-            .def_readwrite("compute_v", &ReductionParams::compute_v)
-            .def_readwrite("compute_u", &ReductionParams::compute_u)
-            .def_readwrite("do_sanity_check", &ReductionParams::do_sanity_check)
-            .def_readwrite("verbose", &ReductionParams::verbose)
-            .def("__repr__", [](const ReductionParams& self) { std::stringstream ss; ss << self; return ss.str(); })
-            .def(py::pickle(
-                    // __getstate__
+    using RedParamsTuple = std::tuple<int,    // n_threads
+                                      int,    //chunk_size
+                                      bool,   // write_dgms
+                                      bool,   // sort_dgms
+                                      bool,   // clearing_opt
+                                      bool,   // acq_rel
+                                      bool,   // print_time
+                                      bool,   // compute_v
+                                      bool,   // compute_u
+                                      bool,   // do_sanity_check
+                                      double, //elapsed
+                                      bool    // verbose
+                                    >;
 
-                    [](const ReductionParams& p) {
-                      return py::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
+    nb::class_<ReductionParams>(m, "ReductionParams")
+            .def(nb::init<>())
+            .def_rw("n_threads", &ReductionParams::n_threads)
+            .def_rw("chunk_size", &ReductionParams::chunk_size)
+            .def_rw("write_dgms", &ReductionParams::write_dgms)
+            .def_rw("sort_dgms", &ReductionParams::sort_dgms)
+            .def_rw("clearing_opt", &ReductionParams::clearing_opt)
+            .def_rw("acq_rel", &ReductionParams::acq_rel)
+            .def_rw("print_time", &ReductionParams::print_time)
+            .def_rw("elapsed", &ReductionParams::elapsed)
+            .def_rw("compute_v", &ReductionParams::compute_v)
+            .def_rw("compute_u", &ReductionParams::compute_u)
+            .def_rw("do_sanity_check", &ReductionParams::do_sanity_check)
+            .def_rw("verbose", &ReductionParams::verbose)
+            .def("__repr__", [](const ReductionParams& self) { std::stringstream ss; ss << self; return ss.str(); })
+            .def("__getstate__", [](const ReductionParams& p) {
+                      return std::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
                               p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
                               p.do_sanity_check, p.elapsed, p.verbose);
-                    },
-                    // __setstate__
-                    [](py::tuple t) {
-                      if (t.size() != 12)
-                          throw std::runtime_error("Invalid tuple for ReductionParams");
+                    })
+            .def("__setstate__", [](ReductionParams& p, const RedParamsTuple& t) {
+                    new (&p) ReductionParams();
+                      p.n_threads       = std::get<0>(t);
+                      p.chunk_size      = std::get<1>(t);
+                      p.write_dgms      = std::get<2>(t);
+                      p.sort_dgms       = std::get<3>(t);
+                      p.clearing_opt    = std::get<4>(t);
+                      p.acq_rel         = std::get<5>(t);
+                      p.print_time      = std::get<6>(t);
+                      p.compute_v       = std::get<7>(t);
+                      p.compute_u       = std::get<8>(t);
+                      p.do_sanity_check = std::get<9>(t);
+                      p.elapsed         = std::get<10>(t);
+                      p.verbose         = std::get<11>(t);
+                    })
+    ;
 
-                      ReductionParams p;
+    using KicrStateTuple = std::tuple<bool, bool, bool, bool, bool, bool, bool,
+                                     int, ReductionParams, ReductionParams,
+                                     ReductionParams, ReductionParams,
+                                     ReductionParams>;
 
-                      int i = 0;
-
-                      p.n_threads = t[i++].cast<decltype(p.n_threads)>();
-                      p.chunk_size = t[i++].cast<decltype(p.chunk_size)>();
-                      p.write_dgms = t[i++].cast<decltype(p.write_dgms)>();
-                      p.sort_dgms = t[i++].cast<decltype(p.sort_dgms)>();
-                      p.clearing_opt = t[i++].cast<decltype(p.clearing_opt)>();
-                      p.acq_rel = t[i++].cast<decltype(p.acq_rel)>();
-                      p.print_time = t[i++].cast<decltype(p.print_time)>();
-                      p.compute_v = t[i++].cast<decltype(p.compute_v)>();
-                      p.compute_u = t[i++].cast<decltype(p.compute_u)>();
-                      p.do_sanity_check = t[i++].cast<decltype(p.do_sanity_check)>();
-
-                      p.elapsed = t[i++].cast<decltype(p.elapsed)>();
-                      p.verbose = t[i++].cast<decltype(p.verbose)>();
-
-                      return p;
-                    }));
-
-    py::class_<KICRParams>(m, "KICRParams")
-            .def(py::init<>())
-            .def_readwrite("codomain", &KICRParams::codomain)
-            .def_readwrite("kernel", &KICRParams::kernel)
-            .def_readwrite("image", &KICRParams::image)
-            .def_readwrite("cokernel", &KICRParams::cokernel)
-            .def_readwrite("include_zero_persistence", &KICRParams::include_zero_persistence)
-            .def_readwrite("verbose", &KICRParams::verbose)
-            .def_readwrite("sanity_check", &KICRParams::sanity_check)
-            .def_readwrite("n_threads", &KICRParams::n_threads)
-            .def_readwrite("params_f", &KICRParams::params_f)
-            .def_readwrite("params_g", &KICRParams::params_g)
-            .def_readwrite("params_ker", &KICRParams::params_ker)
-            .def_readwrite("params_im", &KICRParams::params_ker)
-            .def_readwrite("params_cok", &KICRParams::params_ker)
+    nb::class_<KICRParams>(m, "KICRParams")
+            .def(nb::init<>())
+            .def_rw("codomain", &KICRParams::codomain)
+            .def_rw("kernel", &KICRParams::kernel)
+            .def_rw("image", &KICRParams::image)
+            .def_rw("cokernel", &KICRParams::cokernel)
+            .def_rw("include_zero_persistence", &KICRParams::include_zero_persistence)
+            .def_rw("verbose", &KICRParams::verbose)
+            .def_rw("sanity_check", &KICRParams::sanity_check)
+            .def_rw("n_threads", &KICRParams::n_threads)
+            .def_rw("params_f", &KICRParams::params_f)
+            .def_rw("params_g", &KICRParams::params_g)
+            .def_rw("params_ker", &KICRParams::params_ker)
+            .def_rw("params_im", &KICRParams::params_ker)
+            .def_rw("params_cok", &KICRParams::params_ker)
             .def("__repr__", [](const KICRParams& self) { std::stringstream ss; ss << self; return ss.str(); })
-            .def(py::pickle(
-                    // __getstate__
-
-                    [](const KICRParams& p) {
-                      return py::make_tuple(p.codomain, p.kernel, p.image, p.cokernel, p.include_zero_persistence, p.verbose, p.sanity_check,
+            .def("__getstate__", [](const KICRParams& p) {
+                      return std::make_tuple(p.codomain, p.kernel, p.image, p.cokernel, p.include_zero_persistence, p.verbose, p.sanity_check,
                               p.n_threads, p.params_f, p.params_g, p.params_ker, p.params_im, p.params_cok);
-                    },
-                    // __setstate__
-                    [](py::tuple t) {
-                      if (t.size() != 13)
-                          throw std::runtime_error("Invalid tuple for KICRParams");
+                    })
+            .def("__setstate__",
+                    [](KICRParams& p, const KicrStateTuple& t) {
+                          new (&p) KICRParams();
+                          p.codomain = std::get<0>(t);
+                          p.kernel = std::get<1>(t);
+                          p.image = std::get<2>(t);
+                          p.cokernel = std::get<3>(t);
+                          p.include_zero_persistence = std::get<4>(t);
+                          p.verbose = std::get<5>(t);
+                          p.sanity_check = std::get<6>(t);
+                          p.n_threads = std::get<7>(t);
+                          p.params_f = std::get<8>(t);
+                          p.params_g = std::get<9>(t);
+                          p.params_ker = std::get<10>(t);
+                          p.params_im = std::get<11>(t);
+                          p.params_cok = std::get<12>(t);
+                    })
+    ;
 
-                      KICRParams p;
-
-                      int i = 0;
-
-                      p.codomain = t[i++].cast<decltype(p.codomain)>();
-                      p.kernel = t[i++].cast<decltype(p.kernel)>();
-                      p.image = t[i++].cast<decltype(p.image)>();
-                      p.cokernel = t[i++].cast<decltype(p.cokernel)>();
-                      p.include_zero_persistence = t[i++].cast<decltype(p.include_zero_persistence)>();
-                      p.verbose = t[i++].cast<decltype(p.verbose)>();
-                      p.sanity_check = t[i++].cast<decltype(p.sanity_check)>();
-                      p.n_threads = t[i++].cast<decltype(p.n_threads)>();
-                      p.params_f = t[i++].cast<decltype(p.params_f)>();
-                      p.params_g = t[i++].cast<decltype(p.params_g)>();
-                      p.params_ker = t[i++].cast<decltype(p.params_ker)>();
-                      p.params_im = t[i++].cast<decltype(p.params_im)>();
-                      p.params_cok = t[i++].cast<decltype(p.params_cok)>();
-
-                      return p;
-                    }));
-
-    py::enum_<DenoiseStrategy>(m, "DenoiseStrategy", py::arithmetic())
+    nb::enum_<DenoiseStrategy>(m, "DenoiseStrategy")
             .value("BirthBirth", DenoiseStrategy::BirthBirth, "(b, d) maps to (b, b)")
             .value("DeathDeath", DenoiseStrategy::DeathDeath, "(b, d) maps to (d, d)")
             .value("Midway", DenoiseStrategy::Midway, "((b, d) maps to ((b+d)/2, (b+d)/2)")
             .def("as_str", [](const DenoiseStrategy& self) { return denoise_strategy_to_string(self); });
 
-    py::enum_<ConflictStrategy>(m, "ConflictStrategy", py::arithmetic())
+    nb::enum_<ConflictStrategy>(m, "ConflictStrategy")
             .value("Max", ConflictStrategy::Max, "choose maximal displacement")
             .value("Avg", ConflictStrategy::Avg, "average gradients")
             .value("Sum", ConflictStrategy::Sum, "sum gradients")
             .value("FixCritAvg", ConflictStrategy::FixCritAvg, "use matching on critical, average gradients on other cells")
             .def("as_str", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); });
-
-
 }

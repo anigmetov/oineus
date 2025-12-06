@@ -51,7 +51,7 @@ public:
     Grid& operator=(const Grid&) = default;
     Grid& operator=(Grid&&) noexcept = default;
 
-    Grid(const GridPoint& _dims, bool _wrap, Real* _data, DataLocation _data_location)
+    Grid(const GridPoint& _dims, bool _wrap, const Real* const _data, DataLocation _data_location)
             : data_location_(_data_location), data_domain_(_dims, _wrap), data_(_data)
     {
         if (data_location_ == DataLocation::VERTEX) {
@@ -278,7 +278,7 @@ public:
         }
 
         timer.reset();
-        auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads, false, false);
+        auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads, false);
         auto fil_elapsed = timer.elapsed_reset();
         if (verbose)
             std::cerr << "fil_elapsed : " << fil_elapsed << "\n";
@@ -405,7 +405,7 @@ public:
         }
 
         timer.reset();
-        auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads, false, false);
+        auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads, false);
         auto fil_elapsed = timer.elapsed_reset();
         std::cerr << "fil_elapsed : " << fil_elapsed << "\n";
         return {fil, critical_indices};
@@ -418,7 +418,7 @@ private:
     DataLocation data_location_;
     Domain data_domain_;           // always corresponds to shape of data
     Domain computational_domain_;  // equals data_domain, if location is VERTEX, else is expanded by 1
-    Real* data_ {nullptr};
+    const Real* const data_ {nullptr};
 
     void add_freudenthal_simplices_from_vertex(const GridPoint& v,
             size_t d,
