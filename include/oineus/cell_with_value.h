@@ -94,6 +94,39 @@ struct CellWithValue {
 
     template<typename R, typename C>
     friend std::ostream& operator<<(std::ostream&, const CellWithValue<R, C>&);
+
+    std::string pretty_print() const
+    {
+        std::stringstream out;
+        out << *this;
+        return out.str();
+    }
+
+    // SFINAE wrappers for cell-specific methods
+    template<class C = Cell>
+    auto coboundary_cubes() const -> decltype(std::declval<const C&>().coboundary_cubes())
+    {
+        return cell_.coboundary_cubes();
+    }
+
+    template<class C = Cell>
+    auto top_cofaces() const -> decltype(std::declval<const C&>().top_cofaces_cubes())
+    {
+        return cell_.top_cofaces_cubes();
+    }
+
+    template<class C = Cell>
+    auto anchor_vertex() const -> decltype(std::declval<const C&>().anchor_vertex())
+    {
+        return cell_.anchor_vertex();
+    }
+
+    template<class C = Cell>
+    auto get_vertices() const -> decltype(std::declval<const C&>().get_vertices())
+    {
+        return cell_.get_vertices();
+    }
+
 };
 
 template<typename C, typename R>

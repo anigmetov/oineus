@@ -51,6 +51,12 @@ void init_oineus_common_decomposition(nb::module_& m)
                     nb::arg("fil"))
             .def("zero_pers_diagram", [](const Decomposition& self, const ProdSimplexFiltration& fil) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil)); },
                     nb::arg("fil"))
+            .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_1D& fil) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil)); },
+                    nb::arg("fil"))
+            .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_2D& fil) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil)); },
+                    nb::arg("fil"))
+            .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_3D& fil) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil)); },
+                    nb::arg("fil"))
             .def("filtration_index", &Decomposition::filtration_index, nb::arg("matrix_index"))
                     ;
 

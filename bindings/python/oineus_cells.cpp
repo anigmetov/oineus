@@ -24,9 +24,9 @@ void init_oineus_cells(nb::module_& m)
         .def("__iter__", [](Simplex& sigma) { return nb::make_iterator(nb::type<Simplex>(), "vertices_iterator", sigma.vertices_.begin(), sigma.vertices_.end()); }, nb::keep_alive<0, 1>())
         .def("__getitem__", [](Simplex& sigma, size_t i) { return sigma.vertices_[i]; })
         .def_prop_rw("id", &Simplex::get_id, &Simplex::set_id)
-        .def_ro("vertices", &Simplex::vertices_)
+        .def_prop_ro("vertices", &Simplex::get_vertices)
         .def_prop_ro("uid", &Simplex::get_uid)
-        .def("dim", &Simplex::dim)
+        .def_prop_ro("dim", &Simplex::dim)
         .def("boundary", &Simplex::boundary)
         .def("join", [](const Simplex& sigma, oin_int new_vertex, oin_int new_id) {
                   return sigma.join(new_id, new_vertex);
@@ -48,7 +48,7 @@ void init_oineus_cells(nb::module_& m)
         .def_prop_ro("factor_1", &ProdSimplex::get_factor_1)
         .def_prop_ro("factor_2", &ProdSimplex::get_factor_2)
         .def_prop_ro("uid", &ProdSimplex::get_uid)
-        .def("dim", &ProdSimplex::dim)
+        .def_prop_ro("dim", &ProdSimplex::dim)
         .def("boundary", &ProdSimplex::boundary)
         .def(nb::self == nb::self)
         .def(nb::self != nb::self)
@@ -70,13 +70,13 @@ void init_oineus_cells(nb::module_& m)
             .def("__getitem__", [](SimplexValue& sigma, size_t i) { return sigma.cell_.vertices_[i]; })
             .def_prop_rw("id", &SimplexValue::get_id, &SimplexValue::set_id)
             .def_rw("sorted_id", &SimplexValue::sorted_id_)
-            .def_prop_ro("vertices", [](const SimplexValue& sigma) { return sigma.cell_.vertices_; })
+            .def_prop_ro("vertices", &SimplexValue::get_vertices<Simplex>, "simplex vertices")
             .def_prop_ro("uid", &SimplexValue::get_uid)
             .def_rw("value", &SimplexValue::value_)
-            .def("dim", &SimplexValue::dim)
+            .def_prop_ro("dim", &SimplexValue::dim)
             .def("boundary", &SimplexValue::boundary)
-            .def("combinatorial_simplex", &SimplexValue::get_cell)
-            .def("combinatorial_cell", &SimplexValue::get_cell)
+            .def_prop_ro("combinatorial_simplex", &SimplexValue::get_cell)
+            .def_prop_ro("combinatorial_cell", &SimplexValue::get_cell)
             .def("join", [](const SimplexValue& sigma, oin_int new_vertex, oin_real value, oin_int new_id) {
                       return sigma.join(new_id, new_vertex, value);
                     },
@@ -93,6 +93,12 @@ void init_oineus_cells(nb::module_& m)
                 });
 
     nb::class_<ProdSimplexValue>(m, prod_simplex_class_name.c_str())
+             .def("__init__", [](ProdSimplexValue* p, const Simplex::IdxVector& vertices_1, const Simplex::IdxVector& vertices_2, oin_real value) {
+                      new (p) ProdSimplexValue(ProdSimplex(Simplex(vertices_1), Simplex(vertices_2)), value);
+                    },
+                    nb::arg("vertices_1"),
+                    nb::arg("vertices_2"),
+                    nb::arg("value"))
             .def("__init__", [](ProdSimplexValue* p, const SimplexValue& sigma, const SimplexValue& tau, oin_real value) {
                       new (p) ProdSimplexValue(ProdSimplex(sigma.get_cell(), tau.get_cell()), value);
                     },
@@ -107,13 +113,15 @@ void init_oineus_cells(nb::module_& m)
                     nb::arg("value"))
             .def_prop_rw("id", &ProdSimplexValue::get_id, &ProdSimplexValue::set_id)
             .def_rw("sorted_id", &ProdSimplexValue::sorted_id_)
+            .def_prop_ro("factor_1", &ProdSimplexValue::get_factor_1)
+            .def_prop_ro("factor_2", &ProdSimplexValue::get_factor_2)
             .def_prop_ro("cell_1", &ProdSimplexValue::get_factor_1)
             .def_prop_ro("cell_2", &ProdSimplexValue::get_factor_2)
             .def_prop_ro("uid", &ProdSimplexValue::get_uid)
             .def_rw("value", &ProdSimplexValue::value_)
-            .def("dim", &ProdSimplexValue::dim)
+            .def_prop_ro("dim", &ProdSimplexValue::dim)
             .def("boundary", &ProdSimplexValue::boundary)
-            .def("combinatorial_cell", &ProdSimplexValue::get_cell)
+            .def_prop_ro("combinatorial_cell", &ProdSimplexValue::get_cell)
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def(nb::hash(nb::self))
@@ -134,6 +142,10 @@ void init_oineus_cells(nb::module_& m)
     using Cube_1D = oin::Cube<oin_int, 1>;
     using Cube_2D = oin::Cube<oin_int, 2>;
     using Cube_3D = oin::Cube<oin_int, 3>;
+
+    using CubeValue_1D = oin::CellWithValue<oin::Cube<oin_int, 1>, oin_real>;
+    using CubeValue_2D = oin::CellWithValue<oin::Cube<oin_int, 2>, oin_real>;
+    using CubeValue_3D = oin::CellWithValue<oin::Cube<oin_int, 3>, oin_real>;
 
     // ============ GridDomain bindings ============
     #define BIND_GRID_DOMAIN(DIM) \
@@ -198,7 +210,7 @@ void init_oineus_cells(nb::module_& m)
 
     // ============ Cube bindings ============
     #define BIND_CUBE(DIM) \
-        nb::class_<Cube_##DIM##D>(m, "Cube_" #DIM "D") \
+        nb::class_<Cube_##DIM##D>(m, "CombinatorialCube_" #DIM "D") \
             .def("__init__", [](Cube_##DIM##D * p, const GridDomain_##DIM##D& g, oin_int x) { \
                     new (p) Cube_##DIM##D(x, g); \
                 }, nb::arg("domain"), nb::arg("x")) \
@@ -206,7 +218,7 @@ void init_oineus_cells(nb::module_& m)
                  nb::arg("anchor_vertex"), nb::arg("spanning_dims"), nb::arg("domain")) \
             .def_prop_ro("dim", &Cube_##DIM##D::dim) \
             .def_prop_ro("uid", &Cube_##DIM##D::get_uid, "Get UID of a cube") \
-            .def_prop_ro("vertices", &Cube_##DIM##D::vertices, "Get all vertices of a cube") \
+            .def_prop_ro("vertices", &Cube_##DIM##D::get_vertices, "Get all vertices of a cube") \
             .def_prop_ro("anchor_vertex", &Cube_##DIM##D::anchor_vertex, "Get anchor vertex of a cube") \
             .def_prop_rw("id", &Cube_##DIM##D::get_id, &Cube_##DIM##D::set_id, "User ID of a cube") \
             .def_prop_ro("domain", &Cube_##DIM##D::global_domain) \
@@ -225,4 +237,32 @@ void init_oineus_cells(nb::module_& m)
     BIND_CUBE(3);
 
     #undef BIND_CUBE
+
+    #define BIND_CUBE_VALUE(DIM) \
+        nb::class_<CubeValue_##DIM##D>(m, "Cube_" #DIM "D") \
+            .def("__init__", [](CubeValue_##DIM##D * p, const GridDomain_##DIM##D& g, oin_int x, oin_real value) { \
+                    new (p) CubeValue_##DIM##D(Cube_##DIM##D(x, g), value); \
+                }, nb::arg("domain"), nb::arg("x"), nb::arg("value")) \
+            .def("__init__", [](CubeValue_##DIM##D * p, const Cube_##DIM##D::Point& anchor, const std::vector<oin_int>& spanning_dims, const GridDomain_##DIM##D& domain, oin_real value) { \
+                    new (p) CubeValue_##DIM##D(Cube_##DIM##D(anchor, spanning_dims, domain), value); \
+                }, nb::arg("anchor_vertex"), nb::arg("spanning_dims"), nb::arg("domain"), nb::arg("value")) \
+            .def_prop_ro("dim", &CubeValue_##DIM##D::dim) \
+            .def_prop_ro("uid", &CubeValue_##DIM##D::get_uid, "Get UID of a cube") \
+            .def_rw("value", &CubeValue_##DIM##D::value_) \
+            .def_prop_ro("vertices", &CubeValue_##DIM##D::get_vertices<Cube_##DIM##D>, "Get all vertices of a cube") \
+            .def("boundary", &CubeValue_##DIM##D::boundary, "boundary of a cube") \
+            .def("coboundary", &CubeValue_##DIM##D::coboundary_cubes<Cube_##DIM##D>, "coboundary of a cube") \
+            .def("top_cofaces", &CubeValue_##DIM##D::top_cofaces<Cube_##DIM##D>, "top-dim cofaces of a cube") \
+            .def("__repr__", &CubeValue_##DIM##D::pretty_print) \
+            .def("__str__", &CubeValue_##DIM##D::pretty_print) \
+            .def(nb::self == nb::self) \
+            .def(nb::self != nb::self) \
+            .def(nb::hash(nb::self)) \
+
+
+    BIND_CUBE_VALUE(1);
+    BIND_CUBE_VALUE(2);
+    BIND_CUBE_VALUE(3);
+
+    #undef BIND_CUBE_VALUE
 }

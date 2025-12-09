@@ -108,6 +108,8 @@ struct Simplex {
     Int get_id() const { return id_; }
     void set_id(Int new_id) { id_ = new_id; }
 
+    const IdxVector& get_vertices() const { return vertices_; }
+
     Simplex(const Int _id, const IdxVector& _vertices)
             :id_(_id), vertices_(_vertices)
     {

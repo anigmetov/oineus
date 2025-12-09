@@ -16,9 +16,9 @@ from ._oineus import ReductionParams, KICRParams, KerImCokReduced, KerImCokReduc
 from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizer, TopologyOptimizerProd
 from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise_target, get_induced_matching
 from ._oineus import get_nth_persistence, get_permutation_dtv
-from ._oineus import GridDomain_1D, Grid_1D, Cube_1D, CubeFiltration_1D
-from ._oineus import GridDomain_2D, Grid_2D, Cube_2D, CubeFiltration_2D
-from ._oineus import GridDomain_3D, Grid_3D, Cube_3D, CubeFiltration_3D
+from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D, CubeFiltration_1D
+from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, CubeFiltration_2D
+from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
 # from ._oineus import Z2_Column, Z2_Matrix
 
 

@@ -498,7 +498,7 @@ private:
     bool is_cube_valid(const GridCube& cube) const
     {
         if (not computational_domain_.wrap()) {
-            for(auto v : cube.vertices()) {
+            for(auto v : cube.get_vertices()) {
                 if (not computational_domain_.contains(v)) {
                     return false;
                 }
@@ -530,7 +530,7 @@ private:
                     }
                 }
             } else {
-                for(auto u_local : cube.vertices()) {
+                for(auto u_local : cube.get_vertices()) {
                     Real u_value = value_at_vertex(u_local);
 
                     if (cmp(value, u_value)) {
@@ -561,7 +561,7 @@ private:
                     }
                 }
             } else {
-                for(auto u_local : cube.vertices()) {
+                for(auto u_local : cube.get_vertices()) {
                     Real u_value = value_at_vertex(u_local);
                     if (cmp(value, u_value))
                         value = u_value;

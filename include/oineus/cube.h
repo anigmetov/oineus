@@ -290,13 +290,13 @@ namespace oineus {
             return global_domain_.id_to_point(v_idx);
         }
 
-        std::vector<std::array<Int, D>> vertices() const { return cube_private::get_cube_vertices<Int, D>(get_uid(), global_domain()); }
+        std::vector<std::array<Int, D>> get_vertices() const { return cube_private::get_cube_vertices<Int, D>(get_uid(), global_domain()); }
 
         std::string pretty_print() const
         {
             std::stringstream ss;
             ss << "Cube([";
-            auto vs = vertices();
+            auto vs = get_vertices();
             for(size_t i = 0; i < vs.size() - 1; ++i)
                 ss << vs[i] << ", ";
             ss << vs[vs.size() - 1] << "])";
@@ -309,7 +309,7 @@ namespace oineus {
             ss << "Cube([";
             ss << "uid=" << get_uid() << ", user_id = " << get_id() << ", domain = " << global_domain_ << ",";
             ss << "anchor = " << anchor_vertex() << ", vertices=[";
-            auto vs = vertices();
+            auto vs = get_vertices();
             for(size_t i = 0; i < vs.size() - 1; ++i)
                 ss << vs[i] << ", ";
             ss << vs[vs.size() - 1] << "])";
