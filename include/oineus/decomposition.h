@@ -451,16 +451,6 @@ namespace oineus {
             return dualize() ? size() - matrix_idx - 1 : matrix_idx;
         }
 
-        decltype(auto) densify_v_for_selinv(const std::vector<Int>& rows_to_invert) const
-        {
-            if (not has_matrix_v())
-                throw std::runtime_error("densify_v_for_selinv called on matrix without V");
-            if (not is_reduced)
-                throw std::runtime_error("densify_v_for_selinv called on unreduced decomposition");
-            std::unordered_set<Int> rows_to_invert_set(rows_to_invert.begin(), rows_to_invert.end());
-            return transpose_and_densify_for_targets(v_data, rows_to_invert_set, r_data.size());
-        }
-
         bool is_R_column_zero(size_t col_idx) const { return r_data[col_idx].empty(); }
         bool is_V_column_zero(size_t col_idx) const { return v_data[col_idx].empty(); }
     };
@@ -576,7 +566,7 @@ namespace oineus {
         dv.compute_cols();
 
         for(size_t i = 0; i < rr.n_cols(); ++ i) {
-            if (not rr.is_col_zero(i) and rr.col(i) != dv.col(i)) {
+            if (rr.col(i) != dv.col(i)) {
                 std::cerr << "R = " << rr << std::endl;
                 std::cerr << "D = " << dd << std::endl;
                 std::cerr << "V = " << vv << std::endl;
@@ -745,6 +735,7 @@ namespace oineus {
         for (size_t current_col = 0; current_col < n_cols; ++current_col) {
             // Keep processing column j until no more violations are found
             bool made_changes = true;
+            // R=DV, RU=D
 
             while (made_changes) {
                 made_changes = false;
@@ -1126,22 +1117,124 @@ namespace oineus {
 #ifdef OINEUS_GATHER_ADD_STATS
         write_add_stats_file(stats);
 #endif
+ // {
+ //            if (dualize()) {
+ //                // go from top dimension up, so that R matrix is filled first
+ //                for(int dim_idx = dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
+ //                    tf::Executor executor(1);
+ //                    IC(dualize_, dim_idx, dim_first[dim_idx], dim_last[dim_idx]);
+ //                    if (dim_last[dim_idx] == dim_first[dim_idx]) {
+ //                        continue;
+ //                    }
+ //
+ //                    tf::Taskflow taskflow_finish;
+ //                    taskflow_finish.for_each_index((size_t)dim_first[dim_idx], (size_t)(dim_last[dim_idx]-1), (size_t)1,
+ //                            [this, &pivots, &r_v_matrix](size_t col_idx) {
+ //                                auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+ //                                if (p) {
+ //                                    r_data[col_idx] = std::move(p->r_column);
+ //                                    v_data[col_idx] = std::move(p->v_column);
+ //                                    if (r_data[col_idx].size() > 0) {
+ //                                        if (pivots[r_data[col_idx].back()] != col_idx) {
+ //                                            IC(col_idx);
+ //                                            IC(pivots[r_data[col_idx].back()]);
+ //                                            IC(r_data[col_idx]);
+ //                                            throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx");
+ //                                        }
+ //                                    }
+ //                                    delete p;
+ //                                } else {
+ //                                    // column was cleared
+ //                                    r_data[col_idx].clear();
+ //                                    // Bauer's trick with filling V
+ //                                    v_data[col_idx] = r_data.at(pivots.at(col_idx));
+ //                                }
+ //                                if (v_data[col_idx].empty() or v_data[col_idx].back() != col_idx) {
+ //                                    IC(col_idx);
+ //                                    IC(pivots.at(col_idx));
+ //                                    IC(v_data[col_idx]);
+ //                                    throw std::runtime_error("V column is not 1-diag");
+ //                                }
+ //                            });
+ //                    executor.run_n(taskflow_finish, 1);
+ //                    executor.wait_for_all();
+ //                }
+ //            } else {
+ //                // go from high dimension down, so that R matrix is filled first
+ //                for(int dim_idx = 0; dim_idx < dim_first.size(); ++dim_idx) {
+ //                    IC(dualize_, dim_idx, dim_first[dim_idx], dim_last[dim_idx]);
+ //
+ //                    tf::Executor executor(1);
+ //                    if (dim_last[dim_idx] == dim_first[dim_idx]) {
+ //                        continue;
+ //                    }
+ //
+ //                    tf::Taskflow taskflow_finish;
+ //
+ //                    taskflow_finish.for_each_index((size_t)dim_first[dim_idx], (size_t)(dim_last[dim_idx]-1), (size_t)1,
+ //                            [this, &pivots, &r_v_matrix](size_t col_idx) {
+ //                                auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+ //                                if (p) {
+ //                                    r_data[col_idx] = std::move(p->r_column);
+ //                                    v_data[col_idx] = std::move(p->v_column);
+ //                                    delete p;
+ //                                    if (r_data[col_idx].size() > 0) {
+ //                                       if (pivots[r_data[col_idx].back()] != col_idx) {
+ //                                           IC(col_idx);
+ //                                           IC(pivots[r_data[col_idx].back()]);
+ //                                           IC(r_data[col_idx]);
+ //                                           throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx");
+ //                                       }
+ //                                   }
+ //                                } else {
+ //                                    r_data[col_idx].clear();
+ //                                    // Bauer's trick with filling V
+ //                                    v_data[col_idx] = r_data.at(pivots.at(col_idx));
+ //                                }
+ //                                if (v_data[col_idx].empty() or v_data[col_idx].back() != col_idx) {
+ //                                    IC(col_idx);
+ //                                    IC(pivots.at(col_idx));
+ //                                    IC(v_data[col_idx]);
+ //                                    throw std::runtime_error("V column is not 1-diag");
+ //                                }
+ //                            });
+ //
+ //                    executor.run_n(taskflow_finish, 1);
+ //                    executor.wait_for_all();
+ //                }
+ //            }
+ //        }
+
         {
-            tf::Taskflow taskflow_finish;
-            taskflow_finish.for_each_index((size_t)0, n_cols, (size_t)1,
-                    [this, &r_v_matrix](size_t col_idx) {
+                for(int dim_idx = dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
+                    for(size_t col_idx = dim_first[dim_idx]; col_idx <= dim_last[dim_idx]; ++col_idx) {
                         auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
                         if (p) {
                             r_data[col_idx] = std::move(p->r_column);
                             v_data[col_idx] = std::move(p->v_column);
+                            if (r_data[col_idx].size() > 0) {
+                                if (pivots[r_data[col_idx].back()] != col_idx) {
+                                    IC(col_idx);
+                                    IC(pivots[r_data[col_idx].back()]);
+                                    IC(r_data[col_idx]);
+                                    throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx");
+                                }
+                            }
                             delete p;
                         } else {
+                            // column was cleared
                             r_data[col_idx].clear();
-                            // TODO: Bauer's trick with filling V
-                            v_data[col_idx].clear();
+                            // Bauer's trick with filling V
+                            v_data[col_idx] = r_data.at(pivots.at(col_idx));
                         }
-                    });
-            executor.run(taskflow_finish).get();
+                        if (v_data[col_idx].empty() or v_data[col_idx].back() != col_idx) {
+                            IC(col_idx);
+                            IC(pivots.at(col_idx));
+                            IC(v_data[col_idx]);
+                            throw std::runtime_error("V column is not 1-diag");
+                        }
+                    } // loop over columns
+                } // loop over dimensions
         }
 
         is_reduced = true;

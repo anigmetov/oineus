@@ -832,6 +832,22 @@ std::vector<std::vector<std::pair<Int, Int>>> transpose_and_densify_for_targets(
 
     std::vector<std::vector<std::pair<Int, Int>>> row_format(num_rows);
 
+    // pre-allocate memory for rows
+    double _avg_size = 0;
+    for(auto& col : r_col_data) {
+        _avg_size += double(col.size()) / (double)r_col_data.size();
+    }
+
+    size_t avg_size = 3 * ceil(_avg_size) / 2;
+
+    for(size_t row_idx = 0; row_idx < num_rows; ++row_idx) {
+        if (row_indices.find(row_idx) == row_indices.end()) {
+            row_format[row_idx].reserve(avg_size);
+        } else {
+            row_format[row_idx].reserve(r_col_data.size() / 2);
+        }
+    }
+
     if (n_threads <= 1 or r_col_data.size() < 20 * n_threads) {
         // Iterate through each column
         for (int col_idx = 0; col_idx < r_col_data.size(); ++col_idx) {
