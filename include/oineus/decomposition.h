@@ -311,6 +311,9 @@ namespace oineus {
         bool is_reduced {false};
         bool dualize_ {false};
 
+        // in parallel versions we use atomic pivots, in serial - normal
+        std::vector<Int> _pivots;
+
         std::vector<Int> dim_first;
         std::vector<Int> dim_last;
 
@@ -407,7 +410,6 @@ namespace oineus {
 
         void restore_elz();
 
-        void compute_u_column(size_t col_idx);
 
         template<typename Cell, typename Real>
         Diagrams<Real> diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const;
@@ -453,6 +455,9 @@ namespace oineus {
 
         bool is_R_column_zero(size_t col_idx) const { return r_data[col_idx].empty(); }
         bool is_V_column_zero(size_t col_idx) const { return v_data[col_idx].empty(); }
+
+        IntSparseColumn compute_u_column(size_t col_idx) const;
+        void compute_u_from_v(size_t n_threads=1);
     };
 
     template<class Int>
@@ -732,6 +737,8 @@ namespace oineus {
 
         size_t n_cols = r_data.size();
 
+        size_t n_violators = 0;
+
         for (size_t current_col = 0; current_col < n_cols; ++current_col) {
             // Keep processing column j until no more violations are found
             bool made_changes = true;
@@ -767,6 +774,8 @@ namespace oineus {
                         // TODO: make this more efficient
                     }
                 }
+
+                if (made_changes) {n_violators++;}
             }
 
     #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
@@ -775,12 +784,7 @@ namespace oineus {
             }
     #endif
         }
-    }
-
-    template<class Int>
-    void VRUDecomposition<Int>::compute_u_column(size_t col_idx)
-    {
-        ;
+        IC(n_violators, size());
     }
 
     template<class Int>
@@ -827,7 +831,7 @@ namespace oineus {
         if (d_data.empty())
             return;
 
-        std::vector<Int> pivots(n_rows, -1);
+        _pivots = std::vector<Int>(n_rows, -1);
 
         // homology: go from top dimension to 0, to make clearing possible
         // cohomology:
@@ -836,12 +840,12 @@ namespace oineus {
             for(Int i = dim_first[dim]; i <= dim_last[dim]; ++i) {
                 if (params.clearing_opt and not is_zero(r_data[i])) {
                     // simplex i is pivot -> i is positive -> its column is 0
-                    if (pivots[i] >= 0) {
+                    if (_pivots[i] >= 0) {
                         r_data[i].clear();
                         n_cleared++;
                         // U. Bauer's trick to get a valid V column for cleared columns
                         if (params.compute_v) {
-                            v_data[i] = r_data[pivots[i]];
+                            v_data[i] = r_data[_pivots[i]];
                         }
                         continue;
                     }
@@ -856,7 +860,7 @@ namespace oineus {
 
                 while(not MatrixTraits::is_zero(cached_r_col)) {
 
-                    Int& pivot = pivots[MatrixTraits::low(cached_r_col)];
+                    Int& pivot = _pivots[MatrixTraits::low(cached_r_col)];
 
                     if (pivot == -1) {
                         pivot = i;
@@ -1010,6 +1014,17 @@ namespace oineus {
                         }
                     });
             executor.run(taskflow_finish).get();
+        }
+
+        {
+            tf::Taskflow taskflow_copy_pivots;
+            _pivots.clear();
+            _pivots.resize(r_data.size());
+            taskflow_copy_pivots.for_each_index((size_t)0, n_cols, (size_t)1,
+                    [this, &pivots](size_t col_idx) {
+                        _pivots[col_idx] = pivots[col_idx].load(std::memory_order_relaxed);
+                    });
+            executor.run(taskflow_copy_pivots).get();
         }
 
         is_reduced = true;
@@ -1237,6 +1252,17 @@ namespace oineus {
                 } // loop over dimensions
         }
 
+        {
+            tf::Taskflow taskflow_copy_pivots;
+            _pivots.clear();
+            _pivots.resize(r_data.size());
+            taskflow_copy_pivots.for_each_index((size_t)0, n_cols, (size_t)1,
+                    [this, &pivots](size_t col_idx) {
+                        _pivots[col_idx] = pivots[col_idx].load(std::memory_order_relaxed);
+                    });
+            executor.run(taskflow_copy_pivots).get();
+        }
+
         is_reduced = true;
     }
 
@@ -1432,6 +1458,62 @@ namespace oineus {
     {
         return diagram_general(fil, false, false, true);
     }
+
+    template<typename Int_>
+    typename VRUDecomposition<Int_>::IntSparseColumn
+    VRUDecomposition<Int_>::compute_u_column(size_t col_idx) const
+    {
+        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
+
+        if (not is_reduced)
+            throw std::runtime_error("Cannot compute U column from non-reduced decomposisition");
+
+        if (not has_matrix_v())
+            throw std::runtime_error("Cannot compute U column from non-reduced decomposisition");
+
+        IntSparseColumn result;
+
+        auto residual = MatrixTraits::load_to_cache(d_data.at(col_idx));
+
+        while (not MatrixTraits::is_zero(residual)) {
+            auto low_idx = MatrixTraits::low(residual);
+            auto piv_col_idx = _pivots.at(low_idx);
+            result.push_back(piv_col_idx);
+            MatrixTraits::add_to_cached(r_data[piv_col_idx], residual);
+        }
+
+        std::sort(result.begin(), result.end());
+
+        if (result.empty() or result.back() < col_idx) {
+            if (!r_data.at(col_idx).empty())
+                throw std::runtime_error("diagonal problem");
+            result.push_back(col_idx);
+        }
+
+        return result;
+    }
+
+    template<typename Int_>
+    void VRUDecomposition<Int_>::compute_u_from_v(size_t n_threads)
+    {
+        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
+
+        // compute columns of U in parallel
+        MatrixData u_data = MatrixData(v_data.size());
+
+        // for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
+            // u_data[col_idx] = compute_u_column(col_idx);
+        // }
+
+        tf::Executor executor(n_threads);
+        tf::Taskflow taskflow_u;
+        taskflow_u.for_each_index((size_t)0, r_data.size(), (size_t)1, [this, &u_data](size_t col_idx) { u_data[col_idx] = compute_u_column(col_idx); });
+        executor.run(taskflow_u).get();
+
+        u_data_t = MatrixTraits::col_to_row_format(u_data, v_data.size());
+    }
+
+
 
     template<typename Int>
     std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m)

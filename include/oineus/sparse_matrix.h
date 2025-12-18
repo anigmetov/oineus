@@ -205,6 +205,32 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
         std::set_symmetric_difference(col_a.begin(), col_a.end(), col_b.begin(), col_b.end(), std::back_inserter(result));
         col_a.swap(result);
     }
+
+    static Matrix col_to_row_format(const Matrix& col_format, Int num_rows=-1) {
+        if (col_format.empty()) {
+            return {};
+        }
+
+        // Determine the number of rows needed, if not given
+        if (num_rows == -1) {
+            for (const auto& col : col_format) {
+                if (!col.empty()) {
+                    num_rows = std::max(num_rows, col.back());
+                }
+            }
+            num_rows++;
+        }
+
+        Matrix row_format(num_rows);
+
+        for (int col_idx = 0; col_idx < col_format.size(); ++col_idx) {
+            for (int row_idx : col_format[col_idx]) {
+                row_format[row_idx].push_back(col_idx);
+            }
+        }
+
+        return row_format;
+    }
 };
 
 template<typename Int_, int P>
