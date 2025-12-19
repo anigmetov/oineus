@@ -182,8 +182,11 @@ get_fr_filtration_and_critical_vertices(nb::ndarray<Real, nb::c_contig, nb::devi
 template<class Real, size_t D>
 decltype(auto) numpy_to_point_vector(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> data)
 {
-    if (data.ndim() != D)
-        throw std::runtime_error("numpy_to_point_vector: expected array of dimension " + std::to_string(D));
+    if (data.ndim() != 2)
+        throw std::runtime_error("numpy_to_point_vector: expected array with 2 dimensions");
+
+    if (data.shape(1) != D)
+        throw std::runtime_error("numpy_to_point_vector: expected array with dimension 1 shape = " + std::to_string(D) + ", got " + std::to_string(data.shape(1)));
 
     using PointVector = std::vector<oin::Point<Real, D>>;
 

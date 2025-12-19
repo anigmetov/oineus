@@ -1496,6 +1496,7 @@ namespace oineus {
     template<typename Int_>
     void VRUDecomposition<Int_>::compute_u_from_v(size_t n_threads)
     {
+        Timer timer;
         using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
 
         // compute columns of U in parallel
@@ -1510,10 +1511,15 @@ namespace oineus {
         taskflow_u.for_each_index((size_t)0, r_data.size(), (size_t)1, [this, &u_data](size_t col_idx) { u_data[col_idx] = compute_u_column(col_idx); });
         executor.run(taskflow_u).get();
 
+        auto col_inv_elapsed = timer.elapsed_reset();
+
         u_data_t = MatrixTraits::col_to_row_format(u_data, v_data.size());
+
+        auto col_to_row_elapsed = timer.elapsed_reset();
+
+        IC(col_inv_elapsed, col_to_row_elapsed);
+
     }
-
-
 
     template<typename Int>
     std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m)

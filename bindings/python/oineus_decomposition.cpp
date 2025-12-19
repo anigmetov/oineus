@@ -68,7 +68,7 @@ Eigen::SparseMatrix<oin_int, Eigen::RowMajor>  z2_row_matrix_to_csr(const oin::V
 }
 
 
-Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densify_v_for_selinv_1(
+Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv_1(
     const oin::VRUDecomposition<oin_int>& dcmp,
     const oin::Filtration<oin::Simplex<oin_int>, oin_real>& fil,
     const std::vector<oin_int>& rows_to_invert,
@@ -93,7 +93,7 @@ Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densify_v_for_selinv_1(
         return static_cast<dim_type>(it - dcmp.dim_last.begin());
     };
 
-    Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densified_v(num_rows, num_rows);
+    Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densified_v(num_rows, num_rows);
 
     if (dcmp.v_data.empty()) {
         return densified_v;
@@ -133,7 +133,7 @@ Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densify_v_for_selinv_1(
         for (oin_int row_idx : column) {
             if (u_targets_map.find(row_idx) == u_targets_map.end()) {
                 // Normal row: just insert 1
-                densified_v.insert(row_idx, col_idx) = 1;
+                densified_v.insert(row_idx, col_idx) = 1.0;
             }
             // If row is in rows_to_invert, we handle it separately below
         }
@@ -147,10 +147,10 @@ Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densify_v_for_selinv_1(
             if (col_idx >= static_cast<size_t>(row_idx) && col_idx <= static_cast<size_t>(dcmp.dim_last[d])) {
                 reached_target = fil.negate() ? fil.get_cell_value(col_idx) >= u_targets_map[row_idx] : fil.get_cell_value(col_idx) <= u_targets_map[row_idx];
                 if (column_set.find(row_idx) != column_set.end()) {
-                    densified_v.insert(row_idx, col_idx) = 1;
+                    densified_v.insert(row_idx, col_idx) = 1.0;
                 } else {
                     if (not reached_target)
-                        densified_v.insert(row_idx, col_idx) = 2;  // Explicit zero placeholder
+                        densified_v.insert(row_idx, col_idx) = 2.0;  // Explicit zero placeholder
                 }
             }
         }
@@ -161,8 +161,8 @@ Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densify_v_for_selinv_1(
     // Replace all 2s with 0s in compressed storage
     auto* values = densified_v.valuePtr();
     for (int k = 0; k < densified_v.nonZeros(); ++k) {
-        if (values[k] == 2) {
-            values[k] = 0;
+        if (values[k] == 2.0) {
+            values[k] = 0.0;
         }
     }
 
@@ -172,7 +172,7 @@ Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densify_v_for_selinv_1(
 }
 
 
-Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densify_v_for_selinv(
+Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv(
     const oin::VRUDecomposition<oin_int>& dcmp,
     const std::set<oin_int>& rows_to_invert,
     int num_rows_, int n_threads=1 )
@@ -191,7 +191,7 @@ Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densify_v_for_selinv(
         return static_cast<dim_type>(it - dcmp.dim_last.begin());
     };
 
-    Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densified_v(num_rows, num_rows);
+    Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densified_v(num_rows, num_rows);
 
     if (dcmp.v_data.empty()) {
         return densified_v;
@@ -226,7 +226,7 @@ Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densify_v_for_selinv(
         for (int row_idx : column) {
             if (rows_to_invert.find(row_idx) == rows_to_invert.end()) {
                 // Normal row: just insert 1
-                densified_v.insert(row_idx, col_idx) = 1;
+                densified_v.insert(row_idx, col_idx) = 1.0;
             }
             // If row is in rows_to_invert, we handle it separately below
         }
@@ -238,9 +238,9 @@ Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densify_v_for_selinv(
             // Only process if col_idx is in the range [row_idx, dim_last[d]]
             if (col_idx >= static_cast<size_t>(row_idx) && col_idx <= static_cast<size_t>(dcmp.dim_last[d])) {
                 if (column_set.find(row_idx) != column_set.end()) {
-                    densified_v.insert(row_idx, col_idx) = 1;
+                    densified_v.insert(row_idx, col_idx) = 1.0;
                 } else {
-                    densified_v.insert(row_idx, col_idx) = 2;  // Explicit zero placeholder
+                    densified_v.insert(row_idx, col_idx) = 2.0;  // Explicit zero placeholder
                 }
             }
         }
@@ -251,8 +251,8 @@ Eigen::SparseMatrix<oin_int, Eigen::RowMajor> densify_v_for_selinv(
     // Replace all 2s with 0s in compressed storage
     auto* values = densified_v.valuePtr();
     for (int k = 0; k < densified_v.nonZeros(); ++k) {
-        if (values[k] == 2) {
-            values[k] = 0;
+        if (values[k] == 2.0) {
+            values[k] = 0.0;
         }
     }
 
@@ -297,14 +297,14 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def("is_column_elz", &Decomposition::is_column_elz, nb::arg("column_idx"))
             .def("restore_elz", &Decomposition::restore_elz)
             .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release>())
-            .def("densify_v_for_selinv", [](Decomposition& self, const std::set<oin_int>& rows_to_invert, int n_threads) -> Eigen::SparseMatrix<oin_int, Eigen::RowMajor> {
+            .def("densify_v_for_selinv", [](Decomposition& self, const std::set<oin_int>& rows_to_invert, int n_threads) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
                      int num_rows = self.r_data.size();
                      return densify_v_for_selinv(self, rows_to_invert, num_rows, n_threads);
                  },
                  nb::arg("rows_to_invert"), nb::arg("n_threads")=1,
                  nb::call_guard<nb::gil_scoped_release>())
 
-            .def("densify_v_for_selinv_with_targets", [](Decomposition& self, const SimplexFiltration& fil, const std::vector<oin_int>& rows_to_invert, const std::vector<oin_real>& targets) -> Eigen::SparseMatrix<oin_int, Eigen::RowMajor> {
+            .def("densify_v_for_selinv_with_targets", [](Decomposition& self, const SimplexFiltration& fil, const std::vector<oin_int>& rows_to_invert, const std::vector<oin_real>& targets) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
                      int num_rows = self.r_data.size();
                      return densify_v_for_selinv_1(self, fil, rows_to_invert, targets, num_rows);
                  },
