@@ -408,7 +408,7 @@ namespace oineus {
         size_t n_elz_violators(int n_threads) const;
         size_t n_elz_violators_in_dim(dim_type dim, int n_threads) const;
 
-        void restore_elz();
+        void restore_elz(dim_type dim, bool v_only);
 
 
         template<typename Cell, typename Real>
@@ -457,7 +457,7 @@ namespace oineus {
         bool is_V_column_zero(size_t col_idx) const { return v_data[col_idx].empty(); }
 
         IntSparseColumn compute_u_column(size_t col_idx) const;
-        void compute_u_from_v(size_t n_threads=1);
+        void compute_u_from_v(dim_type dim, size_t n_threads=1);
     };
 
     template<class Int>
@@ -727,19 +727,22 @@ namespace oineus {
 
 
     template<class Int>
-    void VRUDecomposition<Int>::restore_elz()
+    void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only)
     {
         using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
+
+        const bool all_dims = dim >= dim_first.size();
+
+        const size_t start_idx = all_dims ? 0 : dim_first.at(dim);
+        const size_t end_idx = all_dims ? 0 : dim_last.at(dim) + 1;
 
         if (not has_matrix_v()) {
             throw std::runtime_error("VRUDecomposition: cannot restore ELZ without V matrix");
         }
 
-        size_t n_cols = r_data.size();
-
         size_t n_violators = 0;
 
-        for (size_t current_col = 0; current_col < n_cols; ++current_col) {
+        for (size_t current_col = start_idx; current_col < end_idx; ++current_col) {
             // Keep processing column j until no more violations are found
             bool made_changes = true;
             // R=DV, RU=D
@@ -766,9 +769,11 @@ namespace oineus {
                     if (added_zero_column || added_non_killing_column) {
                         // Undo the addition by adding again (Z/2 arithmetic)
                         MatrixTraits::add_to_column(v_data[current_col], v_data[added_col]);
-                        MatrixTraits::add_to_column(r_data[current_col], r_data[added_col]);
-                        if (has_matrix_u())
-                            MatrixTraits::add_to_column(u_data_t[added_col], u_data_t[current_col]);
+                        if (not v_only) {
+                            MatrixTraits::add_to_column(r_data[current_col], r_data[added_col]);
+                            if (has_matrix_u())
+                                MatrixTraits::add_to_column(u_data_t[added_col], u_data_t[current_col]);
+                        }
                         made_changes = true;
                         break;  // Restart checking this column from the beginning
                         // TODO: make this more efficient
@@ -1494,7 +1499,7 @@ namespace oineus {
     }
 
     template<typename Int_>
-    void VRUDecomposition<Int_>::compute_u_from_v(size_t n_threads)
+    void VRUDecomposition<Int_>::compute_u_from_v(dim_type dim, size_t n_threads)
     {
         Timer timer;
         using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
@@ -1502,13 +1507,18 @@ namespace oineus {
         // compute columns of U in parallel
         MatrixData u_data = MatrixData(v_data.size());
 
-        // for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
-            // u_data[col_idx] = compute_u_column(col_idx);
+        const bool all_dims = dim >= dim_first.size();
+
+        size_t col_start = all_dims ? 0 : dim_first[dim];
+        size_t col_end = all_dims ? r_data.size() : dim_last[dim] + 1;
+
+        // for(size_t col_idx = col_start; col_idx < col_end; ++col_idx) {
+        //     u_data[col_idx] = compute_u_column(col_idx);
         // }
 
         tf::Executor executor(n_threads);
         tf::Taskflow taskflow_u;
-        taskflow_u.for_each_index((size_t)0, r_data.size(), (size_t)1, [this, &u_data](size_t col_idx) { u_data[col_idx] = compute_u_column(col_idx); });
+        taskflow_u.for_each_index(col_start, col_end, (size_t)1, [this, &u_data](size_t col_idx) { u_data[col_idx] = compute_u_column(col_idx); });
         executor.run(taskflow_u).get();
 
         auto col_inv_elapsed = timer.elapsed_reset();
@@ -1518,7 +1528,6 @@ namespace oineus {
         auto col_to_row_elapsed = timer.elapsed_reset();
 
         IC(col_inv_elapsed, col_to_row_elapsed);
-
     }
 
     template<typename Int>

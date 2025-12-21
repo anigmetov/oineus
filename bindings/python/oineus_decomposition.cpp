@@ -297,15 +297,14 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def("n_elz_violators", &Decomposition::n_elz_violators, nb::arg("n_threads")=8, nb::call_guard<nb::gil_scoped_release>())
             .def("n_elz_violators_in_dim", &Decomposition::n_elz_violators_in_dim, nb::arg("dim"), nb::arg("n_threads")=8, nb::call_guard<nb::gil_scoped_release>())
             .def("is_column_elz", &Decomposition::is_column_elz, nb::arg("column_idx"))
-            .def("restore_elz", &Decomposition::restore_elz)
-            .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release>())
+            .def("restore_elz", &Decomposition::restore_elz, nb::arg("dim")=oin::k_invalid_index, nb::arg("v_only")=false, nb::call_guard<nb::gil_scoped_release>())
+            .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release>())
             .def("densify_v_for_selinv", [](Decomposition& self, const std::set<oin_int>& rows_to_invert, int n_threads) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
                      int num_rows = self.r_data.size();
                      return densify_v_for_selinv(self, rows_to_invert, num_rows, n_threads);
                  },
                  nb::arg("rows_to_invert"), nb::arg("n_threads")=1,
                  nb::call_guard<nb::gil_scoped_release>())
-
             .def("densify_v_for_selinv_with_targets", [](Decomposition& self, const SimplexFiltration& fil, const std::vector<oin_int>& rows_to_invert, const std::vector<oin_real>& targets) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
                      int num_rows = self.r_data.size();
                      return densify_v_for_selinv_1(self, fil, rows_to_invert, targets, num_rows);
