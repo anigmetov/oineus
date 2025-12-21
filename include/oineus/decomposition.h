@@ -1524,7 +1524,7 @@ namespace oineus {
 
         auto col_inv_elapsed = timer.elapsed_reset();
 
-        u_data_t = MatrixTraits::col_to_row_format(u_data, v_data.size());
+        u_data_t = MatrixTraits::col_to_row_format(u_data, col_start, col_end, v_data.size());
 
         auto col_to_row_elapsed = timer.elapsed_reset();
 

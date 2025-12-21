@@ -206,9 +206,15 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
         col_a.swap(result);
     }
 
-    static Matrix col_to_row_format(const Matrix& col_format, Int num_rows=-1) {
+    static Matrix col_to_row_format(const Matrix& col_format, size_t col_start=0,
+                                    size_t col_end=std::numeric_limits<size_t>::max(),
+                                    Int num_rows=-1) {
         if (col_format.empty()) {
             return {};
+        }
+
+        if (col_end > col_format.size()) {
+            col_end = col_format.size();
         }
 
         // Determine the number of rows needed, if not given
@@ -223,7 +229,7 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
 
         Matrix row_format(num_rows);
 
-        for (size_t col_idx = 0; col_idx < col_format.size(); ++col_idx) {
+        for (size_t col_idx = col_start; col_idx < col_end; ++col_idx) {
             for (auto row_idx : col_format[col_idx]) {
                 row_format[row_idx].push_back(col_idx);
             }
