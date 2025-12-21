@@ -34,7 +34,8 @@ void init_oineus_filtration(nb::module_& m)
             .def("sorted_id_by_id", &Filtration::get_sorted_id, nb::arg("id"))
             .def("cell", &Filtration::get_cell, nb::arg("i"))
             .def("simplex", &Filtration::get_cell, nb::arg("i"))
-            .def("dim_first", [](Filtration& fil, int d) { return fil.dim_first(d); }, nb::arg("d"))
+            .def_prop_ro("dim_first", &Filtration::dims_first)
+            .def_prop_ro("dim_last", &Filtration::dims_last)
             .def("sorting_permutation", &Filtration::get_sorting_permutation)
             .def("inv_sorting_permutation", &Filtration::get_inv_sorting_permutation)
             .def("value_by_uid", &Filtration::value_by_uid, nb::arg("uid"))
@@ -71,6 +72,8 @@ void init_oineus_filtration(nb::module_& m)
             .def("max_dim", &ProdFiltration::max_dim, "maximal dimension of a cell in filtration")
             .def("cells", &ProdFiltration::cells_copy, "copy of all cells in filtration order")
             .def("size", &ProdFiltration::size, "number of cells in filtration")
+            .def_prop_ro("dim_first", &ProdFiltration::dims_first)
+            .def_prop_ro("dim_last", &ProdFiltration::dims_last)
             .def("size_in_dimension", &ProdFiltration::size_in_dimension, nb::arg("dim"), "number of cells of dimension dim")
             .def("cell_value_by_sorted_id", &ProdFiltration::value_by_sorted_id, nb::arg("sorted_id"))
             .def("get_id_by_sorted_id", &ProdFiltration::get_id_by_sorted_id, nb::arg("sorted_id"))
@@ -122,7 +125,8 @@ void init_oineus_filtration(nb::module_& m)
             .def("sorted_id_by_id", &CubeFiltration_##DIM##D::get_sorted_id, nb::arg("id")) \
             .def("cell", &CubeFiltration_##DIM##D::get_cell, nb::arg("i")) \
             .def("cube", &CubeFiltration_##DIM##D::get_cell, nb::arg("i")) \
-            .def("dim_first", [](CubeFiltration_##DIM##D& fil, int d) { return fil.dim_first(d); }, nb::arg("d")) \
+            .def_prop_ro("dim_first", &CubeFiltration_##DIM##D::dims_first) \
+            .def_prop_ro("dim_last", &CubeFiltration_##DIM##D::dims_last) \
             .def("sorting_permutation", &CubeFiltration_##DIM##D::get_sorting_permutation) \
             .def("inv_sorting_permutation", &CubeFiltration_##DIM##D::get_inv_sorting_permutation) \
             .def("value_by_uid", &CubeFiltration_##DIM##D::value_by_uid, nb::arg("uid")) \

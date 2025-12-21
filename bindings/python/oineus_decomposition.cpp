@@ -175,7 +175,7 @@ Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv_1(
 Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv(
     const oin::VRUDecomposition<oin_int>& dcmp,
     const std::set<oin_int>& rows_to_invert,
-    int num_rows_, int n_threads=1 )
+    int num_rows_, int n_threads=1, bool print_time=false)
 {
     Timer timer;
     if (not dcmp.has_matrix_v())
@@ -256,7 +256,7 @@ Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv(
         }
     }
 
-    std::cerr << "Densifying V took " << timer.elapsed() << " seconds" << std::endl;
+    if (print_time) std::cerr << "Densifying V took " << timer.elapsed() << " seconds" << std::endl;
 
     return densified_v;
 }
@@ -293,12 +293,12 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def_ro("dim_first", &Decomposition::dim_first)
             .def_ro("dim_last", &Decomposition::dim_last)
             .def("reduce", &Decomposition::reduce, nb::arg("params")=oin::Params(), nb::call_guard<nb::gil_scoped_release>())
-            .def("is_elz", &Decomposition::is_elz, nb::arg("n_threads")=8, nb::call_guard<nb::gil_scoped_release>())
-            .def("n_elz_violators", &Decomposition::n_elz_violators, nb::arg("n_threads")=8, nb::call_guard<nb::gil_scoped_release>())
-            .def("n_elz_violators_in_dim", &Decomposition::n_elz_violators_in_dim, nb::arg("dim"), nb::arg("n_threads")=8, nb::call_guard<nb::gil_scoped_release>())
+            .def("is_elz", &Decomposition::is_elz, nb::arg("n_threads")=8)
+            .def("n_elz_violators", &Decomposition::n_elz_violators, nb::arg("n_threads")=8)
+            .def("n_elz_violators_in_dim", &Decomposition::n_elz_violators_in_dim, nb::arg("dim"), nb::arg("n_threads")=8)
             .def("is_column_elz", &Decomposition::is_column_elz, nb::arg("column_idx"))
-            .def("restore_elz", &Decomposition::restore_elz, nb::arg("dim")=oin::k_invalid_index, nb::arg("v_only")=false, nb::call_guard<nb::gil_scoped_release>())
-            .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release>())
+            .def("restore_elz", &Decomposition::restore_elz, nb::arg("dim")=oin::k_invalid_index, nb::arg("v_only")=false, nb::arg("verbose")=false)
+            .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false)
             .def("densify_v_for_selinv", [](Decomposition& self, const std::set<oin_int>& rows_to_invert, int n_threads) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
                      int num_rows = self.r_data.size();
                      return densify_v_for_selinv(self, rows_to_invert, num_rows, n_threads);

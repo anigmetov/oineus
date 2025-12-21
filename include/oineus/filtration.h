@@ -100,8 +100,8 @@ namespace oineus {
         auto dim_first(dim_type d) const { return dim_first_.at(d); }
         auto dim_last(dim_type d) const { return dim_last_.at(d); }
 
-        auto dim_first() const { return dim_first_; }
-        auto dim_last() const { return dim_last_; }
+        auto dims_first() const { return dim_first_; }
+        auto dims_last() const { return dim_last_; }
 
         Real get_cell_value(size_t i) const { return cells_[i].get_value(); }
 
@@ -580,11 +580,11 @@ namespace oineus {
         if (fil.size() == 0)
             out << "\n";
         out << ", dim_first = [";
-        for(auto x : fil.dim_first())
+        for(auto x : fil.dims_first())
             out << x << ",";
         out << "]\n";
         out << ", dim_last = [";
-        for(auto x : fil.dim_last())
+        for(auto x : fil.dims_last())
             out << x << ",";
         out << "]\n";
         out << ");";

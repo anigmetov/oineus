@@ -333,8 +333,8 @@ namespace oineus {
 
                 r_data(d_data),
                 dualize_(_dualize),
-                dim_first(fil.dim_first()),
-                dim_last(fil.dim_last()),
+                dim_first(fil.dims_first()),
+                dim_last(fil.dims_last()),
                 n_rows(d_data.size())
         {
             if (dualize_) {
@@ -408,7 +408,7 @@ namespace oineus {
         size_t n_elz_violators(int n_threads) const;
         size_t n_elz_violators_in_dim(dim_type dim, int n_threads) const;
 
-        void restore_elz(dim_type dim, bool v_only);
+        void restore_elz(dim_type dim, bool v_only, bool verbose);
 
 
         template<typename Cell, typename Real>
@@ -457,7 +457,7 @@ namespace oineus {
         bool is_V_column_zero(size_t col_idx) const { return v_data[col_idx].empty(); }
 
         IntSparseColumn compute_u_column(size_t col_idx) const;
-        void compute_u_from_v(dim_type dim, size_t n_threads=1);
+        void compute_u_from_v(dim_type dim, size_t n_threads=1, bool verbose=false);
     };
 
     template<class Int>
@@ -727,7 +727,7 @@ namespace oineus {
 
 
     template<class Int>
-    void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only)
+    void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only, bool verbose)
     {
         using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
 
@@ -789,7 +789,7 @@ namespace oineus {
             }
     #endif
         }
-        IC(n_violators, size());
+        if (verbose) IC(n_violators, size());
     }
 
     template<class Int>
@@ -1499,7 +1499,7 @@ namespace oineus {
     }
 
     template<typename Int_>
-    void VRUDecomposition<Int_>::compute_u_from_v(dim_type dim, size_t n_threads)
+    void VRUDecomposition<Int_>::compute_u_from_v(dim_type dim, size_t n_threads, bool verbose)
     {
         Timer timer;
         using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
@@ -1527,7 +1527,7 @@ namespace oineus {
 
         auto col_to_row_elapsed = timer.elapsed_reset();
 
-        IC(col_inv_elapsed, col_to_row_elapsed);
+        if (verbose) IC(col_inv_elapsed, col_to_row_elapsed);
     }
 
     template<typename Int>
