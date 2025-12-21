@@ -47,6 +47,16 @@ void init_oineus_common(nb::module_& m)
 
     nb::class_<ReductionParams>(m, "ReductionParams")
             .def(nb::init<>())
+            .def("__init__",
+                [](ReductionParams* p, int n_threads, int chunk_size, bool clearing_opt, bool compute_v, bool compute_u, bool verbose) {
+                    new (p) ReductionParams();
+                    p->n_threads = n_threads;
+                    p->chunk_size = chunk_size;
+                    p->clearing_opt = clearing_opt;
+                    p->compute_v = compute_v;
+                    p->compute_u = compute_u;
+                    p->verbose = verbose;
+                }, nb::arg("n_threads")=8, nb::arg("chunk_size")=256, nb::arg("clearing_opt")=true, nb::arg("compute_v")=false, nb::arg("compute_u")=false, nb::arg("verbose")=false)
             .def_rw("n_threads", &ReductionParams::n_threads)
             .def_rw("chunk_size", &ReductionParams::chunk_size)
             .def_rw("write_dgms", &ReductionParams::write_dgms)
