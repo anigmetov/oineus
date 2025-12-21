@@ -1,29 +1,29 @@
 #pragma once
 
-#include <iostream>
+#include <algorithm>
 #include <atomic>
-#include <vector>
+#include <cassert>
+#include <cstdlib>
+#include <functional>
+#include <iostream>
+#include <numeric>
+#include <pthread.h>
+#include <set>
+#include <stdexcept>
 #include <string>
 #include <thread>
-#include <pthread.h>
-#include <cassert>
-#include <algorithm>
-#include <functional>
-#include <numeric>
-#include <utility>
 #include <unordered_set>
-#include <set>
-#include <cstdlib>
-#include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include "taskflow/taskflow.hpp"
 #include "taskflow/algorithm/for_each.hpp"
 
 #include "common_defs.h"
-#include "timer.h"
 #include "diagram.h"
 #include "mem_reclamation.h"
 #include "sparse_matrix.h"
+#include "timer.h"
 
 namespace oineus {
 
@@ -1508,9 +1508,10 @@ namespace oineus {
         MatrixData u_data = MatrixData(v_data.size());
 
         const bool all_dims = dim >= dim_first.size();
+        const size_t d_idx = dualize() ? dim_first.size() - dim - 1 : dim;
 
-        size_t col_start = all_dims ? 0 : dim_first[dim];
-        size_t col_end = all_dims ? r_data.size() : dim_last[dim] + 1;
+        size_t col_start = all_dims ? 0 : dim_first[d_idx];
+        size_t col_end = all_dims ? r_data.size() : dim_last[d_idx] + 1;
 
         // for(size_t col_idx = col_start; col_idx < col_end; ++col_idx) {
         //     u_data[col_idx] = compute_u_column(col_idx);
