@@ -50,7 +50,7 @@ namespace oineus {
         Filtration& operator=(Filtration&&) = default;
 
         // use move constructor to move cells
-        Filtration(CellVector&& _simplices, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false)
+        Filtration(CellVector&& _simplices, bool _negate, int n_threads = 1)
                 :
                 negate_(_negate),
                 cells_(std::move(_simplices)),
@@ -58,19 +58,14 @@ namespace oineus {
                 sorted_id_to_id_(cells_.size())
         {
             CALI_CXX_MARK_FUNCTION;
-            init(n_threads, _sort_only_by_dim);
+            init(n_threads);
         }
 
-        void init(int n_threads, bool sort_only_by_dim)
+        void init(int n_threads)
         {
             CALI_CXX_MARK_FUNCTION;
 
-            if (sort_only_by_dim) {
-                sort_dim_only();
-            } else {
-                sort_and_set(n_threads);
-            }
-
+            sort_and_set(n_threads);
             set_dim_info();
 
             assert(std::all_of(cells_.begin(), cells_.end(),
@@ -90,14 +85,14 @@ namespace oineus {
         }
 
         // copy cells
-        Filtration(const CellVector& cells, bool _negate, int n_threads = 1, bool _sort_only_by_dim=false)
+        Filtration(const CellVector& cells, bool _negate, int n_threads = 1)
                 :
                 negate_(_negate),
                 cells_(cells),
                 id_to_sorted_id_(cells.size()),
                 sorted_id_to_id_(cells.size())
         {
-            init(n_threads, _sort_only_by_dim);
+            init(n_threads);
         }
 
         size_t size() const { return cells_.size(); }
@@ -616,7 +611,7 @@ namespace oineus {
         }
 
         // retain ids from fil_1
-        return Filtration<C, R>(cells, fil_1.negate(), 1, false);
+        return Filtration<C, R>(cells, fil_1.negate(), 1);
     }
 
 

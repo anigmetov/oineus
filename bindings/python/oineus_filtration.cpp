@@ -14,11 +14,10 @@ void init_oineus_filtration(nb::module_& m)
     const std::string prod_filtration_class_name = "ProdFiltration";
 
     nb::class_<Filtration>(m, filtration_class_name.c_str())
-            .def(nb::init<Filtration::CellVector, bool, int, bool>(),
+            .def(nb::init<Filtration::CellVector, bool, int>(),
                     nb::arg("cells"),
                     nb::arg("negate") = false,
-                    nb::arg("n_threads") = 1,
-                    nb::arg("sort_only_by_dimension") = false
+                    nb::arg("n_threads") = 1
                     )
             .def("__len__", &Filtration::size)
             .def("__iter__", [](Filtration& fil) { return nb::make_iterator(nb::type<Filtration>(), "simplex_iterator", fil.begin(), fil.end()); }, nb::keep_alive<0, 1>())
@@ -59,11 +58,10 @@ void init_oineus_filtration(nb::module_& m)
             });
 
     nb::class_<ProdFiltration>(m, prod_filtration_class_name.c_str())
-            .def(nb::init<ProdFiltration::CellVector, bool, int, bool>(),
+            .def(nb::init<ProdFiltration::CellVector, bool, int>(),
                     nb::arg("cells"),
                     nb::arg("negate") = false,
-                    nb::arg("n_threads") = 1,
-                    nb::arg("sort_only_by_dimension") = false
+                    nb::arg("n_threads") = 1
                     )
             .def("__len__", &ProdFiltration::size)
             .def("__iter__", [](ProdFiltration& fil) { return nb::make_iterator(nb::type<ProdFiltration>(), "simplex_simplex_iterator", fil.begin(), fil.end()); }, nb::keep_alive<0,
@@ -99,11 +97,10 @@ void init_oineus_filtration(nb::module_& m)
     // ============ CubeFiltration bindings ============
     #define BIND_CUBE_FILTRATION(DIM) \
         nb::class_<CubeFiltration_##DIM##D>(m, "CubeFiltration_" #DIM "D") \
-            .def(nb::init<CubeFiltration_##DIM##D::CellVector, bool, int, bool>(), \
+            .def(nb::init<CubeFiltration_##DIM##D::CellVector, bool, int>(), \
                     nb::arg("cells"), \
                     nb::arg("negate") = false, \
-                    nb::arg("n_threads") = 1, \
-                    nb::arg("sort_only_by_dimension") = false \
+                    nb::arg("n_threads") = 1 \
                     ) \
             .def("__len__", &CubeFiltration_##DIM##D::size) \
             .def("__iter__", [](CubeFiltration_##DIM##D& fil) { \

@@ -278,7 +278,7 @@ public:
         }
 
         timer.reset();
-        auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads, false);
+        auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads);
         auto fil_elapsed = timer.elapsed_reset();
         if (verbose)
             std::cerr << "fil_elapsed : " << fil_elapsed << "\n";
@@ -405,7 +405,7 @@ public:
         }
 
         timer.reset();
-        auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads, false);
+        auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads);
         auto fil_elapsed = timer.elapsed_reset();
         std::cerr << "fil_elapsed : " << fil_elapsed << "\n";
         return {fil, critical_indices};

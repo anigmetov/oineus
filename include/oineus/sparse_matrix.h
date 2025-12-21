@@ -223,8 +223,8 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
 
         Matrix row_format(num_rows);
 
-        for (int col_idx = 0; col_idx < col_format.size(); ++col_idx) {
-            for (int row_idx : col_format[col_idx]) {
+        for (size_t col_idx = 0; col_idx < col_format.size(); ++col_idx) {
+            for (auto row_idx : col_format[col_idx]) {
                 row_format[row_idx].push_back(col_idx);
             }
         }

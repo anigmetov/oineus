@@ -600,7 +600,7 @@ namespace oineus {
         assert(has_matrix_v());
         bool is_death = not is_R_column_zero(col_idx);
         for(auto row_idx : v_data[col_idx]) {
-            if (row_idx == col_idx)
+            if (row_idx == static_cast<Int>(col_idx))
                 continue;
             // we added column that was eventually zeroed
             if (is_R_column_zero(row_idx))
@@ -1227,7 +1227,7 @@ namespace oineus {
 
         {
                 for(int dim_idx = dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
-                    for(size_t col_idx = dim_first[dim_idx]; col_idx <= dim_last[dim_idx]; ++col_idx) {
+                    for(Int col_idx = dim_first[dim_idx]; col_idx <= dim_last[dim_idx]; ++col_idx) {
                         auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
                         if (p) {
                             r_data[col_idx] = std::move(p->r_column);
@@ -1489,7 +1489,7 @@ namespace oineus {
 
         std::sort(result.begin(), result.end());
 
-        if (result.empty() or result.back() < col_idx) {
+        if (result.empty() or result.back() < static_cast<Int>(col_idx)) {
             if (!r_data.at(col_idx).empty())
                 throw std::runtime_error("diagonal problem");
             result.push_back(col_idx);
