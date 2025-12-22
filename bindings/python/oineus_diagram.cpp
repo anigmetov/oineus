@@ -49,14 +49,14 @@ void init_oineus_diagram(nb::module_& m)
 
     nb::class_<Diagram>(m, dgm_class_name.c_str())
             .def(nb::init<dim_type>())
-            .def("in_dimension", [](Diagram& self, dim_type dim, bool as_numpy) -> std::variant<nb::ndarray<oin_real>, DgmPtVec> {
+            .def("in_dimension", [](Diagram& self, dim_type dim, bool as_numpy) -> std::variant<nb::ndarray<oin_real, nb::numpy>, DgmPtVec> {
                       if (as_numpy)
                           return self.get_diagram_in_dimension_as_numpy(dim);
                       else
                           return self.get_diagram_in_dimension(dim);
                     }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
                     nb::arg("dim"), nb::arg("as_numpy") = true)
-            .def("index_diagram_in_dimension", [](Diagram& self, dim_type dim, bool as_numpy, bool sorted) -> std::variant<nb::ndarray<size_t>, IndexDgmPtVec> {
+            .def("index_diagram_in_dimension", [](Diagram& self, dim_type dim, bool as_numpy, bool sorted) -> std::variant<nb::ndarray<size_t, nb::numpy>, IndexDgmPtVec> {
                       if (as_numpy)
                           return self.get_index_diagram_in_dimension_as_numpy(dim, sorted);
                       else

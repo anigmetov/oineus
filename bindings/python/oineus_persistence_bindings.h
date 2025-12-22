@@ -72,7 +72,7 @@ public:
             :diagrams_(_diagrams) { }
 
     template<class R>
-    nb::ndarray<R> diagram_to_numpy(const typename oin::Diagrams<R>::Dgm& dgm) const
+    nb::ndarray<R, nb::numpy> diagram_to_numpy(const typename oin::Diagrams<R>::Dgm& dgm) const
     {
         size_t arr_sz = dgm.size() * 2;
         R* ptr = new R[arr_sz];
@@ -86,10 +86,10 @@ public:
           delete[] pp;
         });
 
-        return nb::ndarray<R>(ptr, {dgm.size(), static_cast<size_t>(2)});
+        return nb::ndarray<R, nb::numpy>(ptr, {dgm.size(), static_cast<size_t>(2)});
     }
 
-    nb::ndarray<Real> get_diagram_in_dimension_as_numpy(dim_type d)
+    nb::ndarray<Real, nb::numpy> get_diagram_in_dimension_as_numpy(dim_type d)
     {
         auto dgm = diagrams_.get_diagram_in_dimension(d);
         return diagram_to_numpy<Real>(dgm);
@@ -105,7 +105,7 @@ public:
         return diagrams_.get_index_diagram_in_dimension(d, sorted);
     }
 
-    nb::ndarray<size_t> get_index_diagram_in_dimension_as_numpy(dim_type d, bool sorted = true)
+    nb::ndarray<size_t, nb::numpy> get_index_diagram_in_dimension_as_numpy(dim_type d, bool sorted = true)
     {
         auto index_dgm = diagrams_.get_index_diagram_in_dimension(d, sorted);
         return diagram_to_numpy<size_t>(index_dgm);
