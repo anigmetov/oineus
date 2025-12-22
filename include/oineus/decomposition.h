@@ -1321,7 +1321,7 @@ namespace oineus {
             } else {
                 // finite point
                 Int birth_idx = fil.index_in_filtration(low(col), dualize()), death_idx = simplex_idx;
-				Int birth_idx_us = fil.get_id_by_sorted_id(birth_idx), death_idx_us = fil.get_id_by_sorted_id(death_idx);
+		Int birth_idx_us = fil.get_id_by_sorted_id(birth_idx), death_idx_us = fil.get_id_by_sorted_id(death_idx);
                 dim_type dim = fil.dim_by_sorted_id(birth_idx);
                 Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
 
@@ -1401,7 +1401,7 @@ namespace oineus {
             auto col = &r_data[col_idx];
 
             auto simplex_idx = fil.index_in_filtration(col_idx, dualize());
-			auto simplex_idx_us = fil.get_id_by_sorted_id(simplex_idx);
+            auto simplex_idx_us = fil.get_id_by_sorted_id(simplex_idx);
 
             if (is_zero(col)) {
                 if (not include_inf_points or rows_with_lowest_one.count(col_idx) != 0)

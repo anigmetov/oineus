@@ -86,7 +86,7 @@ public:
           delete[] pp;
         });
 
-        return nb::ndarray<R, nb::numpy>(ptr, {dgm.size(), static_cast<size_t>(2)});
+        return nb::ndarray<R, nb::numpy>(ptr, {dgm.size(), static_cast<size_t>(2)}, free_when_done);
     }
 
     nb::ndarray<Real, nb::numpy> get_diagram_in_dimension_as_numpy(dim_type d)
