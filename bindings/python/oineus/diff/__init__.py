@@ -229,15 +229,127 @@ def vr_filtration(data, from_pwdists: bool=False, max_dim: int=-1, max_diameter:
         return DiffFiltration(fil, diff_dists)
 
 
+def triangle_meb(p0, p1, p2, eps=0.0):
+    """
+    Compute minimum enclosing ball center and radius squared for triangles.
+
+    Args:
+        p0, p1, p2: Tensor of shape (n, d) for n triangles in d dimensions
+        eps: Small value for numerical stability
+
+    Returns:
+        centers: Tensor of shape (n, d) - MEB centers
+        radii_sq: Tensor of shape (n,) - MEB radii squared
+    """
+    # Edge vectors
+    a = p1 - p0
+    b = p2 - p0
+    c = p2 - p1
+
+    # Edge lengths squared
+    a_sq = torch.sum(a ** 2, dim=1)
+    b_sq = torch.sum(b ** 2, dim=1)
+    c_sq = torch.sum(c ** 2, dim=1)
+
+    # Area of triangle using cross product (2 * area)
+    d = p0.shape[1]
+    if d == 2:
+        cross = a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]
+        area_2_sq = cross ** 2
+    else:  # 3D case
+        cross = torch.cross(a, b, dim=1)
+        area_2_sq = torch.sum(cross ** 2, dim=1)
+
+    # Circumradius squared: R^2 = (a^2 * b^2 * c^2) / (16 * Area^2)
+    circum_radii_sq = (a_sq * b_sq * c_sq + eps) / (4 * area_2_sq + eps)
+
+    # Circumcenter computation
+    # Using barycentric coordinates: circumcenter = u*p0 + v*p1 + w*p2
+    # where u = |c|²(a·b), v = |b|²(a·c), w = |a|²(b·c) (before normalization)
+    # But easier: circumcenter = p0 + (|a|²(b·b) - |b|²(a·b)) * (b×(b×a)) / (2|a×b|²) ...
+    # Actually, let's use the standard formula:
+    # circumcenter = p0 + ((|a|²)(b) - (|b|²)(a)) × (a × b) / (2|a × b|²)
+
+    # For 3D points:
+    if d == 3:
+        cross_ab = torch.cross(a, b, dim=1)
+        cross_ab_sq = torch.sum(cross_ab ** 2, dim=1, keepdim=True)
+
+        a_dot_a = a_sq.unsqueeze(1)
+        b_dot_b = b_sq.unsqueeze(1)
+
+        b_cross_axb = torch.cross(b, cross_ab, dim=1)
+        axb_cross_a = torch.cross(cross_ab, a, dim=1)
+
+        circum_centers = p0 + (a_dot_a * b_cross_axb + b_dot_b * axb_cross_a) / (2 * cross_ab_sq + eps)
+    else:
+        # 2D case - use perpendicular bisector intersection
+        # circumcenter = p0 + ((|a|²)(b_perp) - (|b|²)(a_perp)) where perp rotates 90 deg
+        # Actually simpler: use the formula with 2x2 system
+        a_dot_a = a_sq.unsqueeze(1)
+        b_dot_b = b_sq.unsqueeze(1)
+
+        # D = 2(a_x * b_y - a_y * b_x) = 2 * cross (scalar)
+        D = 2 * (a[:, 0:1] * b[:, 1:2] - a[:, 1:2] * b[:, 0:1])
+
+        # circumcenter = p0 + (1/D) * [b_y * |a|² - a_y * |b|², a_x * |b|² - b_x * |a|²]
+        ux = (b[:, 1:2] * a_dot_a - a[:, 1:2] * b_dot_b) / (D + eps)
+        uy = (a[:, 0:1] * b_dot_b - b[:, 0:1] * a_dot_a) / (D + eps)
+        circum_centers = p0 + torch.cat([ux, uy], dim=1)
+
+    # For obtuse triangles, MEB center is midpoint of longest edge
+    abc_sq = torch.stack((a_sq, b_sq, c_sq), dim=0)
+    s_abc_sq, sort_idx = torch.sort(abc_sq, dim=0)
+
+    # Triangle is obtuse if longest² > sum of other two squared
+    obtuse_mask = s_abc_sq[2, :] > s_abc_sq[0, :] + s_abc_sq[1, :]
+
+    # Determine which edge is longest and compute its midpoint
+    # Edge 0 (a): p0-p1, midpoint = (p0+p1)/2
+    # Edge 1 (b): p0-p2, midpoint = (p0+p2)/2
+    # Edge 2 (c): p1-p2, midpoint = (p1+p2)/2
+    longest_edge_idx = sort_idx[2, :]  # Index of longest edge for each triangle
+
+    midpoint_a = (p0 + p1) / 2
+    midpoint_b = (p0 + p2) / 2
+    midpoint_c = (p1 + p2) / 2
+
+    # Initialize with circumcenter values
+    centers = circum_centers.clone()
+    radii_sq = circum_radii_sq.clone()
+
+    # Update obtuse triangles
+    if obtuse_mask.any():
+        obtuse_longest = longest_edge_idx[obtuse_mask]
+
+        # For obtuse triangles, set center to midpoint of longest edge
+        mask_a = obtuse_longest == 0
+        mask_b = obtuse_longest == 1
+        mask_c = obtuse_longest == 2
+
+        obtuse_indices = torch.where(obtuse_mask)[0]
+
+        if mask_a.any():
+            centers[obtuse_indices[mask_a]] = midpoint_a[obtuse_mask][mask_a]
+        if mask_b.any():
+            centers[obtuse_indices[mask_b]] = midpoint_b[obtuse_mask][mask_b]
+        if mask_c.any():
+            centers[obtuse_indices[mask_c]] = midpoint_c[obtuse_mask][mask_c]
+
+        # Radius squared = longest edge squared / 4
+        radii_sq[obtuse_mask] = s_abc_sq[2, obtuse_mask] / 4
+
+    return centers, radii_sq
+
+
 def cech_delaunay_filtration(alpha_fil, points, eps=0.0):
     """
-    :param simplices:
+    :param alpha_fil: Alpha filtration from diode or oineus
+    :param points: Tensor of point coordinates
+    :param eps: Small value for numerical stability
     :return: differentiable Cech-Delaunay filtration
     """
-    # start with vertices
-
     if type(alpha_fil) is not _oineus.Filtration:
-        # assume that alpha_fil is the output of Diode
         alpha_fil = _oineus.Filtration([_oineus.Simplex(vs, val) for vs, val in alpha_fil])
 
     values_in_dim = [torch.zeros(alpha_fil.size_in_dimension(0), requires_grad=True)]
@@ -245,49 +357,19 @@ def cech_delaunay_filtration(alpha_fil, points, eps=0.0):
     for dim in range(1, alpha_fil.max_dim() + 1):
         if dim == 1:
             edges = torch.LongTensor(alpha_fil.get_edges().astype(np.uint64))
-            sqdists = torch.sum((points[edges[:, 0].flatten()] - points[edges[:, 1].flatten()]) ** 2, axis=1)
+            sqdists = torch.sum((points[edges[:, 0]] - points[edges[:, 1]]) ** 2, axis=1)
             radii_sq = 0.25 * sqdists
             assert edges.shape[0] == radii_sq.shape[0]
+
         elif dim == 2:
             triangles = torch.LongTensor(alpha_fil.get_triangles().astype(np.uint64))
             p0 = points[triangles[:, 0]]
             p1 = points[triangles[:, 1]]
             p2 = points[triangles[:, 2]]
 
-            # Edge vectors
-            a = p1 - p0
-            b = p2 - p0
-            c = p2 - p1
-
-            # Edge lengths squared
-            a_sq = torch.sum(a ** 2, dim=1)
-            b_sq = torch.sum(b ** 2, dim=1)
-            c_sq = torch.sum(c ** 2, dim=1)
-
-            # Area of triangle using cross product (2 * area)
-            # For 2D: cross product gives scalar; for 3D: need magnitude
-            if points.shape[1] == 2:
-                cross = a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]
-                area_2_sq = cross ** 2
-            else:  # 3D case
-                cross = torch.cross(a, b, dim=1)
-                area_2_sq = torch.sum(cross ** 2, dim=1)
-
-            # R^2 = (abc)^2 / (16*Area^2 = (a^2 b^2 c^2) / (4 * (2*Area)^2
-            radii_sq = (a_sq * b_sq * c_sq + eps) / (4 * area_2_sq + eps)
-
-            # for obtuse triangles, we use 1/2 longest edge
-
-            abc_sq = torch.stack((a_sq, b_sq, c_sq))
-            s_abc_sq = torch.sort(abc_sq, 0).values
-
-            # Triangle is obtuse if longest^2 > sum of other two squared
-            obtuse_mask = s_abc_sq[2, :] > s_abc_sq[0, :] + s_abc_sq[1, :]
-
-            # For obtuse triangles, radius = longest_edge / 2, so radius^2 = longest^2 / 4
-            radii_sq[obtuse_mask] = s_abc_sq[2, obtuse_mask] / 4
-
+            _, radii_sq = triangle_meb(p0, p1, p2, eps)
             assert triangles.shape[0] == radii_sq.shape[0]
+
         elif dim == 3:
             tetra = torch.LongTensor(alpha_fil.get_tetrahedra().astype(np.uint64))
             p0 = points[tetra[:, 0]]
@@ -295,6 +377,7 @@ def cech_delaunay_filtration(alpha_fil, points, eps=0.0):
             p2 = points[tetra[:, 2]]
             p3 = points[tetra[:, 3]]
 
+            # Compute circumradius of tetrahedron
             a = p1 - p0
             b = p2 - p0
             c = p3 - p0
@@ -307,18 +390,62 @@ def cech_delaunay_filtration(alpha_fil, points, eps=0.0):
             cross_ca = torch.cross(c, a, dim=1)
             cross_ab = torch.cross(a, b, dim=1)
 
-            # 6V = |a · (b × c)|
-            volume_6 = torch.abs(torch.sum(a * cross_bc, dim=1))
+            # 6V = a · (b × c)
+            volume_6 = torch.sum(a * cross_bc, dim=1)
+            volume_6_abs = torch.abs(volume_6)
 
-            # Circumcenter displacement: d = (|a|²(b×c) + |b|²(c×a) + |c|²(a×b)) / (2 * a·(b×c))
-            # R = |d|, so R² = |numerator_vec|² / (2 * 6V)² = |numerator_vec|² / (4 * volume_6²)
+            # Circumcenter displacement from p0
             numerator_vec = a_sq * cross_bc + b_sq * cross_ca + c_sq * cross_ab
-            numerator_sq = torch.sum(numerator_vec ** 2, dim=1)
+            circum_disp = numerator_vec / (2 * volume_6.unsqueeze(1) + eps)
+            circum_center = p0 + circum_disp
 
-            radii_sq = numerator_sq / (4 * volume_6 ** 2 + eps)
+            # Circumradius squared
+            circum_radii_sq = torch.sum(circum_disp ** 2, dim=1)
+
+            # Compute MEB for each of the 4 faces and check if opposite vertex is inside
+            # Face 0: p1, p2, p3 (opposite to p0)
+            # Face 1: p0, p2, p3 (opposite to p1)
+            # Face 2: p0, p1, p3 (opposite to p2)
+            # Face 3: p0, p1, p2 (opposite to p3)
+
+            face_centers_0, face_radii_sq_0 = triangle_meb(p1, p2, p3, eps)
+            face_centers_1, face_radii_sq_1 = triangle_meb(p0, p2, p3, eps)
+            face_centers_2, face_radii_sq_2 = triangle_meb(p0, p1, p3, eps)
+            face_centers_3, face_radii_sq_3 = triangle_meb(p0, p1, p2, eps)
+
+            # Check if opposite vertex is contained in face's MEB
+            # Vertex is contained if distance² from center <= radius²
+            dist_sq_0 = torch.sum((p0 - face_centers_0) ** 2, dim=1)  # p0 to face 0's MEB
+            dist_sq_1 = torch.sum((p1 - face_centers_1) ** 2, dim=1)  # p1 to face 1's MEB
+            dist_sq_2 = torch.sum((p2 - face_centers_2) ** 2, dim=1)  # p2 to face 2's MEB
+            dist_sq_3 = torch.sum((p3 - face_centers_3) ** 2, dim=1)  # p3 to face 3's MEB
+
+            # Masks for faces whose MEB contains the opposite vertex
+            contains_0 = dist_sq_0 <= face_radii_sq_0 + eps
+            contains_1 = dist_sq_1 <= face_radii_sq_1 + eps
+            contains_2 = dist_sq_2 <= face_radii_sq_2 + eps
+            contains_3 = dist_sq_3 <= face_radii_sq_3 + eps
+
+            # Set radii to infinity where face MEB doesn't contain opposite vertex
+            inf_val = torch.tensor(float('inf'), dtype=points.dtype, device=points.device)
+
+            face_radii_sq_0_masked = torch.where(contains_0, face_radii_sq_0, inf_val)
+            face_radii_sq_1_masked = torch.where(contains_1, face_radii_sq_1, inf_val)
+            face_radii_sq_2_masked = torch.where(contains_2, face_radii_sq_2, inf_val)
+            face_radii_sq_3_masked = torch.where(contains_3, face_radii_sq_3, inf_val)
+
+            # Stack all candidate radii and take minimum
+            all_radii_sq = torch.stack([
+                circum_radii_sq,
+                face_radii_sq_0_masked,
+                face_radii_sq_1_masked,
+                face_radii_sq_2_masked,
+                face_radii_sq_3_masked
+            ], dim=0)
+
+            radii_sq = torch.min(all_radii_sq, dim=0).values
+
             assert tetra.shape[0] == radii_sq.shape[0]
-        else:
-            raise RuntimeError(f"Unsupported dimension {dim}")
 
         values_in_dim.append(radii_sq)
 
