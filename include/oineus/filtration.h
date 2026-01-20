@@ -419,7 +419,7 @@ namespace oineus {
         auto begin() { return cells_.begin(); }
         auto end()   { return cells_.end(); }
 
-    private:
+    // private:
         // data
         bool negate_;
         CellVector cells_;
@@ -561,6 +561,18 @@ namespace oineus {
             }
             CALI_MARK_END("filtration_init_housekeeping-uid");
         }
+
+        bool operator==(const Filtration& other) const
+        {
+            // ignore id_ ?
+            return negate_ == other.negate_ and is_subfiltration_ == other.is_subfiltration_
+                   and dim_first_ == other.dim_first_ and dim_last_ == other.dim_last_
+                   and uid_to_sorted_id == other.uid_to_sorted_id and id_to_sorted_id_ == other.id_to_sorted_id_
+                   and sorted_id_to_id_ == other.sorted_id_to_id_
+                   and cells_ == other.cells_;
+        }
+
+        bool operator!=(const Filtration& other) const { return not(*this == other); }
 
         template<typename C, typename R>
         friend std::ostream& operator<<(std::ostream&, const Filtration<C, R>&);

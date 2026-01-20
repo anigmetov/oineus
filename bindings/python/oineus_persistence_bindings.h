@@ -1,6 +1,8 @@
 #ifndef OINEUS_OINEUS_PERSISTENCE_BINDINGS_H
 #define OINEUS_OINEUS_PERSISTENCE_BINDINGS_H
 
+#define OINEUS_PYTHON_FRIENDS
+
 #include <iostream>
 #include <vector>
 #include <sstream>
@@ -12,6 +14,7 @@
 #include <nanobind/stl/vector.h>
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/string.h>
+#include "nanobind/stl/tuple.h"
 #include <nanobind/nb_python.h>
 #include <nanobind/ndarray.h>
 #include "nanobind/operators.h"
@@ -24,6 +27,7 @@ using namespace nb::literals;
 
 //#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT {if (PyErr_CheckSignals() != 0) throw nb::error_already_set();}
 //#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL { nb::gil_scoped_acquire acq; if (PyErr_CheckSignals() != 0) throw nb::error_already_set(); }
+
 
 #include <oineus/timer.h>
 #include <oineus/oineus.h>
@@ -38,6 +42,8 @@ using namespace nb::literals;
 
 using oin_int = OINEUS_PYTHON_INT;
 using oin_real = OINEUS_PYTHON_REAL;
+
+
 
 
 // using Z2_Column = oineus::SimpleSparseMatrixTraits<oin_int, 2>::Column;
@@ -100,14 +106,14 @@ public:
         return diagrams_.get_diagram_in_dimension(d);
     }
 
-    auto get_index_diagram_in_dimension(dim_type d, bool sorted = true)
+    auto get_index_diagram_in_dimension(dim_type d)
     {
-        return diagrams_.get_index_diagram_in_dimension(d, sorted);
+        return diagrams_.get_index_diagram_in_dimension(d);
     }
 
-    nb::ndarray<size_t, nb::numpy> get_index_diagram_in_dimension_as_numpy(dim_type d, bool sorted = true)
+    nb::ndarray<size_t, nb::numpy> get_index_diagram_in_dimension_as_numpy(dim_type d)
     {
-        auto index_dgm = diagrams_.get_index_diagram_in_dimension(d, sorted);
+        auto index_dgm = diagrams_.get_index_diagram_in_dimension(d);
         return diagram_to_numpy<size_t>(index_dgm);
     }
 

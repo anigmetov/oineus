@@ -315,7 +315,12 @@ namespace oineus {
             ss << vs[vs.size() - 1] << "])";
             return ss.str();
         }
-    private:
+
+#ifdef OINEUS_PYTHON_FRIENDS
+        friend void init_oineus_cells(nb::module_&);
+#endif
+
+    // private:
         static constexpr Int k_invalid_id = Int(-1);
 
         Int id_{k_invalid_id};

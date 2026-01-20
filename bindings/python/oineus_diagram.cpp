@@ -56,12 +56,12 @@ void init_oineus_diagram(nb::module_& m)
                           return self.get_diagram_in_dimension(dim);
                     }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
                     nb::arg("dim"), nb::arg("as_numpy") = true)
-            .def("index_diagram_in_dimension", [](Diagram& self, dim_type dim, bool as_numpy, bool sorted) -> std::variant<nb::ndarray<size_t, nb::numpy>, IndexDgmPtVec> {
+            .def("index_diagram_in_dimension", [](Diagram& self, dim_type dim, bool as_numpy) -> std::variant<nb::ndarray<size_t, nb::numpy>, IndexDgmPtVec> {
                       if (as_numpy)
-                          return self.get_index_diagram_in_dimension_as_numpy(dim, sorted);
+                          return self.get_index_diagram_in_dimension_as_numpy(dim);
                       else
-                          return self.get_index_diagram_in_dimension(dim, sorted);
+                          return self.get_index_diagram_in_dimension(dim);
                     }, "return persistence pairing (index diagram) in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
-                    nb::arg("dim"), nb::arg("as_numpy") = true, nb::arg("sorted") =  true)
+                    nb::arg("dim"), nb::arg("as_numpy") = true)
             .def("__getitem__", &Diagram::get_diagram_in_dimension_as_numpy);
 }

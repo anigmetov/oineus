@@ -284,7 +284,11 @@ public:
     bool operator==(const GridDomain& other) const { return dims_ == other.dims_ && wrap_ == other.wrap_; }
     bool operator!=(const GridDomain& other) const { return !(*this == other); }
 
-private:
+#ifdef OINEUS_PYTHON_FRIENDS
+    friend void init_oineus_cells(nb::module_& m);
+#endif
+
+// private:
     GridPoint dims_;
     GridPoint strides_;
     bool c_order_ {true};

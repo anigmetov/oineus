@@ -76,6 +76,9 @@ void init_oineus_top_optimizer(nb::module_& m)
 {
     using Simp = oin::Simplex<oin_int>;
     using SimpProd = oin::ProductCell<Simp, Simp>;
+    using Cube_1D = oin::Cube<oin_int, 1>;
+    using Cube_2D = oin::Cube<oin_int, 2>;
+    using Cube_3D = oin::Cube<oin_int, 3>;
 
     init_oineus_top_optimizer_class<Simp>(m, "TopologyOptimizer", "IndicesValues");
     init_oineus_top_optimizer_class<SimpProd>(m, "TopologyOptimizerProd", "IndicesValuesProd");
@@ -87,4 +90,11 @@ void init_oineus_top_optimizer(nb::module_& m)
             nb::arg("containing_filtration"),
             nb::arg("dim")=static_cast<dim_type >(-1),
             nb::arg("n_threads")=1);
+
+    m.def("get_induced_matching", &oin::get_induced_matching<SimpProd, oin_real>,
+           "Compute induced matching for two filtrations of the same complex",
+           nb::arg("included_filtration"),
+           nb::arg("containing_filtration"),
+           nb::arg("dim")=static_cast<dim_type >(-1),
+           nb::arg("n_threads")=1);
 }

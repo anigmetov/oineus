@@ -190,19 +190,15 @@ namespace oineus {
             return diagram_in_dimension_[d];
         }
 
-        IndexDgm get_index_diagram_in_dimension(dim_type d, bool sorted = true) const
+        IndexDgm get_index_diagram_in_dimension(dim_type d) const
         {
             IndexDgm index_dgm;
 
             // just duplicate information for now: birth and death are also indices
-            if (sorted) {
-				for(Point p : diagram_in_dimension_.at(d))
-                	index_dgm.emplace_back(p.birth_index, p.death_index, p.birth_index, p.death_index);
-			} else {
-				std::cout << "sorted is set to false, so will return the original id" << std::endl;
-				for(Point p : diagram_in_dimension_.at(d))
-                	index_dgm.emplace_back(p.birth_index_unsorted, p.death_index_unsorted);
-			}
+            for(Point p : diagram_in_dimension_.at(d)) {
+                index_dgm.emplace_back(p.birth_index, p.death_index, p.birth_index, p.death_index);
+            }
+
             return index_dgm;
         }
 

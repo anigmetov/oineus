@@ -1,17 +1,67 @@
+#include <functional>
 #include "oineus_persistence_bindings.h"
+#include <nanobind/stl/function.h>
+#include <nanobind/stl/unordered_map.h>
+
+
+nb::ndarray<size_t, nb::numpy> extract_simplices_as_numpy(const oin::Filtration<oin::Simplex<oin_int>, oin_real>& fil, dim_type simplex_dim)
+{
+    using VertexIndex = size_t;
+    const dim_type simplex_size = simplex_dim + 1;
+    const VertexIndex n_simplices = fil.size_in_dimension(simplex_dim);
+
+    auto* simplices = new VertexIndex[simplex_size * n_simplices];
+
+    for(auto simplex_idx = fil.dim_first(simplex_dim); simplex_idx <= fil.dim_last(simplex_dim); ++simplex_idx) {
+        size_t array_idx = simplex_idx - fil.dim_first(simplex_dim);
+        assert(fil.get_cell(simplex_idx).get_vertices().size() == simplex_size);
+        for(size_t v_idx = 0; v_idx < simplex_size; ++v_idx) {
+            simplices[simplex_size * array_idx + v_idx] = fil.get_cell(simplex_idx).get_vertices()[v_idx];
+        }
+    }
+
+    nb::capsule free_when_done(simplices, [](void* p) noexcept {
+     auto* pp = reinterpret_cast<VertexIndex*>(p);
+     delete[] pp;
+   });
+
+    return nb::ndarray<VertexIndex, nb::numpy>(simplices, {n_simplices, simplex_size}, free_when_done);
+}
 
 void init_oineus_filtration(nb::module_& m)
 {
     using Simplex = oin::Simplex<oin_int>;
     using Filtration = oin::Filtration<Simplex, oin_real>;
 
+    using FiltrationStateTuple = std::tuple<decltype(Filtration::negate_),
+                                            decltype(Filtration::cells_),
+                                            decltype(Filtration::is_subfiltration_),
+                                            decltype(Filtration::uid_to_sorted_id),
+                                            decltype(Filtration::id_to_sorted_id_),
+                                            decltype(Filtration::sorted_id_to_id_),
+                                            decltype(Filtration::dim_first_),
+                                            decltype(Filtration::dim_last_)
+                                           >;
+
+
     using ProdSimplex = oin::ProductCell<Simplex, Simplex>;
     using ProdFiltration = oin::Filtration<ProdSimplex, oin_real>;
+
+    using ProdFiltrationStateTuple = std::tuple<decltype(ProdFiltration::negate_),
+                                                decltype(ProdFiltration::cells_),
+                                                decltype(ProdFiltration::is_subfiltration_),
+                                                decltype(ProdFiltration::uid_to_sorted_id),
+                                                decltype(ProdFiltration::id_to_sorted_id_),
+                                                decltype(ProdFiltration::sorted_id_to_id_),
+                                                decltype(ProdFiltration::dim_first_),
+                                                decltype(ProdFiltration::dim_last_)
+                                               >;
 
     using oin::VREdge;
 
     const std::string filtration_class_name = "Filtration";
     const std::string prod_filtration_class_name = "ProdFiltration";
+
 
     nb::class_<Filtration>(m, filtration_class_name.c_str())
             .def(nb::init<Filtration::CellVector, bool, int>(),
@@ -19,6 +69,16 @@ void init_oineus_filtration(nb::module_& m)
                     nb::arg("negate") = false,
                     nb::arg("n_threads") = 1
                     )
+            // this ctor accepts the output of Diode directly, list of (vertices, value)
+            .def("__init__", [](Filtration* pfil, const std::vector<std::tuple<std::vector<unsigned>, double>>& diode_simplices, int n_threads) {
+                std::vector<Filtration::Cell> oin_simplices;
+                for(const auto& [vs_, val] : diode_simplices) {
+                    Simplex::IdxVector vs;
+                    for (unsigned v : vs_) { vs.push_back(v); }
+                    oin_simplices.emplace_back(Simplex(vs), val);
+                }
+                new (pfil) Filtration(std::move(oin_simplices), n_threads);
+            }, nb::arg("vertices_values"), nb::arg("n_threads") = 1)
             .def("__len__", &Filtration::size)
             .def("__iter__", [](Filtration& fil) { return nb::make_iterator(nb::type<Filtration>(), "simplex_iterator", fil.begin(), fil.end()); }, nb::keep_alive<0, 1>())
             .def("__getitem__", [](Filtration& fil, int i) { if (i < 0) i = fil.size() + i; return fil.get_cell(i);})
@@ -46,17 +106,48 @@ void init_oineus_filtration(nb::module_& m)
             .def("coboundary_matrix", &Filtration::coboundary_matrix, nb::arg("n_threads")=1)
             .def("boundary_matrix_rel", &Filtration::boundary_matrix_rel)
             .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids)
-            .def("set_values", &Filtration::set_values)
-            // .def("subfiltration", [](Filtration& self, const nb::cpp_function& py_pred) {
-            //     auto pred = [&py_pred](const typename Filtration::Cell& s) -> bool { return py_pred(s).template cast<bool>(); };
-            //     Filtration result = self.subfiltration(pred);
-            //     return result;
-            // }, nb::arg("predicate"), nb::return_value_policy::move)
+            .def("set_values", &Filtration::set_values, nb::arg("new_values"), nb::arg("n_threads")=1)
+            .def("subfiltration", [](Filtration& self, const
+                std::function<bool(const Simplex&)>& py_pred) {
+                auto pred = [&py_pred](const Filtration::Cell& c) -> bool { return py_pred(c.cell_);
+                };
+                Filtration result = self.subfiltration(pred);
+                return result;
+             }, nb::arg("predicate"), nb::rv_policy::take_ownership)
+             .def("subfiltration", [](Filtration& self, const
+                std::function<bool(const Filtration::Cell&)>& py_pred) {
+                Filtration result = self.subfiltration(py_pred);
+                return result;
+             }, nb::arg("predicate"), nb::rv_policy::take_ownership)
+            .def(nb::self == nb::self)
+            .def(nb::self != nb::self)
+            .def("get_vertices", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 0); })
+            .def("get_edges", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 1); })
+            .def("get_triangles", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 2); })
+            .def("get_tetrahedra", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 3); })
+            .def("get_simplices_as_arr", [](Filtration& self, dim_type simplex_dim) -> nb::ndarray<size_t, nb::numpy>
+                { return extract_simplices_as_numpy(self, simplex_dim); }, nb::arg("simplex_dim"))
             .def("__repr__", [](const Filtration& fil) {
               std::stringstream ss;
               ss << fil;
               return ss.str();
-            });
+            })
+            .def("__getstate__", [](const Filtration& fil) -> FiltrationStateTuple {
+                  return std::make_tuple(fil.negate_, fil.cells_, fil.is_subfiltration_,
+                      fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_);
+                })
+            .def("__setstate__", [](Filtration& fil, const FiltrationStateTuple& t) {
+                new (&fil) Filtration();
+                fil.negate_ = std::get<0>(t);
+                fil.cells_ = std::get<1>(t);
+                fil.is_subfiltration_ = std::get<2>(t);
+                fil.uid_to_sorted_id = std::get<3>(t);
+                fil.id_to_sorted_id_ = std::get<4>(t);
+                fil.sorted_id_to_id_ = std::get<5>(t);
+                fil.dim_first_ = std::get<6>(t);
+                fil.dim_last_ = std::get<7>(t);
+            })
+    ;
 
     nb::class_<ProdFiltration>(m, prod_filtration_class_name.c_str())
             .def(nb::init<ProdFiltration::CellVector, bool, int>(),
@@ -90,15 +181,38 @@ void init_oineus_filtration(nb::module_& m)
               std::stringstream ss;
               ss << fil;
               return ss.str();
-            });
-
-    // Type aliases
-    using CubeFiltration_1D = oin::Filtration<oin::Cube<oin_int, 1>, oin_real>;
-    using CubeFiltration_2D = oin::Filtration<oin::Cube<oin_int, 2>, oin_real>;
-    using CubeFiltration_3D = oin::Filtration<oin::Cube<oin_int, 3>, oin_real>;
+            })
+            .def(nb::self == nb::self)
+            .def(nb::self != nb::self)
+            .def("__getstate__", [](const ProdFiltration& fil) -> ProdFiltrationStateTuple {
+                  return std::make_tuple(fil.negate_, fil.cells_, fil.is_subfiltration_,
+                      fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_);
+                })
+            .def("__setstate__", [](ProdFiltration& fil, const ProdFiltrationStateTuple& t) {
+                new (&fil) ProdFiltration();
+                fil.negate_ = std::get<0>(t);
+                fil.cells_ = std::get<1>(t);
+                fil.is_subfiltration_ = std::get<2>(t);
+                fil.uid_to_sorted_id = std::get<3>(t);
+                fil.id_to_sorted_id_ = std::get<4>(t);
+                fil.sorted_id_to_id_ = std::get<5>(t);
+                fil.dim_first_ = std::get<6>(t);
+                fil.dim_last_ = std::get<7>(t);
+            })
+    ;
 
     // ============ CubeFiltration bindings ============
     #define BIND_CUBE_FILTRATION(DIM) \
+        using CubeFiltration_##DIM##D = oin::Filtration<oin::Cube<oin_int, DIM>, oin_real>; \
+        using CubeFiltration_##DIM##DStateTuple = std::tuple<decltype(CubeFiltration_##DIM##D::negate_), \
+                                                decltype(CubeFiltration_##DIM##D::cells_), \
+                                                decltype(CubeFiltration_##DIM##D::is_subfiltration_), \
+                                                decltype(CubeFiltration_##DIM##D::uid_to_sorted_id), \
+                                                decltype(CubeFiltration_##DIM##D::id_to_sorted_id_), \
+                                                decltype(CubeFiltration_##DIM##D::sorted_id_to_id_), \
+                                                decltype(CubeFiltration_##DIM##D::dim_first_), \
+                                                decltype(CubeFiltration_##DIM##D::dim_last_) \
+                                               >; \
         nb::class_<CubeFiltration_##DIM##D>(m, "CubeFiltration_" #DIM "D") \
             .def(nb::init<CubeFiltration_##DIM##D::CellVector, bool, int>(), \
                     nb::arg("cells"), \
@@ -138,11 +252,29 @@ void init_oineus_filtration(nb::module_& m)
             .def("boundary_matrix_rel", &CubeFiltration_##DIM##D::boundary_matrix_rel) \
             .def("reset_ids_to_sorted_ids", &CubeFiltration_##DIM##D::reset_ids_to_sorted_ids) \
             .def("set_values", &CubeFiltration_##DIM##D::set_values) \
+            .def(nb::self == nb::self) \
+            .def(nb::self != nb::self) \
             .def("__repr__", [](const CubeFiltration_##DIM##D& fil) { \
                     std::stringstream ss; \
                     ss << fil; \
                     return ss.str(); \
-                })
+                }) \
+            .def("__getstate__", [](const CubeFiltration_##DIM##D& fil) -> CubeFiltration_##DIM##DStateTuple { \
+                      return std::make_tuple(fil.negate_, fil.cells_, fil.is_subfiltration_, \
+                          fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_); \
+                    }) \
+            .def("__setstate__", [](CubeFiltration_##DIM##D& fil, const CubeFiltration_##DIM##DStateTuple& t) { \
+                new (&fil) CubeFiltration_##DIM##D(); \
+                fil.negate_ = std::get<0>(t); \
+                fil.cells_ = std::get<1>(t); \
+                fil.is_subfiltration_ = std::get<2>(t); \
+                fil.uid_to_sorted_id = std::get<3>(t); \
+                fil.id_to_sorted_id_ = std::get<4>(t); \
+                fil.sorted_id_to_id_ = std::get<5>(t); \
+                fil.dim_first_ = std::get<6>(t); \
+                fil.dim_last_ = std::get<7>(t); \
+            }) \
+
 
     BIND_CUBE_FILTRATION(1);
     BIND_CUBE_FILTRATION(2);

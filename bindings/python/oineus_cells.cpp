@@ -18,6 +18,26 @@ void init_oineus_cells(nb::module_& m)
     const std::string domain_class_name = "Grid";
     const std::string cube_class_name = "CubeValue";
 
+    using SimplexStateTuple = std::tuple<decltype(Simplex::id_),
+                                         decltype(Simplex::uid_),
+                                         decltype(Simplex::vertices_)
+                                         >;
+
+    using SimplexValueStateTuple = std::tuple<decltype(SimplexValue::value_),
+                                              decltype(SimplexValue::sorted_id_),
+                                              decltype(SimplexValue::cell_)
+                                             >;
+
+    using ProdSimplexStateTuple = std::tuple<decltype(ProdSimplex::id_),
+                                             decltype(ProdSimplex::cell_1_),
+                                             decltype(ProdSimplex::cell_2_)
+                                            >;
+
+    using ProdSimplexValueStateTuple = std::tuple<decltype(ProdSimplexValue::value_),
+                                                  decltype(ProdSimplexValue::sorted_id_),
+                                                  decltype(ProdSimplexValue::cell_)
+                                                 >;
+
     nb::class_<Simplex>(m, pure_simplex_class_name.c_str())
         .def(nb::init<const Simplex::IdxVector&>(), nb::arg("vertices"))
         .def(nb::init<oin_int, const Simplex::IdxVector&>(), nb::arg("id"), nb::arg("vertices"))
@@ -36,6 +56,13 @@ void init_oineus_cells(nb::module_& m)
         .def(nb::self == nb::self)
         .def(nb::self != nb::self)
         .def(nb::hash(nb::self))
+        .def("__getstate__", [](const Simplex& sigma) { return std::make_tuple(sigma.id_, sigma.uid_, sigma.vertices_); })
+        .def("__setstate__", [](Simplex& sigma, const SimplexStateTuple& state) {
+            new (&sigma) Simplex();
+            sigma.id_ = std::get<0>(state);
+            sigma.uid_ = std::get<1>(state);
+            sigma.vertices_ = std::get<2>(state);
+         })
         .def("__repr__", [](const Simplex& sigma) {
           std::stringstream ss;
           ss << sigma;
@@ -53,6 +80,13 @@ void init_oineus_cells(nb::module_& m)
         .def(nb::self == nb::self)
         .def(nb::self != nb::self)
         .def(nb::hash(nb::self))
+        .def("__getstate__", [](const ProdSimplex& sigma) ->ProdSimplexStateTuple { return std::make_tuple(sigma.id_, sigma.get_factor_1(), sigma.get_factor_2()); })
+        .def("__setstate__", [](ProdSimplex& sigma, const ProdSimplexStateTuple& state) {
+            new (&sigma) ProdSimplex();
+            sigma.id_ = std::get<0>(state);
+            sigma.cell_1_ = std::get<1>(state);
+            sigma.cell_2_ = std::get<2>(state);
+         })
         .def("__repr__", [](const ProdSimplex& sigma) {
           std::stringstream ss;
           ss << sigma;
@@ -86,6 +120,13 @@ void init_oineus_cells(nb::module_& m)
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def(nb::hash(nb::self))
+            .def("__getstate__", [](const SimplexValue& sigma) { return std::make_tuple(sigma.value_, sigma.sorted_id_, sigma.cell_); })
+            .def("__setstate__", [](SimplexValue& sigma, const SimplexValueStateTuple& state) {
+                new (&sigma) SimplexValue();
+                sigma.value_ = std::get<0>(state);
+                sigma.sorted_id_ = std::get<1>(state);
+                sigma.cell_ = std::get<2>(state);
+             })
             .def("__repr__", [](const SimplexValue& sigma) {
                   std::stringstream ss;
                   ss << sigma;
@@ -125,6 +166,13 @@ void init_oineus_cells(nb::module_& m)
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def(nb::hash(nb::self))
+            .def("__getstate__", [](const ProdSimplexValue& sigma) -> ProdSimplexValueStateTuple { return std::make_tuple(sigma.value_, sigma.sorted_id_, sigma.cell_); })
+            .def("__setstate__", [](ProdSimplexValue& sigma, const ProdSimplexValueStateTuple& state) {
+                new (&sigma) ProdSimplexValue();
+                sigma.value_ = std::get<0>(state);
+                sigma.sorted_id_ = std::get<1>(state);
+                sigma.cell_ = std::get<2>(state);
+             })
             .def("__repr__", [](const ProdSimplexValue& sigma) {
                       std::stringstream ss;
                       ss << sigma;
@@ -143,12 +191,18 @@ void init_oineus_cells(nb::module_& m)
     using Cube_2D = oin::Cube<oin_int, 2>;
     using Cube_3D = oin::Cube<oin_int, 3>;
 
+
     using CubeValue_1D = oin::CellWithValue<oin::Cube<oin_int, 1>, oin_real>;
     using CubeValue_2D = oin::CellWithValue<oin::Cube<oin_int, 2>, oin_real>;
     using CubeValue_3D = oin::CellWithValue<oin::Cube<oin_int, 3>, oin_real>;
 
     // ============ GridDomain bindings ============
     #define BIND_GRID_DOMAIN(DIM) \
+        using GridDomain_##DIM##DStateTuple = std::tuple<decltype(GridDomain_##DIM##D::dims_), \
+                                                        decltype(GridDomain_##DIM##D::strides_), \
+                                                        decltype(GridDomain_##DIM##D::c_order_), \
+                                                        decltype(GridDomain_##DIM##D::wrap_) \
+                                                        >; \
         nb::class_<GridDomain_##DIM##D>(m, "GridDomain_" #DIM "D", #DIM "D grid domain") \
             .def("__init__", ([](GridDomain_##DIM##D* p, nb::args args) { \
                     if (args.size() != DIM) \
@@ -162,7 +216,14 @@ void init_oineus_cells(nb::module_& m)
             .def(nb::self == nb::self) \
             .def(nb::self != nb::self) \
             .def(nb::hash(nb::self)) \
-
+            .def("__getstate__", [](const GridDomain_##DIM##D& g) { return std::make_tuple(g.dims_, g.strides_, g.c_order_, g.wrap_); }) \
+            .def("__setstate__", [](GridDomain_##DIM##D& g, const GridDomain_##DIM##DStateTuple& state) { \
+                new (&g) GridDomain_##DIM##D(); \
+                g.dims_ = std::get<0>(state); \
+                g.strides_ = std::get<1>(state); \
+                g.c_order_ = std::get<2>(state); \
+                g.wrap_ = std::get<3>(state); \
+             }) \
 
     BIND_GRID_DOMAIN(1);
     BIND_GRID_DOMAIN(2);
@@ -210,6 +271,10 @@ void init_oineus_cells(nb::module_& m)
 
     // ============ Cube bindings ============
     #define BIND_CUBE(DIM) \
+        using Cube_##DIM##DStateTuple = std::tuple<decltype(Cube_##DIM##D::id_), \
+                                                   decltype(Cube_##DIM##D::user_id_), \
+                                                   decltype(Cube_##DIM##D::global_domain_) \
+                                                  >; \
         nb::class_<Cube_##DIM##D>(m, "CombinatorialCube_" #DIM "D") \
             .def("__init__", [](Cube_##DIM##D * p, const GridDomain_##DIM##D& g, oin_int x) { \
                     new (p) Cube_##DIM##D(x, g); \
@@ -230,7 +295,13 @@ void init_oineus_cells(nb::module_& m)
             .def(nb::self == nb::self) \
             .def(nb::self != nb::self) \
             .def(nb::hash(nb::self)) \
-
+            .def("__getstate__", [](const Cube_##DIM##D& c) -> Cube_##DIM##DStateTuple { return std::make_tuple(c.id_, c.user_id_, c.global_domain_); }) \
+            .def("__setstate__", [](Cube_##DIM##D& c, const Cube_##DIM##DStateTuple& state) { \
+                    new (&c) Cube_##DIM##D(); \
+                    c.id_ = std::get<0>(state); \
+                    c.user_id_ = std::get<1>(state); \
+                    c.global_domain_ = std::get<2>(state); \
+                }) \
 
     BIND_CUBE(1);
     BIND_CUBE(2);
@@ -239,6 +310,10 @@ void init_oineus_cells(nb::module_& m)
     #undef BIND_CUBE
 
     #define BIND_CUBE_VALUE(DIM) \
+         using CubeValue_##DIM##DStateTuple = std::tuple<decltype(CubeValue_##DIM##D::value_), \
+                                                  decltype(CubeValue_##DIM##D::sorted_id_), \
+                                                  decltype(CubeValue_##DIM##D::cell_) \
+                                                 >; \
         nb::class_<CubeValue_##DIM##D>(m, "Cube_" #DIM "D") \
             .def("__init__", [](CubeValue_##DIM##D * p, const GridDomain_##DIM##D& g, oin_int x, oin_real value) { \
                     new (p) CubeValue_##DIM##D(Cube_##DIM##D(x, g), value); \
@@ -258,7 +333,13 @@ void init_oineus_cells(nb::module_& m)
             .def(nb::self == nb::self) \
             .def(nb::self != nb::self) \
             .def(nb::hash(nb::self)) \
-
+            .def("__getstate__", [](const CubeValue_##DIM##D& c) -> CubeValue_##DIM##DStateTuple { return std::make_tuple(c.value_, c.sorted_id_, c.cell_); }) \
+            .def("__setstate__", [](CubeValue_##DIM##D& c, const CubeValue_##DIM##DStateTuple & state) { \
+                new (&c) ProdSimplexValue(); \
+                c.value_ = std::get<0>(state); \
+                c.sorted_id_ = std::get<1>(state); \
+                c.cell_ = std::get<2>(state); \
+             }) \
 
     BIND_CUBE_VALUE(1);
     BIND_CUBE_VALUE(2);

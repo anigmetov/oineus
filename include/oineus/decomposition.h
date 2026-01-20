@@ -1271,6 +1271,67 @@ namespace oineus {
         is_reduced = true;
     }
 
+
+//     template<class Int>
+//     template<class Cell, class Real>
+//     std::pair<Diagrams<Int>, Diagrams<Int>> VRUDecomposition<Int>::index_diagrams_separate_inf(const Filtration<Cell, Real>& fil, bool include_inf_points) const
+//     {
+//         if (not is_reduced)
+//             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
+//
+//         Diagrams<Int> result_finite(fil.max_dim());
+//         Diagrams<Int> result_infinite(fil.max_dim());
+//
+//         std::unordered_set<Int> rows_with_lowest_one;
+//
+//         if (include_inf_points)
+//             for(size_t i = 0; i < r_data.size(); ++i) {
+//                 if (!is_zero(&r_data[i]))
+//                     rows_with_lowest_one.insert(low(&r_data[i]));
+//
+// #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+//                 if (i % 100 == 0) {
+//                     OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+//                 }
+// #endif
+//
+//             }
+//
+//         for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
+//             auto col = &r_data[col_idx];
+//
+//             auto simplex_idx = fil.index_in_filtration(col_idx, dualize());
+// 			auto simplex_idx_us = fil.get_id_by_sorted_id(simplex_idx);
+//             if (is_zero(col)) {
+//                 if (not include_inf_points or rows_with_lowest_one.count(col_idx) != 0)
+//                     // we don't want infinite points or col_idx is a negative simplex
+//                     continue;
+//
+//                 // point at infinity
+//                 dim_type dim = fil.dim_by_sorted_id(simplex_idx);
+//                 Real birth = fil.value_by_sorted_id(simplex_idx);
+//                 Real death = fil.infinity();
+//
+//                 result.add_point(dim, birth, death, simplex_idx, plus_inf, simplex_idx_us, plus_inf);
+//             } else {
+//                 // finite point
+//                 Int birth_idx = fil.index_in_filtration(low(col), dualize()), death_idx = simplex_idx;
+// 		Int birth_idx_us = fil.get_id_by_sorted_id(birth_idx), death_idx_us = fil.get_id_by_sorted_id(death_idx);
+//                 dim_type dim = fil.dim_by_sorted_id(birth_idx);
+//
+//                 if (dualize()) {
+//                     result.add_point(dim - 1, death, birth, death_idx, birth_idx, death_idx_us, birth_idx_us);
+//                 } else {
+//                     result.add_point(dim, birth, death, birth_idx, death_idx, birth_idx_us, death_idx_us);
+//                 }
+//             }
+//         }
+//
+//         return result;
+//     }
+
+
+
     template<class Int>
     template<class Cell, class Real>
     Diagrams<Real> VRUDecomposition<Int>::diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const
