@@ -10,6 +10,12 @@
 #include "log_wrapper.h"
 #include "grid_domain.h"
 
+#ifdef OINEUS_PYTHON_FRIENDS
+namespace nanobind { class module_; }
+void init_oineus_cells(nanobind::module_&);
+#endif
+
+
 namespace oineus {
     namespace cube_private {
         template<typename Int>
@@ -317,10 +323,10 @@ namespace oineus {
         }
 
 #ifdef OINEUS_PYTHON_FRIENDS
-        friend void init_oineus_cells(nb::module_&);
+         friend void ::init_oineus_cells(nanobind::module_&);
 #endif
 
-    // private:
+    private:
         static constexpr Int k_invalid_id = Int(-1);
 
         Int id_{k_invalid_id};

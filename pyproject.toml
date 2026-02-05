@@ -74,3 +74,8 @@ archs = ["arm64"]
 before-all = "yum install -y boost-devel"
 manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
+
+[tool.uv.workspace]
+members = [
+    "build_310",
+]

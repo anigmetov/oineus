@@ -108,17 +108,18 @@ void init_oineus_filtration(nb::module_& m)
             .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids)
             .def("set_values", &Filtration::set_values, nb::arg("new_values"), nb::arg("n_threads")=1)
             .def("subfiltration", [](Filtration& self, const
-                std::function<bool(const Simplex&)>& py_pred) {
+                std::function<bool(const Simplex&)>& py_pred) -> Filtration {
                 auto pred = [&py_pred](const Filtration::Cell& c) -> bool { return py_pred(c.cell_);
                 };
-                Filtration result = self.subfiltration(pred);
+                // auto pred = [](const Filtration::Cell& cell) -> bool { return cell.dim() == 1; };
+                auto result = self.subfiltration(pred);
                 return result;
-             }, nb::arg("predicate"), nb::rv_policy::take_ownership)
-             .def("subfiltration", [](Filtration& self, const
-                std::function<bool(const Filtration::Cell&)>& py_pred) {
-                Filtration result = self.subfiltration(py_pred);
-                return result;
-             }, nb::arg("predicate"), nb::rv_policy::take_ownership)
+             }, nb::arg("predicate"), nb::rv_policy::copy)
+             // .def("subfiltration", [](Filtration& self, const
+                // std::function<bool(const Filtration::Cell&)>& py_pred) {
+                // Filtration result = self.subfiltration(py_pred);
+                // return result;
+             // }, nb::arg("predicate"))
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def("get_vertices", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 0); })
@@ -176,7 +177,7 @@ void init_oineus_filtration(nb::module_& m)
             .def("boundary_matrix_in_dimension", &ProdFiltration::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads"))
             .def("coboundary_matrix", &ProdFiltration::coboundary_matrix, nb::arg("n_threads"))
             .def("reset_ids_to_sorted_ids", &ProdFiltration::reset_ids_to_sorted_ids)
-            .def("set_values", &ProdFiltration::set_values)
+            .def("set_values", &ProdFiltration::set_values, nb::arg("new_values"), nb::arg("n_threads")=1)
             .def("__repr__", [](const ProdFiltration& fil) {
               std::stringstream ss;
               ss << fil;
@@ -251,7 +252,7 @@ void init_oineus_filtration(nb::module_& m)
             .def("coboundary_matrix", &CubeFiltration_##DIM##D::coboundary_matrix, nb::arg("n_threads")=1) \
             .def("boundary_matrix_rel", &CubeFiltration_##DIM##D::boundary_matrix_rel) \
             .def("reset_ids_to_sorted_ids", &CubeFiltration_##DIM##D::reset_ids_to_sorted_ids) \
-            .def("set_values", &CubeFiltration_##DIM##D::set_values) \
+            .def("set_values", &CubeFiltration_##DIM##D::set_values, nb::arg("new_values"), nb::arg("n_threads")=1) \
             .def(nb::self == nb::self) \
             .def(nb::self != nb::self) \
             .def("__repr__", [](const CubeFiltration_##DIM##D& fil) { \

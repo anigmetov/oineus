@@ -1,5 +1,71 @@
 #include "oineus_persistence_bindings.h"
 
+    //
+    // std::pair<IndicesValues, Real> match_and_distance(typename Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q)
+    // {
+    //     // set ids in template diagram
+    //     for(size_t i = 0 ; i < template_dgm.size() ; ++i) {
+    //         template_dgm[i].id = i;
+    //
+    //         if (template_dgm[i].is_inf())
+    //             throw std::runtime_error("infinite point in template diagram");
+    //     }
+    //
+    //     using Diagram = typename Diagrams<Real>::Dgm;
+    //
+    //     IndicesValues result;
+    //
+    //     hera::AuctionParams<Real> hera_params;
+    //     hera_params.return_matching = true;
+    //     hera_params.match_inf_points = false;
+    //     hera_params.wasserstein_power = wasserstein_q;
+    //
+    //     if (not decmp_hom_.is_reduced)
+    //         decmp_hom_.reduce(params_hom_);
+    //
+    //     Diagram current_dgm = decmp_hom_.diagram(fil_, false).get_diagram_in_dimension(d);
+    //
+    //     for(size_t i = 0 ; i < current_dgm.size() ; ++i) {
+    //         current_dgm[i].id = i;
+    //     }
+    //
+    //     // template_dgm: bidders, a
+    //     // current_dgm: items, b
+    //     auto hera_res = hera::wasserstein_cost_detailed<Diagram>(template_dgm, current_dgm, hera_params);
+    //
+    //     for(auto curr_template: hera_res.matching_b_to_a_) {
+    //         auto current_id = curr_template.first;
+    //         auto template_id = curr_template.second;
+    //
+    //         if (current_id < 0)
+    //             continue;
+    //
+    //         size_t birth_idx = current_dgm.at(current_id).birth_index;
+    //         size_t death_idx = current_dgm.at(current_id).death_index;
+    //
+    //         Real birth_target;
+    //         Real death_target;
+    //
+    //         if (template_id >= 0) {
+    //             // matched to off-diagonal point of template diagram
+    //
+    //             birth_target = template_dgm.at(template_id).birth;
+    //             death_target = template_dgm.at(template_id).death;
+    //         } else {
+    //             // matched to diagonal point of template diagram
+    //             auto curr_proj_id = -template_id - 1;
+    //             Real m = (current_dgm.at(curr_proj_id).birth + current_dgm.at(curr_proj_id).death) / 2;
+    //             birth_target = death_target = m;
+    //         }
+    //
+    //         result.push_back(birth_idx, birth_target);
+    //         result.push_back(death_idx, death_target);
+    //     }
+    //
+    //     return {result, hera_res.distance};
+    // }
+
+
 template<class Cell>
 void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::string ind_vals_name)
 {

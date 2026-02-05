@@ -9,6 +9,11 @@
 #include <stdexcept>
 #include <functional>
 
+#ifdef OINEUS_PYTHON_FRIENDS
+namespace nanobind { class module_; }
+void init_oineus_cells(nanobind::module_&);
+#endif
+
 namespace std {
     template<typename T>
     std::ostream& operator<<(std::ostream& os, const std::vector<T>& v)
@@ -285,10 +290,10 @@ public:
     bool operator!=(const GridDomain& other) const { return !(*this == other); }
 
 #ifdef OINEUS_PYTHON_FRIENDS
-    friend void init_oineus_cells(nb::module_& m);
+     friend void ::init_oineus_cells(nanobind::module_&);
 #endif
 
-// private:
+private:
     GridPoint dims_;
     GridPoint strides_;
     bool c_order_ {true};

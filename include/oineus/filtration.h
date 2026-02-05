@@ -390,6 +390,7 @@ namespace oineus {
             Filtration result;
 
             result.is_subfiltration_ = true;
+            result.id_to_sorted_id_ = decltype(result.id_to_sorted_id_)(id_to_sorted_id_.size(), -1);
 
             std::set<dim_type> dims;
 
@@ -407,7 +408,7 @@ namespace oineus {
             }
 
             if (result.size() == 0)
-                return Filtration();
+                return result;
 
             dim_type max_dim = result.cells_.back().dim();
 

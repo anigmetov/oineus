@@ -335,7 +335,7 @@ void init_oineus_cells(nb::module_& m)
             .def(nb::hash(nb::self)) \
             .def("__getstate__", [](const CubeValue_##DIM##D& c) -> CubeValue_##DIM##DStateTuple { return std::make_tuple(c.value_, c.sorted_id_, c.cell_); }) \
             .def("__setstate__", [](CubeValue_##DIM##D& c, const CubeValue_##DIM##DStateTuple & state) { \
-                new (&c) ProdSimplexValue(); \
+                new (&c) CubeValue_##DIM##D(); \
                 c.value_ = std::get<0>(state); \
                 c.sorted_id_ = std::get<1>(state); \
                 c.cell_ = std::get<2>(state); \
