@@ -55,7 +55,7 @@ class TopologyOptimizer:
 
     #@ft.wraps(_oineus.TopologyOptimizer.match)
     def match(self, template_dgm, dim: int, wasserstein_q: float=1.0, return_wasserstein_distance: bool=False):
-        return self.under_opt.match(temlate_dgm=template_dgm, dim=dim, wasserstein_q=wasserstein_q,
+        return self.under_opt.match(template_dgm=template_dgm, dim=dim, wasserstein_q=wasserstein_q,
                                     return_wasserstein_distance=return_wasserstein_distance)
 
     @property

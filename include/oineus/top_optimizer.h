@@ -364,7 +364,9 @@ public:
         return oineus::get_nth_persistence(fil_, decmp_hom_, d, n);
     }
 
-    std::pair<IndicesValues, Real> match_and_distance(typename Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q)
+    std::pair<IndicesValues, Real> match_and_distance(typename
+        Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q,
+        Real delta)
     {
         // set ids in template diagram
         for(size_t i = 0 ; i < template_dgm.size() ; ++i) {
@@ -382,6 +384,7 @@ public:
         hera_params.return_matching = true;
         hera_params.match_inf_points = false;
         hera_params.wasserstein_power = wasserstein_q;
+        hera_params.delta = delta;
 
         if (not decmp_hom_.is_reduced)
             decmp_hom_.reduce(params_hom_);
@@ -394,7 +397,11 @@ public:
 
         // template_dgm: bidders, a
         // current_dgm: items, b
+        Timer timer;
+        timer.reset();
         auto hera_res = hera::wasserstein_cost_detailed<Diagram>(template_dgm, current_dgm, hera_params);
+        auto hera_elapsed = timer.elapsed();
+        // IC(hera_elapsed);
 
         for(auto curr_template: hera_res.matching_b_to_a_) {
             auto current_id = curr_template.first;
@@ -428,9 +435,10 @@ public:
         return {result, hera_res.distance};
     }
 
-    IndicesValues match(typename Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q)
+    IndicesValues match(typename Diagrams<Real>::Dgm& template_dgm, dim_type
+        d, Real wasserstein_q, Real delta)
     {
-        return match_and_distance(template_dgm, d, wasserstein_q).first;
+        return match_and_distance(template_dgm, d, wasserstein_q, delta).first;
     }
 
     IndicesValues combine_loss(const CriticalSets& critical_sets, ConflictStrategy strategy)

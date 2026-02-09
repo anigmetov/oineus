@@ -180,7 +180,7 @@ def cech_delaunay_filtration(alpha_fil, points, eps=0.0):
     if type(alpha_fil) is not _oineus.Filtration:
         alpha_fil = _oineus.Filtration([_oineus.Simplex(vs, val) for vs, val in alpha_fil])
 
-    values_in_dim = [torch.zeros(alpha_fil.size_in_dimension(0), requires_grad=True)]
+    values_in_dim = [torch.zeros(alpha_fil.size_in_dimension(0), requires_grad=True, device=points.device)]
 
     for dim in range(1, alpha_fil.max_dim() + 1):
         if dim == 1:

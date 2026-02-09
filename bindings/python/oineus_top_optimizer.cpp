@@ -1,4 +1,5 @@
 #include "oineus_persistence_bindings.h"
+#include "nanobind/stl/variant.h"
 
     //
     // std::pair<IndicesValues, Real> match_and_distance(typename Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q)
@@ -108,16 +109,18 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     nb::arg("dim"), "make points with persistence less than epsilon go to the diagonal")
             .def("get_nth_persistence", &TopologyOptimizer::get_nth_persistence,
                     nb::arg("dim"), nb::arg("n"), "return n-th persistence value in d-dimensional persistence diagram")
-            .def("match", [](TopologyOptimizer& opt, Diagram& template_dgm, dim_type d, oin_real wasserstein_q, bool return_wasserstein_distance) -> std::variant<IndicesValues, std::pair<IndicesValues, oin_real>>
+            .def("match", [](TopologyOptimizer& opt, Diagram& template_dgm, dim_type d, oin_real wasserstein_q, oin_real wasserstein_delta, bool return_wasserstein_distance) ->
+                std::variant<IndicesValues, std::pair<IndicesValues, oin_real>>
                     {
                       if (return_wasserstein_distance)
-                          return opt.match_and_distance(template_dgm, d, wasserstein_q);
+                          return opt.match_and_distance(template_dgm, d, wasserstein_q, wasserstein_delta);
                       else
-                          return opt.match(template_dgm, d, wasserstein_q);
+                          return opt.match(template_dgm, d, wasserstein_q, wasserstein_delta);
                     },
                     nb::arg("template_dgm"),
                     nb::arg("dim"),
                     nb::arg("wasserstein_q")=1.0,
+                    nb::arg("wasserstein_delta")=0.01,
                     nb::arg("return_wasserstein_distance")=false,
                     "return target from Wasserstein matching"
             )
