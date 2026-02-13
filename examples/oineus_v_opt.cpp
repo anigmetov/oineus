@@ -38,7 +38,7 @@ std::pair<oineus::Grid<Int, Real, D>, std::vector<Real>> read_function(std::stri
         throw std::runtime_error("Bad file format");
     }
 
-    return {Grid(dims, wrap, func.data()), func};
+    return {Grid(dims, wrap, func.data(), Grid::DataLocation::VERTEX), func};
 }
 
 void test_ls_2()
@@ -58,7 +58,7 @@ void test_ls_2()
     bool wrap = false;
     bool negate = false;
 
-    IntGrid grid {dims, wrap, data};
+    IntGrid grid {dims, wrap, data, IntGrid::DataLocation::VERTEX};
 
     auto fil = grid.freudenthal_filtration(2, negate);
     std::cout << fil << "\n";

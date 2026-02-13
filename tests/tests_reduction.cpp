@@ -11,7 +11,8 @@ template<class Int, class Real, size_t D>
 typename oineus::Grid<Int, Real, D>
 get_grid(Real* pdata, typename oineus::Grid<Int, Real, D>::GridPoint dims, bool wrap)
 {
-    return oineus::Grid<Int, Real, D>(dims, wrap, pdata);
+    return oineus::Grid<Int, Real, D>(dims, wrap, pdata,
+            oineus::Grid<Int, Real, D>::DataLocation::VERTEX);
 }
 
 template<class Int, class Real, size_t D>

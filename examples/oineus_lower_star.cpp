@@ -58,7 +58,7 @@ void test_ls_2()
     bool wrap = false;
     bool negate = false;
 
-    IntGrid grid {dims, wrap, data};
+    IntGrid grid {dims, wrap, data, IntGrid::DataLocation::VERTEX};
 
     auto fil = grid.freudenthal_filtration(2, negate);
     std::cout << fil << "\n";
@@ -92,7 +92,7 @@ void test_ls_3()
     bool wrap = true;
     bool negate = false;
 
-    IntGrid grid {dims, wrap, data};
+    IntGrid grid {dims, wrap, data, IntGrid::DataLocation::VERTEX};
 
     auto fil = grid.freudenthal_filtration(3, negate);
 
@@ -170,7 +170,7 @@ int main(int argc, char** argv)
         using Grid = oineus::Grid<Int, Real, 3>;
 
         auto [func, dims] = read_function<Int, Real, 3>(fname_in);
-        Grid grid {dims, wrap, func.data()};
+        Grid grid {dims, wrap, func.data(), Grid::DataLocation::VERTEX};
 
         auto fil = grid.freudenthal_filtration(top_d, negate, params.n_threads);
         VRUDecomposition<Int> decmp {fil, false };
