@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import torch
 import diode
@@ -170,56 +171,150 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12):
     return centers, min_radii_sq
 
 
-def cech_delaunay_filtration(alpha_fil, points, eps=0.0):
+def cech_delaunay_filtration(alpha_fil, points, eps=0.0, print_time: bool=False):
     """
     :param alpha_fil: Alpha filtration from diode or oineus
     :param points: Tensor of point coordinates
     :param eps: Small value for numerical stability
     :return: differentiable Cech-Delaunay filtration
     """
+    if print_time:
+        start = time.time()
     if type(alpha_fil) is not _oineus.Filtration:
         alpha_fil = _oineus.Filtration([_oineus.Simplex(vs, val) for vs, val in alpha_fil])
+    if print_time:
+        elapsed = time.time() - start
+        print(f"alpha_fil conversion elapsed: {elapsed:.3f}")
 
+    if print_time:
+        start = time.time()
     values_in_dim = [torch.zeros(alpha_fil.size_in_dimension(0), requires_grad=True, device=points.device)]
+    if print_time:
+        elapsed = time.time() - start
+        print(f"initialize dim-0 values elapsed: {elapsed:.3f}")
 
     for dim in range(1, alpha_fil.max_dim() + 1):
+        if print_time:
+            start_dim = time.time()
         if dim == 1:
+            if print_time:
+                start = time.time()
             edges = torch.LongTensor(alpha_fil.get_edges().astype(np.uint64))
+            if print_time:
+                elapsed = time.time() - start
+                print(f"dim 1 get edges elapsed: {elapsed:.3f}")
+
+            if print_time:
+                start = time.time()
             sqdists = torch.sum((points[edges[:, 0]] - points[edges[:, 1]]) ** 2, axis=1)
             radii_sq = 0.25 * sqdists
+            if print_time:
+                elapsed = time.time() - start
+                print(f"dim 1 compute edge radii elapsed: {elapsed:.3f}")
             assert edges.shape[0] == radii_sq.shape[0]
 
         elif dim == 2:
+            if print_time:
+                start = time.time()
             triangles = torch.LongTensor(alpha_fil.get_triangles().astype(np.uint64))
+            if print_time:
+                elapsed = time.time() - start
+                print(f"dim 2 get triangles elapsed: {elapsed:.3f}")
+
+            if print_time:
+                start = time.time()
             p0 = points[triangles[:, 0]]
             p1 = points[triangles[:, 1]]
             p2 = points[triangles[:, 2]]
+            if print_time:
+                elapsed = time.time() - start
+                print(f"dim 2 gather triangle points elapsed: {elapsed:.3f}")
 
             # ignore centers
+            if print_time:
+                start = time.time()
             _, radii_sq = triangle_meb(p0, p1, p2, eps)
+            if print_time:
+                elapsed = time.time() - start
+                print(f"dim 2 triangle_meb elapsed: {elapsed:.3f}")
 
             assert triangles.shape[0] == radii_sq.shape[0]
 
         elif dim == 3:
+            if print_time:
+                start = time.time()
             tetra = torch.LongTensor(alpha_fil.get_tetrahedra().astype(np.uint64))
+            if print_time:
+                elapsed = time.time() - start
+                print(f"dim 3 get tetrahedra elapsed: {elapsed:.3f}")
+
+            if print_time:
+                start = time.time()
             p0 = points[tetra[:, 0]]
             p1 = points[tetra[:, 1]]
             p2 = points[tetra[:, 2]]
             p3 = points[tetra[:, 3]]
+            if print_time:
+                elapsed = time.time() - start
+                print(f"dim 3 gather tetra points elapsed: {elapsed:.3f}")
 
+            if print_time:
+                start = time.time()
             _, radii_sq = tetrahedron_meb(p0, p1, p2, p3, eps)
+            if print_time:
+                elapsed = time.time() - start
+                print(f"dim 3 tetrahedron_meb elapsed: {elapsed:.3f}")
 
             assert tetra.shape[0] == radii_sq.shape[0]
         else:
             raise RuntimeError("Dimension not supported")
 
+        if print_time:
+            elapsed = time.time() - start_dim
+            print(f"dim {dim} total elapsed: {elapsed:.3f}")
+
+        if print_time:
+            start = time.time()
         values_in_dim.append(radii_sq)
+        if print_time:
+            elapsed = time.time() - start
+            print(f"append dim {dim} values elapsed: {elapsed:.3f}")
 
     # this will sort the simplices in the filtration correctly, cd_vals_np is not monotonic
+    if print_time:
+        start = time.time()
     cd_vals = torch.cat(values_in_dim)
+    if print_time:
+        elapsed = time.time() - start
+        print(f"concatenate values elapsed: {elapsed:.3f}")
+
+    if print_time:
+        start = time.time()
     cd_vals_list = [ float(x) for x in cd_vals.clone().detach().cpu() ]
+    if print_time:
+        elapsed = time.time() - start
+        print(f"convert values to list elapsed: {elapsed:.3f}")
+
     # set non-differentiable internal Oineus values:
+    if print_time:
+        start = time.time()
     alpha_fil.set_values(cd_vals_list)
+    if print_time:
+        elapsed = time.time() - start
+        print(f"set alpha_fil values elapsed: {elapsed:.3f}")
+
     # sort values in each dimension independently, in a differentiable way:
+    if print_time:
+        start = time.time()
     sorted_vals = torch.cat([ torch.sort(vals)[0] for vals in values_in_dim])
-    return DiffFiltration(alpha_fil, sorted_vals)
+    if print_time:
+        elapsed = time.time() - start
+        print(f"sort values by dimension elapsed: {elapsed:.3f}")
+
+    if print_time:
+        start = time.time()
+    result = DiffFiltration(alpha_fil, sorted_vals)
+    if print_time:
+        elapsed = time.time() - start
+        print(f"build DiffFiltration elapsed: {elapsed:.3f}")
+    return result
