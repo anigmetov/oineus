@@ -237,6 +237,107 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
 
         return row_format;
     }
+
+    static Matrix col_to_row_format_parallel(const Matrix& col_format, int
+        n_threads, size_t col_start = 0,
+        size_t col_end = std::numeric_limits<size_t>::max(), Int num_rows = -1)
+    {
+        if (col_format.empty()) {
+            return {};
+        }
+
+        if (col_end > col_format.size()) {
+            col_end = col_format.size();
+        }
+
+        if (num_rows == -1) {
+            for (const auto& col : col_format) {
+                if (!col.empty()) {
+                    num_rows = std::max(num_rows, col.back());
+                }
+            }
+            num_rows++;
+        }
+
+        if (num_rows <= 0) {
+            return {};
+        }
+
+        Matrix row_format(static_cast<size_t>(num_rows));
+
+        if (col_start >= col_end) {
+            return row_format;
+        }
+
+        const size_t n_cols = col_end - col_start;
+        const size_t requested_threads = n_threads > 0 ? static_cast<size_t>(n_threads) : 1;
+        const size_t n_workers = std::min(requested_threads, n_cols);
+
+        if (n_workers == 0) {
+            return row_format;
+        }
+
+        std::vector<std::vector<size_t>> per_thread_positions(
+                n_workers, std::vector<size_t>(static_cast<size_t>(num_rows), 0));
+
+        auto worker_range = [n_cols, n_workers, col_start](size_t tid) {
+            const size_t begin = col_start + (tid * n_cols) / n_workers;
+            const size_t end = col_start + ((tid + 1) * n_cols) / n_workers;
+            return std::pair<size_t, size_t>(begin, end);
+        };
+
+        std::vector<std::thread> workers;
+        workers.reserve(n_workers);
+
+        for (size_t tid = 0; tid < n_workers; ++tid) {
+            workers.emplace_back([&, tid]() {
+                auto [begin, end] = worker_range(tid);
+                auto& local_counts = per_thread_positions[tid];
+                for (size_t col_idx = begin; col_idx < end; ++col_idx) {
+                    for (int row_idx : col_format[col_idx]) {
+                        ++local_counts[static_cast<size_t>(row_idx)];
+                    }
+                }
+            });
+        }
+
+        for (auto& t : workers) {
+            t.join();
+        }
+
+        for (int row_idx = 0; row_idx < num_rows; ++row_idx) {
+            size_t prefix = 0;
+            const size_t r = static_cast<size_t>(row_idx);
+            for (size_t tid = 0; tid < n_workers; ++tid) {
+                const size_t count = per_thread_positions[tid][r];
+                per_thread_positions[tid][r] = prefix;
+                prefix += count;
+            }
+            row_format[r].resize(prefix);
+        }
+
+        workers.clear();
+
+        for (size_t tid = 0; tid < n_workers; ++tid) {
+            workers.emplace_back([&, tid]() {
+                auto [begin, end] = worker_range(tid);
+                auto& local_pos = per_thread_positions[tid];
+                for (size_t col_idx = begin; col_idx < end; ++col_idx) {
+                    for (int row_idx : col_format[col_idx]) {
+                        const size_t r = static_cast<size_t>(row_idx);
+                        row_format[r][local_pos[r]++] = static_cast<int>(col_idx);
+                    }
+                }
+            });
+        }
+
+        for (auto& t : workers) {
+            t.join();
+        }
+
+        return row_format;
+    }
+
 };
 
 template<typename Int_, int P>

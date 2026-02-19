@@ -744,44 +744,41 @@ namespace oineus {
 
         for (size_t current_col = start_idx; current_col < end_idx; ++current_col) {
             // Keep processing column j until no more violations are found
-            bool made_changes = true;
+            bool made_changes = false;
             // R=DV, RU=D
 
-            while (made_changes) {
-                made_changes = false;
+            long int end_idx = 0;
 
-                // Check each entry in V column from highest to lowest
-                for (int v_idx = static_cast<int>(v_data[current_col].size()) - 1; v_idx >= 0; v_idx--) {
-                    size_t added_col = v_data[current_col][v_idx];
+            while(end_idx < static_cast<long int>(r_data[current_col].size())) {
+                long int v_idx = static_cast<long int>(r_data[current_col].size()) - 1 - end_idx;
+                size_t added_col = v_data[current_col][v_idx];
 
-                    bool is_current_col_death = not MatrixTraits::is_zero(r_data[current_col]);
-                    bool is_added_col_zero = MatrixTraits::is_zero(r_data[added_col]);
+                bool is_current_col_death = not MatrixTraits::is_zero(r_data[current_col]);
+                bool is_added_col_zero = MatrixTraits::is_zero(r_data[added_col]);
 
-                    // Check for ELZ violations:
-                    // 1. We added a zero column that comes before j
-                    bool added_zero_column = (added_col < current_col && is_added_col_zero);
+                // Check for ELZ violations:
+                // 1. We added a zero column that comes before j
+                bool added_zero_column = (added_col < current_col && is_added_col_zero);
 
-                    // 2. Column j is a death and we added a column whose lowest one
-                    //    is smaller (this addition wouldn't kill anything in ELZ)
-                    bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
-                                                    (MatrixTraits::low(&r_data[current_col]) > MatrixTraits::low(&r_data[added_col])));
+                // 2. Column j is a death and we added a column whose lowest one
+                //    is smaller (this addition wouldn't kill anything in ELZ)
+                bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
+                                                (MatrixTraits::low(&r_data[current_col]) > MatrixTraits::low(&r_data[added_col])));
 
-                    if (added_zero_column || added_non_killing_column) {
-                        // Undo the addition by adding again (Z/2 arithmetic)
-                        MatrixTraits::add_to_column(v_data[current_col], v_data[added_col]);
-                        if (not v_only) {
-                            MatrixTraits::add_to_column(r_data[current_col], r_data[added_col]);
-                            if (has_matrix_u())
-                                MatrixTraits::add_to_column(u_data_t[added_col], u_data_t[current_col]);
-                        }
-                        made_changes = true;
-                        break;  // Restart checking this column from the beginning
-                        // TODO: make this more efficient
+                if (added_zero_column || added_non_killing_column) {
+                    // Undo the addition by adding again (Z/2 arithmetic)
+                    MatrixTraits::add_to_column(v_data[current_col], v_data[added_col]);
+                    if (not v_only) {
+                        MatrixTraits::add_to_column(r_data[current_col], r_data[added_col]);
+                        if (has_matrix_u())
+                            MatrixTraits::add_to_column(u_data_t[added_col], u_data_t[current_col]);
                     }
+                    made_changes = true;
                 }
-
-                if (made_changes) {n_violators++;}
+                end_idx++;
             }
+
+            if (made_changes) {n_violators++;}
 
     #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
             if (current_col % 100 == 0) {
@@ -1585,7 +1582,7 @@ namespace oineus {
 
         auto col_inv_elapsed = timer.elapsed_reset();
 
-        u_data_t = MatrixTraits::col_to_row_format(u_data, col_start, col_end, v_data.size());
+        u_data_t = MatrixTraits::col_to_row_format_parallel(u_data, n_threads, col_start, col_end, v_data.size());
 
         auto col_to_row_elapsed = timer.elapsed_reset();
 

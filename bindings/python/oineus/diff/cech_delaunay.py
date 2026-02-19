@@ -84,7 +84,7 @@ def triangle_meb(p0, p1, p2, eps=1e-12):
     return centers, radii_sq
 
 
-def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12):
+def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False):
     """
     Compute minimum enclosing ball center and radius squared for tetrahedra.
 
@@ -154,19 +154,21 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12):
         torch.where(contains_3, face_radii_sq_3, inf_val),
     ], dim=0)
 
-    all_centers = torch.stack([
-        circum_center,
-        face_centers_0,
-        face_centers_1,
-        face_centers_2,
-        face_centers_3,
-    ], dim=0)
-
     # Find minimum radius for each tetrahedron
     min_radii_sq, min_idx = torch.min(all_radii_sq, dim=0)
 
+    centers = None
+
     # Gather corresponding centers
-    centers = all_centers[min_idx, torch.arange(n)]
+    if return_centers:
+        all_centers = torch.stack([
+            circum_center,
+            face_centers_0,
+            face_centers_1,
+            face_centers_2,
+            face_centers_3,
+        ], dim=0)
+        centers = all_centers[min_idx, torch.arange(n)]
 
     return centers, min_radii_sq
 

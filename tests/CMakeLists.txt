@@ -8,6 +8,16 @@ target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
 
 add_test(NAME all COMMAND tests)
 
+add_executable(tests_parallel_col_to_row tests_parallel_col_to_row.cpp)
+
+target_include_directories(tests_parallel_col_to_row PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include
+                                                             ${CMAKE_CURRENT_SOURCE_DIR}/../extern)
+
+target_link_libraries(tests_parallel_col_to_row PRIVATE ${libraries})
+target_link_libraries(tests_parallel_col_to_row PRIVATE Catch2::Catch2WithMain)
+
+add_test(NAME parallel-col-to-row COMMAND tests_parallel_col_to_row)
+
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/a_6.txt"
            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
