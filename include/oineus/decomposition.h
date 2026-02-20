@@ -733,8 +733,8 @@ namespace oineus {
 
         const bool all_dims = dim >= dim_first.size();
 
-        const size_t start_idx = all_dims ? 0 : dim_first.at(dim);
-        const size_t end_idx = all_dims ? 0 : dim_last.at(dim) + 1;
+        const size_t range_start_idx = all_dims ? 0 : dim_first.at(dim);
+        const size_t range_end_idx = all_dims ? 0 : dim_last.at(dim) + 1;
 
         if (not has_matrix_v()) {
             throw std::runtime_error("VRUDecomposition: cannot restore ELZ without V matrix");
@@ -742,19 +742,22 @@ namespace oineus {
 
         size_t n_violators = 0;
 
-        for (size_t current_col = start_idx; current_col < end_idx; ++current_col) {
+        for (size_t current_col = range_start_idx; current_col < range_end_idx; ++current_col) {
             // Keep processing column j until no more violations are found
             bool made_changes = false;
             // R=DV, RU=D
 
             long int end_idx = 0;
 
-            while(end_idx < static_cast<long int>(r_data[current_col].size())) {
-                long int v_idx = static_cast<long int>(r_data[current_col].size()) - 1 - end_idx;
-                size_t added_col = v_data[current_col][v_idx];
+            while(true) {
+                long int v_idx = static_cast<long int>(v_data[current_col].size()) - 1 - end_idx;
+                if (v_idx < 0)
+                    break;
+                //size_t added_col = v_data[current_col][v_idx];
+                size_t added_col = v_data.at(current_col).at(v_idx);
 
-                bool is_current_col_death = not MatrixTraits::is_zero(r_data[current_col]);
-                bool is_added_col_zero = MatrixTraits::is_zero(r_data[added_col]);
+                bool is_current_col_death = not MatrixTraits::is_zero(r_data.at(current_col));
+                bool is_added_col_zero = MatrixTraits::is_zero(r_data.at(added_col));
 
                 // Check for ELZ violations:
                 // 1. We added a zero column that comes before j
@@ -763,15 +766,15 @@ namespace oineus {
                 // 2. Column j is a death and we added a column whose lowest one
                 //    is smaller (this addition wouldn't kill anything in ELZ)
                 bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
-                                                (MatrixTraits::low(&r_data[current_col]) > MatrixTraits::low(&r_data[added_col])));
+                                                (MatrixTraits::low(&r_data.at(current_col)) > MatrixTraits::low(&r_data.at(added_col))));
 
                 if (added_zero_column || added_non_killing_column) {
                     // Undo the addition by adding again (Z/2 arithmetic)
-                    MatrixTraits::add_to_column(v_data[current_col], v_data[added_col]);
+                    MatrixTraits::add_to_column(v_data.at(current_col), v_data.at(added_col));
                     if (not v_only) {
-                        MatrixTraits::add_to_column(r_data[current_col], r_data[added_col]);
+                        MatrixTraits::add_to_column(r_data.at(current_col), r_data.at(added_col));
                         if (has_matrix_u())
-                            MatrixTraits::add_to_column(u_data_t[added_col], u_data_t[current_col]);
+                            MatrixTraits::add_to_column(u_data_t.at(added_col), u_data_t.at(current_col));
                     }
                     made_changes = true;
                 }
@@ -780,11 +783,11 @@ namespace oineus {
 
             if (made_changes) {n_violators++;}
 
-    #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-            if (current_col % 100 == 0) {
-                OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-            }
-    #endif
+    //#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+    //        if (current_col % 100 == 0) {
+    //            OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+    //        }
+    //#endif
         }
         if (verbose) IC(n_violators, size());
     }
