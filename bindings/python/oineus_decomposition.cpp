@@ -297,7 +297,7 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def("n_elz_violators", &Decomposition::n_elz_violators, nb::arg("n_threads")=8)
             .def("n_elz_violators_in_dim", &Decomposition::n_elz_violators_in_dim, nb::arg("dim"), nb::arg("n_threads")=8)
             .def("is_column_elz", &Decomposition::is_column_elz, nb::arg("column_idx"))
-            .def("restore_elz", &Decomposition::restore_elz, nb::arg("dim")=oin::k_invalid_index, nb::arg("v_only")=false, nb::arg("verbose")=false)
+            .def("restore_elz", &Decomposition::restore_elz, nb::arg("dim")=oin::k_invalid_index, nb::arg("v_only")=false, nb::arg("verbose")=false, nb::arg("n_threads")=1)
             .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false)
             .def("densify_v_for_selinv", [](Decomposition& self, const std::set<oin_int>& rows_to_invert, int n_threads) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
                      int num_rows = self.r_data.size();

@@ -407,8 +407,9 @@ namespace oineus {
         bool is_elz(int n_threads=8) const;
         size_t n_elz_violators(int n_threads) const;
         size_t n_elz_violators_in_dim(dim_type dim, int n_threads) const;
+        std::vector<int8_t> mark_elz_violators_in_dim(dim_type dim, int n_threads) const;
 
-        void restore_elz(dim_type dim, bool v_only, bool verbose);
+        void restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads);
 
 
         template<typename Cell, typename Real>
@@ -667,6 +668,55 @@ namespace oineus {
     }
 
     template<class Int>
+    std::vector<int8_t> VRUDecomposition<Int>::mark_elz_violators_in_dim(dim_type dim, int n_threads) const
+    {
+        if (not has_matrix_v()) {
+            throw std::runtime_error("VRUDecomposition: cannot check ELZ without V matrix");
+        }
+
+        size_t start_idx = dim_first.at(dim);
+        size_t end_idx = dim_last.at(dim) + 1;
+
+        size_t n_cols_to_check = end_idx - start_idx;
+
+        std::vector<int8_t> is_elz_violator(n_cols_to_check, 0);
+
+        // Don't use multithreading if too few columns
+        if (n_threads == 1 or n_cols_to_check < static_cast<size_t>(8 * n_threads)) {
+            // Serial version
+            for (size_t col_idx = start_idx; col_idx < end_idx; ++col_idx) {
+                if (!is_column_elz(col_idx)) {
+                    is_elz_violator[col_idx - start_idx] = 1;
+                }
+            }
+            return is_elz_violator;
+        }
+
+        tf::Executor executor(n_threads);
+        tf::Taskflow taskflow;
+
+        // Calculate chunk size for each thread
+        size_t chunk_size = (n_cols_to_check + n_threads - 1) / n_threads;
+
+        for (int tid = 0; tid < n_threads; ++tid) {
+            taskflow.emplace([this, tid, start_idx, end_idx, chunk_size, &is_elz_violator]() {
+                size_t thread_start = start_idx + tid * chunk_size;
+                size_t thread_end = std::min(thread_start + chunk_size, end_idx);
+
+                for (size_t col_idx = thread_start; col_idx < thread_end; ++col_idx) {
+                    if (!is_column_elz(col_idx)) {
+                        is_elz_violator[col_idx - start_idx] = 1;
+                    }
+                }
+            });
+        }
+
+        executor.run(taskflow).wait();
+
+        return is_elz_violator;
+    }
+
+    template<class Int>
     size_t VRUDecomposition<Int>::n_elz_violators_in_dim(dim_type dim, int n_threads) const
     {
         if (not has_matrix_v()) {
@@ -727,7 +777,7 @@ namespace oineus {
 
 
     template<class Int>
-    void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only, bool verbose)
+    void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads)
     {
         using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
 
@@ -742,10 +792,13 @@ namespace oineus {
 
         size_t n_violators = 0;
 
+        auto is_violator = mark_elz_violators_in_dim(dim, n_threads);
+
         for (size_t current_col = range_start_idx; current_col < range_end_idx; ++current_col) {
+            if (is_violator[current_col - range_start_idx]) {
+                continue;
+            }
             // Keep processing column j until no more violations are found
-            bool made_changes = false;
-            // R=DV, RU=D
 
             long int end_idx = 0;
 
@@ -776,12 +829,9 @@ namespace oineus {
                         if (has_matrix_u())
                             MatrixTraits::add_to_column(u_data_t.at(added_col), u_data_t.at(current_col));
                     }
-                    made_changes = true;
                 }
                 end_idx++;
             }
-
-            if (made_changes) {n_violators++;}
 
     //#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
     //        if (current_col % 100 == 0) {
@@ -789,7 +839,7 @@ namespace oineus {
     //        }
     //#endif
         }
-        if (verbose) IC(n_violators, size());
+        if (verbose) IC(std::accumulate(is_violator.begin(), is_violator.end(), 0), size());
     }
 
     template<class Int>
