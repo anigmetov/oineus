@@ -128,6 +128,11 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
         add_to_cached(&pivot, reduced);
     }
 
+    static CachedColumn cached_identity_column(Int col_idx)
+    {
+        return CachedColumn({col_idx});
+    }
+
     // sort by index
     static void sort(Column& col)
     {

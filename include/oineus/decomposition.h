@@ -459,6 +459,9 @@ namespace oineus {
 
         IntSparseColumn compute_u_column(size_t col_idx) const;
         void compute_u_from_v(dim_type dim, size_t n_threads=1, bool verbose=false);
+
+        IntSparseColumn compute_u_column_1(size_t col_idx) const;
+        void compute_u_from_v_1(dim_type dim, size_t n_threads=1, bool verbose=false);
     };
 
     template<class Int>
@@ -1607,6 +1610,65 @@ namespace oineus {
         }
 
         return result;
+    }
+
+    template<typename Int_>
+        typename VRUDecomposition<Int_>::IntSparseColumn
+        VRUDecomposition<Int_>::compute_u_column_1(size_t col_idx) const
+    {
+        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
+
+        if (not is_reduced)
+            throw std::runtime_error("Cannot compute U column from non-reduced decomposisition");
+
+        if (not has_matrix_v())
+            throw std::runtime_error("Cannot compute U column from non-reduced decomposisition");
+
+        IntSparseColumn result;
+
+        auto residual = MatrixTraits::cached_identity_column(col_idx);
+
+        while (not MatrixTraits::is_zero(residual)) {
+            // V is upper triangular: low and pivot of a column are equal
+            auto piv_col_idx = MatrixTraits::low(residual);
+            result.push_back(piv_col_idx);
+            MatrixTraits::add_to_cached(v_data[piv_col_idx], residual);
+        }
+
+        return result;
+    }
+
+    template<typename Int_>
+    void VRUDecomposition<Int_>::compute_u_from_v_1(dim_type dim, size_t n_threads, bool verbose)
+    {
+        Timer timer;
+        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
+
+        // compute columns of U in parallel
+        MatrixData u_data = MatrixData(v_data.size());
+
+        const bool all_dims = dim >= dim_first.size();
+        const size_t d_idx = dualize() ? dim_first.size() - dim - 1 : dim;
+
+        size_t col_start = all_dims ? 0 : dim_first[d_idx];
+        size_t col_end = all_dims ? r_data.size() : dim_last[d_idx] + 1;
+
+        // for(size_t col_idx = col_start; col_idx < col_end; ++col_idx) {
+        //     u_data[col_idx] = compute_u_column(col_idx);
+        // }
+
+        tf::Executor executor(n_threads);
+        tf::Taskflow taskflow_u;
+        taskflow_u.for_each_index(col_start, col_end, (size_t)1, [this, &u_data](size_t col_idx) { u_data[col_idx] = compute_u_column_1(col_idx); });
+        executor.run(taskflow_u).get();
+
+        auto col_inv_elapsed = timer.elapsed_reset();
+
+        u_data_t = MatrixTraits::col_to_row_format_parallel(u_data, n_threads, col_start, col_end, v_data.size());
+
+        auto col_to_row_elapsed = timer.elapsed_reset();
+
+        if (verbose) IC(col_inv_elapsed, col_to_row_elapsed);
     }
 
     template<typename Int_>
