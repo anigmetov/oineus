@@ -778,72 +778,143 @@ namespace oineus {
         return total_count;
     }
 
-
     template<class Int>
     void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads)
     {
         using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
 
-        const bool all_dims = dim >= dim_first.size();
-
-        const size_t range_start_idx = all_dims ? 0 : dim_first.at(dim);
-        const size_t range_end_idx = all_dims ? 0 : dim_last.at(dim) + 1;
-
         if (not has_matrix_v()) {
             throw std::runtime_error("VRUDecomposition: cannot restore ELZ without V matrix");
         }
 
-        size_t n_violators = 0;
+        size_t n_cols = r_data.size();
 
-        auto is_violator = mark_elz_violators_in_dim(dim, n_threads);
+        size_t n_violators = 0;
+        const bool all_dims = dim >= dim_first.size();
+
+        const size_t range_start_idx = all_dims ? 0 : dim_first.at(dim);
+        const size_t range_end_idx = all_dims ? dim_last.back() + 1 : dim_last.at(dim) + 1 ;
+
+        if (verbose) { IC(dim, range_start_idx, range_end_idx); }
+
+        Timer timer;
 
         for (size_t current_col = range_start_idx; current_col < range_end_idx; ++current_col) {
-            if (is_violator[current_col - range_start_idx]) {
-                continue;
-            }
             // Keep processing column j until no more violations are found
+            bool made_changes = true;
+            // R=DV, RU=D
 
-            long int end_idx = 0;
+            while (made_changes) {
+                made_changes = false;
 
-            while(true) {
-                long int v_idx = static_cast<long int>(v_data[current_col].size()) - 1 - end_idx;
-                if (v_idx < 0)
-                    break;
-                //size_t added_col = v_data[current_col][v_idx];
-                size_t added_col = v_data.at(current_col).at(v_idx);
+                // Check each entry in V column from highest to lowest
+                for (int v_idx = static_cast<int>(v_data[current_col].size()) - 1; v_idx >= 0; v_idx--) {
+                    size_t added_col = v_data[current_col][v_idx];
 
-                bool is_current_col_death = not MatrixTraits::is_zero(r_data.at(current_col));
-                bool is_added_col_zero = MatrixTraits::is_zero(r_data.at(added_col));
+                    bool is_current_col_death = not MatrixTraits::is_zero(r_data[current_col]);
+                    bool is_added_col_zero = MatrixTraits::is_zero(r_data[added_col]);
 
-                // Check for ELZ violations:
-                // 1. We added a zero column that comes before j
-                bool added_zero_column = (added_col < current_col && is_added_col_zero);
+                    // Check for ELZ violations:
+                    // 1. We added a zero column that comes before j
+                    bool added_zero_column = (added_col < current_col && is_added_col_zero);
 
-                // 2. Column j is a death and we added a column whose lowest one
-                //    is smaller (this addition wouldn't kill anything in ELZ)
-                bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
-                                                (MatrixTraits::low(&r_data.at(current_col)) > MatrixTraits::low(&r_data.at(added_col))));
+                    // 2. Column j is a death and we added a column whose lowest one
+                    //    is smaller (this addition wouldn't kill anything in ELZ)
+                    bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
+                                                    (MatrixTraits::low(&r_data[current_col]) > MatrixTraits::low(&r_data[added_col])));
 
-                if (added_zero_column || added_non_killing_column) {
-                    // Undo the addition by adding again (Z/2 arithmetic)
-                    MatrixTraits::add_to_column(v_data.at(current_col), v_data.at(added_col));
-                    if (not v_only) {
-                        MatrixTraits::add_to_column(r_data.at(current_col), r_data.at(added_col));
-                        if (has_matrix_u())
-                            MatrixTraits::add_to_column(u_data_t.at(added_col), u_data_t.at(current_col));
+                    if (added_zero_column || added_non_killing_column) {
+                        // Undo the addition by adding again (Z/2 arithmetic)
+                        MatrixTraits::add_to_column(v_data[current_col], v_data[added_col]);
+                        if (not v_only) {
+                            MatrixTraits::add_to_column(r_data[current_col], r_data[added_col]);
+                            if (has_matrix_u())
+                                MatrixTraits::add_to_column(u_data_t[added_col], u_data_t[current_col]);
+                        }
+                        made_changes = true;
+                        break;  // Restart checking this column from the beginning
+                        // TODO: make this more efficient
                     }
                 }
-                end_idx++;
+
+                if (made_changes) {n_violators++;}
             }
 
-    //#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-    //        if (current_col % 100 == 0) {
-    //            OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-    //        }
-    //#endif
+    #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+            if (current_col % 100 == 0) {
+                OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+            }
+    #endif
         }
-        if (verbose) IC(std::accumulate(is_violator.begin(), is_violator.end(), 0), size());
+
+        if (verbose) { IC(n_violators, size(), timer.elapsed()); }
     }
+
+    // template<class Int>
+    // void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads)
+    // {
+    //     using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
+    //
+    //     const bool all_dims = dim >= dim_first.size();
+    //
+    //     const size_t range_start_idx = all_dims ? 0 : dim_first.at(dim);
+        // const size_t range_end_idx = all_dims ? dim_last.back() + 1 : dim_last.at(dim) + 1 ;
+    //
+    //     if (not has_matrix_v()) {
+    //         throw std::runtime_error("VRUDecomposition: cannot restore ELZ without V matrix");
+    //     }
+    //
+    //     size_t n_violators = 0;
+    //
+    //     auto is_violator = mark_elz_violators_in_dim(dim, n_threads);
+    //
+    //     for (size_t current_col = range_start_idx; current_col < range_end_idx; ++current_col) {
+    //         if (is_violator[current_col - range_start_idx]) {
+    //             continue;
+    //         }
+    //         // Keep processing column j until no more violations are found
+    //
+    //         long int end_idx = 0;
+    //
+    //         while(true) {
+    //             long int v_idx = static_cast<long int>(v_data[current_col].size()) - 1 - end_idx;
+    //             if (v_idx < 0)
+    //                 break;
+    //             //size_t added_col = v_data[current_col][v_idx];
+    //             size_t added_col = v_data.at(current_col).at(v_idx);
+    //
+    //             bool is_current_col_death = not MatrixTraits::is_zero(r_data.at(current_col));
+    //             bool is_added_col_zero = MatrixTraits::is_zero(r_data.at(added_col));
+    //
+    //             // Check for ELZ violations:
+    //             // 1. We added a zero column that comes before j
+    //             bool added_zero_column = (added_col < current_col && is_added_col_zero);
+    //
+    //             // 2. Column j is a death and we added a column whose lowest one
+    //             //    is smaller (this addition wouldn't kill anything in ELZ)
+    //             bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
+    //                                             (MatrixTraits::low(&r_data.at(current_col)) > MatrixTraits::low(&r_data.at(added_col))));
+    //
+    //             if (added_zero_column || added_non_killing_column) {
+    //                 // Undo the addition by adding again (Z/2 arithmetic)
+    //                 MatrixTraits::add_to_column(v_data.at(current_col), v_data.at(added_col));
+    //                 if (not v_only) {
+    //                     MatrixTraits::add_to_column(r_data.at(current_col), r_data.at(added_col));
+    //                     if (has_matrix_u())
+    //                         MatrixTraits::add_to_column(u_data_t.at(added_col), u_data_t.at(current_col));
+    //                 }
+    //             }
+    //             end_idx++;
+    //         }
+    //
+    // //#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+    // //        if (current_col % 100 == 0) {
+    // //            OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
+    // //        }
+    // //#endif
+    //     }
+    //     if (verbose) IC(std::accumulate(is_violator.begin(), is_violator.end(), 0), size());
+    // }
 
     template<class Int>
     void VRUDecomposition<Int>::reduce(Params& params)
@@ -1613,8 +1684,8 @@ namespace oineus {
     }
 
     template<typename Int_>
-        typename VRUDecomposition<Int_>::IntSparseColumn
-        VRUDecomposition<Int_>::compute_u_column_1(size_t col_idx) const
+    typename VRUDecomposition<Int_>::IntSparseColumn
+    VRUDecomposition<Int_>::compute_u_column_1(size_t col_idx) const
     {
         using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
 
@@ -1633,6 +1704,12 @@ namespace oineus {
             auto piv_col_idx = MatrixTraits::low(residual);
             result.push_back(piv_col_idx);
             MatrixTraits::add_to_cached(v_data[piv_col_idx], residual);
+        }
+
+        if (result.empty()) {
+            result.push_back(col_idx);
+        } else {
+            std::sort(result.begin(), result.end());
         }
 
         return result;
@@ -1656,6 +1733,8 @@ namespace oineus {
         // for(size_t col_idx = col_start; col_idx < col_end; ++col_idx) {
         //     u_data[col_idx] = compute_u_column(col_idx);
         // }
+
+        if (verbose) IC(col_start, col_end);
 
         tf::Executor executor(n_threads);
         tf::Taskflow taskflow_u;
