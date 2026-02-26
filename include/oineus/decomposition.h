@@ -1736,10 +1736,28 @@ namespace oineus {
 
         if (verbose) IC(col_start, col_end);
 
-        tf::Executor executor(n_threads);
-        tf::Taskflow taskflow_u;
-        taskflow_u.for_each_index(col_start, col_end, (size_t)1, [this, &u_data](size_t col_idx) { u_data[col_idx] = compute_u_column_1(col_idx); });
-        executor.run(taskflow_u).get();
+        // tf::Executor executor(n_threads);
+        // tf::Taskflow taskflow_u;
+        // taskflow_u.for_each_index(col_start, col_end, (size_t)1, [this, &u_data](size_t col_idx) { u_data[col_idx] = compute_u_column_1(col_idx); });
+        // executor.run(taskflow_u).get();
+
+        std::atomic<size_t> next_free_column(col_start);
+        std::vector<std::thread> workers;
+        workers.reserve(n_threads);
+
+        for(size_t tid = 0; tid < n_threads; ++tid) {
+            workers.emplace_back([this, &u_data, &next_free_column, col_end]() {
+                while(true) {
+                    const size_t col_idx = next_free_column.fetch_add(1, std::memory_order_relaxed);
+                    if (col_idx >= col_end)
+                        break;
+                    u_data[col_idx] = compute_u_column_1(col_idx);
+                }
+            });
+        }
+
+        for(auto& worker: workers)
+            worker.join();
 
         auto col_inv_elapsed = timer.elapsed_reset();
 
@@ -1769,10 +1787,28 @@ namespace oineus {
         //     u_data[col_idx] = compute_u_column(col_idx);
         // }
 
-        tf::Executor executor(n_threads);
-        tf::Taskflow taskflow_u;
-        taskflow_u.for_each_index(col_start, col_end, (size_t)1, [this, &u_data](size_t col_idx) { u_data[col_idx] = compute_u_column(col_idx); });
-        executor.run(taskflow_u).get();
+        // tf::Executor executor(n_threads);
+        // tf::Taskflow taskflow_u;
+        // taskflow_u.for_each_index(col_start, col_end, (size_t)1, [this, &u_data](size_t col_idx) { u_data[col_idx] = compute_u_column(col_idx); });
+        // executor.run(taskflow_u).get();
+
+        std::atomic<size_t> next_free_column(col_start);
+        std::vector<std::thread> workers;
+        workers.reserve(n_threads);
+
+        for(size_t tid = 0; tid < n_threads; ++tid) {
+            workers.emplace_back([this, &u_data, &next_free_column, col_end]() {
+                while(true) {
+                    const size_t col_idx = next_free_column.fetch_add(1, std::memory_order_relaxed);
+                    if (col_idx >= col_end)
+                        break;
+                    u_data[col_idx] = compute_u_column(col_idx);
+                }
+            });
+        }
+
+        for(auto& worker: workers)
+            worker.join();
 
         auto col_inv_elapsed = timer.elapsed_reset();
 
