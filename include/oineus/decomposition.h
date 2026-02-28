@@ -296,6 +296,101 @@ namespace oineus {
         logger->debug("thread {}, EXIT reduction, stats = {}", thread_idx, stats);
     }
 
+    template<class Int>
+    size_t restore_elz_column_serial(std::vector<std::vector<Int>>& r_data,
+            std::vector<std::vector<Int>>& v_data,
+            std::vector<std::vector<Int>>* u_data_t,
+            size_t current_col,
+            bool v_only)
+    {
+        using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
+
+        size_t n_fixes = 0;
+        size_t bottom_offset = 0;
+
+        auto& current_v_col = v_data[current_col];
+        auto& current_r_col = r_data[current_col];
+
+        // Scan V from the bottom. If we undo an addition at row k, entries strictly below k
+        // are unchanged (upper-triangular V), so `bottom_offset` remains valid.
+        while (bottom_offset < current_v_col.size()) {
+            const size_t v_idx = current_v_col.size() - 1 - bottom_offset;
+            const Int added_col = current_v_col[v_idx];
+
+            const bool is_current_col_death = not MatrixTraits::is_zero(current_r_col);
+            const bool is_added_col_zero = MatrixTraits::is_zero(r_data[added_col]);
+
+            const bool added_zero_column = (added_col < static_cast<Int>(current_col) && is_added_col_zero);
+            const bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
+                    (MatrixTraits::low(&current_r_col) > MatrixTraits::low(&r_data[added_col])));
+
+            if (added_zero_column || added_non_killing_column) {
+                MatrixTraits::add_to_column(current_v_col, v_data[added_col]);
+                if (not v_only) {
+                    MatrixTraits::add_to_column(current_r_col, r_data[added_col]);
+                    if (u_data_t) {
+                        MatrixTraits::add_to_column((*u_data_t)[added_col], (*u_data_t)[current_col]);
+                    }
+                }
+                ++n_fixes;
+            } else {
+                ++bottom_offset;
+            }
+        }
+
+        return n_fixes;
+    }
+
+    template<class Int>
+    bool restore_elz_column_parallel(typename SimpleRVMatrixTraits<Int, 2>::AMatrix& r_v_matrix, size_t current_col)
+    {
+        using SparseTraits = SimpleSparseMatrixTraits<Int, 2>;
+        using RVTraits = SimpleRVMatrixTraits<Int, 2>;
+        using RVColumn = typename RVTraits::Column;
+
+        auto current_ptr = r_v_matrix[current_col].load(std::memory_order_relaxed);
+        if (current_ptr == nullptr)
+            return false;
+
+        RVColumn local_col(*current_ptr);
+
+        size_t bottom_offset = 0;
+        bool changed = false;
+
+        // Same bottom-up continuation logic as the serial version, but working on a local copy
+        // of the current column before publishing a new pointer.
+        while (bottom_offset < local_col.v_column.size()) {
+            const size_t v_idx = local_col.v_column.size() - 1 - bottom_offset;
+            const Int added_col = local_col.v_column[v_idx];
+
+            auto added_ptr = r_v_matrix[added_col].load(std::memory_order_relaxed);
+            if (added_ptr == nullptr)
+                return changed;
+
+            const bool is_current_col_death = not local_col.r_column.empty();
+            const bool is_added_col_zero = added_ptr->r_column.empty();
+
+            const bool added_zero_column = (added_col < static_cast<Int>(current_col) && is_added_col_zero);
+            const bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
+                    (local_col.r_column.back() > added_ptr->r_column.back()));
+
+            if (added_zero_column || added_non_killing_column) {
+                SparseTraits::add_to_column(local_col.v_column, added_ptr->v_column);
+                SparseTraits::add_to_column(local_col.r_column, added_ptr->r_column);
+                changed = true;
+            } else {
+                ++bottom_offset;
+            }
+        }
+
+        if (changed) {
+            auto* new_col = new RVColumn(std::move(local_col.r_column), std::move(local_col.v_column));
+            r_v_matrix[current_col].store(new_col, std::memory_order_relaxed);
+        }
+
+        return changed;
+    }
+
     template<typename Int_>
     struct VRUDecomposition {
         // types
@@ -386,7 +481,7 @@ namespace oineus {
         void reduce_serial(Params& params);
 
         void reduce_parallel_r_only(Params& params);
-        void reduce_parallel_rv(Params& params);
+        void reduce_parallel_rv(Params& params, bool restore_elz);
 
         bool is_negative(size_t simplex) const
         {
@@ -823,17 +918,11 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads)
     {
-        using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
-
         if (not has_matrix_v()) {
             throw std::runtime_error("VRUDecomposition: cannot restore ELZ without V matrix");
         }
 
-        size_t n_cols = r_data.size();
-
         size_t n_violators = 0;
-        const bool all_dims = dim >= dim_first.size();
-
         const size_t range_start_idx = range_start_(dim);
         const size_t range_end_idx = range_end_(dim);
 
@@ -842,45 +931,7 @@ namespace oineus {
         Timer timer;
 
         for (size_t current_col = range_start_idx; current_col < range_end_idx; ++current_col) {
-            // Keep processing column j until no more violations are found
-            bool made_changes = true;
-            // R=DV, RU=D
-
-            while (made_changes) {
-                made_changes = false;
-
-                // Check each entry in V column from highest to lowest
-                for (int v_idx = static_cast<int>(v_data[current_col].size()) - 1; v_idx >= 0; v_idx--) {
-                    size_t added_col = v_data[current_col][v_idx];
-
-                    bool is_current_col_death = not MatrixTraits::is_zero(r_data[current_col]);
-                    bool is_added_col_zero = MatrixTraits::is_zero(r_data[added_col]);
-
-                    // Check for ELZ violations:
-                    // 1. We added a zero column that comes before j
-                    bool added_zero_column = (added_col < current_col && is_added_col_zero);
-
-                    // 2. Column j is a death and we added a column whose lowest one
-                    //    is smaller (this addition wouldn't kill anything in ELZ)
-                    bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
-                                                    (MatrixTraits::low(&r_data[current_col]) > MatrixTraits::low(&r_data[added_col])));
-
-                    if (added_zero_column || added_non_killing_column) {
-                        // Undo the addition by adding again (Z/2 arithmetic)
-                        MatrixTraits::add_to_column(v_data[current_col], v_data[added_col]);
-                        if (not v_only) {
-                            MatrixTraits::add_to_column(r_data[current_col], r_data[added_col]);
-                            if (has_matrix_u())
-                                MatrixTraits::add_to_column(u_data_t[added_col], u_data_t[current_col]);
-                        }
-                        made_changes = true;
-                        break;  // Restart checking this column from the beginning
-                        // TODO: make this more efficient
-                    }
-                }
-
-                if (made_changes) {n_violators++;}
-            }
+            n_violators += restore_elz_column_serial(r_data, v_data, has_matrix_u() ? &u_data_t : nullptr, current_col, v_only);
 
     #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
             if (current_col % 100 == 0) {
@@ -970,10 +1021,13 @@ namespace oineus {
         if (params.n_threads > 1 and params.compute_u)
             throw std::runtime_error("Cannot compute U matrix in parallel");
 
+        if (params.restore_elz and not params.compute_v)
+            throw std::runtime_error("Cannot restore ELZ during reduction without V matrix");
+
         if (params.n_threads == 1)
             reduce_serial(params);
         else if (params.compute_v)
-            reduce_parallel_rv(params);
+            reduce_parallel_rv(params, params.restore_elz);
         else
             reduce_parallel_r_only(params);
     }
@@ -1202,7 +1256,7 @@ namespace oineus {
     }
 
     template<class Int>
-    void VRUDecomposition<Int>::reduce_parallel_rv(Params& params)
+    void VRUDecomposition<Int>::reduce_parallel_rv(Params& params, bool restore_elz)
     {
         CALI_CXX_MARK_FUNCTION;
         using namespace std::placeholders;
@@ -1303,124 +1357,141 @@ namespace oineus {
 #ifdef OINEUS_GATHER_ADD_STATS
         write_add_stats_file(stats);
 #endif
- // {
- //            if (dualize()) {
- //                // go from top dimension up, so that R matrix is filled first
- //                for(int dim_idx = dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
- //                    tf::Executor executor(1);
- //                    IC(dualize_, dim_idx, dim_first[dim_idx], dim_last[dim_idx]);
- //                    if (dim_last[dim_idx] == dim_first[dim_idx]) {
- //                        continue;
- //                    }
- //
- //                    tf::Taskflow taskflow_finish;
- //                    taskflow_finish.for_each_index((size_t)dim_first[dim_idx], (size_t)(dim_last[dim_idx]-1), (size_t)1,
- //                            [this, &pivots, &r_v_matrix](size_t col_idx) {
- //                                auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
- //                                if (p) {
- //                                    r_data[col_idx] = std::move(p->r_column);
- //                                    v_data[col_idx] = std::move(p->v_column);
- //                                    if (r_data[col_idx].size() > 0) {
- //                                        if (pivots[r_data[col_idx].back()] != col_idx) {
- //                                            IC(col_idx);
- //                                            IC(pivots[r_data[col_idx].back()]);
- //                                            IC(r_data[col_idx]);
- //                                            throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx");
- //                                        }
- //                                    }
- //                                    delete p;
- //                                } else {
- //                                    // column was cleared
- //                                    r_data[col_idx].clear();
- //                                    // Bauer's trick with filling V
- //                                    v_data[col_idx] = r_data.at(pivots.at(col_idx));
- //                                }
- //                                if (v_data[col_idx].empty() or v_data[col_idx].back() != col_idx) {
- //                                    IC(col_idx);
- //                                    IC(pivots.at(col_idx));
- //                                    IC(v_data[col_idx]);
- //                                    throw std::runtime_error("V column is not 1-diag");
- //                                }
- //                            });
- //                    executor.run_n(taskflow_finish, 1);
- //                    executor.wait_for_all();
- //                }
- //            } else {
- //                // go from high dimension down, so that R matrix is filled first
- //                for(int dim_idx = 0; dim_idx < dim_first.size(); ++dim_idx) {
- //                    IC(dualize_, dim_idx, dim_first[dim_idx], dim_last[dim_idx]);
- //
- //                    tf::Executor executor(1);
- //                    if (dim_last[dim_idx] == dim_first[dim_idx]) {
- //                        continue;
- //                    }
- //
- //                    tf::Taskflow taskflow_finish;
- //
- //                    taskflow_finish.for_each_index((size_t)dim_first[dim_idx], (size_t)(dim_last[dim_idx]-1), (size_t)1,
- //                            [this, &pivots, &r_v_matrix](size_t col_idx) {
- //                                auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
- //                                if (p) {
- //                                    r_data[col_idx] = std::move(p->r_column);
- //                                    v_data[col_idx] = std::move(p->v_column);
- //                                    delete p;
- //                                    if (r_data[col_idx].size() > 0) {
- //                                       if (pivots[r_data[col_idx].back()] != col_idx) {
- //                                           IC(col_idx);
- //                                           IC(pivots[r_data[col_idx].back()]);
- //                                           IC(r_data[col_idx]);
- //                                           throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx");
- //                                       }
- //                                   }
- //                                } else {
- //                                    r_data[col_idx].clear();
- //                                    // Bauer's trick with filling V
- //                                    v_data[col_idx] = r_data.at(pivots.at(col_idx));
- //                                }
- //                                if (v_data[col_idx].empty() or v_data[col_idx].back() != col_idx) {
- //                                    IC(col_idx);
- //                                    IC(pivots.at(col_idx));
- //                                    IC(v_data[col_idx]);
- //                                    throw std::runtime_error("V column is not 1-diag");
- //                                }
- //                            });
- //
- //                    executor.run_n(taskflow_finish, 1);
- //                    executor.wait_for_all();
- //                }
- //            }
- //        }
+        const size_t n_workers = std::max<size_t>(1, std::min(static_cast<size_t>(n_threads), n_cols));
+        // Deterministic static partitioning to avoid a hot global fetch_add in tight loops.
+        auto run_parallel_cols = [n_cols, n_workers](const auto& fn) {
+            std::vector<std::thread> workers;
+            workers.reserve(n_workers);
 
-        {
-                for(int dim_idx = dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
-                    for(Int col_idx = dim_first[dim_idx]; col_idx <= dim_last[dim_idx]; ++col_idx) {
-                        auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
-                        if (p) {
-                            r_data[col_idx] = std::move(p->r_column);
-                            v_data[col_idx] = std::move(p->v_column);
-                            if (r_data[col_idx].size() > 0) {
-                                if (pivots[r_data[col_idx].back()] != col_idx) {
-                                    IC(col_idx);
-                                    IC(pivots[r_data[col_idx].back()]);
-                                    IC(r_data[col_idx]);
-                                    throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx");
-                                }
-                            }
-                            delete p;
-                        } else {
-                            // column was cleared
-                            r_data[col_idx].clear();
-                            // Bauer's trick with filling V
-                            v_data[col_idx] = r_data.at(pivots.at(col_idx));
-                        }
-                        if (v_data[col_idx].empty() or v_data[col_idx].back() != col_idx) {
+            for (size_t tid = 0; tid < n_workers; ++tid) {
+                const size_t begin = (tid * n_cols) / n_workers;
+                const size_t end = ((tid + 1) * n_cols) / n_workers;
+                workers.emplace_back([begin, end, &fn]() {
+                    for (size_t col_idx = begin; col_idx < end; ++col_idx) {
+                        fn(col_idx);
+                    }
+                });
+            }
+
+            for (auto& t : workers) {
+                t.join();
+            }
+        };
+
+        if (restore_elz) {
+            // First observed Bauer-fill failure is recorded here by CAS.
+            std::atomic<Int> missing_bauer_col{-1};
+
+            run_parallel_cols([&](size_t col_idx) {
+                auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+                if (p != nullptr)
+                    return;
+
+                // Bauer trick for cleared columns: V[col] <- R[pivot(col)].
+                const Int pivot_col = pivots[col_idx].load(std::memory_order_relaxed);
+                if (pivot_col < 0) {
+                    Int expected = -1;
+                    missing_bauer_col.compare_exchange_strong(expected, static_cast<Int>(col_idx),
+                            std::memory_order_relaxed, std::memory_order_relaxed);
+                    return;
+                }
+
+                auto pivot_ptr = r_v_matrix[pivot_col].load(std::memory_order_relaxed);
+                if (pivot_ptr == nullptr) {
+                    Int expected = -1;
+                    missing_bauer_col.compare_exchange_strong(expected, static_cast<Int>(col_idx),
+                            std::memory_order_relaxed, std::memory_order_relaxed);
+                    return;
+                }
+
+                IntSparseColumn filled_v_col(pivot_ptr->r_column);
+                auto* new_col = new RVColumn(IntSparseColumn(), std::move(filled_v_col));
+                r_v_matrix[col_idx].store(new_col, std::memory_order_relaxed);
+            });
+
+            if (missing_bauer_col.load(std::memory_order_relaxed) >= 0) {
+                throw std::runtime_error("Bauer trick failed while filling V in reduce_parallel_rv");
+            }
+
+            // Snapshot original pointers so we can reclaim both old/new versions correctly
+            // after parallel restore possibly swaps some column pointers.
+            std::vector<RVColumn*> r_v_matrix_copy(n_cols, nullptr);
+            run_parallel_cols([&](size_t col_idx) {
+                r_v_matrix_copy[col_idx] = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+            });
+
+            // Each thread restores its assigned columns; columns read from r_v_matrix are immutable
+            // snapshots published by pointer replacement.
+            run_parallel_cols([&](size_t col_idx) {
+                restore_elz_column_parallel<Int>(r_v_matrix, col_idx);
+            });
+
+            for(int dim_idx = dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
+                for(Int col_idx = dim_first[dim_idx]; col_idx <= dim_last[dim_idx]; ++col_idx) {
+                    auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+                    if (p == nullptr) {
+                        throw std::runtime_error("NULL column after restore_elz in reduce_parallel_rv");
+                    }
+                    r_data[col_idx] = std::move(p->r_column);
+                    v_data[col_idx] = std::move(p->v_column);
+
+                    if (r_data[col_idx].size() > 0) {
+                        if (pivots[r_data[col_idx].back()] != col_idx) {
                             IC(col_idx);
-                            IC(pivots.at(col_idx));
-                            IC(v_data[col_idx]);
-                            throw std::runtime_error("V column is not 1-diag");
+                            IC(pivots[r_data[col_idx].back()]);
+                            IC(r_data[col_idx]);
+                            throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx");
                         }
-                    } // loop over columns
-                } // loop over dimensions
+                    }
+                    if (v_data[col_idx].empty() or v_data[col_idx].back() != col_idx) {
+                        IC(col_idx);
+                        IC(v_data[col_idx]);
+                        throw std::runtime_error("V column is not 1-diag");
+                    }
+                }
+            }
+
+            for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
+                auto p_current = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+                auto p_original = r_v_matrix_copy[col_idx];
+                // If unchanged, delete once; if updated, delete both pointer generations.
+                if (p_current == p_original) {
+                    delete p_current;
+                } else {
+                    delete p_current;
+                    delete p_original;
+                }
+            }
+        } else {
+            for(int dim_idx = dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
+                for(Int col_idx = dim_first[dim_idx]; col_idx <= dim_last[dim_idx]; ++col_idx) {
+                    auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+                    if (p) {
+                        r_data[col_idx] = std::move(p->r_column);
+                        v_data[col_idx] = std::move(p->v_column);
+                        if (r_data[col_idx].size() > 0) {
+                            if (pivots[r_data[col_idx].back()] != col_idx) {
+                                IC(col_idx);
+                                IC(pivots[r_data[col_idx].back()]);
+                                IC(r_data[col_idx]);
+                                throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx");
+                            }
+                        }
+                        delete p;
+                    } else {
+                        // column was cleared
+                        r_data[col_idx].clear();
+                        // Bauer's trick with filling V
+                        v_data[col_idx] = r_data.at(pivots.at(col_idx));
+                    }
+                    if (v_data[col_idx].empty() or v_data[col_idx].back() != col_idx) {
+                        IC(col_idx);
+                        IC(pivots.at(col_idx));
+                        IC(v_data[col_idx]);
+                        throw std::runtime_error("V column is not 1-diag");
+                    }
+                } // loop over columns
+            } // loop over dimensions
         }
 
         {

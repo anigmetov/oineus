@@ -19,6 +19,7 @@ namespace oineus {
         bool print_time{false};
         bool compute_v{false};
         bool compute_u{false};
+        bool restore_elz{false};
         bool do_sanity_check{false};
         double elapsed{0.0};
         bool verbose{false};
@@ -36,6 +37,7 @@ namespace oineus {
         out << ", print_time = " << p.print_time;
         out << ", compute_v = " << p.compute_v;
         out << ", compute_u = " << p.compute_u;
+        out << ", restore_elz = " << p.restore_elz;
         out << ", do_sanity_check = " << p.do_sanity_check;
         out << ", elapsed = " << p.elapsed;
         out << ", verbose = " << p.verbose;

@@ -40,6 +40,7 @@ void init_oineus_common(nb::module_& m)
                                       bool,   // print_time
                                       bool,   // compute_v
                                       bool,   // compute_u
+                                      bool,   // restore_elz
                                       bool,   // do_sanity_check
                                       double, //elapsed
                                       bool    // verbose
@@ -48,15 +49,16 @@ void init_oineus_common(nb::module_& m)
     nb::class_<ReductionParams>(m, "ReductionParams")
             .def(nb::init<>())
             .def("__init__",
-                [](ReductionParams* p, int n_threads, int chunk_size, bool clearing_opt, bool compute_v, bool compute_u, bool verbose) {
+                [](ReductionParams* p, int n_threads, int chunk_size, bool clearing_opt, bool compute_v, bool compute_u, bool restore_elz, bool verbose) {
                     new (p) ReductionParams();
                     p->n_threads = n_threads;
                     p->chunk_size = chunk_size;
                     p->clearing_opt = clearing_opt;
                     p->compute_v = compute_v;
                     p->compute_u = compute_u;
+                    p->restore_elz = restore_elz;
                     p->verbose = verbose;
-                }, nb::arg("n_threads")=8, nb::arg("chunk_size")=256, nb::arg("clearing_opt")=true, nb::arg("compute_v")=false, nb::arg("compute_u")=false, nb::arg("verbose")=false)
+                }, nb::arg("n_threads")=8, nb::arg("chunk_size")=256, nb::arg("clearing_opt")=true, nb::arg("compute_v")=false, nb::arg("compute_u")=false, nb::arg("restore_elz")=false, nb::arg("verbose")=false)
             .def_rw("n_threads", &ReductionParams::n_threads)
             .def_rw("chunk_size", &ReductionParams::chunk_size)
             .def_rw("write_dgms", &ReductionParams::write_dgms)
@@ -67,13 +69,14 @@ void init_oineus_common(nb::module_& m)
             .def_rw("elapsed", &ReductionParams::elapsed)
             .def_rw("compute_v", &ReductionParams::compute_v)
             .def_rw("compute_u", &ReductionParams::compute_u)
+            .def_rw("restore_elz", &ReductionParams::restore_elz)
             .def_rw("do_sanity_check", &ReductionParams::do_sanity_check)
             .def_rw("verbose", &ReductionParams::verbose)
             .def("__repr__", [](const ReductionParams& self) { std::stringstream ss; ss << self; return ss.str(); })
             .def("__getstate__", [](const ReductionParams& p) {
                       return std::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
                               p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
-                              p.do_sanity_check, p.elapsed, p.verbose);
+                              p.restore_elz, p.do_sanity_check, p.elapsed, p.verbose);
                     })
             .def("__setstate__", [](ReductionParams& p, const RedParamsTuple& t) {
                     new (&p) ReductionParams();
@@ -86,9 +89,10 @@ void init_oineus_common(nb::module_& m)
                       p.print_time      = std::get<6>(t);
                       p.compute_v       = std::get<7>(t);
                       p.compute_u       = std::get<8>(t);
-                      p.do_sanity_check = std::get<9>(t);
-                      p.elapsed         = std::get<10>(t);
-                      p.verbose         = std::get<11>(t);
+                      p.restore_elz     = std::get<9>(t);
+                      p.do_sanity_check = std::get<10>(t);
+                      p.elapsed         = std::get<11>(t);
+                      p.verbose         = std::get<12>(t);
                     })
     ;
 

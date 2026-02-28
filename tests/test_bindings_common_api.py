@@ -25,12 +25,13 @@ def test_reduction_params_api():
     params.elapsed = 0.0
     params.compute_v = True
     params.compute_u = True
+    params.restore_elz = False
     params.do_sanity_check = False
     params.verbose = False
 
     _ = repr(params)
 
-    params_alt = oin.ReductionParams(n_threads=2, chunk_size=32, clearing_opt=True, compute_v=False, compute_u=False, verbose=False)
+    params_alt = oin.ReductionParams(n_threads=2, chunk_size=32, clearing_opt=True, compute_v=False, compute_u=False, restore_elz=False, verbose=False)
     _ = repr(params_alt)
 
     params_back = pickle.loads(pickle.dumps(params))

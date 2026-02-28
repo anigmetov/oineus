@@ -50,6 +50,10 @@ else()
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_decomposition_api.py" -k "not test_decomposition_diagram_overloads_cube_1d")
     set_tests_properties(py-bindings-decomposition PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
+    add_test(NAME py-restore-elz
+            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_restore_elz_parallel.py")
+    set_tests_properties(py-restore-elz PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
     add_test(NAME py-bindings-diagram
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_diagram_api.py")
     set_tests_properties(py-bindings-diagram PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
