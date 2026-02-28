@@ -97,3 +97,49 @@ def test_restore_elz_requires_compute_v():
 
     with pytest.raises(RuntimeError, match="without V matrix"):
         dcmp.reduce(params)
+
+
+def test_parallel_reduction_elapsed_fields():
+    filtration = _build_filtration()
+
+    params_no_restore = oin.ReductionParams()
+    params_no_restore.n_threads = 4
+    params_no_restore.clearing_opt = True
+    params_no_restore.compute_v = True
+    params_no_restore.restore_elz = False
+
+    dcmp = oin.Decomposition(filtration, dualize=False, n_threads=4)
+    dcmp.reduce(params_no_restore)
+
+    assert params_no_restore.elapsed >= 0.0
+    assert params_no_restore.elapsed_restore_elz == 0.0
+    assert params_no_restore.elapsed_copy_back >= 0.0
+    assert params_no_restore.elapsed_copy_pivots >= 0.0
+
+    params_with_restore = oin.ReductionParams()
+    params_with_restore.n_threads = 4
+    params_with_restore.clearing_opt = True
+    params_with_restore.compute_v = True
+    params_with_restore.restore_elz = True
+
+    dcmp2 = oin.Decomposition(filtration, dualize=False, n_threads=4)
+    dcmp2.reduce(params_with_restore)
+
+    assert params_with_restore.elapsed >= 0.0
+    assert params_with_restore.elapsed_restore_elz >= 0.0
+    assert params_with_restore.elapsed_copy_back >= 0.0
+    assert params_with_restore.elapsed_copy_pivots >= 0.0
+
+    params_r_only = oin.ReductionParams()
+    params_r_only.n_threads = 4
+    params_r_only.clearing_opt = True
+    params_r_only.compute_v = False
+    params_r_only.restore_elz = False
+
+    dcmp3 = oin.Decomposition(filtration, dualize=False, n_threads=4)
+    dcmp3.reduce(params_r_only)
+
+    assert params_r_only.elapsed >= 0.0
+    assert params_r_only.elapsed_restore_elz == 0.0
+    assert params_r_only.elapsed_copy_back >= 0.0
+    assert params_r_only.elapsed_copy_pivots >= 0.0

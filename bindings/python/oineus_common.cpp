@@ -43,6 +43,9 @@ void init_oineus_common(nb::module_& m)
                                       bool,   // restore_elz
                                       bool,   // do_sanity_check
                                       double, //elapsed
+                                      double, //elapsed_restore_elz
+                                      double, //elapsed_copy_back
+                                      double, //elapsed_copy_pivots
                                       bool    // verbose
                                     >;
 
@@ -71,12 +74,16 @@ void init_oineus_common(nb::module_& m)
             .def_rw("compute_u", &ReductionParams::compute_u)
             .def_rw("restore_elz", &ReductionParams::restore_elz)
             .def_rw("do_sanity_check", &ReductionParams::do_sanity_check)
+            .def_rw("elapsed_restore_elz", &ReductionParams::elapsed_restore_elz)
+            .def_rw("elapsed_copy_back", &ReductionParams::elapsed_copy_back)
+            .def_rw("elapsed_copy_pivots", &ReductionParams::elapsed_copy_pivots)
             .def_rw("verbose", &ReductionParams::verbose)
             .def("__repr__", [](const ReductionParams& self) { std::stringstream ss; ss << self; return ss.str(); })
             .def("__getstate__", [](const ReductionParams& p) {
                       return std::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
                               p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
-                              p.restore_elz, p.do_sanity_check, p.elapsed, p.verbose);
+                              p.restore_elz, p.do_sanity_check, p.elapsed, p.elapsed_restore_elz,
+                              p.elapsed_copy_back, p.elapsed_copy_pivots, p.verbose);
                     })
             .def("__setstate__", [](ReductionParams& p, const RedParamsTuple& t) {
                     new (&p) ReductionParams();
@@ -92,7 +99,10 @@ void init_oineus_common(nb::module_& m)
                       p.restore_elz     = std::get<9>(t);
                       p.do_sanity_check = std::get<10>(t);
                       p.elapsed         = std::get<11>(t);
-                      p.verbose         = std::get<12>(t);
+                      p.elapsed_restore_elz = std::get<12>(t);
+                      p.elapsed_copy_back = std::get<13>(t);
+                      p.elapsed_copy_pivots = std::get<14>(t);
+                      p.verbose         = std::get<15>(t);
                     })
     ;
 

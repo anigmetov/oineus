@@ -22,6 +22,9 @@ namespace oineus {
         bool restore_elz{false};
         bool do_sanity_check{false};
         double elapsed{0.0};
+        double elapsed_restore_elz{0.0};
+        double elapsed_copy_back{0.0};
+        double elapsed_copy_pivots{0.0};
         bool verbose{false};
         spd::level::level_enum spdlog_level {spd::level::level_enum::info};
     };
@@ -40,6 +43,9 @@ namespace oineus {
         out << ", restore_elz = " << p.restore_elz;
         out << ", do_sanity_check = " << p.do_sanity_check;
         out << ", elapsed = " << p.elapsed;
+        out << ", elapsed_restore_elz = " << p.elapsed_restore_elz;
+        out << ", elapsed_copy_back = " << p.elapsed_copy_back;
+        out << ", elapsed_copy_pivots = " << p.elapsed_copy_pivots;
         out << ", verbose = " << p.verbose;
         out << ")";
         return out;

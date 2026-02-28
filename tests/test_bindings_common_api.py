@@ -27,6 +27,9 @@ def test_reduction_params_api():
     params.compute_u = True
     params.restore_elz = False
     params.do_sanity_check = False
+    params.elapsed_restore_elz = 0.0
+    params.elapsed_copy_back = 0.0
+    params.elapsed_copy_pivots = 0.0
     params.verbose = False
 
     _ = repr(params)

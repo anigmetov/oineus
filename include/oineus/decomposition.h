@@ -1013,6 +1013,12 @@ namespace oineus {
     void VRUDecomposition<Int>::reduce(Params& params)
     {
         CALI_CXX_MARK_FUNCTION;
+
+        params.elapsed = 0.0;
+        params.elapsed_restore_elz = 0.0;
+        params.elapsed_copy_back = 0.0;
+        params.elapsed_copy_pivots = 0.0;
+
         if (d_data.empty()) {
             is_reduced = true;
             return;
@@ -1185,7 +1191,7 @@ namespace oineus {
         mms.reserve(n_threads);
         stats.reserve(n_threads);
 
-        Timer timer;
+        Timer timer_reduction;
 
         for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
 
@@ -1212,7 +1218,8 @@ namespace oineus {
             t.join();
         }
 
-        params.elapsed = timer.elapsed_reset();
+        params.elapsed = timer_reduction.elapsed();
+        params.elapsed_restore_elz = 0.0;
 
         if (params.print_time) {
             long total_cleared = 0;
@@ -1227,6 +1234,7 @@ namespace oineus {
         write_add_stats_file(stats);
 #endif
         {
+            Timer timer_copy_back;
             tf::Taskflow taskflow_finish;
             taskflow_finish.for_each_index((size_t)0, n_cols, (size_t)1,
                     [this, &ar_matrix](size_t col_idx) {
@@ -1239,9 +1247,11 @@ namespace oineus {
                         }
                     });
             executor.run(taskflow_finish).get();
+            params.elapsed_copy_back = timer_copy_back.elapsed();
         }
 
         {
+            Timer timer_copy_pivots;
             tf::Taskflow taskflow_copy_pivots;
             _pivots.clear();
             _pivots.resize(r_data.size());
@@ -1250,6 +1260,7 @@ namespace oineus {
                         _pivots[col_idx] = pivots[col_idx].load(std::memory_order_relaxed);
                     });
             executor.run(taskflow_copy_pivots).get();
+            params.elapsed_copy_pivots = timer_copy_pivots.elapsed();
         }
 
         is_reduced = true;
@@ -1316,7 +1327,7 @@ namespace oineus {
 
         next_free_chunk = 0;
 
-        Timer timer;
+        Timer timer_reduction;
 
         for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
 
@@ -1343,7 +1354,7 @@ namespace oineus {
             t.join();
         }
 
-        params.elapsed = timer.elapsed_reset();
+        params.elapsed = timer_reduction.elapsed();
 
         if (params.print_time) {
             long total_cleared = 0;
@@ -1379,6 +1390,7 @@ namespace oineus {
         };
 
         if (restore_elz) {
+            Timer timer_restore;
             // First observed Bauer-fill failure is recorded here by CAS.
             std::atomic<Int> missing_bauer_col{-1};
 
@@ -1426,6 +1438,10 @@ namespace oineus {
                 restore_elz_column_parallel<Int>(r_v_matrix, col_idx);
             });
 
+            params.elapsed_restore_elz = timer_restore.elapsed();
+
+            Timer timer_copy_back;
+
             for(int dim_idx = dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
                 for(Int col_idx = dim_first[dim_idx]; col_idx <= dim_last[dim_idx]; ++col_idx) {
                     auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
@@ -1462,7 +1478,10 @@ namespace oineus {
                     delete p_original;
                 }
             }
+            params.elapsed_copy_back = timer_copy_back.elapsed();
         } else {
+            params.elapsed_restore_elz = 0.0;
+            Timer timer_copy_back;
             for(int dim_idx = dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
                 for(Int col_idx = dim_first[dim_idx]; col_idx <= dim_last[dim_idx]; ++col_idx) {
                     auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
@@ -1492,9 +1511,11 @@ namespace oineus {
                     }
                 } // loop over columns
             } // loop over dimensions
+            params.elapsed_copy_back = timer_copy_back.elapsed();
         }
 
         {
+            Timer timer_copy_pivots;
             tf::Taskflow taskflow_copy_pivots;
             _pivots.clear();
             _pivots.resize(r_data.size());
@@ -1503,6 +1524,7 @@ namespace oineus {
                         _pivots[col_idx] = pivots[col_idx].load(std::memory_order_relaxed);
                     });
             executor.run(taskflow_copy_pivots).get();
+            params.elapsed_copy_pivots = timer_copy_pivots.elapsed();
         }
 
         is_reduced = true;
