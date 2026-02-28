@@ -143,3 +143,17 @@ def test_parallel_reduction_elapsed_fields():
     assert params_r_only.elapsed_restore_elz == 0.0
     assert params_r_only.elapsed_copy_back >= 0.0
     assert params_r_only.elapsed_copy_pivots >= 0.0
+
+
+def test_serial_without_clearing_ignores_restore_elz():
+    filtration = _build_filtration()
+    dcmp = oin.Decomposition(filtration, dualize=False, n_threads=1)
+
+    params = oin.ReductionParams()
+    params.n_threads = 1
+    params.clearing_opt = False
+    params.compute_v = False
+    params.restore_elz = True
+
+    dcmp.reduce(params)
+    assert params.elapsed_restore_elz == 0.0

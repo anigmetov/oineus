@@ -1027,7 +1027,9 @@ namespace oineus {
         if (params.n_threads > 1 and params.compute_u)
             throw std::runtime_error("Cannot compute U matrix in parallel");
 
-        if (params.restore_elz and not params.compute_v)
+        // Serial + no clearing already produces ELZ, so restore_elz is ignored there.
+        const bool serial_without_clearing = (params.n_threads == 1 && !params.clearing_opt);
+        if (params.restore_elz and not params.compute_v and not serial_without_clearing)
             throw std::runtime_error("Cannot restore ELZ during reduction without V matrix");
 
         if (params.n_threads == 1)
@@ -1043,7 +1045,12 @@ namespace oineus {
     {
         CALI_CXX_MARK_FUNCTION;
 
-        Timer timer_total;
+        // If clearing is off, serial reduction is already ELZ and restore_elz is ignored.
+        if (params.restore_elz and params.clearing_opt and not params.compute_v) {
+            throw std::runtime_error("Cannot restore ELZ during serial reduction without V matrix");
+        }
+
+        Timer timer_reduction;
 
         using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
 
@@ -1126,10 +1133,24 @@ namespace oineus {
             } // loop over columns in fixed dimension
         } // loop over dimensions
 
-        params.elapsed = timer_total.elapsed_reset();
+        params.elapsed = timer_reduction.elapsed();
+        params.elapsed_restore_elz = 0.0;
 
-        if (params.print_time or params.verbose)
-            std::cerr << "reduce_serial, matrix_size = " << r_data.size() << ", clearing_opt = " << params.clearing_opt << ", n_cleared = " << n_cleared << ", total elapsed: " << params.elapsed << std::endl;
+        if (params.restore_elz and params.clearing_opt) {
+            Timer timer_restore;
+            restore_elz(k_invalid_index, false, params.verbose, 1);
+            params.elapsed_restore_elz = timer_restore.elapsed();
+        }
+
+        if (params.print_time or params.verbose) {
+            std::cerr << "reduce_serial, matrix_size = " << r_data.size()
+                      << ", clearing_opt = " << params.clearing_opt
+                      << ", n_cleared = " << n_cleared
+                      << ", reduction elapsed: " << params.elapsed
+                      << ", restore_elz elapsed: " << params.elapsed_restore_elz
+                      << ", total elapsed: " << (params.elapsed + params.elapsed_restore_elz)
+                      << std::endl;
+        }
 
         is_reduced = true;
     }
