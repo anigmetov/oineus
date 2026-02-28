@@ -462,6 +462,9 @@ namespace oineus {
 
         IntSparseColumn compute_u_column_1(size_t col_idx) const;
         void compute_u_from_v_1(dim_type dim, size_t n_threads=1, bool verbose=false);
+
+        size_t range_start_(dim_type dim) const;
+        size_t range_end_(dim_type dim) const;
     };
 
     template<class Int>
@@ -778,6 +781,45 @@ namespace oineus {
         return total_count;
     }
 
+    // return the beginning of interesting range
+    // if dim > top dimensions, use all dimensions except 0 for homology
+    template<class Int>
+    size_t VRUDecomposition<Int>::range_start_(dim_type dim) const
+    {
+        if (dim < dim_first.size() and dim >= 0)
+            return dim_first[dim];
+        else
+            if (dualize())
+                return 0;
+            else
+                return dim_first[1];
+    }
+
+    // return the end of interesting range
+    // if dim > top dimensions, use all dimensions except top_dim for cohomology
+    template<class Int>
+    size_t VRUDecomposition<Int>::range_end_(dim_type dim) const
+    {
+        if (dim < dim_first.size() and dim >= 0) {
+            return dim_last[dim] + 1;
+        } else {
+            // all dims
+            if (dualize()) {
+                // for cohomology: 0..dim-1
+                if (dim_last.size() > 2) {
+                    return dim_last[dim_last.size() - 2] + 1;
+                } else {
+                    return dim_last[1];
+                }
+            }
+            else {
+                // for homology: 1...dim
+                return dim_last.back() + 1;
+            }
+        }
+    }
+
+
     template<class Int>
     void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads)
     {
@@ -792,8 +834,8 @@ namespace oineus {
         size_t n_violators = 0;
         const bool all_dims = dim >= dim_first.size();
 
-        const size_t range_start_idx = all_dims ? 0 : dim_first.at(dim);
-        const size_t range_end_idx = all_dims ? dim_last.back() + 1 : dim_last.at(dim) + 1 ;
+        const size_t range_start_idx = range_start_(dim);
+        const size_t range_end_idx = range_end_(dim);
 
         if (verbose) { IC(dim, range_start_idx, range_end_idx); }
 
@@ -1727,8 +1769,8 @@ namespace oineus {
         const bool all_dims = dim >= dim_first.size();
         const size_t d_idx = dualize() ? dim_first.size() - dim - 1 : dim;
 
-        size_t col_start = all_dims ? 0 : dim_first[d_idx];
-        size_t col_end = all_dims ? r_data.size() : dim_last[d_idx] + 1;
+        const size_t col_start = range_start_(dim);
+        const size_t col_end = range_end_(dim);
 
         // for(size_t col_idx = col_start; col_idx < col_end; ++col_idx) {
         //     u_data[col_idx] = compute_u_column(col_idx);
@@ -1780,8 +1822,8 @@ namespace oineus {
         const bool all_dims = dim >= dim_first.size();
         const size_t d_idx = dualize() ? dim_first.size() - dim - 1 : dim;
 
-        size_t col_start = all_dims ? 0 : dim_first[d_idx];
-        size_t col_end = all_dims ? r_data.size() : dim_last[d_idx] + 1;
+        const size_t col_start = range_start_(dim);
+        const size_t col_end = range_end_(dim);
 
         // for(size_t col_idx = col_start; col_idx < col_end; ++col_idx) {
         //     u_data[col_idx] = compute_u_column(col_idx);
