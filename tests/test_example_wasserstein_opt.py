@@ -35,7 +35,14 @@ negate = False
 wrap =False
 
 
-fil, max_value_vertices = oin.get_freudenthal_filtration_and_critical_vertices(f, negate=negate, wrap=wrap, max_dim=2, n_threads=8)
+fil, max_value_vertices = oin.freudenthal_filtration(
+    f,
+    negate=negate,
+    wrap=wrap,
+    max_dim=2,
+    with_critical_vertices=True,
+    n_threads=8,
+)
 
 top_opt = oin.TopologyOptimizer(fil)
 
@@ -54,9 +61,20 @@ ic(template_dgm)
 wass_q = 1.0
 
 # if we only want to know where to move the points
-indices, values = top_opt.match(template_dgm, dim, wass_q, False)
+indices, values = top_opt.match(
+    template_dgm,
+    dim,
+    wasserstein_q=wass_q,
+    return_wasserstein_distance=False,
+)
 # if we want to get Wasserstein distance as well
-(indices, values), distance = top_opt.match(template_dgm, dim, wass_q, True)
+(indices, values), distance = top_opt.match(
+    template_dgm,
+    dim,
+    wasserstein_q=wass_q,
+    wasserstein_delta=0.01,
+    return_wasserstein_distance=True,
+)
 critical_sets = top_opt.singletons(indices, values)
 crit_indices, crit_values = top_opt.combine_loss(critical_sets, oin.ConflictStrategy.Max)
 

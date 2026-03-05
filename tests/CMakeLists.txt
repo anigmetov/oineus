@@ -87,7 +87,6 @@ else()
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_cubical_dgms.py")
     set_tests_properties(py-cubical-dgms PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-    # TODO: enable after return type conversion for get_induced_matching is fixed.
     add_test(NAME py-induced-matching
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/induced-matching-pytest.py")
     set_tests_properties(py-induced-matching PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
@@ -178,15 +177,13 @@ else()
             COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_vr.py")
     set_tests_properties(py-example-vr PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-    # TODO: enable after updating Freudenthal helper API usage.
-    # add_test(NAME py-example-wasserstein-opt
-    #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_wasserstein_opt.py")
-    # set_tests_properties(py-example-wasserstein-opt PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    add_test(NAME py-example-wasserstein-opt
+            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_wasserstein_opt.py")
+    set_tests_properties(py-example-wasserstein-opt PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-    # TODO: enable after implementing/adjusting requested gradient methods.
-    # add_test(NAME py-differentiable-diagram
-    #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_differentiable_diagram.py")
-    # set_tests_properties(py-differentiable-diagram PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    add_test(NAME py-differentiable-diagram
+            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_differentiable_diagram.py")
+    set_tests_properties(py-differentiable-diagram PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_custom_target(py-tests
             COMMAND ${CMAKE_CTEST_COMMAND} --test-dir "${CMAKE_BINARY_DIR}" --output-on-failure -R "^py-")
