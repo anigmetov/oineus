@@ -13,8 +13,7 @@ def test_kernel_1():
     K = oin.list_to_filtration(K)
     L = oin.list_to_filtration(L)
     kicr = oin.KerImCokReduced(K, L, params)
-    # print(kicr.kernel_diagrams().in_dimension(0))
-    # assert (kicr.kernel_diagrams().in_dimension(0) == [[30., 80.],[20., math.inf]]).all()
+    assert (kicr.kernel_diagrams().in_dimension(0) == [[30., 80.]]).all()
     assert (len(kicr.kernel_diagrams().in_dimension(1)) == 0)
     assert (kicr.cokernel_diagrams().in_dimension(0) == [[12., 20.]]).all()
     assert (kicr.cokernel_diagrams().in_dimension(1) == [[80., math.inf]]).all()
@@ -40,7 +39,50 @@ def test_kernel_2():
     assert (len(kicr.image_diagrams().in_dimension(1)) == 0)
 
 
+def test_kernel_0d_domain_vertices_only():
+    params = oin.KICRParams()
+    params.n_threads = 4
+    params.kernel = True
+    params.image = True
+    params.cokernel = True
+
+    K = [[0, [0], 0.0], [1, [1], 0.0], [2, [0, 1], 1.0]]
+    L = [[0, [0], 0.0], [1, [1], 0.0]]
+
+    K = oin.list_to_filtration(K)
+    L = oin.list_to_filtration(L)
+    kicr = oin.KerImCokReduced(K, L, params)
+
+    assert (kicr.kernel_diagrams().in_dimension(0) == [[1.0, math.inf]]).all()
+    assert (len(kicr.kernel_diagrams().in_dimension(1)) == 0)
+
+
+def test_kernel_0d_persistent_bar_with_shared_edge():
+    params = oin.KICRParams()
+    params.n_threads = 4
+    params.kernel = True
+    params.image = True
+    params.cokernel = True
+
+    K = [
+        [0, [0], 0.0], [1, [1], 0.0], [2, [2], 0.0], [3, [3], 0.0],
+        [4, [2, 3], 0.5], [5, [0, 1], 1.0],
+    ]
+    L = [
+        [0, [0], 0.0], [1, [1], 0.0], [2, [2], 0.0], [3, [3], 0.0],
+        [4, [2, 3], 0.5],
+    ]
+
+    K = oin.list_to_filtration(K)
+    L = oin.list_to_filtration(L)
+    kicr = oin.KerImCokReduced(K, L, params)
+
+    assert (kicr.kernel_diagrams().in_dimension(0) == [[1.0, math.inf]]).all()
+    assert (len(kicr.kernel_diagrams().in_dimension(1)) == 0)
+
+
 if __name__ == "__main__":
     test_kernel_1()
     test_kernel_2()
-
+    test_kernel_0d_domain_vertices_only()
+    test_kernel_0d_persistent_bar_with_shared_edge()

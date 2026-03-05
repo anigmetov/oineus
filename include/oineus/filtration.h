@@ -8,8 +8,6 @@
 
 #include <algorithm>
 
-#include <icecream/icecream.hpp>
-
 #include <taskflow/taskflow.hpp>
 #include <taskflow/core/flow_builder.hpp>
 #include <taskflow/algorithm/sort.hpp>

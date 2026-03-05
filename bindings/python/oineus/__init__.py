@@ -110,9 +110,9 @@ def is_reduced(a):
 
 def mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain, with_indices=False):
     if isinstance(v_codomain, _oineus.Simplex) or isinstance(v_codomain, _oineus.ProdSimplex):
-        v_codomain = v_codomain.combinatorial_cell()
+        v_codomain = v_codomain.combinatorial_cell
     if isinstance(v_domain, _oineus.Simplex) or isinstance(v_domain, _oineus.ProdSimplex):
-        v_domain = v_domain.combinatorial_cell()
+        v_domain = v_domain.combinatorial_cell
     if with_indices:
         return _oineus._mapping_cylinder_with_indices(fil_domain, fil_codomain, v_domain, v_codomain)
     else:
@@ -120,7 +120,7 @@ def mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain, with_indice
 
 def multiply_filtration(fil, sigma):
     if isinstance(sigma, _oineus.Simplex):
-        sigma = sigma.combinatorial_cell()
+        sigma = sigma.combinatorial_cell
     return _oineus._multiply_filtration(fil, sigma)
 
 def min_filtration(fil_1, fil_2, with_indices=False):
@@ -175,9 +175,9 @@ def compute_kernel_image_cokernel_reduction(K, L, params=None, reduction_params=
     # simplicial filtrations can be supplied as lists,
     # convert to Oineus filtrations if necessary
     if isinstance(K, list):
-        K = _oineus.list_to_filtration(K)
+        K = list_to_filtration(K)
     if isinstance(L, list):
-        L = _oineus.list_to_filtration(L)
+        L = list_to_filtration(L)
 
     # KICR class is templatized by cell type in C++
     # different instantiations have different class names in Python
@@ -186,16 +186,18 @@ def compute_kernel_image_cokernel_reduction(K, L, params=None, reduction_params=
         KICR_Class = _oineus.KerImCokReduced
     elif isinstance(K[0], _oineus.ProdSimplex):
         KICR_Class = _oineus.KerImCokReducedProd
+    else:
+        raise TypeError(f"Unsupported filtration cell type: {type(K[0])}")
 
     if params is None:
         # compute all by default
-        params = _oineus.KICRParams()
-        params.kernel = True
-        params.cokernel = True
-        params.image = True
+        params = _oineus.KICRParams(kernel=True, image=True, cokernel=True)
+    elif not isinstance(params, _oineus.KICRParams):
+        raise TypeError("params must be a KICRParams instance")
 
-    if reduction_params != None:
-        assert type(params) == _oineus.ReductionParams
+    if reduction_params is not None:
+        if not isinstance(reduction_params, _oineus.ReductionParams):
+            raise TypeError("reduction_params must be a ReductionParams instance")
         params.params_f = reduction_params
         params.params_g = reduction_params
         params.params_ker = reduction_params

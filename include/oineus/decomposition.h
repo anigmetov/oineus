@@ -19,6 +19,17 @@
 #include "taskflow/taskflow.hpp"
 #include "taskflow/algorithm/for_each.hpp"
 
+#ifndef OINEUS_DISABLE_ICECREAM
+#include <icecream/icecream.hpp>
+#else
+#ifndef IC
+#define IC(...)
+#endif
+#ifndef IC0
+#define IC0()
+#endif
+#endif
+
 #include "common_defs.h"
 #include "diagram.h"
 #include "mem_reclamation.h"

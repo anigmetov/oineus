@@ -113,9 +113,9 @@ for pt in coker_dgms.in_dimension(hdim, as_numpy=False):
     c_birth = fil_cyl[b]
     birth_simplex = c_birth.cell_1
     if c_birth.cell_2 == v1:
-        true_birth_simplex = fil_min.cell_by_uid(birth_simplex.get_uid())
+        true_birth_simplex = fil_min.cell_by_uid(birth_simplex.uid)
     else:
-        true_birth_simplex = fil_3.cell_by_uid(birth_simplex.get_uid())
+        true_birth_simplex = fil_3.cell_by_uid(birth_simplex.uid)
 
     # death: comes from included complex L, i.e., fil_3
     if d < fil_cyl.size():
@@ -123,9 +123,9 @@ for pt in coker_dgms.in_dimension(hdim, as_numpy=False):
         c_death = fil_cyl[d]
         death_simplex = c_death.cell_1
         if c_death.cell_2 == v1:
-            true_death_simplex = fil_min.cell_by_uid(death_simplex.get_uid())
+            true_death_simplex = fil_min.cell_by_uid(death_simplex.uid)
         else:
-            true_death_simplex = fil_3.cell_by_uid(death_simplex.get_uid())
+            true_death_simplex = fil_3.cell_by_uid(death_simplex.uid)
         print(f"{true_birth_simplex = }, {true_death_simplex = }")
     else:
         print(f"{true_birth_simplex = }, infinity")

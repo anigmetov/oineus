@@ -20,8 +20,9 @@ pts_1.requires_grad_()
 pts_2.requires_grad_()
 
 
-fil_1 = oin.diff.vr_filtration(pts_1, eps=1e-9)
-fil_2 = oin.diff.vr_filtration(pts_1, eps=1e-0)
+# use identical VR combinatorics so min_filtration can match simplices by uid
+fil_1 = oin.diff.vr_filtration(pts_1, max_dim=2, max_diameter=1e9, eps=1e-9)
+fil_2 = oin.diff.vr_filtration(pts_2, max_dim=2, max_diameter=1e9, eps=1e-0)
 
 fil_min = oin.diff.min_filtration(fil_1, fil_2)
 
@@ -46,20 +47,21 @@ fil_min_and_coned = oin.Filtration(min_and_coned_simplices)
 min_and_coned_simplices = fil_min_and_coned.simplices()
 
 lengths_1 = fil_1.values.detach().cpu().numpy()
-lengths_2 = fil_1.values.detach().cpu().numpy()
-lengths_min = np.min(np.stack((lengths_1, lengths_2)), axis=0)
+lengths_2 = fil_2.values.detach().cpu().numpy()
 
 for sigma in min_and_coned_simplices:
-    if sigma.dim() == 0:
+    if sigma.dim == 0:
         continue
     # get cone base, we only need it's uid, so value does not matter
     base_vertices = [v for v in sigma if v != cone_v]
     sigma_base = oin.Simplex(base_vertices)
     # here is how we can get the index of sigma_base in the original min_filtration:
     # (note that uid is uniquely determined by simplex vertices)
-    orig_sorted_sigma_id = fil_min.sorted_id_by_uid(sigma_base.uid)
-    if sigma_base.dim() == sigma.dim():
-        assert(np.abs(lengths_1[orig_sorted_sigma_id] - sigma.value) < 0.001)
+    min_sorted_sigma_id = fil_min.sorted_id_by_uid(sigma_base.uid)
+    fil_1_sigma_id = fil_1.sorted_id_by_uid(sigma_base.uid)
+    fil_2_sigma_id = fil_2.sorted_id_by_uid(sigma_base.uid)
+    if sigma_base.dim == sigma.dim:
+        min_value = np.min((lengths_1[fil_1_sigma_id], lengths_2[fil_2_sigma_id]))
+        assert(np.abs(min_value - sigma.value) < 0.001)
     else:
-        assert(np.abs(lengths_min[orig_sorted_sigma_id] - sigma.value) < 0.001)
-
+        assert(np.abs(lengths_1[fil_1_sigma_id] - sigma.value) < 0.001)

@@ -1,5 +1,7 @@
 #include "oineus_persistence_bindings.h"
 #include "nanobind/stl/variant.h"
+#include "nanobind/stl/map.h"
+#include "nanobind/stl/unordered_map.h"
 
     //
     // std::pair<IndicesValues, Real> match_and_distance(typename Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q)

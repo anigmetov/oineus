@@ -113,6 +113,40 @@ void init_oineus_common(nb::module_& m)
 
     nb::class_<KICRParams>(m, "KICRParams")
             .def(nb::init<>())
+            .def("__init__",
+                    [](KICRParams* p, bool codomain, bool kernel, bool image, bool cokernel,
+                            bool include_zero_persistence, bool verbose, bool sanity_check,
+                            int n_threads, const ReductionParams& params_f,
+                            const ReductionParams& params_g, const ReductionParams& params_ker,
+                            const ReductionParams& params_im, const ReductionParams& params_cok) {
+                        new (p) KICRParams();
+                        p->codomain = codomain;
+                        p->kernel = kernel;
+                        p->image = image;
+                        p->cokernel = cokernel;
+                        p->include_zero_persistence = include_zero_persistence;
+                        p->verbose = verbose;
+                        p->sanity_check = sanity_check;
+                        p->n_threads = n_threads;
+                        p->params_f = params_f;
+                        p->params_g = params_g;
+                        p->params_ker = params_ker;
+                        p->params_im = params_im;
+                        p->params_cok = params_cok;
+                    },
+                    nb::arg("codomain")=false,
+                    nb::arg("kernel")=true,
+                    nb::arg("image")=true,
+                    nb::arg("cokernel")=true,
+                    nb::arg("include_zero_persistence")=false,
+                    nb::arg("verbose")=false,
+                    nb::arg("sanity_check")=false,
+                    nb::arg("n_threads")=1,
+                    nb::arg("params_f")=ReductionParams(),
+                    nb::arg("params_g")=ReductionParams(),
+                    nb::arg("params_ker")=ReductionParams(),
+                    nb::arg("params_im")=ReductionParams(),
+                    nb::arg("params_cok")=ReductionParams())
             .def_rw("codomain", &KICRParams::codomain)
             .def_rw("kernel", &KICRParams::kernel)
             .def_rw("image", &KICRParams::image)

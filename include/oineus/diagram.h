@@ -5,6 +5,7 @@
 #include <map>
 #include <utility>
 #include <string>
+#include <iostream>
 #include <ostream>
 #include <fstream>
 #include <stdexcept>
@@ -166,10 +167,13 @@ namespace oineus {
         Diagrams() { };
 
         Diagrams(dim_type filtration_dim)
-                :max_dim_(filtration_dim - 1)
+                :max_dim_(filtration_dim == 0 ? 0 : filtration_dim - 1)
         {
-            if (filtration_dim == 0)
-                throw std::runtime_error("refuse to compute diagram from 0-dim filtration");
+            if (filtration_dim == 0) {
+                std::cerr << "Warning: computing diagram from 0-dim filtration; "
+                             "result may be empty in some dimensions."
+                          << std::endl;
+            }
 
             for(dim_type d = 0; d <= max_dim_; ++d) {
                 diagram_in_dimension_[d];

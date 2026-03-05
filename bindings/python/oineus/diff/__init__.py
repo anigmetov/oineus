@@ -154,10 +154,10 @@ def mapping_cylinder_filtration(fil_domain: DiffFiltration, fil_codomain: DiffFi
     assert(type(fil_codomain) is DiffFiltration)
 
     if isinstance(v_domain, _oineus.Simplex):
-        v_domain = v_domain.combinatorial_cell()
+        v_domain = v_domain.combinatorial_cell
 
     if isinstance(v_codomain, _oineus.Simplex):
-        v_codomain = v_codomain.combinatorial_cell()
+        v_codomain = v_codomain.combinatorial_cell
 
     under_fil_dom = fil_domain.under_fil
     under_fil_cod = fil_codomain.under_fil

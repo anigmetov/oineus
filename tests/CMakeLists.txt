@@ -38,6 +38,19 @@ else()
     file(COPY ${VERTEBRA_NPY_FILES} DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
     file(COPY ${TEST_PY_FILES} DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
+    # Keep copied Python tests/data in sync on every build (without reconfigure).
+    set(COPY_PY_TEST_FILES_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/copy_py_test_files.cmake")
+    file(WRITE "${COPY_PY_TEST_FILES_SCRIPT}" "file(GLOB VERTEBRA_NPY_FILES \"${CMAKE_CURRENT_SOURCE_DIR}/*vertebra*.npy\")\n")
+    file(APPEND "${COPY_PY_TEST_FILES_SCRIPT}" "file(GLOB TEST_PY_FILES \"${CMAKE_CURRENT_SOURCE_DIR}/*.py\")\n")
+    file(APPEND "${COPY_PY_TEST_FILES_SCRIPT}" "foreach(src IN LISTS VERTEBRA_NPY_FILES TEST_PY_FILES)\n")
+    file(APPEND "${COPY_PY_TEST_FILES_SCRIPT}" "  file(COPY \"\${src}\" DESTINATION \"${CMAKE_CURRENT_BINARY_DIR}\")\n")
+    file(APPEND "${COPY_PY_TEST_FILES_SCRIPT}" "endforeach()\n")
+
+    add_custom_target(copy_py_test_files ALL
+            COMMAND ${CMAKE_COMMAND} -P "${COPY_PY_TEST_FILES_SCRIPT}")
+    add_dependencies(tests copy_py_test_files)
+    add_dependencies(tests_parallel_col_to_row copy_py_test_files)
+
     add_test(NAME py-bindings-cells
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_cells_api.py")
     set_tests_properties(py-bindings-cells PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
@@ -62,33 +75,31 @@ else()
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_filtration_api.py")
     set_tests_properties(py-bindings-filtration PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-    # TODO: enable after fixing current failures in this file.
-    # add_test(NAME py-bindings-kicr
-    #         COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_kicr_api.py")
-    # set_tests_properties(py-bindings-kicr PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    add_test(NAME py-bindings-kicr
+            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_kicr_api.py")
+    set_tests_properties(py-bindings-kicr PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-    # TODO: enable after fixing current failures in this file.
-    # add_test(NAME py-cube
-    #         COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_cube.py")
-    # set_tests_properties(py-cube PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    add_test(NAME py-cube
+            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_cube.py")
+    set_tests_properties(py-cube PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_test(NAME py-cubical-dgms
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_cubical_dgms.py")
     set_tests_properties(py-cubical-dgms PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     # TODO: enable after return type conversion for get_induced_matching is fixed.
-    # add_test(NAME py-induced-matching
-    #         COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/induced-matching-pytest.py")
-    # set_tests_properties(py-induced-matching PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    add_test(NAME py-induced-matching
+            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/induced-matching-pytest.py")
+    set_tests_properties(py-induced-matching PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_test(NAME py-kernel
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-pytest.py")
     set_tests_properties(py-kernel PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     # TODO: enable after updating to current KICR API.
-    # add_test(NAME py-kernel-legacy
-    #         COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-test-1.py")
-    # set_tests_properties(py-kernel-legacy PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    add_test(NAME py-kernel-legacy
+            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-test-1.py")
+    set_tests_properties(py-kernel-legacy PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     # TODO: this file is a CLI script and not a pytest module yet.
     # add_test(NAME py-oin
@@ -126,15 +137,13 @@ else()
     #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_cone_diff.py")
     # set_tests_properties(py-example-cone-diff PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-    # TODO: enable after updating Cube API usage in this example script.
-    # add_test(NAME py-example-cube
-    #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_cube.py")
-    # set_tests_properties(py-example-cube PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    add_test(NAME py-example-cube
+            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_cube.py")
+    set_tests_properties(py-example-cube PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-    # TODO: enable after fixing API issues in this example script.
-    # add_test(NAME py-example-diff-cyl
-    #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_diff_cyl.py")
-    # set_tests_properties(py-example-diff-cyl PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    add_test(NAME py-example-diff-cyl
+            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_diff_cyl.py")
+    set_tests_properties(py-example-diff-cyl PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_test(NAME py-example-diff-vr-dists
             COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_diff_vr_dists.py")
@@ -149,10 +158,9 @@ else()
     #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_kernel.py")
     # set_tests_properties(py-example-kernel PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-    # TODO: enable after fixing API issues in this example script.
-    # add_test(NAME py-example-kernel-cyl
-    #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_kernel_cyl.py")
-    # set_tests_properties(py-example-kernel-cyl PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    add_test(NAME py-example-kernel-cyl
+            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_kernel_cyl.py")
+    set_tests_properties(py-example-kernel-cyl PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_test(NAME py-example-manual
             COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_manual.py")

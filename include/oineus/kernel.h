@@ -42,6 +42,7 @@ inline std::ostream& operator<<(std::ostream& out, const KICRParams& p)
     out << "KICRParams(compute_kernel = " << p.kernel;
     out << ", compute_image = " << p.image;
     out << ", compute_cokernel = " << p.cokernel;
+    out << ", compute_codomain = " << p.codomain;
     out << ", include_zero_persistence = " << p.include_zero_persistence;
     out << ", verbose = " << p.verbose;
     out << ", n_threads = " << p.n_threads;
