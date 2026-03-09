@@ -1,14 +1,20 @@
-name: Python Tests
+name: CTest
 
 on:
   push:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+  workflow_dispatch:
 
 jobs:
-  python_tests:
+  ctest:
+    name: ctest (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
 
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +24,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install system dependencies
         run: |
@@ -31,10 +37,12 @@ jobs:
           python -m pip install pytest numpy scipy gudhi dionysus icecream argh
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -Doin_build_examples=OFF -Doin_build_tests=ON -DPython_EXECUTABLE="$(which python)"
+        run: |
+          PYEXE="$(python -c 'import sys; print(sys.executable)')"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -Doin_build_examples=OFF -Doin_build_tests=ON -DPython_EXECUTABLE="$PYEXE"
 
       - name: Build
         run: cmake --build build -j
 
-      - name: Run Python tests
-        run: ctest --test-dir build --output-on-failure -R "^py-"
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
