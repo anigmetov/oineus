@@ -70,18 +70,45 @@ void init_oineus_filtration(nb::module_& m)
                     nb::arg("n_threads") = 1
                     )
             // this ctor accepts the output of Diode directly, list of (vertices, value)
-            .def("__init__", [](Filtration* pfil, const std::vector<std::tuple<std::vector<unsigned>, oin_real>>& diode_simplices, int n_threads) {
+            .def("__init__", [](Filtration* pfil, const std::vector<std::tuple<std::vector<unsigned>, oin_real>>& diode_simplices, int n_threads, bool duplicates_possible) {
                 std::vector<Filtration::Cell> oin_simplices;
                 oin_simplices.reserve(diode_simplices.size());
-                for(const auto& [vs_, val] : diode_simplices) {
-                    Simplex::IdxVector vs;
-                    vs.reserve(vs_.size());
-                    for (unsigned v : vs_) { vs.push_back(v); }
-                    oin_simplices.emplace_back(Simplex(vs), val);
+
+                if (duplicates_possible) {
+                    std::unordered_map<Simplex::Uid, size_t> uid_to_idx;
+                    uid_to_idx.reserve(diode_simplices.size());
+
+                    for(const auto& [vs_, val] : diode_simplices) {
+                        Simplex::IdxVector vs;
+                        vs.reserve(vs_.size());
+                        for (unsigned v : vs_) { vs.push_back(v); }
+
+                        Simplex sigma(vs);
+                        auto uid = sigma.get_uid();
+                        auto it = uid_to_idx.find(uid);
+
+                        if (it == uid_to_idx.end()) {
+                            uid_to_idx.emplace(uid, oin_simplices.size());
+                            oin_simplices.emplace_back(std::move(sigma), val);
+                        } else {
+                            auto& existing = oin_simplices[it->second];
+                            if (val < existing.value_) {
+                                existing.value_ = val;
+                            }
+                        }
+                    }
+                } else {
+                    for(const auto& [vs_, val] : diode_simplices) {
+                        Simplex::IdxVector vs;
+                        vs.reserve(vs_.size());
+                        for (unsigned v : vs_) { vs.push_back(v); }
+                        oin_simplices.emplace_back(Simplex(vs), val);
+                    }
                 }
+
                 // Negation must stay false here; n_threads is the third ctor argument.
                 new (pfil) Filtration(std::move(oin_simplices), false, n_threads);
-            }, nb::arg("vertices_values"), nb::arg("n_threads") = 1)
+            }, nb::arg("vertices_values"), nb::arg("n_threads") = 1, nb::arg("duplicates_possible") = false)
             .def("__len__", &Filtration::size)
             .def("__iter__", [](Filtration& fil) { return nb::make_iterator(nb::type<Filtration>(), "simplex_iterator", fil.begin(), fil.end()); }, nb::keep_alive<0, 1>())
             .def("__getitem__", [](Filtration& fil, int i) { if (i < 0) i = fil.size() + i; return fil.get_cell(i);})

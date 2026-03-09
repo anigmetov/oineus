@@ -1,0 +1,322 @@
+from __future__ import annotations
+
+import typing
+
+import numpy as np
+
+try:
+    import matplotlib.pyplot as plt
+    _HAS_MATPLOTLIB = True
+except Exception:
+    _HAS_MATPLOTLIB = False
+
+try:
+    import mpl_scatter_density  # noqa: F401
+    _HAS_MPL_SCATTER_DENSITY = True
+except Exception:
+    _HAS_MPL_SCATTER_DENSITY = False
+
+
+def _diagram_points_to_array(diagram_points) -> np.ndarray:
+    if len(diagram_points) == 0:
+        return np.empty((0, 2), dtype=float)
+    return np.asarray([(p.birth, p.death) for p in diagram_points], dtype=float)
+
+
+def _array_diagram(a) -> np.ndarray:
+    arr = np.asarray(a, dtype=float)
+    if arr.ndim != 2 or arr.shape[1] != 2:
+        raise ValueError("Diagram array must have shape (n, 2).")
+    return arr
+
+
+def _to_dim_diagrams(
+    diagrams,
+    dims: typing.Optional[typing.Iterable[int]],
+    max_dimension: typing.Optional[int],
+) -> typing.Dict[int, np.ndarray]:
+    # dict: dim -> ndarray or list[DiagramPoint]
+    if isinstance(diagrams, dict):
+        out = {}
+        for dim, dgm in diagrams.items():
+            if isinstance(dgm, np.ndarray):
+                out[int(dim)] = _array_diagram(dgm)
+            else:
+                out[int(dim)] = _diagram_points_to_array(dgm)
+        return out
+
+    # Diagrams object from oineus bindings
+    if hasattr(diagrams, "in_dimension"):
+        if dims is None:
+            max_scan_dim = 64 if max_dimension is None else int(max_dimension)
+            out = {}
+            seen_non_empty = False
+            for dim in range(max_scan_dim + 1):
+                arr = _array_diagram(diagrams.in_dimension(dim, as_numpy=True))
+                if arr.shape[0] == 0:
+                    if seen_non_empty:
+                        break
+                    continue
+                seen_non_empty = True
+                out[dim] = arr
+            if not out:
+                out[0] = np.empty((0, 2), dtype=float)
+            return out
+        return {int(dim): _array_diagram(diagrams.in_dimension(int(dim), as_numpy=True)) for dim in dims}
+
+    # Single numpy diagram
+    if isinstance(diagrams, np.ndarray):
+        return {0: _array_diagram(diagrams)}
+
+    # list[DiagramPoint] or list[np.ndarray]
+    if isinstance(diagrams, list):
+        if len(diagrams) == 0:
+            return {0: np.empty((0, 2), dtype=float)}
+
+        first = diagrams[0]
+        if isinstance(first, np.ndarray):
+            return {dim: _array_diagram(dgm) for dim, dgm in enumerate(diagrams)}
+
+        if hasattr(first, "birth") and hasattr(first, "death"):
+            return {0: _diagram_points_to_array(diagrams)}
+
+        raise TypeError(
+            "Unsupported list input. Expected list[DiagramPoint] or list[np.ndarray]."
+        )
+
+    raise TypeError(
+        "Unsupported diagrams input. Expected Diagrams, list[DiagramPoint], "
+        "numpy.ndarray, list[numpy.ndarray], or dict[int, numpy.ndarray]."
+    )
+
+
+def _resolve_color(color, dim: int, dim_idx: int):
+    if color is None:
+        return None
+    if isinstance(color, dict):
+        return color.get(dim, None)
+    if isinstance(color, list):
+        if len(color) == 0:
+            return None
+        return color[dim_idx % len(color)]
+    return color
+
+
+def _shift_for_log(values: np.ndarray, use_log: bool) -> float:
+    if not use_log or values.size == 0:
+        return 0.0
+    min_val = float(np.min(values[np.isfinite(values)]))
+    if min_val <= 0.0:
+        return 1.0 - min_val
+    return 0.0
+
+
+def plot_persistence_diagram(
+    diagrams,
+    ax=None,
+    *,
+    marker: str = "o",
+    marker_size: float = 16.0,
+    color=None,
+    alpha: float = 0.9,
+    log_x: bool = False,
+    log_y: bool = False,
+    title: typing.Optional[str] = None,
+    suptitle: typing.Optional[str] = None,
+    dims: typing.Optional[typing.Iterable[int]] = None,
+    max_dimension: typing.Optional[int] = None,
+    use_density: bool = True,
+    density_threshold: int = 50000,
+    near_diagonal_fraction: float = 0.03,
+    density_cmap: str = "viridis",
+    inf_line_margin: float = 0.05,
+    inf_line_color: str = "black",
+    inf_line_style: str = "--",
+    diag_line_color: str = "gray",
+    diag_line_style: str = "--",
+    diag_line_alpha: float = 0.7,
+    scatter_kwargs: typing.Optional[dict] = None,
+):
+    if not _HAS_MATPLOTLIB:
+        raise ImportError("matplotlib is required for plot_persistence_diagram.")
+
+    scatter_kwargs = {} if scatter_kwargs is None else dict(scatter_kwargs)
+    dgms = _to_dim_diagrams(diagrams, dims=dims, max_dimension=max_dimension)
+    dims_sorted = sorted(dgms.keys())
+
+    finite_by_dim = {}
+    inf_birth_by_dim = {}
+    all_finite_births = []
+    all_finite_deaths = []
+    all_births_for_limits = []
+
+    for dim in dims_sorted:
+        arr = dgms[dim]
+        births = arr[:, 0] if arr.shape[0] else np.empty((0,), dtype=float)
+        deaths = arr[:, 1] if arr.shape[0] else np.empty((0,), dtype=float)
+
+        finite_mask = np.isfinite(births) & np.isfinite(deaths)
+        inf_mask = np.isfinite(births) & (~np.isfinite(deaths))
+
+        finite_births = births[finite_mask]
+        finite_deaths = deaths[finite_mask]
+        inf_births = births[inf_mask]
+
+        finite_by_dim[dim] = (finite_births, finite_deaths)
+        inf_birth_by_dim[dim] = inf_births
+
+        if finite_births.size:
+            all_finite_births.append(finite_births)
+            all_finite_deaths.append(finite_deaths)
+            all_births_for_limits.append(finite_births)
+        if inf_births.size:
+            all_births_for_limits.append(inf_births)
+
+    all_finite_births = (
+        np.concatenate(all_finite_births) if all_finite_births else np.empty((0,), dtype=float)
+    )
+    all_finite_deaths = (
+        np.concatenate(all_finite_deaths) if all_finite_deaths else np.empty((0,), dtype=float)
+    )
+    all_births_for_limits = (
+        np.concatenate(all_births_for_limits) if all_births_for_limits else np.empty((0,), dtype=float)
+    )
+
+    any_inf = any(inf_birth_by_dim[d].size > 0 for d in dims_sorted)
+
+    if all_finite_deaths.size:
+        y_max = float(np.max(all_finite_deaths))
+        y_span = float(np.ptp(all_finite_deaths))
+    elif all_births_for_limits.size:
+        y_max = float(np.max(all_births_for_limits))
+        y_span = float(np.ptp(all_births_for_limits))
+    else:
+        y_max = 1.0
+        y_span = 1.0
+    if y_span <= 0.0:
+        y_span = max(abs(y_max), 1.0)
+    inf_y = y_max + inf_line_margin * y_span
+
+    if all_births_for_limits.size:
+        x_span = float(np.ptp(all_births_for_limits))
+    else:
+        x_span = 1.0
+    if x_span <= 0.0:
+        x_span = 1.0
+
+    near_thr = near_diagonal_fraction * max(x_span, y_span)
+
+    near_x_parts = []
+    near_y_parts = []
+    near_mask_by_dim = {}
+    for dim in dims_sorted:
+        births, deaths = finite_by_dim[dim]
+        if births.size == 0:
+            near_mask = np.zeros((0,), dtype=bool)
+        else:
+            near_mask = np.abs(deaths - births) <= near_thr
+            if np.any(near_mask):
+                near_x_parts.append(births[near_mask])
+                near_y_parts.append(deaths[near_mask])
+        near_mask_by_dim[dim] = near_mask
+
+    near_x = np.concatenate(near_x_parts) if near_x_parts else np.empty((0,), dtype=float)
+    near_y = np.concatenate(near_y_parts) if near_y_parts else np.empty((0,), dtype=float)
+
+    use_density_plot = use_density and all_finite_births.size >= density_threshold and near_x.size > 0
+    if use_density_plot and not _HAS_MPL_SCATTER_DENSITY:
+        raise ImportError(
+            "mpl_scatter_density is required when density rendering is used. "
+            "Install mpl_scatter_density, or disable density plotting "
+            "(use_density=False / increase density_threshold)."
+        )
+
+    if ax is None:
+        if use_density_plot:
+            fig = plt.figure()
+            ax = fig.add_subplot(1, 1, 1, projection="scatter_density")
+        else:
+            _, ax = plt.subplots()
+    elif use_density_plot and not hasattr(ax, "scatter_density"):
+        raise ValueError(
+            "For density rendering, axis must use projection='scatter_density'. "
+            "Pass ax=None or create the axis with that projection."
+        )
+
+    y_values_for_shift = all_finite_deaths
+    if any_inf:
+        y_values_for_shift = np.concatenate([y_values_for_shift, np.asarray([inf_y])])
+
+    x_shift = _shift_for_log(all_births_for_limits, log_x)
+    y_shift = _shift_for_log(y_values_for_shift, log_y)
+
+    if use_density_plot:
+        ax.scatter_density(near_x + x_shift, near_y + y_shift, cmap=density_cmap)
+
+    for dim_idx, dim in enumerate(dims_sorted):
+        births, deaths = finite_by_dim[dim]
+        if births.size:
+            mask = ~near_mask_by_dim[dim] if use_density_plot else np.ones_like(births, dtype=bool)
+            if np.any(mask):
+                ax.scatter(
+                    births[mask] + x_shift,
+                    deaths[mask] + y_shift,
+                    s=marker_size,
+                    marker=marker,
+                    c=_resolve_color(color, dim, dim_idx),
+                    alpha=alpha,
+                    label=f"H{dim}",
+                    **scatter_kwargs,
+                )
+
+        inf_births = inf_birth_by_dim[dim]
+        if inf_births.size:
+            ax.scatter(
+                inf_births + x_shift,
+                np.full_like(inf_births, inf_y + y_shift),
+                s=marker_size,
+                marker=marker,
+                c=_resolve_color(color, dim, dim_idx),
+                alpha=alpha,
+                label=f"H{dim}" if births.size == 0 else None,
+                **scatter_kwargs,
+            )
+
+    if any_inf:
+        ax.axhline(inf_y + y_shift, color=inf_line_color, linestyle=inf_line_style, linewidth=1.0)
+
+    if all_births_for_limits.size or all_finite_deaths.size or any_inf:
+        if all_births_for_limits.size:
+            x_vals = all_births_for_limits + x_shift
+        else:
+            x_vals = np.asarray([0.0 + x_shift, 1.0 + x_shift])
+        if all_finite_deaths.size:
+            y_vals = all_finite_deaths + y_shift
+        else:
+            y_vals = np.asarray([0.0 + y_shift, 1.0 + y_shift])
+        lo = min(float(np.min(x_vals)), float(np.min(y_vals)))
+        hi = max(float(np.max(x_vals)), float(np.max(y_vals)), float(inf_y + y_shift) if any_inf else -np.inf)
+        if hi <= lo:
+            hi = lo + 1.0
+        ax.plot([lo, hi], [lo, hi], linestyle=diag_line_style, color=diag_line_color, alpha=diag_line_alpha, linewidth=1.0)
+
+    if log_x:
+        ax.set_xscale("log")
+    if log_y:
+        ax.set_yscale("log")
+
+    ax.set_xlabel("birth" if x_shift == 0 else f"birth (shifted by +{x_shift:.3g})")
+    ax.set_ylabel("death" if y_shift == 0 else f"death (shifted by +{y_shift:.3g})")
+
+    if title is not None:
+        ax.set_title(title)
+    if suptitle is not None:
+        ax.figure.suptitle(suptitle)
+
+    if len(dims_sorted) > 1:
+        handles, labels = ax.get_legend_handles_labels()
+        if labels:
+            uniq = dict(zip(labels, handles))
+            ax.legend(uniq.values(), uniq.keys(), title="dimension")
+
+    return ax

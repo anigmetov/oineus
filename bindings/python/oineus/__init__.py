@@ -160,15 +160,60 @@ def compute_diagrams_vr(data: np.ndarray, from_pwdists: bool=False, max_dim: int
     return dcmp.diagram(fil=fil, include_inf_points=include_inf_points)
 
 
-def compute_diagrams_alpha(points: np.ndarray, params: typing.Optional[ReductionParams]=None,
-                       include_inf_points: bool=True, dualize: bool=False):
+def compute_diagrams_alpha(points: np.ndarray,
+                           weights: typing.Optional[np.ndarray]=None,
+                           params: typing.Optional[ReductionParams]=None,
+                           include_inf_points: bool=True,
+                           dualize: bool=False,
+                           exact: bool=False,
+                           periodic: bool=False):
+    """Compute alpha-shape persistence diagrams.
+
+    Args:
+        points: NumPy array of shape (n, 2) or (n, 3).
+        weights: Optional 1D array of length n. If provided, computes weighted
+            alpha-shapes (currently 3D only).
+        params: Reduction parameters. Defaults to ReductionParams().
+        include_inf_points: Include points at infinity in output diagrams.
+        dualize: If True, compute cohomology; otherwise homology.
+        exact: Passed to diode. If True, uses exact CGAL kernel.
+        periodic: If True, uses periodic alpha-shapes. Duplicate simplices
+            reported by diode are deduplicated before building the filtration.
+
+    Returns:
+        Diagrams object indexed by homology dimension.
+    """
     if params is None:
         params = _oineus.ReductionParams()
     assert _HAS_DIODE, "Cannot compute alpha-shapes without diode"
     assert points.ndim == 2
     assert points.shape[1] in [2, 3], "Alpha-shapes only support 2D and 3D point clouds"
-    fil_diode = diode.fill_alpha_shapes(points)
-    fil = _oineus.Filtration(fil_diode, n_threads=params.n_threads)
+
+    if weights is not None:
+        weights = np.asarray(weights)
+        assert weights.ndim == 1, "weights must be a 1D array"
+        assert weights.shape[0] == points.shape[0], "weights must have same length as points"
+        assert points.shape[1] == 3, "Weighted alpha-shapes require 3D points"
+
+        weighted_points = np.column_stack((points, weights))
+
+        if periodic:
+            if not hasattr(diode, "fill_weighted_periodic_alpha_shapes"):
+                raise RuntimeError("diode.fill_weighted_periodic_alpha_shapes is not available in this diode build")
+            fil_diode = diode.fill_weighted_periodic_alpha_shapes(weighted_points, exact=exact)
+        else:
+            fil_diode = diode.fill_weighted_alpha_shapes(weighted_points, exact=exact)
+    else:
+        if periodic:
+            fil_diode = diode.fill_periodic_alpha_shapes(points, exact=exact)
+        else:
+            fil_diode = diode.fill_alpha_shapes(points, exact=exact)
+
+    fil = _oineus.Filtration(
+        fil_diode,
+        duplicates_possible=periodic,
+        n_threads=params.n_threads
+    )
     dcmp = _oineus.Decomposition(fil, dualize)
     dcmp.reduce(params)
     return dcmp.diagram(fil=fil, include_inf_points=include_inf_points)
