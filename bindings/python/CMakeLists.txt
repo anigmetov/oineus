@@ -30,7 +30,7 @@ add_custom_target           (oineus ALL ${CMAKE_COMMAND} -E copy_directory
 set(OINEUS_PYTHON_INT "long int" CACHE STRING "Choose the Int type in Python bindings, options are: int, long int, long long int." FORCE)
 set_property(CACHE OINEUS_PYTHON_INT PROPERTY STRINGS "int" "long int" "long long int")
 
-set(OINEUS_PYTHON_REAL "double" CACHE STRING "Choose the Real type in Python bindings, options are: float, double." FORCE)
+set(OINEUS_PYTHON_REAL "double" CACHE STRING "Choose the Real type in Python bindings, options are: float, double.")
 set_property(CACHE OINEUS_PYTHON_REAL PROPERTY STRINGS "float" "double")
 
 nanobind_add_module(_oineus NOMINSIZE oineus.cpp

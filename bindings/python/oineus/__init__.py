@@ -19,10 +19,17 @@ from ._oineus import get_nth_persistence, get_permutation_dtv
 from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D, CubeFiltration_1D
 from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, CubeFiltration_2D
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
+from .vis_utils import plot_persistence_diagram
 # from ._oineus import Z2_Column, Z2_Matrix
 
+try:
+    import diode
+    _HAS_DIODE = True
+except:
+    _HAS_DIODE = False
 
-__all__ = ["compute_diagrams_ls", "compute_diagrams_vr", "get_boundary_matrix", "is_reduced"]
+
+__all__ = ["compute_diagrams_ls", "compute_diagrams_vr", "compute_diagrams_alpha", "get_boundary_matrix", "is_reduced", "plot_persistence_diagram"]
 
 
 def to_scipy_matrix(sparse_cols, shape=None):
@@ -148,6 +155,20 @@ def compute_diagrams_vr(data: np.ndarray, from_pwdists: bool=False, max_dim: int
         params = _oineus.ReductionParams()
     # max_dim is maximal dimension of the _diagram_, we need simplices one dimension higher, hence +1
     fil = vr_filtration(data, from_pwdists, max_dim=max_dim, max_diameter=max_diameter, with_critical_edges=False, n_threads=params.n_threads)
+    dcmp = _oineus.Decomposition(fil, dualize)
+    dcmp.reduce(params)
+    return dcmp.diagram(fil=fil, include_inf_points=include_inf_points)
+
+
+def compute_diagrams_alpha(points: np.ndarray, params: typing.Optional[ReductionParams]=None,
+                       include_inf_points: bool=True, dualize: bool=False):
+    if params is None:
+        params = _oineus.ReductionParams()
+    assert _HAS_DIODE, "Cannot compute alpha-shapes without diode"
+    assert points.ndim == 2
+    assert points.shape[1] in [2, 3], "Alpha-shapes only support 2D and 3D point clouds"
+    fil_diode = diode.fill_alpha_shapes(points)
+    fil = _oineus.Filtration(fil_diode, n_threads=params.n_threads)
     dcmp = _oineus.Decomposition(fil, dualize)
     dcmp.reduce(params)
     return dcmp.diagram(fil=fil, include_inf_points=include_inf_points)

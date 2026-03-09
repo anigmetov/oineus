@@ -70,14 +70,17 @@ void init_oineus_filtration(nb::module_& m)
                     nb::arg("n_threads") = 1
                     )
             // this ctor accepts the output of Diode directly, list of (vertices, value)
-            .def("__init__", [](Filtration* pfil, const std::vector<std::tuple<std::vector<unsigned>, double>>& diode_simplices, int n_threads) {
+            .def("__init__", [](Filtration* pfil, const std::vector<std::tuple<std::vector<unsigned>, oin_real>>& diode_simplices, int n_threads) {
                 std::vector<Filtration::Cell> oin_simplices;
+                oin_simplices.reserve(diode_simplices.size());
                 for(const auto& [vs_, val] : diode_simplices) {
                     Simplex::IdxVector vs;
+                    vs.reserve(vs_.size());
                     for (unsigned v : vs_) { vs.push_back(v); }
                     oin_simplices.emplace_back(Simplex(vs), val);
                 }
-                new (pfil) Filtration(std::move(oin_simplices), n_threads);
+                // Negation must stay false here; n_threads is the third ctor argument.
+                new (pfil) Filtration(std::move(oin_simplices), false, n_threads);
             }, nb::arg("vertices_values"), nb::arg("n_threads") = 1)
             .def("__len__", &Filtration::size)
             .def("__iter__", [](Filtration& fil) { return nb::make_iterator(nb::type<Filtration>(), "simplex_iterator", fil.begin(), fil.end()); }, nb::keep_alive<0, 1>())
