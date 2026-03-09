@@ -103,7 +103,7 @@ TEST_CASE("Simple reduction parallel")
     auto dv = compute_diagrams_and_v_ls_freudenthal<Int, Real, 3>(grid, negate, wrap, top_d, n_threads);
     auto dgms = dv.first;
     auto decmp = dv.second;
-    REQUIRE(dgms.n_dims() == top_d + 1);
+    REQUIRE(dgms.n_dims() == top_d + 2);
     REQUIRE(decmp.sanity_check());
 }
 

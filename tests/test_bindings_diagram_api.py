@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import oineus as oin
 
 
@@ -69,8 +70,55 @@ def test_diagrams_api():
     _ = dgm.index_diagram_in_dimension(0, as_numpy=False)
     _ = dgm.index_diagram_in_dimension(0, as_numpy=True)
     _ = dgm[0]
+    assert len(dgm) > 0
+
+    n_dims = len(dgm)
+    with pytest.raises(IndexError):
+        _ = dgm[n_dims]
 
     empty = oin.Diagrams(1)
     _ = empty.in_dimension(0, as_numpy=False)
     _ = empty.index_diagram_in_dimension(0, as_numpy=False)
     _ = empty[0]
+
+
+def test_diagrams_iteration_stops():
+    fil = _make_simplex_filtration()
+    dcmp = oin.Decomposition(fil, dualize=False, n_threads=1)
+    params = oin.ReductionParams()
+    dcmp.reduce(params)
+
+    dgms = dcmp.diagram(fil, include_inf_points=True)
+    n_dims = len(dgms)
+    it = iter(dgms)
+
+    for _ in range(n_dims):
+        arr = next(it)
+        assert arr.ndim == 2
+        assert arr.shape[1] == 2
+
+    with pytest.raises(StopIteration):
+        next(it)
+
+
+def test_diagrams_pad_and_trim():
+    d = oin.Diagrams(1)
+    assert len(d) == 2
+
+    d.pad_to_dim(4)
+    assert len(d) == 5
+    assert d[4].shape == (0, 2)
+
+    # no-op grow
+    d.pad_to_dim(2)
+    assert len(d) == 5
+
+    d.trim_to_dim(2)
+    assert len(d) == 3
+    assert d[2].shape == (0, 2)
+    with pytest.raises(IndexError):
+        _ = d[3]
+
+    # no-op trim
+    d.trim_to_dim(5)
+    assert len(d) == 3

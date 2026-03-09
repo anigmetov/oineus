@@ -50,18 +50,38 @@ void init_oineus_diagram(nb::module_& m)
     nb::class_<Diagram>(m, dgm_class_name.c_str())
             .def(nb::init<dim_type>())
             .def("in_dimension", [](Diagram& self, dim_type dim, bool as_numpy) -> std::variant<nb::ndarray<oin_real, nb::numpy>, DgmPtVec> {
-                      if (as_numpy)
-                          return self.get_diagram_in_dimension_as_numpy(dim);
-                      else
-                          return self.get_diagram_in_dimension(dim);
+                      try {
+                          if (as_numpy)
+                              return self.get_diagram_in_dimension_as_numpy(dim);
+                          else
+                              return self.get_diagram_in_dimension(dim);
+                      } catch (const std::out_of_range&) {
+                          throw nb::index_error("Diagram dimension out of range");
+                      }
                     }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
                     nb::arg("dim"), nb::arg("as_numpy") = true)
             .def("index_diagram_in_dimension", [](Diagram& self, dim_type dim, bool as_numpy) -> std::variant<nb::ndarray<size_t, nb::numpy>, IndexDgmPtVec> {
-                      if (as_numpy)
-                          return self.get_index_diagram_in_dimension_as_numpy(dim);
-                      else
-                          return self.get_index_diagram_in_dimension(dim);
+                      try {
+                          if (as_numpy)
+                              return self.get_index_diagram_in_dimension_as_numpy(dim);
+                          else
+                              return self.get_index_diagram_in_dimension(dim);
+                      } catch (const std::out_of_range&) {
+                          throw nb::index_error("Diagram dimension out of range");
+                      }
                     }, "return persistence pairing (index diagram) in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
                     nb::arg("dim"), nb::arg("as_numpy") = true)
-            .def("__getitem__", &Diagram::get_diagram_in_dimension_as_numpy);
+            .def("__getitem__", [](Diagram& self, dim_type dim) {
+                try {
+                    return self.get_diagram_in_dimension_as_numpy(dim);
+                } catch (const std::out_of_range&) {
+                    throw nb::index_error("Diagram dimension out of range");
+                }
+            })
+            .def("__len__", &Diagram::n_dims)
+            .def("pad_to_dim", &Diagram::pad_to_dim, nb::arg("new_top_dim"),
+                 "Extend diagrams to dimensions [0..new_top_dim] by appending empty diagrams as needed.")
+            .def("trim_to_dim", &Diagram::trim_to_dim, nb::arg("max_dim"),
+                 "Trim diagrams to dimensions [0..max_dim].")
+            ;
 }

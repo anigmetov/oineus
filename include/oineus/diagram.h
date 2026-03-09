@@ -2,7 +2,7 @@
 
 #include <vector>
 #include <cmath>
-#include <map>
+#include <algorithm>
 #include <utility>
 #include <string>
 #include <iostream>
@@ -162,36 +162,39 @@ namespace oineus {
         using Dgm = std::vector<Point>;
         using IndexDgm = std::vector<DgmPoint<size_t>>;
 
-        dim_type max_dim_;
+        Diagrams() = default;
 
-        Diagrams() { };
-
-        Diagrams(dim_type filtration_dim)
-                :max_dim_(filtration_dim == 0 ? 0 : filtration_dim - 1)
-        {
-            if (filtration_dim == 0) {
-                std::cerr << "Warning: computing diagram from 0-dim filtration; "
-                             "result may be empty in some dimensions."
-                          << std::endl;
-            }
-
-            for(dim_type d = 0; d <= max_dim_; ++d) {
-                diagram_in_dimension_[d];
-            }
-        }
+        // Construct diagrams in dimensions [0, max_dim].
+        explicit Diagrams(dim_type max_dim)
+                :diagram_in_dimension_(max_dim + 1)
+        { }
 
         Diagrams(const Diagrams&) = default;
         Diagrams(Diagrams&&) noexcept = default;
         Diagrams& operator=(const Diagrams&) = default;
         Diagrams& operator=(Diagrams&&) noexcept = default;
 
-        std::map<dim_type, Dgm> diagram_in_dimension_;
+        std::vector<Dgm> diagram_in_dimension_;
 
         [[nodiscard]] size_t n_dims() const noexcept { return diagram_in_dimension_.size(); }
 
-        Dgm get_diagram_in_dimension(dim_type d)
+        void pad_to_dim(dim_type new_top_dim)
         {
-            return diagram_in_dimension_[d];
+            const size_t new_size = new_top_dim + 1;
+            if (diagram_in_dimension_.size() < new_size)
+                diagram_in_dimension_.resize(new_size);
+        }
+
+        void trim_to_dim(dim_type max_dim)
+        {
+            const size_t new_size = max_dim + 1;
+            if (diagram_in_dimension_.size() > new_size)
+                diagram_in_dimension_.resize(new_size);
+        }
+
+        Dgm get_diagram_in_dimension(dim_type d) const
+        {
+            return diagram_in_dimension_.at(d);
         }
 
         IndexDgm get_index_diagram_in_dimension(dim_type d) const
@@ -199,45 +202,41 @@ namespace oineus {
             IndexDgm index_dgm;
 
             // just duplicate information for now: birth and death are also indices
-            for(Point p : diagram_in_dimension_.at(d)) {
+            for(const Point& p : diagram_in_dimension_.at(d)) {
                 index_dgm.emplace_back(p.birth_index, p.death_index, p.birth_index, p.death_index);
             }
 
             return index_dgm;
         }
 
-        Dgm& extract(int i) { return diagram_in_dimension_[i]; }
-        Dgm& operator[](size_t d) { return diagram_in_dimension_[d]; }
+        Dgm& extract(dim_type i) { return diagram_in_dimension_.at(i); }
+        Dgm& operator[](size_t d) { return diagram_in_dimension_.at(d); }
         const Dgm& operator[](size_t d) const { return diagram_in_dimension_.at(d); }
 
 		void add_point(dim_type dim, Real birth_value, Real death_value, size_t birth_index, size_t death_index)
         {
-            diagram_in_dimension_[dim].emplace_back(birth_value, death_value, birth_index, death_index);
+            diagram_in_dimension_.at(dim).emplace_back(birth_value, death_value, birth_index, death_index);
         }
 
         void add_point(dim_type dim, Real birth_value, Real death_value, size_t birth_index, size_t death_index, size_t birth_index_unsorted, size_t death_index_unsorted)
         {
-            diagram_in_dimension_[dim].emplace_back(birth_value, death_value, birth_index, death_index, birth_index_unsorted, death_index_unsorted);
+            diagram_in_dimension_.at(dim).emplace_back(birth_value, death_value, birth_index, death_index, birth_index_unsorted, death_index_unsorted);
         }
 
         void sort()
         {
-            for(auto& dim_points: diagram_in_dimension_) {
-                auto& points = dim_points.second;
+            for(auto& points: diagram_in_dimension_) {
                 std::sort(points.begin(), points.end(), [](const Point& a, const Point& b) { return a > b; });
             }
         }
 
         void save_as_txt(std::string fname, std::string extension = "txt", int prec = 4) const
         {
-            for(const auto& dim_points: diagram_in_dimension_) {
-
-                const auto& points = dim_points.second;
+            for(dim_type dim = 0; dim < diagram_in_dimension_.size(); ++dim) {
+                const auto& points = diagram_in_dimension_[dim];
 
                 if (points.empty())
                     continue;
-
-                auto dim = dim_points.first;
 
                 std::string fname_dim = fname + "." + std::to_string(dim) + extension;
 

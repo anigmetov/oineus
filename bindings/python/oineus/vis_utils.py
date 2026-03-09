@@ -52,7 +52,10 @@ def _to_dim_diagrams(
             out = {}
             seen_non_empty = False
             for dim in range(max_scan_dim + 1):
-                arr = _array_diagram(diagrams.in_dimension(dim, as_numpy=True))
+                try:
+                    arr = _array_diagram(diagrams.in_dimension(dim, as_numpy=True))
+                except (IndexError, RuntimeError):
+                    break
                 if arr.shape[0] == 0:
                     if seen_non_empty:
                         break

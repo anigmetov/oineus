@@ -73,6 +73,9 @@ public:
 
     PyOineusDiagrams() = default;
 
+    explicit PyOineusDiagrams(dim_type max_dim)
+            :diagrams_(max_dim) { }
+
     PyOineusDiagrams(const oin::Diagrams<Real>& _diagrams)
             :diagrams_(_diagrams) { }
 
@@ -117,6 +120,21 @@ public:
     {
         auto index_dgm = diagrams_.get_index_diagram_in_dimension(d);
         return diagram_to_numpy<size_t>(index_dgm);
+    }
+
+    size_t n_dims() const
+    {
+        return diagrams_.n_dims();
+    }
+
+    void pad_to_dim(dim_type new_top_dim)
+    {
+        diagrams_.pad_to_dim(new_top_dim);
+    }
+
+    void trim_to_dim(dim_type max_dim)
+    {
+        diagrams_.trim_to_dim(max_dim);
     }
 
 private:

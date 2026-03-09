@@ -1630,7 +1630,7 @@ namespace oineus {
         if (not is_reduced)
             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
 
-        Diagrams<Real> result(fil.max_dim());
+        Diagrams<Real> result = fil.size() == 0 ? Diagrams<Real>() : Diagrams<Real>(fil.max_dim());
 
         std::unordered_set<Int> rows_with_lowest_one;
 
@@ -1709,7 +1709,7 @@ namespace oineus {
         if (not is_reduced)
             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
 
-        Diagrams<Real> result(fil.max_dim());
+        Diagrams<Real> result = fil.size() == 0 ? Diagrams<Real>() : Diagrams<Real>(fil.max_dim());
 
         std::unordered_set<Int> rows_with_lowest_one;
 

@@ -167,7 +167,7 @@ Diagrams<Real> get_image_diagram(const VRUDecomposition<typename Cell::Int>& dcm
     if (not dcmp.is_reduced)
         throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
 
-    Diagrams<Real> result(fil.max_dim());
+    Diagrams<Real> result = fil.size() == 0 ? Diagrams<Real>() : Diagrams<Real>(fil.max_dim());
 
     std::unordered_set<size_t> unmatched_positive;
 
