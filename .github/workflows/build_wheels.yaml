@@ -47,8 +47,8 @@ jobs:
           CIBW_ARCHS_MACOS: "x86_64 arm64"
           CIBW_ARCHS_LINUX: "x86_64"
           CIBW_SKIP: "*musllinux*"
-          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux2014"
-          CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux2014"
+          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+          CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux_2_28"
 
       - name: Build wheels
         run: |
@@ -69,10 +69,10 @@ jobs:
           CIBW_ARCHS_MACOS: "x86_64 arm64"
           CIBW_ARCHS_LINUX: "x86_64"
           CIBW_SKIP: "*musllinux*"
-          CIBW_BEFORE_ALL_LINUX: "yum install -y boost-devel"
+          CIBW_BEFORE_ALL_LINUX: "dnf install -y boost-devel || yum install -y boost-devel"
           CIBW_BEFORE_ALL_MACOS: "brew install boost"
-          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux2014"
-          CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux2014"
+          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+          CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux_2_28"
 
       - name: List built wheels
         run: ls -l wheelhouse
