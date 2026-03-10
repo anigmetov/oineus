@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-__version__ = "0.9.24"
+__version__ = "0.9.25"
 
 import typing
 import numpy as np
@@ -16,6 +16,8 @@ from ._oineus import ReductionParams, KICRParams, KerImCokReduced, KerImCokReduc
 from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizer, TopologyOptimizerProd
 from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise_target, get_induced_matching
 from ._oineus import get_nth_persistence, get_permutation_dtv
+from ._oineus import bottleneck_distance as _bottleneck_distance_cpp
+from ._oineus import wasserstein_distance as _wasserstein_distance_cpp
 from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D, CubeFiltration_1D
 from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, CubeFiltration_2D
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
@@ -29,7 +31,34 @@ except:
     _HAS_DIODE = False
 
 
-__all__ = ["compute_diagrams_ls", "compute_diagrams_vr", "compute_diagrams_alpha", "get_boundary_matrix", "is_reduced", "plot_persistence_diagram"]
+__all__ = ["compute_diagrams_ls", "compute_diagrams_vr", "compute_diagrams_alpha", "get_boundary_matrix", "is_reduced", "plot_persistence_diagram", "bottleneck_distance", "wasserstein_distance"]
+
+
+def _normalize_diagram_for_distance(dgm):
+    if isinstance(dgm, np.ndarray):
+        dgm = np.asarray(dgm, dtype=np.float64)
+        if dgm.ndim != 2 or dgm.shape[1] != 2:
+            raise ValueError("Expected NumPy array with shape (n_points, 2)")
+        return np.ascontiguousarray(dgm)
+    return dgm
+
+
+def bottleneck_distance(dgm_1, dgm_2, delta: float=0.01):
+    return _bottleneck_distance_cpp(_normalize_diagram_for_distance(dgm_1),
+                                    _normalize_diagram_for_distance(dgm_2),
+                                    delta=delta)
+
+
+def wasserstein_distance(dgm_1, dgm_2, q: float=2.0, delta: float=0.01, internal_p: float=np.inf,
+                         wasserstein_q: typing.Optional[float]=None):
+    if wasserstein_q is not None:
+        q = wasserstein_q
+    if np.isinf(internal_p):
+        internal_p = -1.0
+
+    return _wasserstein_distance_cpp(_normalize_diagram_for_distance(dgm_1),
+                                     _normalize_diagram_for_distance(dgm_2),
+                                     q=q, delta=delta, internal_p=internal_p)
 
 
 def to_scipy_matrix(sparse_cols, shape=None):

@@ -1,4 +1,59 @@
 #include "oineus_persistence_bindings.h"
+#include <hera/bottleneck.h>
+#include <hera/wasserstein.h>
+
+namespace {
+
+using DiagramPoint = oin::Diagrams<oin_real>::Point;
+using Diagram = oin::Diagrams<oin_real>::Dgm;
+using NumpyDiagram = nb::ndarray<oin_real, nb::c_contig, nb::device::cpu, nb::ro>;
+
+Diagram normalize_diagram_ids(const Diagram& dgm)
+{
+    Diagram result = dgm;
+    for(size_t i = 0 ; i < result.size() ; ++i) {
+        result[i].id = static_cast<oin::id_type>(i);
+    }
+    return result;
+}
+
+Diagram numpy_to_diagram(const NumpyDiagram& dgm)
+{
+    if (dgm.ndim() != 2)
+        throw nb::value_error("Expected 2D NumPy array with shape (n_points, 2)");
+    if (dgm.shape(1) != 2)
+        throw nb::value_error("Expected NumPy array with shape (n_points, 2)");
+
+    Diagram result;
+    result.reserve(dgm.shape(0));
+
+    const auto* pdata = static_cast<const oin_real*>(dgm.data());
+    for(size_t i = 0 ; i < dgm.shape(0) ; ++i) {
+        result.emplace_back(pdata[2 * i], pdata[2 * i + 1]);
+        result.back().id = static_cast<oin::id_type>(i);
+    }
+
+    return result;
+}
+
+oin_real bottleneck_distance_impl(Diagram dgm_1, Diagram dgm_2, oin_real delta)
+{
+    if (delta == 0.0)
+        return hera::bottleneckDistExact(dgm_1, dgm_2);
+    else
+        return hera::bottleneckDistApprox(dgm_1, dgm_2, delta);
+}
+
+oin_real wasserstein_distance_impl(Diagram dgm_1, Diagram dgm_2, oin_real q, oin_real delta, oin_real internal_p)
+{
+    hera::AuctionParams<oin_real> params;
+    params.wasserstein_power = q;
+    params.delta = delta;
+    params.internal_p = internal_p;
+    return hera::wasserstein_dist(dgm_1, dgm_2, params);
+}
+
+} // namespace
 
 void init_oineus_functions(nb::module_& m)
 {
@@ -61,4 +116,37 @@ void init_oineus_functions(nb::module_& m)
 
     func_name = "compute_relative_diagrams";
     m.def(func_name.c_str(), &compute_relative_diagrams<SimpProd, oin_real>, nb::arg("fil"), nb::arg("rel"), nb::arg("include_inf_points")=true);
+
+    // persistence diagram distances via Hera
+    func_name = "bottleneck_distance";
+    m.def(func_name.c_str(),
+            [](const Diagram& dgm_1, const Diagram& dgm_2, oin_real delta) {
+                return bottleneck_distance_impl(normalize_diagram_ids(dgm_1), normalize_diagram_ids(dgm_2), delta);
+            },
+            nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("delta") = 0.01,
+            "Compute bottleneck distance between two persistence diagrams.");
+
+    m.def(func_name.c_str(),
+            [](const NumpyDiagram& dgm_1, const NumpyDiagram& dgm_2, oin_real delta) {
+                return bottleneck_distance_impl(numpy_to_diagram(dgm_1), numpy_to_diagram(dgm_2), delta);
+            },
+            nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("delta") = 0.01,
+            "Compute bottleneck distance between two persistence diagrams given as NumPy arrays of shape (n_points, 2).");
+
+    func_name = "wasserstein_distance";
+    m.def(func_name.c_str(),
+            [](const Diagram& dgm_1, const Diagram& dgm_2, oin_real q, oin_real delta, oin_real internal_p) {
+                return wasserstein_distance_impl(normalize_diagram_ids(dgm_1), normalize_diagram_ids(dgm_2), q, delta, internal_p);
+            },
+            nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("q") = 2.0,
+            nb::arg("delta") = 0.01, nb::arg("internal_p") = hera::get_infinity<oin_real>(),
+            "Compute q-Wasserstein distance between two persistence diagrams.");
+
+    m.def(func_name.c_str(),
+            [](const NumpyDiagram& dgm_1, const NumpyDiagram& dgm_2, oin_real q, oin_real delta, oin_real internal_p) {
+                return wasserstein_distance_impl(numpy_to_diagram(dgm_1), numpy_to_diagram(dgm_2), q, delta, internal_p);
+            },
+            nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("q") = 2.0,
+            nb::arg("delta") = 0.01, nb::arg("internal_p") = hera::get_infinity<oin_real>(),
+            "Compute q-Wasserstein distance between NumPy-array persistence diagrams of shape (n_points, 2).");
 }
