@@ -44,20 +44,92 @@ def _normalize_diagram_for_distance(dgm):
 
 
 def bottleneck_distance(dgm_1, dgm_2, delta: float=0.01):
+    """Compute the bottleneck distance between two persistence diagrams.
+
+    Args:
+        dgm_1: Persistence diagram as either `list[DiagramPoint]` or a NumPy
+            array with shape `(n_points, 2)`.
+        dgm_2: Persistence diagram as either `list[DiagramPoint]` or a NumPy
+            array with shape `(n_points, 2)`.
+        delta: Relative error requested from Hera. Set `delta=0.0` to request
+            the exact bottleneck distance.
+
+    Returns:
+        The bottleneck distance as a Python float.
+    """
     return _bottleneck_distance_cpp(_normalize_diagram_for_distance(dgm_1),
                                     _normalize_diagram_for_distance(dgm_2),
                                     delta=delta)
 
 
+def _diagram_arrays_equal_for_zero_check(dgm_1, dgm_2):
+    if isinstance(dgm_1, np.ndarray):
+        arr_1 = dgm_1
+    else:
+        arr_1 = np.array([[p[0], p[1]] for p in dgm_1], dtype=np.float64).reshape((-1, 2))
+
+    if isinstance(dgm_2, np.ndarray):
+        arr_2 = dgm_2
+    else:
+        arr_2 = np.array([[p[0], p[1]] for p in dgm_2], dtype=np.float64).reshape((-1, 2))
+
+    if arr_1.shape != arr_2.shape:
+        return False
+
+    if arr_1.size == 0:
+        return True
+
+    sort_idx_1 = np.lexsort((arr_1[:, 1], arr_1[:, 0]))
+    sort_idx_2 = np.lexsort((arr_2[:, 1], arr_2[:, 0]))
+    arr_1 = arr_1[sort_idx_1]
+    arr_2 = arr_2[sort_idx_2]
+
+    finite_mask = np.isfinite(arr_1) & np.isfinite(arr_2)
+    matching_inf_mask = np.isinf(arr_1) & np.isinf(arr_2) & (np.signbit(arr_1) == np.signbit(arr_2))
+
+    if not np.all(finite_mask | matching_inf_mask):
+        return False
+
+    diff = np.zeros_like(arr_1)
+    diff[finite_mask] = np.abs(arr_1[finite_mask] - arr_2[finite_mask])
+
+    return np.all(diff < np.finfo(np.float64).eps)
+
+
 def wasserstein_distance(dgm_1, dgm_2, q: float=2.0, delta: float=0.01, internal_p: float=np.inf,
-                         wasserstein_q: typing.Optional[float]=None):
+                         wasserstein_q: typing.Optional[float]=None,
+                         check_for_zero: bool=True):
+    """Compute the q-Wasserstein distance between two persistence diagrams.
+
+    Args:
+        dgm_1: Persistence diagram as either `list[DiagramPoint]` or a NumPy
+            array with shape `(n_points, 2)`.
+        dgm_2: Persistence diagram as either `list[DiagramPoint]` or a NumPy
+            array with shape `(n_points, 2)`.
+        q: Wasserstein exponent.
+        delta: Relative error requested from Hera.
+        internal_p: Ground-metric norm in the plane. Use `np.inf` for the
+            `L_infinity` norm.
+        wasserstein_q: Alias for `q`, kept for API compatibility.
+        check_for_zero: If `True`, do a quick exact equality check in Python and
+            return `0.0` before calling Hera when the diagrams coincide.
+
+    Returns:
+        The Wasserstein distance as a Python float.
+    """
+    dgm_1 = _normalize_diagram_for_distance(dgm_1)
+    dgm_2 = _normalize_diagram_for_distance(dgm_2)
+    if check_for_zero:
+        if _diagram_arrays_equal_for_zero_check(dgm_1, dgm_2):
+            return 0.0
+
     if wasserstein_q is not None:
         q = wasserstein_q
     if np.isinf(internal_p):
         internal_p = -1.0
 
-    return _wasserstein_distance_cpp(_normalize_diagram_for_distance(dgm_1),
-                                     _normalize_diagram_for_distance(dgm_2),
+    return _wasserstein_distance_cpp(dgm_1,
+                                     dgm_2,
                                      q=q, delta=delta, internal_p=internal_p)
 
 
@@ -195,7 +267,11 @@ def compute_diagrams_alpha(points: np.ndarray,
                            include_inf_points: bool=True,
                            dualize: bool=False,
                            exact: bool=False,
-                           periodic: bool=False):
+                           periodic: bool=False,
+                           compute_bounding_box: bool=True,
+                           bbox_min: typing.Optional[typing.Union[np.ndarray, typing.List[float]]]=None,
+                           bbox_max: typing.Optional[typing.Union[np.ndarray, typing.List[float]]]=None,
+                           ):
     """Compute alpha-shape persistence diagrams.
 
     Args:
@@ -208,6 +284,13 @@ def compute_diagrams_alpha(points: np.ndarray,
         exact: Passed to diode. If True, uses exact CGAL kernel.
         periodic: If True, uses periodic alpha-shapes. Duplicate simplices
             reported by diode are deduplicated before building the filtration.
+        compute_bounding_box: If True, use the bounding box of the data for periodic
+            otherwise diode defaults (unit box) will be used.
+        bbox_min: lexicographically smallest point of the bounding box.
+             NumPy array or list of floats. Ignored, if compute_bounding_box is True.
+             Origin will be used, if compute_bounding_box is False and bbox_min is None.
+        bbox_max: lexicographically largest point of the bounding box.
+             NumPy array or list of floats. Ignored, if compute_bounding_box is True
 
     Returns:
         Diagrams object indexed by homology dimension.
@@ -217,6 +300,21 @@ def compute_diagrams_alpha(points: np.ndarray,
     assert _HAS_DIODE, "Cannot compute alpha-shapes without diode"
     assert points.ndim == 2
     assert points.shape[1] in [2, 3], "Alpha-shapes only support 2D and 3D point clouds"
+
+    # Diode wants lists, we accept NumPy array for convenience
+    if isinstance(bbox_min, np.ndarray):
+        bbox_min = [ float(x) for x in bbox_min ]
+    if isinstance(bbox_max, np.ndarray):
+        bbox_max = [ float(x) for x in bbox_max ]
+
+    if compute_bounding_box:
+        bbox_min = [ float(np.min(points[:, d])) for d in range(points.shape[1]) ]
+        bbox_max = [ float(np.max(points[:, d])) for d in range(points.shape[1]) ]
+    else:
+        if bbox_max is None:
+            bbox_max = [ 1.0 for d in range(points.shape[1]) ]
+        if  bbox_min is None:
+            bbox_min = [ 0.0 for d in range(points.shape[1]) ]
 
     if weights is not None:
         weights = np.asarray(weights)
@@ -229,12 +327,12 @@ def compute_diagrams_alpha(points: np.ndarray,
         if periodic:
             if not hasattr(diode, "fill_weighted_periodic_alpha_shapes"):
                 raise RuntimeError("diode.fill_weighted_periodic_alpha_shapes is not available in this diode build")
-            fil_diode = diode.fill_weighted_periodic_alpha_shapes(weighted_points, exact=exact)
+            fil_diode = diode.fill_weighted_periodic_alpha_shapes(weighted_points, exact, bbox_min, bbox_max)
         else:
             fil_diode = diode.fill_weighted_alpha_shapes(weighted_points, exact=exact)
     else:
         if periodic:
-            fil_diode = diode.fill_periodic_alpha_shapes(points, exact=exact)
+            fil_diode = diode.fill_periodic_alpha_shapes(points, exact, bbox_min, bbox_max)
         else:
             fil_diode = diode.fill_alpha_shapes(points, exact=exact)
 

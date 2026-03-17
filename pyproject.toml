@@ -72,8 +72,8 @@ archs = ["arm64"]
 
 [tool.cibuildwheel.linux]
 before-all = "yum install -y boost-devel"
-manylinux-x86_64-image = "manylinux_2_28"
-manylinux-aarch64-image = "manylinux_2_28"
+manylinux-x86_64-image = "manylinux2014"
+manylinux-aarch64-image = "manylinux2014"
 
 [tool.uv.workspace]
 members = [

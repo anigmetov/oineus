@@ -22,6 +22,47 @@ def test_distance_values_for_simple_case():
     assert ws_l1 == pytest.approx(0.2, abs=1e-12)
 
 
+def test_wasserstein_zero_fast_path_skips_cpp(monkeypatch):
+    dgm_1 = np.array([[0.0, 3.0], [1.0, np.inf]], dtype=np.float64)
+    dgm_2 = np.array([[1.0, np.inf], [0.0, 3.0]], dtype=np.float64)
+
+    def _should_not_run(*args, **kwargs):
+        raise AssertionError("Python zero check should return before the C++ call")
+
+    monkeypatch.setattr(oin, "_wasserstein_distance_cpp", _should_not_run)
+
+    assert oin.wasserstein_distance(dgm_1, dgm_2) == 0.0
+
+
+def test_wasserstein_zero_fast_path_handles_empty_list_and_array(monkeypatch):
+    dgm_1 = []
+    dgm_2 = np.empty((0, 2), dtype=np.float64)
+
+    def _should_not_run(*args, **kwargs):
+        raise AssertionError("Python zero check should return before the C++ call")
+
+    monkeypatch.setattr(oin, "_wasserstein_distance_cpp", _should_not_run)
+
+    assert oin.wasserstein_distance(dgm_1, dgm_2) == 0.0
+
+
+def test_wasserstein_zero_fast_path_respects_infinity_sign(monkeypatch):
+    dgm_1 = np.array([[0.0, np.inf]], dtype=np.float64)
+    dgm_2 = np.array([[0.0, -np.inf]], dtype=np.float64)
+
+    monkeypatch.setattr(oin, "_wasserstein_distance_cpp", lambda *args, **kwargs: 7.0)
+
+    assert oin.wasserstein_distance(dgm_1, dgm_2) == 7.0
+
+
+def test_wasserstein_zero_fast_path_can_be_disabled(monkeypatch):
+    dgm = np.array([[0.0, 3.0]], dtype=np.float64)
+
+    monkeypatch.setattr(oin, "_wasserstein_distance_cpp", lambda *args, **kwargs: 5.0)
+
+    assert oin.wasserstein_distance(dgm, dgm, check_for_zero=False) == 5.0
+
+
 def test_distances_match_dionysus_small():
     dion = pytest.importorskip("dionysus")
     if not hasattr(dion, "Diagram") or not hasattr(dion, "bottleneck_distance") or not hasattr(dion, "wasserstein_distance"):
