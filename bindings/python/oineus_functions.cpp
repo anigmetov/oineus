@@ -124,6 +124,7 @@ void init_oineus_functions(nb::module_& m)
                 return bottleneck_distance_impl(normalize_diagram_ids(dgm_1), normalize_diagram_ids(dgm_2), delta);
             },
             nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("delta") = 0.01,
+            nb::call_guard<nb::gil_scoped_release>(),
             "Compute bottleneck distance between two persistence diagrams.");
 
     m.def(func_name.c_str(),
@@ -131,6 +132,7 @@ void init_oineus_functions(nb::module_& m)
                 return bottleneck_distance_impl(numpy_to_diagram(dgm_1), numpy_to_diagram(dgm_2), delta);
             },
             nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("delta") = 0.01,
+            nb::call_guard<nb::gil_scoped_release>(),
             "Compute bottleneck distance between two persistence diagrams given as NumPy arrays of shape (n_points, 2).");
 
     func_name = "wasserstein_distance";
@@ -138,15 +140,17 @@ void init_oineus_functions(nb::module_& m)
             [](const Diagram& dgm_1, const Diagram& dgm_2, oin_real q, oin_real delta, oin_real internal_p) {
                 return wasserstein_distance_impl(normalize_diagram_ids(dgm_1), normalize_diagram_ids(dgm_2), q, delta, internal_p);
             },
-            nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("q") = 2.0,
+            nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("q") = 1.0,
             nb::arg("delta") = 0.01, nb::arg("internal_p") = hera::get_infinity<oin_real>(),
+            nb::call_guard<nb::gil_scoped_release>(),
             "Compute q-Wasserstein distance between two persistence diagrams.");
 
     m.def(func_name.c_str(),
             [](const NumpyDiagram& dgm_1, const NumpyDiagram& dgm_2, oin_real q, oin_real delta, oin_real internal_p) {
                 return wasserstein_distance_impl(numpy_to_diagram(dgm_1), numpy_to_diagram(dgm_2), q, delta, internal_p);
             },
-            nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("q") = 2.0,
+            nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("q") = 1.0,
             nb::arg("delta") = 0.01, nb::arg("internal_p") = hera::get_infinity<oin_real>(),
+            nb::call_guard<nb::gil_scoped_release>(),
             "Compute q-Wasserstein distance between NumPy-array persistence diagrams of shape (n_points, 2).");
 }

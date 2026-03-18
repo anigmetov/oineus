@@ -124,6 +124,7 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     nb::arg("wasserstein_q")=1.0,
                     nb::arg("wasserstein_delta")=0.01,
                     nb::arg("return_wasserstein_distance")=false,
+                    nb::call_guard<nb::gil_scoped_release>(),
                     "return target from Wasserstein matching"
             )
             .def_prop_ro("homology_decomposition", &TopologyOptimizer::get_homology_decompostion)
