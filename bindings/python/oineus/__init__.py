@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-__version__ = "0.9.25"
+__version__ = "0.9.26"
 
 import typing
 import numpy as np
