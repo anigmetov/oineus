@@ -397,7 +397,7 @@ struct RVColumn<Int_, 2> {
     RVColumn(const RVColumn& other) = default;
     RVColumn(RVColumn&& other) noexcept = default;
     RVColumn(Column&& _r, Column&& _v)
-            :r_column(_r), v_column(_v) { }
+            :r_column(std::move(_r)), v_column(std::move(_v)) { }
 
     RVColumn(const Column& _r, const Column& _v)
             :r_column(_r), v_column(_v) { }
