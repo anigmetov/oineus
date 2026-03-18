@@ -118,6 +118,16 @@ public:
             out << container_to_string(iv.values);
             return out;
         }
+
+        bool operator==(const IndicesValues& other) const
+        {
+            return indices == other.indices && values == other.values;
+        }
+
+        bool operator!=(const IndicesValues& other) const
+        {
+            return !(*this == other);
+        }
     };
 
 //    TopologyOptimizer(const BoundaryMatrix& boundary_matrix, const Values& values, bool negate = false)
@@ -645,7 +655,22 @@ public:
     Decomposition get_homology_decompostion() const { return decmp_hom_; }
     Decomposition get_cohomology_decompostion() const { return decmp_coh_; }
 
-private:
+    bool operator==(const TopologyOptimizer& other) const
+    {
+        return negate_ == other.negate_
+            && fil_ == other.fil_
+            && decmp_hom_ == other.decmp_hom_
+            && decmp_coh_ == other.decmp_coh_
+            && params_hom_ == other.params_hom_
+            && params_coh_ == other.params_coh_;
+    }
+
+    bool operator!=(const TopologyOptimizer& other) const
+    {
+        return !(*this == other);
+    }
+
+// private:
     // data
     bool negate_;
 

@@ -254,6 +254,16 @@ namespace oineus {
                 f.close();
             }
         }
+
+        bool operator==(const Diagrams& other) const
+        {
+            return diagram_in_dimension_ == other.diagram_in_dimension_;
+        }
+
+        bool operator!=(const Diagrams& other) const
+        {
+            return !(*this == other);
+        }
     };
 
 } // namespace oineus

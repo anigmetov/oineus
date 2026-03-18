@@ -55,6 +55,28 @@ inline std::ostream& operator<<(std::ostream& out, const KICRParams& p)
     return out;
 }
 
+inline bool operator==(const KICRParams& a, const KICRParams& b)
+{
+    return a.codomain == b.codomain
+        && a.kernel == b.kernel
+        && a.image == b.image
+        && a.cokernel == b.cokernel
+        && a.include_zero_persistence == b.include_zero_persistence
+        && a.verbose == b.verbose
+        && a.sanity_check == b.sanity_check
+        && a.n_threads == b.n_threads
+        && a.params_f == b.params_f
+        && a.params_g == b.params_g
+        && a.params_ker == b.params_ker
+        && a.params_im == b.params_im
+        && a.params_cok == b.params_cok;
+}
+
+inline bool operator!=(const KICRParams& a, const KICRParams& b)
+{
+    return !(a == b);
+}
+
 template<typename Cell, typename Real_, int P = 2>
 struct KerImCokReduced {
     using Int = typename Cell::Int;
@@ -83,7 +105,7 @@ public:
     Dgms ker_diagrams_;  // kernel diagrams (essentially, map dim -> vector of DgmPoints)
     Dgms im_diagrams_;   // image diagrams
     Dgms cok_diagrams_;  // cokernel diagrams
-private:
+// private:
     std::vector<size_t> sorted_K_to_sorted_L_; // given sorted_id i of cell in K, sorted_K_to_sorted_L_[i] is its sorted_id in L; for cells not in K, stores k_invalid_index
     std::vector<size_t> sorted_L_to_sorted_K_; // given sorted_id i of cell in L, sorted_L_to_sorted_K_[i] is its sorted_id in K
     std::vector<size_t> new_order_to_old_;     // given sorted_id i of cell in K, new_order_to_old[i] is its index in the ordering 'first L, then K-L', used in D_im
@@ -219,6 +241,35 @@ public:
     bool is_in_K_only(size_t index_in_K) const
     {
         return sorted_K_to_sorted_L_[index_in_K] == k_invalid_index;
+    }
+
+    bool operator==(const KerImCokReduced& other) const
+    {
+        return fil_K_ == other.fil_K_
+            && fil_L_ == other.fil_L_
+            && dcmp_F_ == other.dcmp_F_
+            && dcmp_F_D_ == other.dcmp_F_D_
+            && dcmp_G_ == other.dcmp_G_
+            && dcmp_im_ == other.dcmp_im_
+            && dcmp_ker_ == other.dcmp_ker_
+            && dcmp_cok_ == other.dcmp_cok_
+            && max_dim_ == other.max_dim_
+            && dom_diagrams_ == other.dom_diagrams_
+            && cod_diagrams_ == other.cod_diagrams_
+            && ker_diagrams_ == other.ker_diagrams_
+            && im_diagrams_ == other.im_diagrams_
+            && cok_diagrams_ == other.cok_diagrams_
+            && sorted_K_to_sorted_L_ == other.sorted_K_to_sorted_L_
+            && sorted_L_to_sorted_K_ == other.sorted_L_to_sorted_K_
+            && new_order_to_old_ == other.new_order_to_old_
+            && old_order_to_new_ == other.old_order_to_new_
+            && K_to_ker_column_index_ == other.K_to_ker_column_index_
+            && params_ == other.params_;
+    }
+
+    bool operator!=(const KerImCokReduced& other) const
+    {
+        return !(*this == other);
     }
 
     // parameters: complex K, a subcomplex L, reduction params

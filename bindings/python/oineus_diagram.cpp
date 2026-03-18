@@ -8,6 +8,21 @@ void init_oineus_diagram(nb::module_& m)
     using IndexDgmPoint = typename oin::Diagrams<size_t>::Point;
     using IndexDgmPtVec = typename oin::Diagrams<oin_real>::IndexDgm;
     using Diagram = PyOineusDiagrams<oin_real>;
+    using DgmPointStateTuple = std::tuple<decltype(DgmPoint::birth),
+                                          decltype(DgmPoint::death),
+                                          decltype(DgmPoint::birth_index),
+                                          decltype(DgmPoint::death_index),
+                                          decltype(DgmPoint::birth_index_unsorted),
+                                          decltype(DgmPoint::death_index_unsorted),
+                                          decltype(DgmPoint::id)>;
+    using IndexDgmPointStateTuple = std::tuple<decltype(IndexDgmPoint::birth),
+                                               decltype(IndexDgmPoint::death),
+                                               decltype(IndexDgmPoint::birth_index),
+                                               decltype(IndexDgmPoint::death_index),
+                                               decltype(IndexDgmPoint::birth_index_unsorted),
+                                               decltype(IndexDgmPoint::death_index_unsorted),
+                                               decltype(IndexDgmPoint::id)>;
+    using DiagramStateTuple = std::tuple<typename Diagram::State>;
 
     const std::string dgm_point_name = "DiagramPoint";
     const std::string index_dgm_point_name = "IndexDiagramPoint";
@@ -25,11 +40,26 @@ void init_oineus_diagram(nb::module_& m)
             .def("is_inf", &DgmPoint::is_inf)
             .def("__getitem__", [](const DgmPoint& p, int i) { return p[i]; })
             .def("__hash__", [](const DgmPoint& p) { return std::hash<DgmPoint>()(p); })
-            .def("__eq__", [](const DgmPoint& p, const DgmPoint& q) { return p == q; })
+            .def(nb::self == nb::self)
+            .def(nb::self != nb::self)
             .def("__repr__", [](const DgmPoint& p) {
               std::stringstream ss;
               ss << p;
               return ss.str();
+            })
+            .def("__getstate__", [](const DgmPoint& p) -> DgmPointStateTuple {
+                return std::make_tuple(p.birth, p.death, p.birth_index, p.death_index,
+                        p.birth_index_unsorted, p.death_index_unsorted, p.id);
+            })
+            .def("__setstate__", [](DgmPoint& p, const DgmPointStateTuple& t) {
+                new (&p) DgmPoint();
+                p.birth = std::get<0>(t);
+                p.death = std::get<1>(t);
+                p.birth_index = std::get<2>(t);
+                p.death_index = std::get<3>(t);
+                p.birth_index_unsorted = std::get<4>(t);
+                p.death_index_unsorted = std::get<5>(t);
+                p.id = std::get<6>(t);
             });
 
     nb::class_<IndexDgmPoint>(m, index_dgm_point_name.c_str())
@@ -40,11 +70,26 @@ void init_oineus_diagram(nb::module_& m)
                  { return std::abs(static_cast<long long>(p.birth) - static_cast<long long>(p.death)); })
             .def("__getitem__", [](const IndexDgmPoint& p, int i) { return p[i]; })
             .def("__hash__", [](const IndexDgmPoint& p) { return std::hash<IndexDgmPoint>()(p); })
-            .def("__eq__", [](const IndexDgmPoint& p, const IndexDgmPoint& q) { return p == q; })
+            .def(nb::self == nb::self)
+            .def(nb::self != nb::self)
             .def("__repr__", [](const IndexDgmPoint& p) {
               std::stringstream ss;
               ss << p;
               return ss.str();
+            })
+            .def("__getstate__", [](const IndexDgmPoint& p) -> IndexDgmPointStateTuple {
+                return std::make_tuple(p.birth, p.death, p.birth_index, p.death_index,
+                        p.birth_index_unsorted, p.death_index_unsorted, p.id);
+            })
+            .def("__setstate__", [](IndexDgmPoint& p, const IndexDgmPointStateTuple& t) {
+                new (&p) IndexDgmPoint();
+                p.birth = std::get<0>(t);
+                p.death = std::get<1>(t);
+                p.birth_index = std::get<2>(t);
+                p.death_index = std::get<3>(t);
+                p.birth_index_unsorted = std::get<4>(t);
+                p.death_index_unsorted = std::get<5>(t);
+                p.id = std::get<6>(t);
             });
 
     nb::class_<Diagram>(m, dgm_class_name.c_str())
@@ -83,5 +128,14 @@ void init_oineus_diagram(nb::module_& m)
                  "Extend diagrams to dimensions [0..new_top_dim] by appending empty diagrams as needed.")
             .def("trim_to_dim", &Diagram::trim_to_dim, nb::arg("max_dim"),
                  "Trim diagrams to dimensions [0..max_dim].")
+            .def(nb::self == nb::self)
+            .def(nb::self != nb::self)
+            .def("__getstate__", [](const Diagram& d) -> DiagramStateTuple {
+                return std::make_tuple(d.state());
+            })
+            .def("__setstate__", [](Diagram& d, const DiagramStateTuple& t) {
+                new (&d) Diagram();
+                d.set_state(std::get<0>(t));
+            })
             ;
 }

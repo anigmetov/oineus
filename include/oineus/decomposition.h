@@ -487,6 +487,25 @@ namespace oineus {
 
         bool dualize() const { return dualize_; }
 
+        bool operator==(const VRUDecomposition& other) const
+        {
+            return d_data == other.d_data
+                && r_data == other.r_data
+                && v_data == other.v_data
+                && u_data_t == other.u_data_t
+                && is_reduced == other.is_reduced
+                && dualize_ == other.dualize_
+                && _pivots == other._pivots
+                && dim_first == other.dim_first
+                && dim_last == other.dim_last
+                && n_rows == other.n_rows;
+        }
+
+        bool operator!=(const VRUDecomposition& other) const
+        {
+            return !(*this == other);
+        }
+
         void reduce(Params& params);
 
         void reduce_serial(Params& params);

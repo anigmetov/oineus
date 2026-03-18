@@ -51,6 +51,32 @@ namespace oineus {
         return out;
     }
 
+    inline bool operator==(const Params& a, const Params& b)
+    {
+        return a.n_threads == b.n_threads
+            && a.chunk_size == b.chunk_size
+            && a.write_dgms == b.write_dgms
+            && a.sort_dgms == b.sort_dgms
+            && a.clearing_opt == b.clearing_opt
+            && a.acq_rel == b.acq_rel
+            && a.print_time == b.print_time
+            && a.compute_v == b.compute_v
+            && a.compute_u == b.compute_u
+            && a.restore_elz == b.restore_elz
+            && a.do_sanity_check == b.do_sanity_check
+            && a.elapsed == b.elapsed
+            && a.elapsed_restore_elz == b.elapsed_restore_elz
+            && a.elapsed_copy_back == b.elapsed_copy_back
+            && a.elapsed_copy_pivots == b.elapsed_copy_pivots
+            && a.verbose == b.verbose
+            && a.spdlog_level == b.spdlog_level;
+    }
+
+    inline bool operator!=(const Params& a, const Params& b)
+    {
+        return !(a == b);
+    }
+
     struct ThreadStats {
         const int thread_id;
         long int n_right_pivots {0};

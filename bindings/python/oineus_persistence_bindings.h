@@ -70,6 +70,8 @@ template<class Real>
 class PyOineusDiagrams {
 public:
     using Coordinate = Real;
+    using Storage = oin::Diagrams<Real>;
+    using State = std::vector<typename Storage::Dgm>;
 
     PyOineusDiagrams() = default;
 
@@ -135,6 +137,36 @@ public:
     void trim_to_dim(dim_type max_dim)
     {
         diagrams_.trim_to_dim(max_dim);
+    }
+
+    const Storage& data() const
+    {
+        return diagrams_;
+    }
+
+    void set_data(const Storage& diagrams)
+    {
+        diagrams_ = diagrams;
+    }
+
+    State state() const
+    {
+        return diagrams_.diagram_in_dimension_;
+    }
+
+    void set_state(const State& state)
+    {
+        diagrams_.diagram_in_dimension_ = state;
+    }
+
+    bool operator==(const PyOineusDiagrams& other) const
+    {
+        return diagrams_ == other.diagrams_;
+    }
+
+    bool operator!=(const PyOineusDiagrams& other) const
+    {
+        return !(*this == other);
     }
 
 private:

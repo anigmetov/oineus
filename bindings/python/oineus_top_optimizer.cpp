@@ -83,6 +83,13 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
     using IndicesValues = typename TopologyOptimizer::IndicesValues;
     using Indices = typename TopologyOptimizer::Indices;
     using Values = typename TopologyOptimizer::Values;
+    using IndicesValuesStateTuple = std::tuple<Indices, Values>;
+    using TopologyOptimizerStateTuple = std::tuple<decltype(TopologyOptimizer::negate_),
+                                                   decltype(TopologyOptimizer::fil_),
+                                                   decltype(TopologyOptimizer::decmp_hom_),
+                                                   decltype(TopologyOptimizer::decmp_coh_),
+                                                   decltype(TopologyOptimizer::params_hom_),
+                                                   decltype(TopologyOptimizer::params_coh_)>;
 
     nb::class_<IndicesValues>(m, ind_vals_name.c_str())
             .def("__getitem__", [](const IndicesValues& iv, int i) -> std::variant<Indices, Values> {
@@ -97,6 +104,16 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
               std::stringstream ss;
               ss << iv;
               return ss.str();
+            })
+            .def(nb::self == nb::self)
+            .def(nb::self != nb::self)
+            .def("__getstate__", [](const IndicesValues& iv) -> IndicesValuesStateTuple {
+                return std::make_tuple(iv.indices, iv.values);
+            })
+            .def("__setstate__", [](IndicesValues& iv, const IndicesValuesStateTuple& t) {
+                new (&iv) IndicesValues();
+                iv.indices = std::get<0>(t);
+                iv.values = std::get<1>(t);
             });
 
     // optimization
@@ -140,7 +157,21 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     nb::arg("critical_sets"),
                     nb::arg("strategy"),
                     "combine critical sets into well-defined assignment of new values to indices")
-            .def("update", &TopologyOptimizer::update);
+            .def("update", &TopologyOptimizer::update)
+            .def(nb::self == nb::self)
+            .def(nb::self != nb::self)
+            .def("__getstate__", [](const TopologyOptimizer& opt) -> TopologyOptimizerStateTuple {
+                return std::make_tuple(opt.negate_, opt.fil_, opt.decmp_hom_, opt.decmp_coh_, opt.params_hom_, opt.params_coh_);
+            })
+            .def("__setstate__", [](TopologyOptimizer& opt, const TopologyOptimizerStateTuple& t) {
+                new (&opt) TopologyOptimizer(std::get<1>(t));
+                opt.negate_ = std::get<0>(t);
+                opt.fil_ = std::get<1>(t);
+                opt.decmp_hom_ = std::get<2>(t);
+                opt.decmp_coh_ = std::get<3>(t);
+                opt.params_hom_ = std::get<4>(t);
+                opt.params_coh_ = std::get<5>(t);
+            });
 
 }
 

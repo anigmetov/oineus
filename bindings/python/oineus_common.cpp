@@ -3,6 +3,7 @@
 void init_oineus_common(nb::module_& m)
 {
     using VREdge = oin::VREdge<oin_int>;
+    using VREdgeStateTuple = std::tuple<decltype(VREdge::x), decltype(VREdge::y)>;
 
     using oin::DenoiseStrategy;
     using oin::ConflictStrategy;
@@ -29,6 +30,16 @@ void init_oineus_common(nb::module_& m)
               std::stringstream ss;
               ss << p;
               return ss.str();
+            })
+            .def(nb::self == nb::self)
+            .def(nb::self != nb::self)
+            .def("__getstate__", [](const VREdge& p) -> VREdgeStateTuple {
+                return std::make_tuple(p.x, p.y);
+            })
+            .def("__setstate__", [](VREdge& p, const VREdgeStateTuple& t) {
+                new (&p) VREdge();
+                p.x = std::get<0>(t);
+                p.y = std::get<1>(t);
             });
 
     using RedParamsTuple = std::tuple<int,    // n_threads
@@ -46,7 +57,8 @@ void init_oineus_common(nb::module_& m)
                                       double, //elapsed_restore_elz
                                       double, //elapsed_copy_back
                                       double, //elapsed_copy_pivots
-                                      bool    // verbose
+                                      bool,   // verbose
+                                      int     // spdlog_level
                                     >;
 
     nb::class_<ReductionParams>(m, "ReductionParams")
@@ -79,11 +91,13 @@ void init_oineus_common(nb::module_& m)
             .def_rw("elapsed_copy_pivots", &ReductionParams::elapsed_copy_pivots)
             .def_rw("verbose", &ReductionParams::verbose)
             .def("__repr__", [](const ReductionParams& self) { std::stringstream ss; ss << self; return ss.str(); })
+            .def(nb::self == nb::self)
+            .def(nb::self != nb::self)
             .def("__getstate__", [](const ReductionParams& p) {
                       return std::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
                               p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
                               p.restore_elz, p.do_sanity_check, p.elapsed, p.elapsed_restore_elz,
-                              p.elapsed_copy_back, p.elapsed_copy_pivots, p.verbose);
+                              p.elapsed_copy_back, p.elapsed_copy_pivots, p.verbose, static_cast<int>(p.spdlog_level));
                     })
             .def("__setstate__", [](ReductionParams& p, const RedParamsTuple& t) {
                     new (&p) ReductionParams();
@@ -103,6 +117,7 @@ void init_oineus_common(nb::module_& m)
                       p.elapsed_copy_back = std::get<13>(t);
                       p.elapsed_copy_pivots = std::get<14>(t);
                       p.verbose         = std::get<15>(t);
+                      p.spdlog_level    = static_cast<spd::level::level_enum>(std::get<16>(t));
                     })
     ;
 
@@ -158,9 +173,11 @@ void init_oineus_common(nb::module_& m)
             .def_rw("params_f", &KICRParams::params_f)
             .def_rw("params_g", &KICRParams::params_g)
             .def_rw("params_ker", &KICRParams::params_ker)
-            .def_rw("params_im", &KICRParams::params_ker)
-            .def_rw("params_cok", &KICRParams::params_ker)
+            .def_rw("params_im", &KICRParams::params_im)
+            .def_rw("params_cok", &KICRParams::params_cok)
             .def("__repr__", [](const KICRParams& self) { std::stringstream ss; ss << self; return ss.str(); })
+            .def(nb::self == nb::self)
+            .def(nb::self != nb::self)
             .def("__getstate__", [](const KICRParams& p) {
                       return std::make_tuple(p.codomain, p.kernel, p.image, p.cokernel, p.include_zero_persistence, p.verbose, p.sanity_check,
                               p.n_threads, p.params_f, p.params_g, p.params_ker, p.params_im, p.params_cok);

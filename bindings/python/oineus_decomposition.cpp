@@ -264,6 +264,16 @@ Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv(
 void init_oineus_common_decomposition(nb::module_& m)
 {
     using Decomposition = oin::VRUDecomposition<oin_int>;
+    using DecompositionStateTuple = std::tuple<decltype(Decomposition::d_data),
+                                               decltype(Decomposition::r_data),
+                                               decltype(Decomposition::v_data),
+                                               decltype(Decomposition::u_data_t),
+                                               decltype(Decomposition::is_reduced),
+                                               decltype(Decomposition::dualize_),
+                                               decltype(Decomposition::_pivots),
+                                               decltype(Decomposition::dim_first),
+                                               decltype(Decomposition::dim_last),
+                                               decltype(Decomposition::n_rows)>;
     using Simplex = oin::Simplex<oin_int>;
     using SimplexFiltration = oin::Filtration<Simplex, oin_real>;
     using ProdSimplex = oin::ProductCell<Simplex, Simplex>;
@@ -338,6 +348,25 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_3D& fil) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil)); },
                     nb::arg("fil"))
             .def("filtration_index", &Decomposition::filtration_index, nb::arg("matrix_index"))
+            .def(nb::self == nb::self)
+            .def(nb::self != nb::self)
+            .def("__getstate__", [](const Decomposition& self) -> DecompositionStateTuple {
+                return std::make_tuple(self.d_data, self.r_data, self.v_data, self.u_data_t, self.is_reduced,
+                        self.dualize_, self._pivots, self.dim_first, self.dim_last, self.n_rows);
+            })
+            .def("__setstate__", [](Decomposition& self, const DecompositionStateTuple& t) {
+                new (&self) Decomposition();
+                self.d_data = std::get<0>(t);
+                self.r_data = std::get<1>(t);
+                self.v_data = std::get<2>(t);
+                self.u_data_t = std::get<3>(t);
+                self.is_reduced = std::get<4>(t);
+                self.dualize_ = std::get<5>(t);
+                self._pivots = std::get<6>(t);
+                self.dim_first = std::get<7>(t);
+                self.dim_last = std::get<8>(t);
+                self.n_rows = std::get<9>(t);
+            })
                     ;
 
 }
