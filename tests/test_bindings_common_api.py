@@ -74,3 +74,17 @@ def test_conflict_strategy_enum():
     _ = oin.ConflictStrategy.Avg.as_str()
     _ = oin.ConflictStrategy.Sum.as_str()
     _ = oin.ConflictStrategy.FixCritAvg.as_str()
+
+
+def test_diagram_plane_domain_enum():
+    _ = oin.DiagramPlaneDomain.AboveDiagonal.as_str()
+    _ = oin.DiagramPlaneDomain.BelowDiagonal.as_str()
+    _ = oin.DiagramPlaneDomain.Mixed.as_str()
+
+
+def test_frechet_mean_init_enum():
+    _ = oin.FrechetMeanInit.Custom.as_str()
+    _ = oin.FrechetMeanInit.FirstDiagram.as_str()
+    _ = oin.FrechetMeanInit.MedoidDiagram.as_str()
+    _ = oin.FrechetMeanInit.RandomDiagram.as_str()
+    _ = oin.FrechetMeanInit.Grid.as_str()

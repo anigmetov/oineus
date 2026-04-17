@@ -9,6 +9,7 @@
 #include "inclusion_filtration.h"
 #include "product_cell.h"
 #include "diagram.h"
+#include "frechet_mean.h"
 #include "grid_domain.h"
 #include "grid.h"
 #include "vietoris_rips.h"

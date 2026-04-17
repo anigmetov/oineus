@@ -75,6 +75,10 @@ else()
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_diagram_distances.py")
     set_tests_properties(py-diagram-distances PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
+    add_test(NAME py-frechet-mean
+            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_frechet_mean.py")
+    set_tests_properties(py-frechet-mean PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
     add_test(NAME py-bindings-filtration
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_filtration_api.py")
     set_tests_properties(py-bindings-filtration PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")

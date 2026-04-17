@@ -9,6 +9,7 @@ import scipy.sparse
 from . import _oineus
 
 from ._oineus import ConflictStrategy, DenoiseStrategy, VREdge
+from ._oineus import DiagramPlaneDomain, FrechetMeanInit
 from ._oineus import CombinatorialProdSimplex, CombinatorialSimplex,Simplex, ProdSimplex
 from ._oineus import Filtration, ProdFiltration
 from ._oineus import Decomposition, IndexDiagramPoint, DiagramPoint, Diagrams
@@ -18,6 +19,7 @@ from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise
 from ._oineus import get_nth_persistence, get_permutation_dtv
 from ._oineus import bottleneck_distance as _bottleneck_distance_cpp
 from ._oineus import wasserstein_distance as _wasserstein_distance_cpp
+from ._oineus import frechet_mean as _frechet_mean_cpp
 from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D, CubeFiltration_1D
 from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, CubeFiltration_2D
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
@@ -31,10 +33,21 @@ except:
     _HAS_DIODE = False
 
 
-__all__ = ["compute_diagrams_ls", "compute_diagrams_vr", "compute_diagrams_alpha", "get_boundary_matrix", "is_reduced", "plot_persistence_diagram", "bottleneck_distance", "wasserstein_distance"]
+__all__ = ["compute_diagrams_ls", "compute_diagrams_vr", "compute_diagrams_alpha", "get_boundary_matrix", "is_reduced", "plot_persistence_diagram", "bottleneck_distance", "wasserstein_distance", "frechet_mean"]
 
 
-def _normalize_diagram_for_distance(dgm):
+def _diagram_from_oineus_diagrams(dgms, dim: typing.Optional[int]):
+    if dim is None:
+        if len(dgms) == 1:
+            dim = 0
+        else:
+            raise ValueError("When passing oineus.Diagrams, specify dim=...")
+    return np.ascontiguousarray(dgms.in_dimension(dim, as_numpy=True), dtype=np.float64)
+
+
+def _normalize_diagram_for_distance(dgm, *, dim: typing.Optional[int]=None):
+    if hasattr(dgm, "in_dimension") and hasattr(dgm, "__len__"):
+        return _diagram_from_oineus_diagrams(dgm, dim)
     if isinstance(dgm, np.ndarray):
         dgm = np.asarray(dgm, dtype=np.float64)
         if dgm.ndim != 2 or dgm.shape[1] != 2:
@@ -43,22 +56,29 @@ def _normalize_diagram_for_distance(dgm):
     return dgm
 
 
-def bottleneck_distance(dgm_1, dgm_2, delta: float=0.01):
+def _normalize_diagram_collection(diagrams):
+    return [_normalize_diagram_for_distance(dgm) for dgm in diagrams]
+
+
+def bottleneck_distance(dgm_1, dgm_2, delta: float=0.01, dim: typing.Optional[int]=None):
     """Compute the bottleneck distance between two persistence diagrams.
 
     Args:
-        dgm_1: Persistence diagram as either `list[DiagramPoint]` or a NumPy
-            array with shape `(n_points, 2)`.
-        dgm_2: Persistence diagram as either `list[DiagramPoint]` or a NumPy
-            array with shape `(n_points, 2)`.
+        dgm_1: Persistence diagram as either `list[DiagramPoint]`, an Oineus
+            `Diagrams` object, or a NumPy array with shape `(n_points, 2)`.
+        dgm_2: Persistence diagram as either `list[DiagramPoint]`, an Oineus
+            `Diagrams` object, or a NumPy array with shape `(n_points, 2)`.
         delta: Relative error requested from Hera. Set `delta=0.0` to request
             the exact bottleneck distance.
+        dim: Homology dimension to extract when `dgm_1` or `dgm_2` is an
+            Oineus `Diagrams` object. If omitted, dimension 0 is used only when
+            the diagrams container has length 1.
 
     Returns:
         The bottleneck distance as a Python float.
     """
-    return _bottleneck_distance_cpp(_normalize_diagram_for_distance(dgm_1),
-                                    _normalize_diagram_for_distance(dgm_2),
+    return _bottleneck_distance_cpp(_normalize_diagram_for_distance(dgm_1, dim=dim),
+                                    _normalize_diagram_for_distance(dgm_2, dim=dim),
                                     delta=delta)
 
 
@@ -98,14 +118,15 @@ def _diagram_arrays_equal_for_zero_check(dgm_1, dgm_2):
 
 def wasserstein_distance(dgm_1, dgm_2, q: float=2.0, delta: float=0.01, internal_p: float=np.inf,
                          wasserstein_q: typing.Optional[float]=None,
-                         check_for_zero: bool=True):
+                         check_for_zero: bool=True,
+                         dim: typing.Optional[int]=None):
     """Compute the q-Wasserstein distance between two persistence diagrams.
 
     Args:
-        dgm_1: Persistence diagram as either `list[DiagramPoint]` or a NumPy
-            array with shape `(n_points, 2)`.
-        dgm_2: Persistence diagram as either `list[DiagramPoint]` or a NumPy
-            array with shape `(n_points, 2)`.
+        dgm_1: Persistence diagram as either `list[DiagramPoint]`, an Oineus
+            `Diagrams` object, or a NumPy array with shape `(n_points, 2)`.
+        dgm_2: Persistence diagram as either `list[DiagramPoint]`, an Oineus
+            `Diagrams` object, or a NumPy array with shape `(n_points, 2)`.
         q: Wasserstein exponent.
         delta: Relative error requested from Hera.
         internal_p: Ground-metric norm in the plane. Use `np.inf` for the
@@ -113,12 +134,15 @@ def wasserstein_distance(dgm_1, dgm_2, q: float=2.0, delta: float=0.01, internal
         wasserstein_q: Alias for `q`, kept for API compatibility.
         check_for_zero: If `True`, do a quick exact equality check in Python and
             return `0.0` before calling Hera when the diagrams coincide.
+        dim: Homology dimension to extract when `dgm_1` or `dgm_2` is an
+            Oineus `Diagrams` object. If omitted, dimension 0 is used only when
+            the diagrams container has length 1.
 
     Returns:
         The Wasserstein distance as a Python float.
     """
-    dgm_1 = _normalize_diagram_for_distance(dgm_1)
-    dgm_2 = _normalize_diagram_for_distance(dgm_2)
+    dgm_1 = _normalize_diagram_for_distance(dgm_1, dim=dim)
+    dgm_2 = _normalize_diagram_for_distance(dgm_2, dim=dim)
     if check_for_zero:
         if _diagram_arrays_equal_for_zero_check(dgm_1, dgm_2):
             return 0.0
@@ -131,6 +155,47 @@ def wasserstein_distance(dgm_1, dgm_2, q: float=2.0, delta: float=0.01, internal
     return _wasserstein_distance_cpp(dgm_1,
                                      dgm_2,
                                      q=q, delta=delta, internal_p=internal_p)
+
+
+def frechet_mean(diagrams,
+                 *,
+                 weights=None,
+                 max_iter: int = 100,
+                 tol: float = 1e-7,
+                 wasserstein_delta: float = 0.01,
+                 internal_p: float = np.inf,
+                 init_strategy=FrechetMeanInit.Grid,
+                 domain=DiagramPlaneDomain.AboveDiagonal,
+                 ignore_infinite_points: bool = False,
+                 random_noise_scale: float = 1.0,
+                 random_seed: int = 42,
+                 grid_n_x_bins: int = 16,
+                 grid_n_y_bins: int = 16,
+                 custom_initial_barycenter=None):
+    diagrams = _normalize_diagram_collection(diagrams)
+    weights = None if weights is None else np.asarray(weights, dtype=np.float64)
+    if weights is not None:
+        assert weights.ndim == 1, "weights must be a 1D array"
+        assert weights.shape[0] == len(diagrams), "weights must have same length as diagrams"
+    custom_initial_barycenter = None if custom_initial_barycenter is None else _normalize_diagram_for_distance(custom_initial_barycenter)
+
+    if np.isinf(internal_p):
+        internal_p = -1.0
+
+    return _frechet_mean_cpp(diagrams,
+                             weights=weights,
+                             max_iter=max_iter,
+                             tol=tol,
+                             wasserstein_delta=wasserstein_delta,
+                             internal_p=internal_p,
+                             init_strategy=init_strategy,
+                             domain=domain,
+                             ignore_infinite_points=ignore_infinite_points,
+                             random_noise_scale=random_noise_scale,
+                             random_seed=random_seed,
+                             grid_n_x_bins=grid_n_x_bins,
+                             grid_n_y_bins=grid_n_y_bins,
+                             custom_initial_barycenter=custom_initial_barycenter)
 
 
 def to_scipy_matrix(sparse_cols, shape=None):

@@ -156,6 +156,36 @@ def test_wasserstein_distance_accepts_list_and_numpy():
     assert ws_l1_alias == pytest.approx(ws_l1_np, abs=1e-12)
 
 
+def test_distance_functions_accept_oineus_diagrams_with_dim():
+    fil = _make_simplex_filtration()
+    dcmp = oin.Decomposition(fil, dualize=False, n_threads=1)
+    params = oin.ReductionParams()
+    dcmp.reduce(params)
+    dgms = dcmp.diagram(fil, include_inf_points=True)
+
+    dgm_dim_0 = dgms[0]
+
+    bt = oin.bottleneck_distance(dgms, dgm_dim_0, dim=0, delta=0.0)
+    ws = oin.wasserstein_distance(dgms, dgm_dim_0, dim=0, q=2.0, delta=1e-3, internal_p=np.inf)
+
+    assert bt == pytest.approx(0.0, abs=1e-12)
+    assert ws == pytest.approx(0.0, abs=1e-12)
+
+
+def test_distance_functions_require_dim_for_multidim_oineus_diagrams():
+    fil = _make_simplex_filtration()
+    dcmp = oin.Decomposition(fil, dualize=False, n_threads=1)
+    params = oin.ReductionParams()
+    dcmp.reduce(params)
+    dgms = dcmp.diagram(fil, include_inf_points=True)
+
+    with pytest.raises(ValueError, match="specify dim"):
+        _ = oin.bottleneck_distance(dgms, dgms)
+
+    with pytest.raises(ValueError, match="specify dim"):
+        _ = oin.wasserstein_distance(dgms, dgms)
+
+
 def test_distance_array_shape_validation():
     good = np.array([[0.0, 1.0]], dtype=np.float64)
     bad = np.array([0.0, 1.0], dtype=np.float64)

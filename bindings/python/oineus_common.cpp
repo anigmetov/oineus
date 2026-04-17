@@ -7,6 +7,8 @@ void init_oineus_common(nb::module_& m)
 
     using oin::DenoiseStrategy;
     using oin::ConflictStrategy;
+    using oin::DiagramPlaneDomain;
+    using oin::FrechetMeanInit;
     using ReductionParams = oin::Params;
     using KICRParams = oin::KICRParams;
     std::string vr_edge_name = "VREdge";
@@ -213,4 +215,34 @@ void init_oineus_common(nb::module_& m)
             .value("Sum", ConflictStrategy::Sum, "sum gradients")
             .value("FixCritAvg", ConflictStrategy::FixCritAvg, "use matching on critical, average gradients on other cells")
             .def("as_str", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); });
+
+    nb::enum_<DiagramPlaneDomain>(m, "DiagramPlaneDomain")
+            .value("AboveDiagonal", DiagramPlaneDomain::AboveDiagonal)
+            .value("BelowDiagonal", DiagramPlaneDomain::BelowDiagonal)
+            .value("Mixed", DiagramPlaneDomain::Mixed)
+            .def("as_str", [](const DiagramPlaneDomain& self) {
+                switch (self) {
+                case DiagramPlaneDomain::AboveDiagonal: return std::string("above");
+                case DiagramPlaneDomain::BelowDiagonal: return std::string("below");
+                case DiagramPlaneDomain::Mixed: return std::string("mixed");
+                default: return std::string("unknown");
+                }
+            });
+
+    nb::enum_<FrechetMeanInit>(m, "FrechetMeanInit")
+            .value("Custom", FrechetMeanInit::Custom)
+            .value("FirstDiagram", FrechetMeanInit::FirstDiagram)
+            .value("MedoidDiagram", FrechetMeanInit::MedoidDiagram)
+            .value("RandomDiagram", FrechetMeanInit::RandomDiagram)
+            .value("Grid", FrechetMeanInit::Grid)
+            .def("as_str", [](const FrechetMeanInit& self) {
+                switch (self) {
+                case FrechetMeanInit::Custom: return std::string("custom");
+                case FrechetMeanInit::FirstDiagram: return std::string("first");
+                case FrechetMeanInit::MedoidDiagram: return std::string("medoid");
+                case FrechetMeanInit::RandomDiagram: return std::string("random");
+                case FrechetMeanInit::Grid: return std::string("grid");
+                default: return std::string("unknown");
+                }
+            });
 }

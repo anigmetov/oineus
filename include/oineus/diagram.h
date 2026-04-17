@@ -9,6 +9,7 @@
 #include <ostream>
 #include <fstream>
 #include <stdexcept>
+#include <limits>
 
 #include "common_defs.h"
 
