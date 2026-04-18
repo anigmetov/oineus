@@ -224,6 +224,80 @@ void init_oineus_functions(nb::module_& m)
             nb::call_guard<nb::gil_scoped_release>(),
             "Compute q-Wasserstein distance between NumPy-array persistence diagrams of shape (n_points, 2).");
 
+    func_name = "init_frechet_mean_first_diagram";
+    m.def(func_name.c_str(),
+            [](const nb::list& diagrams) {
+                auto diagram_vec = python_object_to_diagrams(diagrams);
+                return diagram_to_numpy(oin::init_frechet_mean_first_diagram<oin_real>(diagram_vec));
+            },
+            nb::arg("diagrams"),
+            "Return the first input diagram as a Fréchet-mean initializer.");
+
+    func_name = "init_frechet_mean_random_diagram";
+    m.def(func_name.c_str(),
+            [](const nb::list& diagrams,
+               oin::DiagramPlaneDomain domain,
+               oin_real random_noise_scale,
+               size_t random_seed) {
+                auto diagram_vec = python_object_to_diagrams(diagrams);
+                oin::FrechetMeanInitRandomParams<oin_real> params;
+                params.domain = domain;
+                params.noise_scale = random_noise_scale;
+                params.random_seed = random_seed;
+                return diagram_to_numpy(oin::init_frechet_mean_random_diagram<oin_real>(diagram_vec, params));
+            },
+            nb::arg("diagrams"),
+            nb::arg("domain") = oin::DiagramPlaneDomain::AboveDiagonal,
+            nb::arg("random_noise_scale") = 1.0,
+            nb::arg("random_seed") = 42,
+            "Return a random perturbed input diagram as a Fréchet-mean initializer.");
+
+    func_name = "init_frechet_mean_medoid_diagram";
+    m.def(func_name.c_str(),
+            [](const nb::list& diagrams,
+               nb::object weights) {
+                auto diagram_vec = python_object_to_diagrams(diagrams);
+                std::vector<oin_real> weight_vec;
+                if (!weights.is_none()) {
+                    nb::sequence weight_seq = nb::cast<nb::sequence>(weights);
+                    weight_vec.reserve(nb::len(weight_seq));
+                    for (auto item : weight_seq)
+                        weight_vec.push_back(nb::cast<oin_real>(item));
+                }
+                return diagram_to_numpy(oin::init_frechet_mean_medoid_diagram<oin_real>(diagram_vec, weight_vec));
+            },
+            nb::arg("diagrams"),
+            nb::arg("weights") = nb::none(),
+            "Return the weighted Wasserstein medoid diagram used as a Fréchet-mean initializer.");
+
+    func_name = "init_frechet_mean_diagonal_grid";
+    m.def(func_name.c_str(),
+            [](const nb::list& diagrams,
+               nb::object weights,
+               oin::DiagramPlaneDomain domain,
+               size_t grid_n_x_bins,
+               size_t grid_n_y_bins) {
+                auto diagram_vec = python_object_to_diagrams(diagrams);
+                std::vector<oin_real> weight_vec;
+                if (!weights.is_none()) {
+                    nb::sequence weight_seq = nb::cast<nb::sequence>(weights);
+                    weight_vec.reserve(nb::len(weight_seq));
+                    for (auto item : weight_seq)
+                        weight_vec.push_back(nb::cast<oin_real>(item));
+                }
+                oin::FrechetMeanInitGridParams params;
+                params.domain = domain;
+                params.n_x_bins = std::max<size_t>(1, grid_n_x_bins);
+                params.n_y_bins = std::max<size_t>(1, grid_n_y_bins);
+                return diagram_to_numpy(oin::init_frechet_mean_diagonal_grid<oin_real>(diagram_vec, weight_vec, params));
+            },
+            nb::arg("diagrams"),
+            nb::arg("weights") = nb::none(),
+            nb::arg("domain") = oin::DiagramPlaneDomain::AboveDiagonal,
+            nb::arg("grid_n_x_bins") = 16,
+            nb::arg("grid_n_y_bins") = 16,
+            "Return the diagonal-grid Fréchet-mean initializer.");
+
     func_name = "frechet_mean";
     m.def(func_name.c_str(),
             [](const nb::list& diagrams,

@@ -139,3 +139,150 @@ def test_frechet_mean_raises_on_nonpositive_wasserstein_delta():
             wasserstein_delta=0.0,
             max_iter=10,
         )
+
+
+def test_frechet_mean_init_helpers():
+    dgm_1 = np.array([[0.0, 2.0]], dtype=np.float64)
+    dgm_2 = np.array([[2.0, 4.0]], dtype=np.float64)
+
+    first = oin.init_frechet_mean_first_diagram([dgm_1, dgm_2])
+    medoid = oin.init_frechet_mean_medoid_diagram([dgm_1, dgm_2])
+    grid = oin.init_frechet_mean_diagonal_grid([dgm_1, dgm_2], grid_n_x_bins=1, grid_n_y_bins=1)
+
+    assert _sort_diagram_rows(first) == pytest.approx(_sort_diagram_rows(dgm_1), abs=1e-12)
+    assert medoid.shape == (1, 2)
+    assert grid.shape == (1, 2)
+    assert grid[0, 0] == pytest.approx(1.0, abs=1e-8)
+    assert grid[0, 1] == pytest.approx(3.0, abs=1e-8)
+
+
+def test_frechet_mean_objective_matches_expected_midpoint_value():
+    dgm_1 = np.array([[0.0, 2.0]], dtype=np.float64)
+    dgm_2 = np.array([[2.0, 4.0]], dtype=np.float64)
+    barycenter = np.array([[1.0, 3.0]], dtype=np.float64)
+
+    objective = oin.frechet_mean_objective(
+        [dgm_1, dgm_2],
+        barycenter,
+        wasserstein_delta=TEST_WASSERSTEIN_DELTA,
+    )
+
+    assert objective == pytest.approx(1.0, abs=1e-8)
+
+
+def test_make_frechet_mean_persistence_schedule_is_monotone():
+    diagrams = [
+        np.array([[0.0, 5.0], [0.0, 2.0], [0.0, 0.5]], dtype=np.float64),
+        np.array([[1.0, 4.5], [1.0, 1.5]], dtype=np.float64),
+    ]
+
+    schedule = oin.make_frechet_mean_persistence_schedule(
+        diagrams,
+        initial_threshold_fraction=0.5,
+        max_active_growth=0.5,
+        min_persistence=0.0,
+    )
+
+    assert schedule[0] >= schedule[-1]
+    assert schedule[-1] == pytest.approx(0.0, abs=1e-12)
+    assert all(schedule[i] > schedule[i + 1] for i in range(len(schedule) - 1))
+
+
+def test_frechet_mean_multistart_picks_best_requested_start():
+    dgm_1 = np.array([[0.0, 2.0]], dtype=np.float64)
+    dgm_2 = np.array([[2.0, 4.0]], dtype=np.float64)
+
+    barycenter, details = oin.frechet_mean_multistart(
+        [dgm_1, dgm_2],
+        starts=("first", "grid"),
+        grid_n_x_bins=1,
+        grid_n_y_bins=1,
+        wasserstein_delta=TEST_WASSERSTEIN_DELTA,
+        max_iter=20,
+        return_details=True,
+    )
+
+    objectives = [run["objective"] for run in details["runs"]]
+    assert details["objective"] == pytest.approx(min(objectives), abs=1e-12)
+    assert barycenter.shape[1] == 2
+
+
+def test_frechet_mean_multistart_default_starts_do_not_include_grid():
+    dgm_1 = np.array([[0.0, 2.0]], dtype=np.float64)
+    dgm_2 = np.array([[2.0, 4.0]], dtype=np.float64)
+
+    _, details = oin.frechet_mean_multistart(
+        [dgm_1, dgm_2],
+        wasserstein_delta=TEST_WASSERSTEIN_DELTA,
+        max_iter=20,
+        return_details=True,
+    )
+
+    start_names = [run["start"] for run in details["runs"]]
+    assert "grid" not in start_names
+
+
+def test_progressive_frechet_mean_runs_and_records_history():
+    dgm_1 = np.array([[0.0, 5.0], [1.0, 1.4]], dtype=np.float64)
+    dgm_2 = np.array([[2.0, 7.0], [1.2, 1.5]], dtype=np.float64)
+
+    barycenter, details = oin.progressive_frechet_mean(
+        [dgm_1, dgm_2],
+        thresholds=[3.0, 0.0],
+        initial_seed="medoid",
+        wasserstein_delta=TEST_WASSERSTEIN_DELTA,
+        max_iter=20,
+        return_details=True,
+    )
+
+    assert barycenter.shape[1] == 2
+    assert [entry["threshold"] for entry in details["history"]] == pytest.approx([3.0, 0.0])
+    assert len(details["history"]) == 2
+
+
+def test_progressive_frechet_mean_support_hooks_are_used():
+    dgm_1 = np.array([[0.0, 5.0], [1.0, 1.4]], dtype=np.float64)
+    dgm_2 = np.array([[2.0, 7.0], [1.2, 1.5]], dtype=np.float64)
+    called = []
+
+    def predicate(**kwargs):
+        called.append(("predicate", kwargs["stage_index"]))
+        return True
+
+    def add_points(**kwargs):
+        called.append(("add", kwargs["stage_index"]))
+        return oin.frechet_mean_newborn_points_from_newly_active(
+            kwargs["newly_active_diagrams"],
+            weights=kwargs["weights"],
+        )
+
+    _ = oin.progressive_frechet_mean(
+        [dgm_1, dgm_2],
+        thresholds=[3.0, 0.0],
+        initial_seed="medoid",
+        support_update_predicate=predicate,
+        support_update_fn=add_points,
+        wasserstein_delta=TEST_WASSERSTEIN_DELTA,
+        max_iter=20,
+    )
+
+    assert called == [("predicate", 1), ("add", 1)]
+
+
+def test_progressive_frechet_mean_multistart_picks_best_requested_start():
+    dgm_1 = np.array([[0.0, 5.0], [1.0, 1.4]], dtype=np.float64)
+    dgm_2 = np.array([[2.0, 7.0], [1.2, 1.5]], dtype=np.float64)
+
+    barycenter, details = oin.progressive_frechet_mean_multistart(
+        [dgm_1, dgm_2],
+        starts=("medoid", "grid"),
+        thresholds=[3.0, 0.0],
+        wasserstein_delta=TEST_WASSERSTEIN_DELTA,
+        max_iter=20,
+        return_details=True,
+    )
+
+    objectives = [run["objective"] for run in details["runs"]]
+    assert details["objective"] == pytest.approx(min(objectives), abs=1e-12)
+    assert barycenter.shape[1] == 2
+    assert details["thresholds"] == pytest.approx([3.0, 0.0])

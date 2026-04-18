@@ -19,6 +19,10 @@ from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise
 from ._oineus import get_nth_persistence, get_permutation_dtv
 from ._oineus import bottleneck_distance as _bottleneck_distance_cpp
 from ._oineus import wasserstein_distance as _wasserstein_distance_cpp
+from ._oineus import init_frechet_mean_first_diagram as _init_frechet_mean_first_diagram_cpp
+from ._oineus import init_frechet_mean_random_diagram as _init_frechet_mean_random_diagram_cpp
+from ._oineus import init_frechet_mean_medoid_diagram as _init_frechet_mean_medoid_diagram_cpp
+from ._oineus import init_frechet_mean_diagonal_grid as _init_frechet_mean_diagonal_grid_cpp
 from ._oineus import frechet_mean as _frechet_mean_cpp
 from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D, CubeFiltration_1D
 from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, CubeFiltration_2D
@@ -33,7 +37,27 @@ except:
     _HAS_DIODE = False
 
 
-__all__ = ["compute_diagrams_ls", "compute_diagrams_vr", "compute_diagrams_alpha", "get_boundary_matrix", "is_reduced", "plot_persistence_diagram", "bottleneck_distance", "wasserstein_distance", "frechet_mean"]
+__all__ = [
+    "compute_diagrams_ls",
+    "compute_diagrams_vr",
+    "compute_diagrams_alpha",
+    "get_boundary_matrix",
+    "is_reduced",
+    "plot_persistence_diagram",
+    "bottleneck_distance",
+    "wasserstein_distance",
+    "init_frechet_mean_first_diagram",
+    "init_frechet_mean_random_diagram",
+    "init_frechet_mean_medoid_diagram",
+    "init_frechet_mean_diagonal_grid",
+    "frechet_mean_objective",
+    "make_frechet_mean_persistence_schedule",
+    "frechet_mean_newborn_points_from_newly_active",
+    "frechet_mean_multistart",
+    "progressive_frechet_mean",
+    "progressive_frechet_mean_multistart",
+    "frechet_mean",
+]
 
 
 def _diagram_from_oineus_diagrams(dgms, dim: typing.Optional[int]):
@@ -58,6 +82,132 @@ def _normalize_diagram_for_distance(dgm, *, dim: typing.Optional[int]=None):
 
 def _normalize_diagram_collection(diagrams):
     return [_normalize_diagram_for_distance(dgm) for dgm in diagrams]
+
+
+def _normalize_frechet_weights(n_diagrams: int, weights):
+    if n_diagrams == 0:
+        return np.empty((0,), dtype=np.float64)
+
+    if weights is None:
+        return np.full(n_diagrams, 1.0 / n_diagrams, dtype=np.float64)
+
+    arr = np.asarray(weights, dtype=np.float64)
+    if arr.ndim != 1:
+        raise ValueError("weights must be a 1D array")
+    if arr.shape[0] != n_diagrams:
+        raise ValueError("weights must have same length as diagrams")
+    if np.any(arr < 0.0):
+        raise ValueError("weights must be nonnegative")
+
+    total = float(np.sum(arr))
+    if total <= 0.0:
+        raise ValueError("weights must sum to a positive value")
+
+    return arr / total
+
+
+def _diagram_persistences(dgm: np.ndarray) -> np.ndarray:
+    if dgm.size == 0:
+        return np.empty((0,), dtype=np.float64)
+
+    pers = np.empty(dgm.shape[0], dtype=np.float64)
+    finite_mask = np.isfinite(dgm[:, 0]) & np.isfinite(dgm[:, 1])
+    pers[finite_mask] = np.abs(dgm[finite_mask, 1] - dgm[finite_mask, 0])
+    pers[~finite_mask] = np.inf
+    return pers
+
+
+def _threshold_diagram_by_persistence(dgm: np.ndarray, min_persistence: float, *, include_infinite_points: bool = True):
+    if dgm.size == 0:
+        return dgm.reshape((0, 2))
+
+    pers = _diagram_persistences(dgm)
+    finite_mask = np.isfinite(pers)
+    keep_mask = np.zeros(dgm.shape[0], dtype=bool)
+    keep_mask[finite_mask] = pers[finite_mask] >= min_persistence
+    if include_infinite_points:
+        keep_mask |= ~finite_mask
+    return np.ascontiguousarray(dgm[keep_mask], dtype=np.float64)
+
+
+def _newly_active_diagram_points(dgm: np.ndarray, previous_threshold: float, current_threshold: float):
+    if dgm.size == 0:
+        return dgm.reshape((0, 2))
+
+    pers = _diagram_persistences(dgm)
+    finite_mask = np.isfinite(pers)
+    keep_mask = finite_mask & (pers >= current_threshold) & (pers < previous_threshold)
+    return np.ascontiguousarray(dgm[keep_mask], dtype=np.float64)
+
+
+def _resolve_multistart_seed(diagrams,
+                             seed,
+                             *,
+                             weights,
+                             domain,
+                             random_noise_scale,
+                             random_seed,
+                             grid_n_x_bins,
+                             grid_n_y_bins,
+                             wasserstein_delta,
+                             internal_p):
+    diagrams = _normalize_diagram_collection(diagrams)
+
+    if not isinstance(seed, str):
+        return _normalize_diagram_for_distance(seed)
+
+    if seed == "first":
+        return init_frechet_mean_first_diagram(diagrams)
+    if seed == "medoid":
+        return init_frechet_mean_medoid_diagram(diagrams, weights=weights)
+    if seed == "grid":
+        return init_frechet_mean_diagonal_grid(
+            diagrams,
+            weights=weights,
+            domain=domain,
+            grid_n_x_bins=grid_n_x_bins,
+            grid_n_y_bins=grid_n_y_bins,
+        )
+    if seed == "random":
+        return init_frechet_mean_random_diagram(
+            diagrams,
+            domain=domain,
+            random_noise_scale=random_noise_scale,
+            random_seed=random_seed,
+        )
+
+    normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
+    n = len(diagrams)
+    d2 = np.zeros((n, n), dtype=np.float64)
+    for i in range(n):
+        for j in range(i + 1, n):
+            dist = wasserstein_distance(
+                diagrams[i],
+                diagrams[j],
+                q=2.0,
+                delta=wasserstein_delta,
+                internal_p=internal_p,
+            )
+            d2[i, j] = dist * dist
+            d2[j, i] = d2[i, j]
+
+    medoid_idx = int(np.argmin(d2 @ normalized_weights))
+
+    if seed == "farthest_from_medoid":
+        return diagrams[int(np.argmax(d2[:, medoid_idx]))].copy()
+
+    if seed == "second_medoid":
+        provisional = int(np.argmax(d2[:, medoid_idx]))
+        c2 = np.where(d2[:, provisional] < d2[:, medoid_idx])[0]
+        if c2.size == 0:
+            return diagrams[provisional].copy()
+        restricted_scores = np.array([
+            np.sum(normalized_weights[c2] * d2[idx, c2])
+            for idx in c2
+        ])
+        return diagrams[int(c2[int(np.argmin(restricted_scores))])].copy()
+
+    raise ValueError(f"Unknown Fréchet-mean seed '{seed}'")
 
 
 def bottleneck_distance(dgm_1, dgm_2, delta: float=0.01, dim: typing.Optional[int]=None):
@@ -155,6 +305,385 @@ def wasserstein_distance(dgm_1, dgm_2, q: float=2.0, delta: float=0.01, internal
     return _wasserstein_distance_cpp(dgm_1,
                                      dgm_2,
                                      q=q, delta=delta, internal_p=internal_p)
+
+
+def init_frechet_mean_first_diagram(diagrams):
+    diagrams = _normalize_diagram_collection(diagrams)
+    return _init_frechet_mean_first_diagram_cpp(diagrams)
+
+
+def init_frechet_mean_random_diagram(diagrams,
+                                     *,
+                                     domain=DiagramPlaneDomain.AboveDiagonal,
+                                     random_noise_scale: float = 1.0,
+                                     random_seed: int = 42):
+    diagrams = _normalize_diagram_collection(diagrams)
+    return _init_frechet_mean_random_diagram_cpp(
+        diagrams,
+        domain=domain,
+        random_noise_scale=random_noise_scale,
+        random_seed=random_seed,
+    )
+
+
+def init_frechet_mean_medoid_diagram(diagrams, *, weights=None):
+    diagrams = _normalize_diagram_collection(diagrams)
+    weights = None if weights is None else np.asarray(weights, dtype=np.float64)
+    return _init_frechet_mean_medoid_diagram_cpp(diagrams, weights=weights)
+
+
+def init_frechet_mean_diagonal_grid(diagrams,
+                                    *,
+                                    weights=None,
+                                    domain=DiagramPlaneDomain.AboveDiagonal,
+                                    grid_n_x_bins: int = 16,
+                                    grid_n_y_bins: int = 16):
+    diagrams = _normalize_diagram_collection(diagrams)
+    weights = None if weights is None else np.asarray(weights, dtype=np.float64)
+    return _init_frechet_mean_diagonal_grid_cpp(
+        diagrams,
+        weights=weights,
+        domain=domain,
+        grid_n_x_bins=grid_n_x_bins,
+        grid_n_y_bins=grid_n_y_bins,
+    )
+
+
+def frechet_mean_objective(diagrams,
+                           barycenter,
+                           *,
+                           weights=None,
+                           wasserstein_delta: float = 0.01,
+                           internal_p: float = np.inf):
+    diagrams = _normalize_diagram_collection(diagrams)
+    barycenter = _normalize_diagram_for_distance(barycenter)
+    normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
+    return float(sum(
+        normalized_weights[i] * wasserstein_distance(
+            barycenter,
+            diagram,
+            q=2.0,
+            delta=wasserstein_delta,
+            internal_p=internal_p,
+        ) ** 2
+        for i, diagram in enumerate(diagrams)
+    ))
+
+
+def make_frechet_mean_persistence_schedule(diagrams,
+                                           *,
+                                           initial_threshold_fraction: float = 0.5,
+                                           max_active_growth: float = 0.10,
+                                           min_persistence: float = 0.0):
+    diagrams = _normalize_diagram_collection(diagrams)
+    if initial_threshold_fraction <= 0.0:
+        raise ValueError("initial_threshold_fraction must be positive")
+    if max_active_growth < 0.0:
+        raise ValueError("max_active_growth must be nonnegative")
+
+    finite_persistences = []
+    for dgm in diagrams:
+        pers = _diagram_persistences(dgm)
+        finite_persistences.extend(pers[np.isfinite(pers)].tolist())
+
+    if not finite_persistences:
+        return [float(min_persistence)]
+
+    values = np.array(sorted(set(float(p) for p in finite_persistences if p >= min_persistence), reverse=True), dtype=np.float64)
+    if values.size == 0:
+        return [float(min_persistence)]
+
+    start_target = max(float(min_persistence), float(initial_threshold_fraction) * float(values[0]))
+    start_idx = int(np.where(values >= start_target)[0][-1])
+    schedule = [float(values[start_idx])]
+    current_idx = start_idx
+
+    counts = np.array([
+        sum(int(np.count_nonzero(np.isfinite(_diagram_persistences(dgm)) & (_diagram_persistences(dgm) >= thr))) for dgm in diagrams)
+        for thr in values
+    ], dtype=np.int64)
+
+    while current_idx + 1 < values.size:
+        current_count = max(int(counts[current_idx]), 1)
+        max_count = int(np.floor((1.0 + max_active_growth) * current_count))
+        next_idx = current_idx + 1
+        valid = np.where(counts[current_idx + 1:] <= max_count)[0]
+        if valid.size > 0:
+            next_idx = current_idx + 1 + int(valid[-1])
+        schedule.append(float(values[next_idx]))
+        current_idx = next_idx
+
+    if schedule[-1] > float(min_persistence):
+        schedule.append(float(min_persistence))
+
+    deduped = []
+    for threshold in schedule:
+        if not deduped or threshold < deduped[-1]:
+            deduped.append(threshold)
+    return deduped
+
+
+def frechet_mean_newborn_points_from_newly_active(newly_active_diagrams, *, weights=None):
+    newly_active_diagrams = _normalize_diagram_collection(newly_active_diagrams)
+    normalized_weights = _normalize_frechet_weights(len(newly_active_diagrams), weights)
+
+    new_points = []
+    for diagram_weight, dgm in zip(normalized_weights, newly_active_diagrams):
+        if dgm.size == 0:
+            continue
+        finite_mask = np.isfinite(dgm[:, 0]) & np.isfinite(dgm[:, 1])
+        finite_points = dgm[finite_mask]
+        if finite_points.size == 0:
+            continue
+        midpoints = 0.5 * (finite_points[:, 0] + finite_points[:, 1])
+        births = diagram_weight * finite_points[:, 0] + (1.0 - diagram_weight) * midpoints
+        deaths = diagram_weight * finite_points[:, 1] + (1.0 - diagram_weight) * midpoints
+        new_points.append(np.column_stack((births, deaths)))
+
+    if not new_points:
+        return np.empty((0, 2), dtype=np.float64)
+
+    return np.ascontiguousarray(np.vstack(new_points), dtype=np.float64)
+
+
+def frechet_mean_multistart(diagrams,
+                            *,
+                            weights=None,
+                            starts=("medoid", "second_medoid", "farthest_from_medoid"),
+                            return_details: bool = False,
+                            **kwargs):
+    diagrams = _normalize_diagram_collection(diagrams)
+    normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
+    if not starts:
+        raise ValueError("starts must be non-empty")
+
+    results = []
+    for start_idx, start in enumerate(starts):
+        if isinstance(start, dict):
+            local_kwargs = dict(kwargs)
+            local_kwargs.update(start)
+            local_kwargs.pop("init_strategy", None)
+            local_kwargs.pop("custom_initial_barycenter", None)
+            seed = _resolve_multistart_seed(
+                diagrams,
+                local_kwargs.pop("seed", "medoid"),
+                weights=normalized_weights,
+                domain=local_kwargs.get("domain", DiagramPlaneDomain.AboveDiagonal),
+                random_noise_scale=local_kwargs.get("random_noise_scale", 1.0),
+                random_seed=local_kwargs.get("random_seed", 42 + start_idx),
+                grid_n_x_bins=local_kwargs.get("grid_n_x_bins", 16),
+                grid_n_y_bins=local_kwargs.get("grid_n_y_bins", 16),
+                wasserstein_delta=local_kwargs.get("wasserstein_delta", 0.01),
+                internal_p=local_kwargs.get("internal_p", np.inf),
+            )
+        else:
+            local_kwargs = dict(kwargs)
+            local_kwargs.pop("init_strategy", None)
+            local_kwargs.pop("custom_initial_barycenter", None)
+            seed = _resolve_multistart_seed(
+                diagrams,
+                start,
+                weights=normalized_weights,
+                domain=local_kwargs.get("domain", DiagramPlaneDomain.AboveDiagonal),
+                random_noise_scale=local_kwargs.get("random_noise_scale", 1.0),
+                random_seed=local_kwargs.get("random_seed", 42 + start_idx),
+                grid_n_x_bins=local_kwargs.get("grid_n_x_bins", 16),
+                grid_n_y_bins=local_kwargs.get("grid_n_y_bins", 16),
+                wasserstein_delta=local_kwargs.get("wasserstein_delta", 0.01),
+                internal_p=local_kwargs.get("internal_p", np.inf),
+            )
+
+        barycenter = frechet_mean(
+            diagrams,
+            weights=normalized_weights,
+            init_strategy=FrechetMeanInit.Custom,
+            custom_initial_barycenter=seed,
+            **local_kwargs,
+        )
+        objective = frechet_mean_objective(
+            diagrams,
+            barycenter,
+            weights=normalized_weights,
+            wasserstein_delta=local_kwargs.get("wasserstein_delta", 0.01),
+            internal_p=local_kwargs.get("internal_p", np.inf),
+        )
+        results.append({"start": start, "barycenter": barycenter, "objective": objective})
+
+    best = min(results, key=lambda item: item["objective"])
+    if return_details:
+        return best["barycenter"], {"objective": best["objective"], "runs": results}
+    return best["barycenter"]
+
+
+def progressive_frechet_mean(diagrams,
+                             *,
+                             weights=None,
+                             thresholds=None,
+                             initial_threshold_fraction: float = 0.5,
+                             max_active_growth: float = 0.10,
+                             min_persistence: float = 0.0,
+                             initial_seed="medoid",
+                             support_update_predicate=None,
+                             support_update_fn=None,
+                             return_details: bool = False,
+                             **kwargs):
+    diagrams = _normalize_diagram_collection(diagrams)
+    normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
+    ignore_infinite_points = bool(kwargs.get("ignore_infinite_points", False))
+
+    if thresholds is None:
+        thresholds = make_frechet_mean_persistence_schedule(
+            diagrams,
+            initial_threshold_fraction=initial_threshold_fraction,
+            max_active_growth=max_active_growth,
+            min_persistence=min_persistence,
+        )
+    else:
+        thresholds = [float(t) for t in thresholds]
+        if not thresholds:
+            raise ValueError("thresholds must be non-empty")
+
+    local_kwargs = dict(kwargs)
+    local_kwargs.pop("init_strategy", None)
+    local_kwargs.pop("custom_initial_barycenter", None)
+
+    barycenter = None
+    history = []
+    previous_threshold = np.inf
+
+    for stage_idx, threshold in enumerate(thresholds):
+        active_diagrams = [
+            _threshold_diagram_by_persistence(
+                dgm,
+                threshold,
+                include_infinite_points=not ignore_infinite_points,
+            )
+            for dgm in diagrams
+        ]
+
+        if barycenter is None:
+            seed = _resolve_multistart_seed(
+                active_diagrams,
+                initial_seed,
+                weights=normalized_weights,
+                domain=local_kwargs.get("domain", DiagramPlaneDomain.AboveDiagonal),
+                random_noise_scale=local_kwargs.get("random_noise_scale", 1.0),
+                random_seed=local_kwargs.get("random_seed", 42),
+                grid_n_x_bins=local_kwargs.get("grid_n_x_bins", 16),
+                grid_n_y_bins=local_kwargs.get("grid_n_y_bins", 16),
+                wasserstein_delta=local_kwargs.get("wasserstein_delta", 0.01),
+                internal_p=local_kwargs.get("internal_p", np.inf),
+            )
+        else:
+            seed = barycenter
+            if support_update_predicate is not None and support_update_fn is not None:
+                newly_active_diagrams = [
+                    _newly_active_diagram_points(dgm, previous_threshold, threshold)
+                    for dgm in diagrams
+                ]
+                should_update = bool(support_update_predicate(
+                    stage_index=stage_idx,
+                    threshold=threshold,
+                    previous_threshold=previous_threshold,
+                    current_barycenter=seed,
+                    active_diagrams=active_diagrams,
+                    newly_active_diagrams=newly_active_diagrams,
+                    weights=normalized_weights,
+                ))
+                if should_update:
+                    new_points = support_update_fn(
+                        stage_index=stage_idx,
+                        threshold=threshold,
+                        previous_threshold=previous_threshold,
+                        current_barycenter=seed,
+                        active_diagrams=active_diagrams,
+                        newly_active_diagrams=newly_active_diagrams,
+                        weights=normalized_weights,
+                    )
+                    if new_points is not None:
+                        new_points = _normalize_diagram_for_distance(new_points)
+                        if new_points.size != 0:
+                            seed = np.ascontiguousarray(np.vstack([seed, new_points]), dtype=np.float64)
+
+        barycenter = frechet_mean(
+            active_diagrams,
+            weights=normalized_weights,
+            init_strategy=FrechetMeanInit.Custom,
+            custom_initial_barycenter=seed,
+            **local_kwargs,
+        )
+
+        objective = frechet_mean_objective(
+            active_diagrams,
+            barycenter,
+            weights=normalized_weights,
+            wasserstein_delta=local_kwargs.get("wasserstein_delta", 0.01),
+            internal_p=local_kwargs.get("internal_p", np.inf),
+        )
+        history.append({
+            "stage_index": stage_idx,
+            "threshold": threshold,
+            "n_active_points": int(sum(dgm.shape[0] for dgm in active_diagrams)),
+            "barycenter": barycenter,
+            "objective": objective,
+        })
+        previous_threshold = threshold
+
+    if return_details:
+        return barycenter, {"thresholds": thresholds, "history": history}
+    return barycenter
+
+
+def progressive_frechet_mean_multistart(diagrams,
+                                        *,
+                                        weights=None,
+                                        starts=("medoid", "second_medoid", "farthest_from_medoid"),
+                                        return_details: bool = False,
+                                        **kwargs):
+    diagrams = _normalize_diagram_collection(diagrams)
+    normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
+    if not starts:
+        raise ValueError("starts must be non-empty")
+
+    results = []
+    for start_idx, start in enumerate(starts):
+        local_kwargs = dict(kwargs)
+        initial_seed = local_kwargs.pop("initial_seed", start)
+
+        if isinstance(start, dict):
+            local_kwargs.update(start)
+            initial_seed = local_kwargs.pop("initial_seed", local_kwargs.pop("seed", "medoid"))
+
+        barycenter, details = progressive_frechet_mean(
+            diagrams,
+            weights=normalized_weights,
+            initial_seed=initial_seed,
+            return_details=True,
+            **local_kwargs,
+        )
+        objective = frechet_mean_objective(
+            diagrams,
+            barycenter,
+            weights=normalized_weights,
+            wasserstein_delta=local_kwargs.get("wasserstein_delta", 0.01),
+            internal_p=local_kwargs.get("internal_p", np.inf),
+        )
+        results.append({
+            "start": start,
+            "barycenter": barycenter,
+            "objective": objective,
+            "progressive_details": details,
+        })
+
+    best = min(results, key=lambda item: item["objective"])
+    if return_details:
+        return best["barycenter"], {
+            "objective": best["objective"],
+            "runs": results,
+            "thresholds": best["progressive_details"]["thresholds"],
+            "history": best["progressive_details"]["history"],
+        }
+    return best["barycenter"]
 
 
 def frechet_mean(diagrams,

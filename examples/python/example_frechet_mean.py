@@ -69,35 +69,61 @@ def main() -> None:
         wasserstein_delta=wasserstein_delta,
         max_iter=max_iter,
     )
+    bary_multistart, multistart_details = oin.frechet_mean_multistart(
+        diagrams,
+        starts=("medoid", "second_medoid"),
+        grid_n_x_bins=6,
+        grid_n_y_bins=6,
+        wasserstein_delta=wasserstein_delta,
+        max_iter=max_iter,
+        return_details=True,
+    )
+    bary_progressive, progressive_details = oin.progressive_frechet_mean_multistart(
+        diagrams,
+        starts=("medoid", "second_medoid"),
+        grid_n_x_bins=6,
+        grid_n_y_bins=6,
+        wasserstein_delta=wasserstein_delta,
+        max_iter=max_iter,
+        return_details=True,
+    )
 
     loss_first = frechet_objective(diagrams, bary_first, delta=wasserstein_delta)
     loss_medoid = frechet_objective(diagrams, bary_medoid, delta=wasserstein_delta)
     loss_grid = frechet_objective(diagrams, bary_grid, delta=wasserstein_delta)
+    loss_multistart = frechet_objective(diagrams, bary_multistart, delta=wasserstein_delta)
+    loss_progressive = frechet_objective(diagrams, bary_progressive, delta=wasserstein_delta)
 
-    barycenter_colors = ["#d62728", "#2ca02c", "#1f77b4"]
+    barycenter_colors = ["#d62728", "#2ca02c", "#1f77b4", "#9467bd", "#8c564b"]
     barycenter_titles = [
         f"Barycenter: First\nloss={loss_first:.4f}",
         f"Barycenter: Medoid\nloss={loss_medoid:.4f}",
         f"Barycenter: Grid\nloss={loss_grid:.4f}",
+        f"Barycenter: Multistart\nloss={loss_multistart:.4f}",
+        f"Barycenter: Progressive\nloss={loss_progressive:.4f}",
     ]
-    barycenters = [bary_first, bary_medoid, bary_grid]
+    barycenters = [bary_first, bary_medoid, bary_grid, bary_multistart, bary_progressive]
+    barycenter_names = ["First", "Medoid", "Grid", "Multistart", "Progressive"]
     axis_bounds = diagram_bounds(diagrams + barycenters)
 
     print("Pairwise W_2 distances between barycenters:")
-    print(
-        "  First vs Medoid: "
-        f"{oin.wasserstein_distance(bary_first, bary_medoid, q=2.0, delta=wasserstein_delta, internal_p=np.inf):.6f}"
-    )
-    print(
-        "  First vs Grid: "
-        f"{oin.wasserstein_distance(bary_first, bary_grid, q=2.0, delta=wasserstein_delta, internal_p=np.inf):.6f}"
-    )
-    print(
-        "  Medoid vs Grid: "
-        f"{oin.wasserstein_distance(bary_medoid, bary_grid, q=2.0, delta=wasserstein_delta, internal_p=np.inf):.6f}"
-    )
+    for i in range(len(barycenters)):
+        for j in range(i + 1, len(barycenters)):
+            print(
+                f"  {barycenter_names[i]} vs {barycenter_names[j]}: "
+                f"{oin.wasserstein_distance(barycenters[i], barycenters[j], q=2.0, delta=wasserstein_delta, internal_p=np.inf):.6f}"
+            )
 
-    fig, axes = plt.subplots(1, 4, figsize=(18, 5))
+    print(f"Multistart selected objective: {multistart_details['objective']:.6f}")
+    for run in multistart_details["runs"]:
+        print(f"  start={run['start']}: objective={run['objective']:.6f}, size={len(run['barycenter'])}")
+
+    print(f"Progressive multistart selected objective: {progressive_details['objective']:.6f}")
+    print(f"Progressive thresholds: {progressive_details['thresholds']}")
+    for run in progressive_details["runs"]:
+        print(f"  start={run['start']}: objective={run['objective']:.6f}, size={len(run['barycenter'])}")
+
+    fig, axes = plt.subplots(1, 6, figsize=(26, 5))
     oin.plot_persistence_diagram(
         {idx: dgm for idx, dgm in enumerate(diagrams)},
         ax=axes[0],
@@ -123,6 +149,8 @@ def main() -> None:
     print(f"Barycenter 1st: {len(bary_first)}")
     print(f"Barycenter medoid: {len(bary_medoid)}")
     print(f"Barycenter grid: {len(bary_grid)}")
+    print(f"Barycenter multistart: {len(bary_multistart)}")
+    print(f"Barycenter progressive: {len(bary_progressive)}")
 
     if args.output:
         fig.savefig(args.output, dpi=160)
