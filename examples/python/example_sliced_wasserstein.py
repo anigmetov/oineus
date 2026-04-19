@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 import oineus.diff as oin_diff
 
 
-def random_diagram(n_points, birth_mean=0.5, death_mean=2.0, noise=0.3, seed=None):
+def random_diagram(n_points, birth_mean=0.5, persistence_mean=1.0, noise=0.3, seed=None):
     """Generate a random persistence diagram."""
     if seed is not None:
         torch.manual_seed(seed)
@@ -27,14 +27,28 @@ def random_diagram(n_points, birth_mean=0.5, death_mean=2.0, noise=0.3, seed=Non
     births = torch.randn(n_points, dtype=torch.float64) * noise + birth_mean
     births = torch.clamp(births, min=0.0)
 
-    persistence = torch.abs(torch.randn(n_points, dtype=torch.float64) * noise + 0.5) + 0.2
+    persistence = torch.abs(torch.randn(n_points, dtype=torch.float64) * noise + persistence_mean) + 0.2
     deaths = births + persistence
 
     return torch.stack([births, deaths], dim=1)
 
 
-def plot_diagram_with_gradients(ax, dgm, grad, title, show_diagonal=True):
-    """Plot a persistence diagram with gradient vectors."""
+def plot_gradient_arrows(ax, dgm_np, grad_np, color, scale=0.1, show_descent=True):
+    """Plot gradient arrows, optionally flipped to show the descent/update direction."""
+    if grad_np is None:
+        return
+
+    direction = -grad_np if show_descent else grad_np
+    for i in range(len(dgm_np)):
+        b, d = dgm_np[i]
+        db, dd = direction[i]
+        ax.arrow(b, d, db * scale, dd * scale,
+                head_width=0.05, head_length=0.05,
+                fc=color, ec=color, alpha=0.6, zorder=4, linewidth=1.5)
+
+
+def plot_diagram_with_gradients(ax, dgm, grad, title, color='blue', label='Points', show_diagonal=True):
+    """Plot a persistence diagram with descent-direction arrows."""
     dgm_np = dgm.detach().numpy()
     grad_np = grad.numpy() if grad is not None else None
 
@@ -43,21 +57,37 @@ def plot_diagram_with_gradients(ax, dgm, grad, title, show_diagonal=True):
         max_val = max(dgm_np[:, 1].max(), dgm_np[:, 0].max()) * 1.1
         ax.plot([0, max_val], [0, max_val], 'k--', alpha=0.3, linewidth=1, label='Diagonal')
 
-    # Plot points
-    ax.scatter(dgm_np[:, 0], dgm_np[:, 1], c='blue', s=50, alpha=0.6, zorder=3, label='Points')
+    # Plot points with specified color
+    ax.scatter(dgm_np[:, 0], dgm_np[:, 1], c=color, s=40, alpha=0.7, zorder=3, label=label)
 
-    # Plot gradients as arrows
-    if grad_np is not None:
-        for i in range(len(dgm_np)):
-            b, d = dgm_np[i]
-            db, dd = grad_np[i]
-            # Scale gradients for visibility
-            scale = 0.1
-            ax.arrow(b, d, db * scale, dd * scale,
-                    head_width=0.05, head_length=0.05,
-                    fc='red', ec='red', alpha=0.7, zorder=4)
+    # Plot descent direction so the arrows match the optimizer update.
+    grad_color = color if color != 'blue' else 'darkblue'
+    plot_gradient_arrows(ax, dgm_np, grad_np, grad_color, scale=0.1, show_descent=True)
 
-        ax.scatter([], [], c='red', marker='>', s=50, alpha=0.7, label='Gradients')
+    ax.set_xlabel('Birth')
+    ax.set_ylabel('Death')
+    ax.set_title(title)
+    ax.set_aspect('equal', adjustable='box')
+    ax.legend(frameon=False, loc='upper left')
+    ax.grid(True, alpha=0.3)
+
+
+def plot_combined_diagrams_with_gradients(ax, dgm1, grad1, dgm2, grad2, title):
+    """Plot both diagrams together with descent-direction arrows."""
+    dgm1_np = dgm1.detach().numpy()
+    dgm2_np = dgm2.detach().numpy()
+    grad1_np = grad1.numpy() if grad1 is not None else None
+    grad2_np = grad2.numpy() if grad2 is not None else None
+
+    all_points = np.vstack([dgm1_np, dgm2_np])
+    max_val = all_points.max() * 1.1
+    ax.plot([0, max_val], [0, max_val], 'k--', alpha=0.3, linewidth=1, label='Diagonal')
+
+    ax.scatter(dgm1_np[:, 0], dgm1_np[:, 1], c='#1f77b4', s=40, alpha=0.7, zorder=3, label='Diagram 1')
+    ax.scatter(dgm2_np[:, 0], dgm2_np[:, 1], c='#ff7f0e', s=40, alpha=0.7, zorder=3, label='Diagram 2')
+
+    plot_gradient_arrows(ax, dgm1_np, grad1_np, '#0d3d63', scale=0.1, show_descent=True)
+    plot_gradient_arrows(ax, dgm2_np, grad2_np, '#cc6600', scale=0.1, show_descent=True)
 
     ax.set_xlabel('Birth')
     ax.set_ylabel('Death')
@@ -74,8 +104,8 @@ def example_gradient_visualization():
     print("=" * 70)
 
     # Create two diagrams
-    dgm1 = random_diagram(5, birth_mean=0.3, death_mean=1.5, noise=0.2, seed=42)
-    dgm2 = random_diagram(5, birth_mean=0.7, death_mean=2.5, noise=0.2, seed=43)
+    dgm1 = random_diagram(5, birth_mean=0.3, persistence_mean=1.2, noise=0.2, seed=42)
+    dgm2 = random_diagram(5, birth_mean=0.7, persistence_mean=1.8, noise=0.2, seed=43)
 
     dgm1.requires_grad_(True)
     dgm2.requires_grad_(True)
@@ -92,13 +122,33 @@ def example_gradient_visualization():
     print(f"Gradient norm on dgm1: {dgm1.grad.norm().item():.6f}")
     print(f"Gradient norm on dgm2: {dgm2.grad.norm().item():.6f}")
 
-    # Visualize
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    # Visualize both diagrams in one plot
+    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 
-    plot_diagram_with_gradients(axes[0], dgm1, dgm1.grad, 'Diagram 1 with Gradients')
-    plot_diagram_with_gradients(axes[1], dgm2, dgm2.grad, 'Diagram 2 with Gradients')
+    # Compute combined extent for diagonal
+    all_points = torch.cat([dgm1, dgm2], dim=0).detach().numpy()
+    max_val = all_points.max() * 1.1
+    ax.plot([0, max_val], [0, max_val], 'k--', alpha=0.3, linewidth=1, label='Diagonal')
 
-    fig.suptitle(f'Sliced Wasserstein Distance = {dist.item():.4f}', fontsize=14)
+    # Plot first diagram in blue
+    dgm1_np = dgm1.detach().numpy()
+    grad1_np = dgm1.grad.numpy()
+    ax.scatter(dgm1_np[:, 0], dgm1_np[:, 1], c='#1f77b4', s=40, alpha=0.7, zorder=3, label='Diagram 1')
+    plot_gradient_arrows(ax, dgm1_np, grad1_np, '#0d3d63', scale=0.1, show_descent=True)
+
+    # Plot second diagram in orange
+    dgm2_np = dgm2.detach().numpy()
+    grad2_np = dgm2.grad.numpy()
+    ax.scatter(dgm2_np[:, 0], dgm2_np[:, 1], c='#ff7f0e', s=40, alpha=0.7, zorder=3, label='Diagram 2')
+    plot_gradient_arrows(ax, dgm2_np, grad2_np, '#cc6600', scale=0.1, show_descent=True)
+
+    ax.set_xlabel('Birth')
+    ax.set_ylabel('Death')
+    ax.set_title(f'Gradient Visualization (descent direction, distance = {dist.item():.4f})', fontsize=13)
+    ax.set_aspect('equal', adjustable='box')
+    ax.legend(frameon=False, loc='upper left')
+    ax.grid(True, alpha=0.3)
+
     fig.tight_layout()
 
     return fig
@@ -111,10 +161,10 @@ def example_optimization():
     print("=" * 70)
 
     # Target diagram
-    target = random_diagram(6, birth_mean=0.5, death_mean=2.0, noise=0.25, seed=100)
+    target = random_diagram(6, birth_mean=0.5, persistence_mean=1.5, noise=0.25, seed=100)
 
-    # Initial diagram (far from target)
-    dgm = random_diagram(6, birth_mean=1.5, death_mean=3.5, noise=0.3, seed=101)
+    # Initial diagram (far from target in both birth and persistence)
+    dgm = random_diagram(6, birth_mean=1.5, persistence_mean=2.0, noise=0.3, seed=101)
     dgm.requires_grad_(True)
 
     optimizer = torch.optim.Adam([dgm], lr=0.05)
@@ -162,12 +212,6 @@ def example_optimization():
     axes[1].scatter(dgm_np[:, 0], dgm_np[:, 1], c='blue', s=100, alpha=0.6,
                    marker='x', label='Optimized', zorder=3)
 
-    # Draw connections
-    for i in range(min(len(target_np), len(dgm_np))):
-        axes[1].plot([target_np[i, 0], dgm_np[i, 0]],
-                    [target_np[i, 1], dgm_np[i, 1]],
-                    'gray', alpha=0.3, linewidth=1, zorder=1)
-
     axes[1].set_xlabel('Birth')
     axes[1].set_ylabel('Death')
     axes[1].set_title(f'Final Result (distance = {distances[-1]:.4f})')
@@ -186,8 +230,8 @@ def example_compare_variants():
     print("Example 3: Standard vs Diagonal-Corrected")
     print("=" * 70)
 
-    dgm1 = random_diagram(7, birth_mean=0.5, death_mean=2.0, noise=0.3, seed=200)
-    dgm2 = random_diagram(5, birth_mean=0.6, death_mean=2.2, noise=0.3, seed=201)
+    dgm1 = random_diagram(7, birth_mean=0.5, persistence_mean=1.5, noise=0.3, seed=200)
+    dgm2 = random_diagram(5, birth_mean=0.6, persistence_mean=1.6, noise=0.3, seed=201)
 
     dgm1_std = dgm1.clone().requires_grad_(True)
     dgm2_std = dgm2.clone().requires_grad_(True)
@@ -213,16 +257,19 @@ def example_compare_variants():
     print(f"  Standard: {dgm1_std.grad.norm().item():.6f}")
     print(f"  Corrected: {dgm1_corr.grad.norm().item():.6f}")
 
-    # Visualize gradient differences
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    # Visualize both diagrams together for each variant.
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
-    plot_diagram_with_gradients(axes[0, 0], dgm1_std, dgm1_std.grad, 'Diagram 1 - Standard')
-    plot_diagram_with_gradients(axes[0, 1], dgm2_std, dgm2_std.grad, 'Diagram 2 - Standard')
-    plot_diagram_with_gradients(axes[1, 0], dgm1_corr, dgm1_corr.grad, 'Diagram 1 - Corrected')
-    plot_diagram_with_gradients(axes[1, 1], dgm2_corr, dgm2_corr.grad, 'Diagram 2 - Corrected')
+    plot_combined_diagrams_with_gradients(
+        axes[0], dgm1_std, dgm1_std.grad, dgm2_std, dgm2_std.grad,
+        f'Standard sliced Wasserstein\n(distance = {dist_std.item():.4f})'
+    )
+    plot_combined_diagrams_with_gradients(
+        axes[1], dgm1_corr, dgm1_corr.grad, dgm2_corr, dgm2_corr.grad,
+        f'Diagonal-corrected sliced Wasserstein\n(distance = {dist_corr.item():.4f})'
+    )
 
-    fig.suptitle(f'Standard ({dist_std.item():.4f}) vs Corrected ({dist_corr.item():.4f})',
-                fontsize=14)
+    fig.suptitle('Arrows show descent direction (the optimizer update)', fontsize=14)
     fig.tight_layout()
 
     return fig

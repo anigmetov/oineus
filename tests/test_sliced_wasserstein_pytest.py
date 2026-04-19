@@ -1,8 +1,18 @@
 """Pytest tests for sliced Wasserstein distance on differentiable diagrams."""
 
 import numpy as np
-import torch
 import pytest
+
+# Check if PyTorch is available (optional dependency)
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
+# Skip all tests if PyTorch is not available
+pytestmark = pytest.mark.skipif(not TORCH_AVAILABLE, reason="PyTorch not available")
+
 import oineus.diff as oin_diff
 
 
@@ -148,3 +158,23 @@ def test_compare_standard_vs_corrected():
 
     assert dist_standard.item() >= 0
     assert dist_corrected.item() >= 0
+
+
+def test_diag_corrected_empty_diagram():
+    """Test diagonal-corrected version with empty diagrams."""
+    empty = torch.zeros((0, 2), dtype=torch.float64)
+    dgm = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=torch.float64)
+
+    # Both empty
+    dist_empty_empty = oin_diff.sliced_wasserstein_distance_diag_corrected(empty, empty, n_directions=10)
+    assert dist_empty_empty.item() == pytest.approx(0.0)
+
+    # One empty
+    torch.manual_seed(42)
+    dist_empty_dgm = oin_diff.sliced_wasserstein_distance_diag_corrected(empty, dgm, n_directions=50)
+    assert dist_empty_dgm.item() > 0
+
+    # Reverse order
+    torch.manual_seed(42)
+    dist_dgm_empty = oin_diff.sliced_wasserstein_distance_diag_corrected(dgm, empty, n_directions=50)
+    assert dist_dgm_empty.item() > 0

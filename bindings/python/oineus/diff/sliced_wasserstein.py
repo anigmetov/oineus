@@ -167,8 +167,23 @@ def _compute_slice_cost_corrected(fin1, fin2, u):
     """
     n1, n2 = len(fin1), len(fin2)
 
+    # Handle empty diagram cases specially to avoid indexing issues
     if n1 == 0 and n2 == 0:
         return torch.tensor(0.0, dtype=u.dtype, device=u.device)
+
+    if n1 == 0:
+        # Cost: distance from each point in fin2 to its own diagonal projection
+        diag_proj2 = _project_to_diagonal(fin2).detach()
+        proj2 = fin2 @ u
+        proj2_diag = diag_proj2 @ u
+        return torch.sum(torch.abs(proj2 - proj2_diag))
+
+    if n2 == 0:
+        # Cost: distance from each point in fin1 to its own diagonal projection
+        diag_proj1 = _project_to_diagonal(fin1).detach()
+        proj1 = fin1 @ u
+        proj1_diag = diag_proj1 @ u
+        return torch.sum(torch.abs(proj1 - proj1_diag))
 
     # Project finite points onto direction u
     proj1 = (fin1 @ u) if n1 > 0 else torch.tensor([], dtype=u.dtype, device=u.device)
