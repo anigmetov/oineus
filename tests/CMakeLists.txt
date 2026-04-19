@@ -103,6 +103,10 @@ else()
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-pytest.py")
     set_tests_properties(py-kernel PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
+    add_test(NAME py-sliced-wasserstein
+          COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_sliced_wasserstein_pytest.py")
+    set_tests_properties(py-sliced-wasserstein PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
     # TODO: enable after updating to current KICR API.
     add_test(NAME py-kernel-legacy
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-test-1.py")
