@@ -95,6 +95,16 @@ Diagram python_object_to_diagram(const nb::handle& obj)
     throw nb::type_error("Expected a persistence diagram as list[DiagramPoint] or NumPy array with shape (n_points, 2)");
 }
 
+struct WassersteinMatchingFinite {
+    // Finite-to-finite matching (parallel arrays)
+    std::vector<int> a_to_b;      // indices in finite_dgm_a
+    std::vector<int> b_from_a;    // corresponding indices in finite_dgm_b
+
+    // Finite-to-diagonal matching
+    std::vector<int> a_to_diag;   // indices in finite_dgm_a matched to diagonal
+    std::vector<int> b_to_diag;   // indices in finite_dgm_b matched to diagonal
+};
+
 std::vector<Diagram> python_object_to_diagrams(const nb::list& diagrams)
 {
     std::vector<Diagram> result;
@@ -102,6 +112,90 @@ std::vector<Diagram> python_object_to_diagrams(const nb::list& diagrams)
 
     for (auto item : diagrams)
         result.push_back(python_object_to_diagram(item));
+
+    return result;
+}
+
+WassersteinMatchingFinite wasserstein_matching_finite_impl(
+    const NumpyDiagram& finite_a_np,
+    const NumpyDiagram& finite_b_np,
+    oin_real wasserstein_q,
+    oin_real wasserstein_delta,
+    oin_real internal_p)
+{
+    // Convert NumPy diagrams to Hera format
+    Diagram finite_a = numpy_to_diagram(finite_a_np);
+    Diagram finite_b = numpy_to_diagram(finite_b_np);
+
+    WassersteinMatchingFinite result;
+
+    // Handle empty diagrams
+    if (finite_a.empty() && finite_b.empty()) {
+        return result;  // Both empty, return empty matching
+    }
+
+    // Check if diagrams are identical (or very close)
+    if (finite_a.size() == finite_b.size()) {
+        bool identical = true;
+        constexpr oin_real eps = 1e-10;
+
+        for (size_t i = 0; i < finite_a.size() && identical; ++i) {
+            if (std::abs(finite_a[i].birth - finite_b[i].birth) > eps ||
+                std::abs(finite_a[i].death - finite_b[i].death) > eps) {
+                identical = false;
+            }
+        }
+
+        if (identical) {
+            // Diagrams are identical, match each point to itself
+            for (size_t i = 0; i < finite_a.size(); ++i) {
+                result.a_to_b.push_back(i);
+                result.b_from_a.push_back(i);
+            }
+            return result;
+        }
+    }
+
+    // Call Hera directly on the original diagrams
+    // Hera will build the augmented diagrams internally
+    hera::AuctionParams<oin_real> params;
+    params.wasserstein_power = wasserstein_q;
+    params.delta = wasserstein_delta;
+    params.internal_p = internal_p;
+    params.return_matching = true;
+    params.match_inf_points = false;  // Finite points only!
+
+    auto hera_res = hera::wasserstein_cost_detailed(finite_a, finite_b, params);
+
+    // Parse Hera's matching result
+    // Important: Sort by a_id to maintain parallel array correspondence
+    std::vector<std::pair<int, int>> finite_matches;
+    std::vector<int> a_diag_matches, b_diag_matches;
+
+    for (const auto& [a_id, b_id] : hera_res.matching_a_to_b_) {
+        if (a_id >= 0 && b_id >= 0) {
+            finite_matches.emplace_back(a_id, b_id);
+        } else if (a_id >= 0 && b_id < 0) {
+            a_diag_matches.push_back(a_id);
+        } else if (a_id < 0 && b_id >= 0) {
+            b_diag_matches.push_back(b_id);
+        }
+    }
+
+    // Sort finite matches by a_id to create proper parallel arrays
+    std::sort(finite_matches.begin(), finite_matches.end());
+
+    for (const auto& [a_id, b_id] : finite_matches) {
+        result.a_to_b.push_back(a_id);
+        result.b_from_a.push_back(b_id);
+    }
+
+    // Sort diagonal matches for consistency
+    std::sort(a_diag_matches.begin(), a_diag_matches.end());
+    std::sort(b_diag_matches.begin(), b_diag_matches.end());
+
+    result.a_to_diag = std::move(a_diag_matches);
+    result.b_to_diag = std::move(b_diag_matches);
 
     return result;
 }
@@ -223,6 +317,31 @@ void init_oineus_functions(nb::module_& m)
             nb::arg("delta") = 0.01, nb::arg("internal_p") = hera::get_infinity<oin_real>(),
             nb::call_guard<nb::gil_scoped_release>(),
             "Compute q-Wasserstein distance between NumPy-array persistence diagrams of shape (n_points, 2).");
+
+    // Bind WassersteinMatchingFinite struct
+    nb::class_<WassersteinMatchingFinite>(m, "WassersteinMatchingFinite",
+            "Matching information for Wasserstein distance between two finite diagrams")
+        .def_ro("a_to_b", &WassersteinMatchingFinite::a_to_b,
+            "Indices in finite_dgm_a matched to finite points in dgm_b")
+        .def_ro("b_from_a", &WassersteinMatchingFinite::b_from_a,
+            "Corresponding indices in finite_dgm_b")
+        .def_ro("a_to_diag", &WassersteinMatchingFinite::a_to_diag,
+            "Indices in finite_dgm_a matched to diagonal")
+        .def_ro("b_to_diag", &WassersteinMatchingFinite::b_to_diag,
+            "Indices in finite_dgm_b matched to diagonal");
+
+    // Bind wasserstein_matching_finite function
+    func_name = "wasserstein_matching_finite";
+    m.def(func_name.c_str(),
+        &wasserstein_matching_finite_impl,
+        nb::arg("finite_dgm_a"),
+        nb::arg("finite_dgm_b"),
+        nb::arg("wasserstein_q") = 1.0,
+        nb::arg("wasserstein_delta") = 0.01,
+        nb::arg("internal_p") = hera::get_infinity<oin_real>(),
+        nb::call_guard<nb::gil_scoped_release>(),
+        "Compute Wasserstein matching between two finite diagrams (no essential points). "
+        "Returns matching information as a WassersteinMatchingFinite object.");
 
     func_name = "init_frechet_mean_first_diagram";
     m.def(func_name.c_str(),
