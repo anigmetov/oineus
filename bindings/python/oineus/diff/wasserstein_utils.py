@@ -71,16 +71,17 @@ def _split_finite_essential(dgm):
     return finite, (coords_bfin_pinf, coords_bfin_ninf, coords_pinf_dfin, coords_ninf_dfin)
 
 
-def _match_essential_1d(ess1: torch.Tensor, ess2: torch.Tensor) -> torch.Tensor:
+def _match_essential_1d(ess1: torch.Tensor, ess2: torch.Tensor, q: float = 1.0) -> torch.Tensor:
     """
     Match essential points in 1D.
 
     Args:
         ess1: 1D tensor of finite coordinate values from dgm1 essential points
         ess2: 1D tensor of finite coordinate values from dgm2 essential points
+        q: Wasserstein power parameter (default 1.0)
 
     Returns:
-        Scalar tensor with the matching cost (sum of absolute differences)
+        Scalar tensor with the matching cost: sum_i |a_i - b_i|^q
 
     Both tensors must have the same length (same cardinality of essential points).
     Sorts and matches by rank.
@@ -94,4 +95,4 @@ def _match_essential_1d(ess1: torch.Tensor, ess2: torch.Tensor) -> torch.Tensor:
 
     sorted1 = torch.sort(ess1)[0]
     sorted2 = torch.sort(ess2)[0]
-    return torch.sum(torch.abs(sorted1 - sorted2))
+    return torch.sum(torch.abs(sorted1 - sorted2) ** q)

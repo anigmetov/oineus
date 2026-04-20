@@ -1,10 +1,19 @@
 """Comprehensive tests for differentiable Wasserstein distance."""
 
 import pytest
-import torch
 import numpy as np
 import sys
 import os
+
+# Check if PyTorch is available (optional dependency)
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
+# Skip all tests if PyTorch is not available
+pytestmark = pytest.mark.skipif(not TORCH_AVAILABLE, reason="PyTorch not available")
 
 # Add build directory to path for local testing
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../build/bindings/python'))
@@ -165,6 +174,52 @@ class TestEssentialPoints:
 
         # Cost should be sum of |0.6-0.5| + |1.1-1.0| = 0.1 + 0.1 = 0.2 for q=1
         assert torch.allclose(cost, torch.tensor(0.2, dtype=torch.float64), rtol=0.01)
+
+    def test_essential_points_q2(self):
+        """Test essential points with q=2."""
+        dgm_a = torch.tensor([
+            [0.5, float('inf')],
+            [1.0, float('inf')]
+        ], dtype=torch.float64)
+        dgm_b = torch.tensor([
+            [0.6, float('inf')],
+            [1.1, float('inf')]
+        ], dtype=torch.float64)
+
+        q = 2.0
+        cost_diff = oin_diff.wasserstein_cost(dgm_a, dgm_b, wasserstein_q=q, ignore_inf_points=False)
+        dist_nondiff = oineus.wasserstein_distance(dgm_a.numpy(), dgm_b.numpy(), q=q, delta=0.01)
+
+        # For q=2: cost = distance^2
+        # distance^2 = (|0.6-0.5|^2 + |1.1-1.0|^2) = (0.1^2 + 0.1^2) = 0.02
+        expected_cost = dist_nondiff ** q
+        assert torch.allclose(cost_diff, torch.tensor(expected_cost, dtype=torch.float64), rtol=0.01), (
+            f"Essential q=2: cost={cost_diff.item()}, expected={expected_cost}, distance={dist_nondiff}"
+        )
+
+    def test_essential_points_q3(self):
+        """Test essential points with q=3."""
+        dgm_a = torch.tensor([
+            [0.5, float('inf')],
+            [1.0, float('inf')],
+            [1.5, float('inf')]
+        ], dtype=torch.float64)
+        dgm_b = torch.tensor([
+            [0.7, float('inf')],
+            [1.2, float('inf')],
+            [1.6, float('inf')]
+        ], dtype=torch.float64)
+
+        q = 3.0
+        cost_diff = oin_diff.wasserstein_cost(dgm_a, dgm_b, wasserstein_q=q, ignore_inf_points=False)
+        dist_nondiff = oineus.wasserstein_distance(dgm_a.numpy(), dgm_b.numpy(), q=q, delta=0.01)
+
+        # For q=3: cost = distance^3
+        # distance^3 = (|0.7-0.5|^3 + |1.2-1.0|^3 + |1.6-1.5|^3)
+        expected_cost = dist_nondiff ** q
+        assert torch.allclose(cost_diff, torch.tensor(expected_cost, dtype=torch.float64), rtol=0.01), (
+            f"Essential q=3: cost={cost_diff.item()}, expected={expected_cost}, distance={dist_nondiff}"
+        )
 
     def test_all_four_essential_categories(self):
         """Test all four categories of essential points."""

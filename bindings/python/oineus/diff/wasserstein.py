@@ -61,11 +61,8 @@ def wasserstein_cost(
                     f"Got {len(coords1)} and {len(coords2)} points with {name}."
                 )
             if len(coords1) > 0:
-                # Compute 1D matching cost
-                cost_1d = _match_essential_1d(coords1, coords2)
-                # _match_essential_1d returns sum of |a - b|, need to raise to power q
-                if wasserstein_q != 1.0:
-                    cost_1d = cost_1d ** wasserstein_q
+                # Compute 1D matching cost: sum_i |a_i - b_i|^q
+                cost_1d = _match_essential_1d(coords1, coords2, q=wasserstein_q)
                 total_cost = total_cost + cost_1d
 
     # Handle finite points
