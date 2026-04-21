@@ -28,6 +28,7 @@ from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D, Cube
 from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, CubeFiltration_2D
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
 from .vis_utils import plot_persistence_diagram
+from .matching import DiagramMatching, point_to_diagonal, wasserstein_matching
 # from ._oineus import Z2_Column, Z2_Matrix
 
 try:
@@ -46,6 +47,9 @@ __all__ = [
     "plot_persistence_diagram",
     "bottleneck_distance",
     "wasserstein_distance",
+    "wasserstein_matching",
+    "DiagramMatching",
+    "point_to_diagonal",
     "init_frechet_mean_first_diagram",
     "init_frechet_mean_random_diagram",
     "init_frechet_mean_medoid_diagram",

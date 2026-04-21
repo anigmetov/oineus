@@ -111,6 +111,10 @@ else()
           COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_differentiable_wasserstein.py")
     set_tests_properties(py-differentiable-wasserstein PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
+    add_test(NAME py-wasserstein-matching
+          COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_wasserstein_matching.py")
+    set_tests_properties(py-wasserstein-matching PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
     # TODO: enable after updating to current KICR API.
     add_test(NAME py-kernel-legacy
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-test-1.py")
