@@ -172,6 +172,10 @@ else()
             COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_diff_vr_pts.py")
     set_tests_properties(py-example-diff-vr-pts PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
+    add_test(NAME py-example-diff-cube
+            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_diff_cube.py")
+    set_tests_properties(py-example-diff-cube PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
     # TODO: enable after updating to the current kernel/cokernel API.
     # add_test(NAME py-example-kernel
     #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_kernel.py")
@@ -204,6 +208,10 @@ else()
     add_test(NAME py-differentiable-diagram
             COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_differentiable_diagram.py")
     set_tests_properties(py-differentiable-diagram PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
+    add_test(NAME py-diff-cube-filtration
+            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_diff_cube_filtration.py")
+    set_tests_properties(py-diff-cube-filtration PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_custom_target(py-tests
             COMMAND ${CMAKE_CTEST_COMMAND} --test-dir "${CMAKE_BINARY_DIR}" --output-on-failure -R "^py-")

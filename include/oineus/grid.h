@@ -407,8 +407,18 @@ public:
         timer.reset();
         auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads);
         auto fil_elapsed = timer.elapsed_reset();
-        std::cerr << "fil_elapsed : " << fil_elapsed << "\n";
-        return {fil, critical_indices};
+        if (verbose)
+            std::cerr << "fil_elapsed : " << fil_elapsed << "\n";
+
+        // Reorder critical indices to match the filtration's sorted order,
+        // so callers can index by sorted_id (matching the freudenthal variant).
+        CriticalIndices sorted_critical_indices;
+        sorted_critical_indices.reserve(critical_indices.size());
+        for(const auto& cell : fil.cells()) {
+            sorted_critical_indices.push_back(critical_indices[cell.get_id()]);
+        }
+
+        return {fil, sorted_critical_indices};
     }
 
     template<typename I, typename R, size_t DD>

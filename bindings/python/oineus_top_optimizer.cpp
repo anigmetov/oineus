@@ -185,6 +185,9 @@ void init_oineus_top_optimizer(nb::module_& m)
 
     init_oineus_top_optimizer_class<Simp>(m, "TopologyOptimizer", "IndicesValues");
     init_oineus_top_optimizer_class<SimpProd>(m, "TopologyOptimizerProd", "IndicesValuesProd");
+    init_oineus_top_optimizer_class<Cube_1D>(m, "TopologyOptimizerCube_1D", "IndicesValuesCube_1D");
+    init_oineus_top_optimizer_class<Cube_2D>(m, "TopologyOptimizerCube_2D", "IndicesValuesCube_2D");
+    init_oineus_top_optimizer_class<Cube_3D>(m, "TopologyOptimizerCube_3D", "IndicesValuesCube_3D");
 
     // induced matching
     m.def("get_induced_matching", &oin::get_induced_matching<Simp, oin_real>,
@@ -195,6 +198,27 @@ void init_oineus_top_optimizer(nb::module_& m)
             nb::arg("n_threads")=1);
 
     m.def("get_induced_matching", &oin::get_induced_matching<SimpProd, oin_real>,
+           "Compute induced matching for two filtrations of the same complex",
+           nb::arg("included_filtration"),
+           nb::arg("containing_filtration"),
+           nb::arg("dim")=static_cast<dim_type >(-1),
+           nb::arg("n_threads")=1);
+
+    m.def("get_induced_matching", &oin::get_induced_matching<Cube_1D, oin_real>,
+           "Compute induced matching for two filtrations of the same complex",
+           nb::arg("included_filtration"),
+           nb::arg("containing_filtration"),
+           nb::arg("dim")=static_cast<dim_type >(-1),
+           nb::arg("n_threads")=1);
+
+    m.def("get_induced_matching", &oin::get_induced_matching<Cube_2D, oin_real>,
+           "Compute induced matching for two filtrations of the same complex",
+           nb::arg("included_filtration"),
+           nb::arg("containing_filtration"),
+           nb::arg("dim")=static_cast<dim_type >(-1),
+           nb::arg("n_threads")=1);
+
+    m.def("get_induced_matching", &oin::get_induced_matching<Cube_3D, oin_real>,
            "Compute induced matching for two filtrations of the same complex",
            nb::arg("included_filtration"),
            nb::arg("containing_filtration"),

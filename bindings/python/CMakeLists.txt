@@ -21,7 +21,8 @@ else()
 endif()
 
 file (MAKE_DIRECTORY "${MODULE_OUTPUT_DIRECTORY}/oineus")
-file (GLOB OINEUS_PYTHON "${CMAKE_CURRENT_SOURCE_DIR}/oineus/*.py")
+file (GLOB_RECURSE OINEUS_PYTHON CONFIGURE_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/oineus/*.py")
 
 add_custom_target           (oineus ALL ${CMAKE_COMMAND} -E copy_directory
                                        ${CMAKE_CURRENT_SOURCE_DIR}/oineus ${MODULE_OUTPUT_DIRECTORY}/oineus
