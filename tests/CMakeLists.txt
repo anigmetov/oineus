@@ -213,6 +213,10 @@ else()
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_diff_cube_filtration.py")
     set_tests_properties(py-diff-cube-filtration PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
+    add_test(NAME py-diff-gradients
+            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_diff_gradients.py")
+    set_tests_properties(py-diff-gradients PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
     add_custom_target(py-tests
             COMMAND ${CMAKE_CTEST_COMMAND} --test-dir "${CMAKE_BINARY_DIR}" --output-on-failure -R "^py-")
 endif()
