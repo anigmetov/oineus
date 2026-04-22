@@ -2,12 +2,13 @@ import eagerpy as epy
 
 from .. import vr_filtration as non_diff_vr_filtration
 from .diff_filtration import DiffFiltration
+from ._tensor_utils import tensor_to_real_numpy
 
 
 def vr_filtration(data, from_pwdists: bool = False, max_dim: int = -1,
                   max_diameter: float = -1.0, eps=1e-6, n_threads=8) -> DiffFiltration:
     data = epy.astensor(data)
-    data_np = data.float64().numpy()
+    data_np = tensor_to_real_numpy(data)
     assert data.ndim == 2
 
     fil, edges = non_diff_vr_filtration(

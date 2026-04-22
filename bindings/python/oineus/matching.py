@@ -3,6 +3,7 @@
 import typing
 import numpy as np
 from . import _oineus
+from ._dtype import REAL_DTYPE, as_real_numpy
 
 
 class DiagramMatching:
@@ -279,8 +280,8 @@ def _split_with_indices(dgm):
             essential_idx["(-inf, finite)"].append(i)
         # Skip points with both coords infinite or on diagonal
 
-    finite = np.array(finite_pts, dtype=np.float64) if finite_pts else np.zeros((0, 2), dtype=np.float64)
-    essential = {k: np.array(v, dtype=np.float64) for k, v in essential_coords.items()}
+    finite = np.array(finite_pts, dtype=REAL_DTYPE) if finite_pts else np.zeros((0, 2), dtype=REAL_DTYPE)
+    essential = {k: np.array(v, dtype=REAL_DTYPE) for k, v in essential_coords.items()}
 
     return finite, essential, finite_idx, essential_idx
 
@@ -371,11 +372,18 @@ def wasserstein_matching(dgm_1, dgm_2, q: float = 2.0, delta: float = 0.01, inte
     point_to_diagonal : Get diagonal projection coordinates
     """
     # Import here to avoid circular dependency
-    from . import _normalize_diagram_for_distance, wasserstein_distance
+    from . import _check_numpy_diagram_shape, wasserstein_distance
+
+    def _to_matching_array(dgm):
+        if hasattr(dgm, "in_dimension"):  # oineus.Diagrams
+            if dim is None:
+                raise ValueError("When passing oineus.Diagrams, specify dim=...")
+            return dgm.in_dimension(dim, as_numpy=True)
+        return as_real_numpy(_check_numpy_diagram_shape(dgm))
 
     # 1. Normalize inputs
-    dgm_1 = _normalize_diagram_for_distance(dgm_1, dim=dim)
-    dgm_2 = _normalize_diagram_for_distance(dgm_2, dim=dim)
+    dgm_1 = _to_matching_array(dgm_1)
+    dgm_2 = _to_matching_array(dgm_2)
 
     # 2. Handle wasserstein_q alias
     if wasserstein_q is not None:

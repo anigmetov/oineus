@@ -1,10 +1,11 @@
 from typing import Optional
 
 import numpy as np
+import eagerpy as epy
 
 from .. import _oineus
 from .diff_filtration import DiffFiltration
-from ._tensor_utils import to_float64_numpy, gather_values
+from ._tensor_utils import tensor_to_real_numpy, gather_values
 
 
 _GRID_CLASS_BY_NDIM = {
@@ -37,7 +38,8 @@ def cube_filtration(data,
     if wrap:
         raise RuntimeError("cube_filtration: wrap=True is not supported")
 
-    tensor, np_data = to_float64_numpy(data)
+    tensor = epy.astensor(data)
+    np_data = tensor_to_real_numpy(tensor)
     ndim = np_data.ndim
 
     grid_cls = _GRID_CLASS_BY_NDIM.get(ndim)

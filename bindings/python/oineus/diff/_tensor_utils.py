@@ -2,17 +2,23 @@
 import numpy as np
 import eagerpy as epy
 
+from .._dtype import REAL_DTYPE
 
-def to_float64_numpy(data):
-    """Return (eagerpy tensor, C-contiguous float64 numpy view) for a tensor-like input.
+
+def tensor_to_real_numpy(tensor):
+    """Produce a contiguous Real-dtype numpy copy from an eagerpy tensor.
 
     The numpy copy is owning so that nanobind bindings which declare strict
-    ``nb::ndarray<float64, c_contig>`` accept it — a non-owning view produced
-    by ``eagerpy.numpy()`` on a torch tensor is otherwise rejected.
+    ``nb::ndarray<Real, c_contig>`` accept it — a non-owning view produced
+    by ``eagerpy.numpy()`` on a torch tensor is otherwise rejected. The dtype
+    matches how ``_oineus`` was compiled (``float32`` if Real=float,
+    ``float64`` if Real=double).
     """
-    tensor = epy.astensor(data)
-    np_data = np.array(tensor.float64().numpy(), dtype=np.float64, order="C")
-    return tensor, np_data
+    if REAL_DTYPE == np.float32:
+        casted = tensor.float32()
+    else:
+        casted = tensor.float64()
+    return np.array(casted.numpy(), dtype=REAL_DTYPE, order="C")
 
 
 def gather_values(tensor, critical_indices):

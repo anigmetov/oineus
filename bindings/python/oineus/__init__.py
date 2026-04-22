@@ -29,6 +29,7 @@ from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, Cube
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
 from .vis_utils import plot_persistence_diagram
 from .matching import DiagramMatching, point_to_diagonal, wasserstein_matching
+from ._dtype import REAL_DTYPE, as_real_numpy
 # from ._oineus import Z2_Column, Z2_Matrix
 
 try:
@@ -64,38 +65,21 @@ __all__ = [
 ]
 
 
-def _diagram_from_oineus_diagrams(dgms, dim: typing.Optional[int]):
-    if dim is None:
-        if len(dgms) == 1:
-            dim = 0
-        else:
-            raise ValueError("When passing oineus.Diagrams, specify dim=...")
-    return np.ascontiguousarray(dgms.in_dimension(dim, as_numpy=True), dtype=np.float64)
-
-
-def _normalize_diagram_for_distance(dgm, *, dim: typing.Optional[int]=None):
-    if hasattr(dgm, "in_dimension") and hasattr(dgm, "__len__"):
-        return _diagram_from_oineus_diagrams(dgm, dim)
-    if isinstance(dgm, np.ndarray):
-        dgm = np.asarray(dgm, dtype=np.float64)
-        if dgm.ndim != 2 or dgm.shape[1] != 2:
-            raise ValueError("Expected NumPy array with shape (n_points, 2)")
-        return np.ascontiguousarray(dgm)
+def _check_numpy_diagram_shape(dgm):
+    """If ``dgm`` is a numpy array, assert shape (n, 2). Otherwise pass through."""
+    if isinstance(dgm, np.ndarray) and (dgm.ndim != 2 or dgm.shape[1] != 2):
+        raise ValueError("Expected NumPy array with shape (n_points, 2)")
     return dgm
-
-
-def _normalize_diagram_collection(diagrams):
-    return [_normalize_diagram_for_distance(dgm) for dgm in diagrams]
 
 
 def _normalize_frechet_weights(n_diagrams: int, weights):
     if n_diagrams == 0:
-        return np.empty((0,), dtype=np.float64)
+        return np.empty((0,), dtype=REAL_DTYPE)
 
     if weights is None:
-        return np.full(n_diagrams, 1.0 / n_diagrams, dtype=np.float64)
+        return np.full(n_diagrams, 1.0 / n_diagrams, dtype=REAL_DTYPE)
 
-    arr = np.asarray(weights, dtype=np.float64)
+    arr = np.asarray(weights)
     if arr.ndim != 1:
         raise ValueError("weights must be a 1D array")
     if arr.shape[0] != n_diagrams:
@@ -112,9 +96,9 @@ def _normalize_frechet_weights(n_diagrams: int, weights):
 
 def _diagram_persistences(dgm: np.ndarray) -> np.ndarray:
     if dgm.size == 0:
-        return np.empty((0,), dtype=np.float64)
+        return np.empty((0,), dtype=dgm.dtype)
 
-    pers = np.empty(dgm.shape[0], dtype=np.float64)
+    pers = np.empty(dgm.shape[0], dtype=dgm.dtype)
     finite_mask = np.isfinite(dgm[:, 0]) & np.isfinite(dgm[:, 1])
     pers[finite_mask] = np.abs(dgm[finite_mask, 1] - dgm[finite_mask, 0])
     pers[~finite_mask] = np.inf
@@ -131,7 +115,7 @@ def _threshold_diagram_by_persistence(dgm: np.ndarray, min_persistence: float, *
     keep_mask[finite_mask] = pers[finite_mask] >= min_persistence
     if include_infinite_points:
         keep_mask |= ~finite_mask
-    return np.ascontiguousarray(dgm[keep_mask], dtype=np.float64)
+    return np.ascontiguousarray(dgm[keep_mask])
 
 
 def _newly_active_diagram_points(dgm: np.ndarray, previous_threshold: float, current_threshold: float):
@@ -141,7 +125,36 @@ def _newly_active_diagram_points(dgm: np.ndarray, previous_threshold: float, cur
     pers = _diagram_persistences(dgm)
     finite_mask = np.isfinite(pers)
     keep_mask = finite_mask & (pers >= current_threshold) & (pers < previous_threshold)
-    return np.ascontiguousarray(dgm[keep_mask], dtype=np.float64)
+    return np.ascontiguousarray(dgm[keep_mask])
+
+
+def _diagrams_to_numpy_list(diagrams):
+    """Convert each diagram in the sequence to a Real-dtype ``(n, 2)`` numpy array.
+
+    Used by helpers that manipulate diagram points in Python (thresholding,
+    persistence scheduling, pairwise distances, ...). For direct pass-through
+    to the C++ Hera bindings, prefer :func:`as_real_numpy` instead — nanobind
+    picks the correct overload based on input type.
+    """
+    result = []
+    for dgm in diagrams:
+        if isinstance(dgm, np.ndarray):
+            result.append(as_real_numpy(_check_numpy_diagram_shape(dgm)))
+        elif hasattr(dgm, "in_dimension"):  # oineus.Diagrams
+            if len(dgm) != 1:
+                raise ValueError(
+                    "Cannot convert multi-dimensional oineus.Diagrams: specify dim=... "
+                    "or extract .in_dimension(d) before calling"
+                )
+            result.append(dgm.in_dimension(0, as_numpy=True))
+        else:  # list of DiagramPoint or similar
+            if len(dgm) == 0:
+                result.append(np.empty((0, 2), dtype=REAL_DTYPE))
+            else:
+                result.append(
+                    np.array([[p[0], p[1]] for p in dgm], dtype=REAL_DTYPE).reshape((-1, 2))
+                )
+    return result
 
 
 def _resolve_multistart_seed(diagrams,
@@ -155,10 +168,8 @@ def _resolve_multistart_seed(diagrams,
                              grid_n_y_bins,
                              wasserstein_delta,
                              internal_p):
-    diagrams = _normalize_diagram_collection(diagrams)
-
     if not isinstance(seed, str):
-        return _normalize_diagram_for_distance(seed)
+        return as_real_numpy(_check_numpy_diagram_shape(seed))
 
     if seed == "first":
         return init_frechet_mean_first_diagram(diagrams)
@@ -180,9 +191,11 @@ def _resolve_multistart_seed(diagrams,
             random_seed=random_seed,
         )
 
+    # Need numpy arrays for .copy() in the "farthest_from_medoid"/"second_medoid" paths.
+    diagrams = _diagrams_to_numpy_list(diagrams)
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
     n = len(diagrams)
-    d2 = np.zeros((n, n), dtype=np.float64)
+    d2 = np.zeros((n, n), dtype=REAL_DTYPE)
     for i in range(n):
         for j in range(i + 1, n):
             dist = wasserstein_distance(
@@ -214,6 +227,36 @@ def _resolve_multistart_seed(diagrams,
     raise ValueError(f"Unknown Fréchet-mean seed '{seed}'")
 
 
+def _prepare_distance_args(dgm_1, dgm_2, dim):
+    """Coerce inputs into one of the C++ overloads' supported shapes.
+
+    Returns either ``(Diagrams, Diagrams, dim)`` — when both are Diagrams —
+    or ``(x, y)`` where each of ``x``, ``y`` is a list/numpy and nanobind will
+    pick the matching overload. Mixed Diagrams + numpy/list is resolved by
+    extracting the named ``dim`` slice from the Diagrams side.
+    """
+    dgm_1 = as_real_numpy(_check_numpy_diagram_shape(dgm_1))
+    dgm_2 = as_real_numpy(_check_numpy_diagram_shape(dgm_2))
+    is_d1 = isinstance(dgm_1, Diagrams)
+    is_d2 = isinstance(dgm_2, Diagrams)
+
+    if is_d1 and is_d2:
+        if dim is None:
+            raise ValueError("When passing oineus.Diagrams, specify dim=...")
+        return (dgm_1, dgm_2, dim)
+
+    if is_d1:
+        if dim is None:
+            raise ValueError("When passing oineus.Diagrams, specify dim=...")
+        dgm_1 = dgm_1.in_dimension(dim, as_numpy=True)
+    if is_d2:
+        if dim is None:
+            raise ValueError("When passing oineus.Diagrams, specify dim=...")
+        dgm_2 = dgm_2.in_dimension(dim, as_numpy=True)
+
+    return (dgm_1, dgm_2)
+
+
 def bottleneck_distance(dgm_1, dgm_2, delta: float=0.01, dim: typing.Optional[int]=None):
     """Compute the bottleneck distance between two persistence diagrams.
 
@@ -225,27 +268,24 @@ def bottleneck_distance(dgm_1, dgm_2, delta: float=0.01, dim: typing.Optional[in
         delta: Relative error requested from Hera. Set `delta=0.0` to request
             the exact bottleneck distance.
         dim: Homology dimension to extract when `dgm_1` or `dgm_2` is an
-            Oineus `Diagrams` object. If omitted, dimension 0 is used only when
-            the diagrams container has length 1.
+            Oineus `Diagrams` object.
 
     Returns:
         The bottleneck distance as a Python float.
     """
-    return _bottleneck_distance_cpp(_normalize_diagram_for_distance(dgm_1, dim=dim),
-                                    _normalize_diagram_for_distance(dgm_2, dim=dim),
-                                    delta=delta)
+    return _bottleneck_distance_cpp(*_prepare_distance_args(dgm_1, dgm_2, dim), delta=delta)
 
 
 def _diagram_arrays_equal_for_zero_check(dgm_1, dgm_2):
     if isinstance(dgm_1, np.ndarray):
         arr_1 = dgm_1
     else:
-        arr_1 = np.array([[p[0], p[1]] for p in dgm_1], dtype=np.float64).reshape((-1, 2))
+        arr_1 = np.array([[p[0], p[1]] for p in dgm_1], dtype=REAL_DTYPE).reshape((-1, 2))
 
     if isinstance(dgm_2, np.ndarray):
         arr_2 = dgm_2
     else:
-        arr_2 = np.array([[p[0], p[1]] for p in dgm_2], dtype=np.float64).reshape((-1, 2))
+        arr_2 = np.array([[p[0], p[1]] for p in dgm_2], dtype=REAL_DTYPE).reshape((-1, 2))
 
     if arr_1.shape != arr_2.shape:
         return False
@@ -267,7 +307,7 @@ def _diagram_arrays_equal_for_zero_check(dgm_1, dgm_2):
     diff = np.zeros_like(arr_1)
     diff[finite_mask] = np.abs(arr_1[finite_mask] - arr_2[finite_mask])
 
-    return np.all(diff < np.finfo(np.float64).eps)
+    return np.all(diff < np.finfo(arr_1.dtype).eps)
 
 
 def wasserstein_distance(dgm_1, dgm_2, q: float=2.0, delta: float=0.01, internal_p: float=np.inf,
@@ -286,34 +326,29 @@ def wasserstein_distance(dgm_1, dgm_2, q: float=2.0, delta: float=0.01, internal
         internal_p: Ground-metric norm in the plane. Use `np.inf` for the
             `L_infinity` norm.
         wasserstein_q: Alias for `q`, kept for API compatibility.
-        check_for_zero: If `True`, do a quick exact equality check in Python and
-            return `0.0` before calling Hera when the diagrams coincide.
+        check_for_zero: If `True`, skip Hera when the two inputs are numpy
+            arrays of equal points.
         dim: Homology dimension to extract when `dgm_1` or `dgm_2` is an
-            Oineus `Diagrams` object. If omitted, dimension 0 is used only when
-            the diagrams container has length 1.
+            Oineus `Diagrams` object.
 
     Returns:
         The Wasserstein distance as a Python float.
     """
-    dgm_1 = _normalize_diagram_for_distance(dgm_1, dim=dim)
-    dgm_2 = _normalize_diagram_for_distance(dgm_2, dim=dim)
-    if check_for_zero:
-        if _diagram_arrays_equal_for_zero_check(dgm_1, dgm_2):
-            return 0.0
-
     if wasserstein_q is not None:
         q = wasserstein_q
     if np.isinf(internal_p):
         internal_p = -1.0
 
-    return _wasserstein_distance_cpp(dgm_1,
-                                     dgm_2,
-                                     q=q, delta=delta, internal_p=internal_p)
+    prepared = _prepare_distance_args(dgm_1, dgm_2, dim)
+
+    if check_for_zero and len(prepared) == 2 and _diagram_arrays_equal_for_zero_check(*prepared):
+        return 0.0
+
+    return _wasserstein_distance_cpp(*prepared, q=q, delta=delta, internal_p=internal_p)
 
 
 def init_frechet_mean_first_diagram(diagrams):
-    diagrams = _normalize_diagram_collection(diagrams)
-    return _init_frechet_mean_first_diagram_cpp(diagrams)
+    return _init_frechet_mean_first_diagram_cpp([as_real_numpy(d) for d in diagrams])
 
 
 def init_frechet_mean_random_diagram(diagrams,
@@ -321,9 +356,8 @@ def init_frechet_mean_random_diagram(diagrams,
                                      domain=DiagramPlaneDomain.AboveDiagonal,
                                      random_noise_scale: float = 1.0,
                                      random_seed: int = 42):
-    diagrams = _normalize_diagram_collection(diagrams)
     return _init_frechet_mean_random_diagram_cpp(
-        diagrams,
+        [as_real_numpy(d) for d in diagrams],
         domain=domain,
         random_noise_scale=random_noise_scale,
         random_seed=random_seed,
@@ -331,9 +365,9 @@ def init_frechet_mean_random_diagram(diagrams,
 
 
 def init_frechet_mean_medoid_diagram(diagrams, *, weights=None):
-    diagrams = _normalize_diagram_collection(diagrams)
-    weights = None if weights is None else np.asarray(weights, dtype=np.float64)
-    return _init_frechet_mean_medoid_diagram_cpp(diagrams, weights=weights)
+    return _init_frechet_mean_medoid_diagram_cpp(
+        [as_real_numpy(d) for d in diagrams], weights=weights
+    )
 
 
 def init_frechet_mean_diagonal_grid(diagrams,
@@ -342,10 +376,8 @@ def init_frechet_mean_diagonal_grid(diagrams,
                                     domain=DiagramPlaneDomain.AboveDiagonal,
                                     grid_n_x_bins: int = 16,
                                     grid_n_y_bins: int = 16):
-    diagrams = _normalize_diagram_collection(diagrams)
-    weights = None if weights is None else np.asarray(weights, dtype=np.float64)
     return _init_frechet_mean_diagonal_grid_cpp(
-        diagrams,
+        [as_real_numpy(d) for d in diagrams],
         weights=weights,
         domain=domain,
         grid_n_x_bins=grid_n_x_bins,
@@ -359,8 +391,6 @@ def frechet_mean_objective(diagrams,
                            weights=None,
                            wasserstein_delta: float = 0.01,
                            internal_p: float = np.inf):
-    diagrams = _normalize_diagram_collection(diagrams)
-    barycenter = _normalize_diagram_for_distance(barycenter)
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
     return float(sum(
         normalized_weights[i] * wasserstein_distance(
@@ -379,7 +409,7 @@ def make_frechet_mean_persistence_schedule(diagrams,
                                            initial_threshold_fraction: float = 0.5,
                                            max_active_growth: float = 0.10,
                                            min_persistence: float = 0.0):
-    diagrams = _normalize_diagram_collection(diagrams)
+    diagrams = _diagrams_to_numpy_list(diagrams)
     if initial_threshold_fraction <= 0.0:
         raise ValueError("initial_threshold_fraction must be positive")
     if max_active_growth < 0.0:
@@ -393,7 +423,7 @@ def make_frechet_mean_persistence_schedule(diagrams,
     if not finite_persistences:
         return [float(min_persistence)]
 
-    values = np.array(sorted(set(float(p) for p in finite_persistences if p >= min_persistence), reverse=True), dtype=np.float64)
+    values = np.array(sorted(set(float(p) for p in finite_persistences if p >= min_persistence), reverse=True))
     if values.size == 0:
         return [float(min_persistence)]
 
@@ -428,7 +458,7 @@ def make_frechet_mean_persistence_schedule(diagrams,
 
 
 def frechet_mean_newborn_points_from_newly_active(newly_active_diagrams, *, weights=None):
-    newly_active_diagrams = _normalize_diagram_collection(newly_active_diagrams)
+    newly_active_diagrams = _diagrams_to_numpy_list(newly_active_diagrams)
     normalized_weights = _normalize_frechet_weights(len(newly_active_diagrams), weights)
 
     new_points = []
@@ -445,9 +475,9 @@ def frechet_mean_newborn_points_from_newly_active(newly_active_diagrams, *, weig
         new_points.append(np.column_stack((births, deaths)))
 
     if not new_points:
-        return np.empty((0, 2), dtype=np.float64)
+        return np.empty((0, 2), dtype=REAL_DTYPE)
 
-    return np.ascontiguousarray(np.vstack(new_points), dtype=np.float64)
+    return np.ascontiguousarray(np.vstack(new_points))
 
 
 def frechet_mean_multistart(diagrams,
@@ -456,7 +486,7 @@ def frechet_mean_multistart(diagrams,
                             starts=("medoid", "second_medoid", "farthest_from_medoid"),
                             return_details: bool = False,
                             **kwargs):
-    diagrams = _normalize_diagram_collection(diagrams)
+    diagrams = [as_real_numpy(_check_numpy_diagram_shape(d)) for d in diagrams]
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
     if not starts:
         raise ValueError("starts must be non-empty")
@@ -531,7 +561,7 @@ def progressive_frechet_mean(diagrams,
                              support_update_fn=None,
                              return_details: bool = False,
                              **kwargs):
-    diagrams = _normalize_diagram_collection(diagrams)
+    diagrams = _diagrams_to_numpy_list(diagrams)
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
     ignore_infinite_points = bool(kwargs.get("ignore_infinite_points", False))
 
@@ -605,9 +635,9 @@ def progressive_frechet_mean(diagrams,
                         weights=normalized_weights,
                     )
                     if new_points is not None:
-                        new_points = _normalize_diagram_for_distance(new_points)
+                        new_points = as_real_numpy(_check_numpy_diagram_shape(new_points))
                         if new_points.size != 0:
-                            seed = np.ascontiguousarray(np.vstack([seed, new_points]), dtype=np.float64)
+                            seed = np.ascontiguousarray(np.vstack([seed, new_points]))
 
         barycenter = frechet_mean(
             active_diagrams,
@@ -644,7 +674,7 @@ def progressive_frechet_mean_multistart(diagrams,
                                         starts=("medoid", "second_medoid", "farthest_from_medoid"),
                                         return_details: bool = False,
                                         **kwargs):
-    diagrams = _normalize_diagram_collection(diagrams)
+    diagrams = [as_real_numpy(_check_numpy_diagram_shape(d)) for d in diagrams]
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
     if not starts:
         raise ValueError("starts must be non-empty")
@@ -705,12 +735,15 @@ def frechet_mean(diagrams,
                  grid_n_x_bins: int = 16,
                  grid_n_y_bins: int = 16,
                  custom_initial_barycenter=None):
-    diagrams = _normalize_diagram_collection(diagrams)
-    weights = None if weights is None else np.asarray(weights, dtype=np.float64)
+    diagrams = [as_real_numpy(_check_numpy_diagram_shape(d)) for d in diagrams]
     if weights is not None:
+        weights = np.asarray(weights)
         assert weights.ndim == 1, "weights must be a 1D array"
         assert weights.shape[0] == len(diagrams), "weights must have same length as diagrams"
-    custom_initial_barycenter = None if custom_initial_barycenter is None else _normalize_diagram_for_distance(custom_initial_barycenter)
+    custom_initial_barycenter = (
+        None if custom_initial_barycenter is None
+        else as_real_numpy(_check_numpy_diagram_shape(custom_initial_barycenter))
+    )
 
     if np.isinf(internal_p):
         internal_p = -1.0

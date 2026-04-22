@@ -3,6 +3,7 @@
 import torch
 import numpy as np
 from .. import _oineus
+from .._dtype import as_real_numpy
 from .wasserstein_utils import _project_to_diagonal, _split_finite_essential, _match_essential_1d
 
 
@@ -70,8 +71,8 @@ def wasserstein_cost(
         return total_cost
 
     # Convert finite diagrams to numpy for C++ matching
-    fin_a_np = fin_a.detach().cpu().numpy()
-    fin_b_np = fin_b.detach().cpu().numpy()
+    fin_a_np = as_real_numpy(fin_a.detach().cpu().numpy())
+    fin_b_np = as_real_numpy(fin_b.detach().cpu().numpy())
 
     # Convert internal_p: Hera uses -1.0 to represent L_inf norm
     internal_p_for_hera = -1.0 if np.isinf(internal_p) else internal_p
