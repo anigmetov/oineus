@@ -2,11 +2,6 @@
 
 import pytest
 import numpy as np
-import sys
-import os
-
-# Add build directory to path for local testing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../build/bindings/python'))
 
 import oineus
 
@@ -112,11 +107,12 @@ class TestEssentialPoints:
                                               ignore_inf_points=False)
 
         assert len(matching.finite_to_finite) == 1
-        assert "(finite, +inf)" in matching.essential_matches
-        assert len(matching.essential_matches["(finite, +inf)"]) == 1
+        # Attr access (preferred) and enum-indexed access agree.
+        assert len(matching.essential.inf_death) == 1
+        assert len(matching.essential[oineus.InfKind.INF_DEATH]) == 1
 
         # Check indices refer to original diagrams
-        idx_a, idx_b = matching.essential_matches["(finite, +inf)"][0]
+        idx_a, idx_b = matching.essential.inf_death[0]
         assert dgm_a[idx_a][1] == np.inf
         assert dgm_b[idx_b][1] == np.inf
 
@@ -138,10 +134,10 @@ class TestEssentialPoints:
         matching = oineus.wasserstein_matching(dgm_a, dgm_b,
                                               ignore_inf_points=False)
 
-        assert len(matching.essential_matches["(finite, +inf)"]) == 3
+        assert len(matching.essential.inf_death) == 3
 
         # All indices should be valid
-        for idx_a, idx_b in matching.essential_matches["(finite, +inf)"]:
+        for idx_a, idx_b in matching.essential.inf_death:
             assert 0 <= idx_a < len(dgm_a)
             assert 0 <= idx_b < len(dgm_b)
 
@@ -161,7 +157,8 @@ class TestEssentialPoints:
         matching = oineus.wasserstein_matching(dgm_a, dgm_b,
                                               ignore_inf_points=True)
 
-        assert len(matching.essential_matches) == 0
+        # All four families are present as empty (0, 2) arrays.
+        assert all(v.shape == (0, 2) for v in matching.essential.values())
         assert len(matching.finite_to_finite) == 1
 
 
@@ -187,11 +184,12 @@ class TestIndexCorrectness:
                                               ignore_inf_points=False)
 
         # Essential match should involve indices 1 and 1
-        assert (1, 1) in matching.essential_matches["(finite, +inf)"]
+        ess = matching.essential.inf_death
+        assert [tuple(map(int, p)) for p in ess] == [(1, 1)]
 
         # Finite matches should involve indices 0,2,3
-        finite_a_indices = set(idx for idx, _ in matching.finite_to_finite)
-        finite_b_indices = set(idx for _, idx in matching.finite_to_finite)
+        finite_a_indices = set(int(idx) for idx, _ in matching.finite_to_finite)
+        finite_b_indices = set(int(idx) for _, idx in matching.finite_to_finite)
         assert finite_a_indices == {0, 2, 3}
         assert finite_b_indices == {0, 2, 3}
 
@@ -211,10 +209,12 @@ class TestIndexCorrectness:
         matching = oineus.wasserstein_matching(dgm_a, dgm_b,
                                               ignore_inf_points=False)
 
-        assert (2, 2) in matching.essential_matches["(finite, +inf)"]
+        # Mix attr access and enum indexing for coverage.
+        assert [tuple(map(int, p)) for p in matching.essential.inf_death] == [(2, 2)]
+        assert [tuple(map(int, p)) for p in matching.essential[oineus.InfKind.INF_DEATH]] == [(2, 2)]
 
         # Verify we can index into original diagrams
-        idx_a, idx_b = matching.essential_matches["(finite, +inf)"][0]
+        idx_a, idx_b = matching.essential.inf_death[0]
         assert dgm_a[idx_a][0] == 1.5
         assert dgm_b[idx_b][0] == 1.6
 

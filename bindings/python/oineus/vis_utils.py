@@ -6,6 +6,7 @@ import numpy as np
 
 try:
     import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
     _HAS_MATPLOTLIB = True
 except Exception:
     _HAS_MATPLOTLIB = False
@@ -16,6 +17,116 @@ try:
 except Exception:
     _HAS_MPL_SCATTER_DENSITY = False
 
+
+# ---------------------------------------------------------------------------
+# Style-dict infrastructure
+#
+# Mutable module-level defaults that every plotting helper below consults.
+# Callers get a fresh dict from the default_*_style() getters, modify it,
+# and pass it back via the corresponding kwarg for a one-shot override.
+# For global overrides (once per script / notebook), mutate the module-level
+# DEFAULT_*_STYLE dict in place: oineus.DEFAULT_MATCHING_EDGE_STYLE["linewidth"] = 2.
+# ---------------------------------------------------------------------------
+
+DEFAULT_POINT_STYLE: dict = {
+    "marker": "o",
+    "s": 25.0,
+    "alpha": 0.9,
+    "edgecolors": "none",
+}
+
+DEFAULT_DIAGRAM_A_POINT_STYLE: dict = {**DEFAULT_POINT_STYLE, "c": "tab:red"}
+DEFAULT_DIAGRAM_B_POINT_STYLE: dict = {**DEFAULT_POINT_STYLE, "c": "tab:blue"}
+
+DEFAULT_MATCHING_EDGE_STYLE: dict = {
+    "linewidth": 0.8,
+    "linestyle": "-",
+    "color": "gray",
+    "alpha": 0.5,
+}
+
+DEFAULT_LONGEST_EDGE_STYLE: dict = {
+    "linewidth": 1.6,
+    "linestyle": "-",
+    "color": "red",
+    "alpha": 0.95,
+}
+
+DEFAULT_DIAGONAL_STYLE: dict = {
+    "linestyle": "--",
+    "color": "gray",
+    "alpha": 0.7,
+    "linewidth": 1.0,
+}
+
+DEFAULT_DIAGONAL_PROJECTION_A_STYLE: dict = {
+    "marker": "x",
+    "s": 30.0,
+    "alpha": 0.8,
+    "c": "tab:red",
+}
+
+DEFAULT_DIAGONAL_PROJECTION_B_STYLE: dict = {
+    "marker": "x",
+    "s": 30.0,
+    "alpha": 0.8,
+    "c": "tab:blue",
+}
+
+DEFAULT_INF_LINE_STYLE: dict = {
+    "color": "black",
+    "linestyle": "--",
+    "linewidth": 1.0,
+}
+
+
+def default_point_style() -> dict:
+    return dict(DEFAULT_POINT_STYLE)
+
+
+def default_diagram_a_point_style() -> dict:
+    return dict(DEFAULT_DIAGRAM_A_POINT_STYLE)
+
+
+def default_diagram_b_point_style() -> dict:
+    return dict(DEFAULT_DIAGRAM_B_POINT_STYLE)
+
+
+def default_matching_edge_style() -> dict:
+    return dict(DEFAULT_MATCHING_EDGE_STYLE)
+
+
+def default_longest_edge_style() -> dict:
+    return dict(DEFAULT_LONGEST_EDGE_STYLE)
+
+
+def default_diagonal_style() -> dict:
+    return dict(DEFAULT_DIAGONAL_STYLE)
+
+
+def default_diagonal_projection_a_style() -> dict:
+    return dict(DEFAULT_DIAGONAL_PROJECTION_A_STYLE)
+
+
+def default_diagonal_projection_b_style() -> dict:
+    return dict(DEFAULT_DIAGONAL_PROJECTION_B_STYLE)
+
+
+def default_inf_line_style() -> dict:
+    return dict(DEFAULT_INF_LINE_STYLE)
+
+
+def _resolve_style(user: typing.Optional[dict], default_getter) -> dict:
+    """Merge a fresh copy of the default with user overrides (user wins)."""
+    style = default_getter()
+    if user:
+        style.update(user)
+    return style
+
+
+# ---------------------------------------------------------------------------
+# Diagram input coercion
+# ---------------------------------------------------------------------------
 
 def _diagram_points_to_array(diagram_points) -> np.ndarray:
     if len(diagram_points) == 0:
@@ -35,7 +146,6 @@ def _to_dim_diagrams(
     dims: typing.Optional[typing.Iterable[int]],
     max_dimension: typing.Optional[int],
 ) -> typing.Dict[int, np.ndarray]:
-    # dict: dim -> ndarray or list[DiagramPoint]
     if isinstance(diagrams, dict):
         out = {}
         for dim, dgm in diagrams.items():
@@ -45,7 +155,6 @@ def _to_dim_diagrams(
                 out[int(dim)] = _diagram_points_to_array(dgm)
         return out
 
-    # Diagrams object from oineus bindings
     if hasattr(diagrams, "in_dimension"):
         if dims is None:
             max_scan_dim = 64 if max_dimension is None else int(max_dimension)
@@ -67,11 +176,9 @@ def _to_dim_diagrams(
             return out
         return {int(dim): _array_diagram(diagrams.in_dimension(int(dim), as_numpy=True)) for dim in dims}
 
-    # Single numpy diagram
     if isinstance(diagrams, np.ndarray):
         return {0: _array_diagram(diagrams)}
 
-    # list[DiagramPoint] or list[np.ndarray]
     if isinstance(diagrams, list):
         if len(diagrams) == 0:
             return {0: np.empty((0, 2), dtype=float)}
@@ -114,14 +221,62 @@ def _shift_for_log(values: np.ndarray, use_log: bool) -> float:
     return 0.0
 
 
-def plot_persistence_diagram(
+# ---------------------------------------------------------------------------
+# Shared inf-line / axis-range helper
+# ---------------------------------------------------------------------------
+
+def _compute_plot_limits(finite_xs: np.ndarray, finite_ys: np.ndarray,
+                         extra_xs: typing.Sequence[np.ndarray] = (),
+                         extra_ys: typing.Sequence[np.ndarray] = (),
+                         inf_line_margin: float = 0.05):
+    """Compute (x_min, x_max, y_min, y_max, x_span, y_span, inf_x_pos,
+    inf_x_neg, inf_y_pos, inf_y_neg) given the finite data and any extra
+    finite-coordinate arrays that should be included for positioning.
+    """
+    xs = [finite_xs] + list(extra_xs)
+    ys = [finite_ys] + list(extra_ys)
+    xs = [a for a in xs if a.size > 0]
+    ys = [a for a in ys if a.size > 0]
+    all_x = np.concatenate(xs) if xs else np.empty((0,), dtype=float)
+    all_y = np.concatenate(ys) if ys else np.empty((0,), dtype=float)
+
+    if all_y.size:
+        y_min, y_max = float(np.min(all_y)), float(np.max(all_y))
+    elif all_x.size:
+        y_min, y_max = float(np.min(all_x)), float(np.max(all_x))
+    else:
+        y_min, y_max = -1.0, 1.0
+
+    if all_x.size:
+        x_min, x_max = float(np.min(all_x)), float(np.max(all_x))
+    else:
+        x_min, x_max = y_min, y_max
+
+    y_span = y_max - y_min
+    x_span = x_max - x_min
+    if y_span <= 0.0:
+        y_span = max(abs(y_max), abs(y_min), 1.0)
+    if x_span <= 0.0:
+        x_span = max(abs(x_max), abs(x_min), 1.0)
+
+    inf_y_pos = y_max + inf_line_margin * y_span
+    inf_y_neg = y_min - inf_line_margin * y_span
+    inf_x_pos = x_max + inf_line_margin * x_span
+    inf_x_neg = x_min - inf_line_margin * x_span
+
+    return (x_min, x_max, y_min, y_max, x_span, y_span,
+            inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
+
+
+# ---------------------------------------------------------------------------
+# plot_diagram (refactored from plot_persistence_diagram)
+# ---------------------------------------------------------------------------
+
+def plot_diagram(
     diagrams,
     ax=None,
     *,
-    marker: str = "o",
-    marker_size: float = 16.0,
     color=None,
-    alpha: float = 0.9,
     log_x: bool = False,
     log_y: bool = False,
     title: typing.Optional[str] = None,
@@ -134,18 +289,25 @@ def plot_persistence_diagram(
     near_diagonal_fraction: float = 0.03,
     density_cmap: str = "viridis",
     inf_line_margin: float = 0.05,
-    inf_line_color: str = "black",
-    inf_line_style: str = "--",
-    diag_line_color: str = "gray",
-    diag_line_style: str = "--",
-    diag_line_alpha: float = 0.7,
-    scatter_kwargs: typing.Optional[dict] = None,
+    point_style: typing.Optional[dict] = None,
+    diagonal_style: typing.Optional[dict] = None,
+    inf_line_style: typing.Optional[dict] = None,
+    dim_label_fmt: str = "H{dim}",
 ):
+    """Plot one or more persistence diagrams.
+
+    Style-dict kwargs (``point_style``, ``diagonal_style``, ``inf_line_style``)
+    default to copies of the module-level ``DEFAULT_*_STYLE`` dicts. Per-dim
+    colouring is overridden via ``color`` (dict[int, color] or list).
+    """
     if not _HAS_MATPLOTLIB:
-        raise ImportError("matplotlib is required for plot_persistence_diagram.")
+        raise ImportError("matplotlib is required for plot_diagram.")
+
+    point_style = _resolve_style(point_style, default_point_style)
+    diagonal_style = _resolve_style(diagonal_style, default_diagonal_style)
+    inf_line_style = _resolve_style(inf_line_style, default_inf_line_style)
 
     bounds = {} if axis_bounds is None else dict(axis_bounds)
-    scatter_kwargs = {} if scatter_kwargs is None else dict(scatter_kwargs)
     dgms = _to_dim_diagrams(diagrams, dims=dims, max_dimension=max_dimension)
     dims_sorted = sorted(dgms.keys())
 
@@ -279,7 +441,19 @@ def plot_persistence_diagram(
     if use_density_plot:
         ax.scatter_density(near_x + x_shift, near_y + y_shift, cmap=density_cmap)
 
+    # When a per-dim color override is supplied, it wins over point_style's "c".
+    base_scatter_kwargs = dict(point_style)
+    base_color = base_scatter_kwargs.pop("c", None)
+
     for dim_idx, dim in enumerate(dims_sorted):
+        dim_color = _resolve_color(color, dim, dim_idx)
+        effective_c = dim_color if dim_color is not None else base_color
+
+        scatter_kwargs = dict(base_scatter_kwargs)
+        if effective_c is not None:
+            scatter_kwargs["c"] = effective_c
+
+        label = dim_label_fmt.format(dim=dim)
         births, deaths = finite_by_dim[dim]
         if births.size:
             mask = ~near_mask_by_dim[dim] if use_density_plot else np.ones_like(births, dtype=bool)
@@ -287,25 +461,17 @@ def plot_persistence_diagram(
                 ax.scatter(
                     births[mask] + x_shift,
                     deaths[mask] + y_shift,
-                    s=marker_size,
-                    marker=marker,
-                    c=_resolve_color(color, dim, dim_idx),
-                    alpha=alpha,
-                    label=f"H{dim}",
+                    label=label,
                     **scatter_kwargs,
                 )
 
-        label_for_inf = f"H{dim}" if births.size == 0 else None
+        label_for_inf = label if births.size == 0 else None
 
         pos_inf_births = pos_inf_birth_by_dim[dim]
         if pos_inf_births.size:
             ax.scatter(
                 pos_inf_births + x_shift,
                 np.full_like(pos_inf_births, inf_y_pos + y_shift),
-                s=marker_size,
-                marker=marker,
-                c=_resolve_color(color, dim, dim_idx),
-                alpha=alpha,
                 label=label_for_inf,
                 **scatter_kwargs,
             )
@@ -316,18 +482,14 @@ def plot_persistence_diagram(
             ax.scatter(
                 neg_inf_births + x_shift,
                 np.full_like(neg_inf_births, inf_y_neg + y_shift),
-                s=marker_size,
-                marker=marker,
-                c=_resolve_color(color, dim, dim_idx),
-                alpha=alpha,
                 label=label_for_inf,
                 **scatter_kwargs,
             )
 
     if any_pos_inf:
-        ax.axhline(inf_y_pos + y_shift, color=inf_line_color, linestyle=inf_line_style, linewidth=1.0)
+        ax.axhline(inf_y_pos + y_shift, **inf_line_style)
     if any_neg_inf:
-        ax.axhline(inf_y_neg + y_shift, color=inf_line_color, linestyle=inf_line_style, linewidth=1.0)
+        ax.axhline(inf_y_neg + y_shift, **inf_line_style)
 
     if all_births_for_limits.size or all_finite_deaths.size or any_pos_inf or any_neg_inf:
         if all_births_for_limits.size:
@@ -346,7 +508,7 @@ def plot_persistence_diagram(
             lo = min(lo, float(inf_y_neg + y_shift))
         if hi <= lo:
             hi = lo + 1.0
-        ax.plot([lo, hi], [lo, hi], linestyle=diag_line_style, color=diag_line_color, alpha=diag_line_alpha, linewidth=1.0)
+        ax.plot([lo, hi], [lo, hi], **diagonal_style)
 
     if log_x:
         ax.set_xscale("log")
@@ -376,5 +538,291 @@ def plot_persistence_diagram(
         if labels:
             uniq = dict(zip(labels, handles))
             ax.legend(uniq.values(), uniq.keys(), title="dimension")
+
+    return ax
+
+
+# ---------------------------------------------------------------------------
+# plot_matching
+# ---------------------------------------------------------------------------
+
+def _build_diagram_arrays(dgm) -> np.ndarray:
+    if isinstance(dgm, np.ndarray):
+        return _array_diagram(dgm)
+    if hasattr(dgm, "birth") and hasattr(dgm, "death"):
+        raise TypeError("Single DiagramPoint cannot be plotted; pass a diagram.")
+    if isinstance(dgm, list):
+        return _diagram_points_to_array(dgm)
+    return _array_diagram(dgm)
+
+
+def _classify_points(dgm: np.ndarray):
+    """Return masks and indices for (finite, pos_inf_death, neg_inf_death,
+    pos_inf_birth, neg_inf_birth) points in a (n, 2) diagram."""
+    b = dgm[:, 0]
+    d = dgm[:, 1]
+    finite_mask = np.isfinite(b) & np.isfinite(d)
+    pos_inf_d = np.isfinite(b) & np.isposinf(d)
+    neg_inf_d = np.isfinite(b) & np.isneginf(d)
+    pos_inf_b = np.isposinf(b) & np.isfinite(d)
+    neg_inf_b = np.isneginf(b) & np.isfinite(d)
+    return finite_mask, pos_inf_d, neg_inf_d, pos_inf_b, neg_inf_b
+
+
+def _point_coords_for_edge(dgm: np.ndarray, idx: int,
+                           inf_x_pos: float, inf_x_neg: float,
+                           inf_y_pos: float, inf_y_neg: float) -> typing.Tuple[float, float]:
+    """Coordinates to use when drawing an edge endpoint for a diagram point,
+    mapping infinities to the capped inf-line coordinates."""
+    b = float(dgm[idx, 0])
+    d = float(dgm[idx, 1])
+    if np.isposinf(d):
+        return (b, inf_y_pos)
+    if np.isneginf(d):
+        return (b, inf_y_neg)
+    if np.isposinf(b):
+        return (inf_x_pos, d)
+    if np.isneginf(b):
+        return (inf_x_neg, d)
+    return (b, d)
+
+
+def plot_matching(
+    dgm_a,
+    dgm_b,
+    matching,
+    ax=None,
+    *,
+    plot_finite_to_finite: typing.Optional[bool] = None,
+    plot_a_to_diagonal: typing.Optional[bool] = None,
+    plot_b_to_diagonal: typing.Optional[bool] = None,
+    plot_essential: typing.Optional[bool] = None,
+    highlight_longest: typing.Optional[bool] = None,
+    plot_points: bool = True,
+    plot_diagonal_projections: bool = False,
+    plot_diagonal: bool = True,
+    dgm_a_point_style: typing.Optional[dict] = None,
+    dgm_b_point_style: typing.Optional[dict] = None,
+    ordinary_edge_style: typing.Optional[dict] = None,
+    longest_edge_style: typing.Optional[dict] = None,
+    diagonal_style: typing.Optional[dict] = None,
+    diagonal_projection_a_style: typing.Optional[dict] = None,
+    diagonal_projection_b_style: typing.Optional[dict] = None,
+    inf_line_style: typing.Optional[dict] = None,
+    dgm_a_label: str = "Diagram A",
+    dgm_b_label: str = "Diagram B",
+    title: typing.Optional[str] = None,
+    axis_bounds: typing.Optional[typing.Mapping[str, float]] = None,
+    inf_line_margin: float = 0.05,
+):
+    """Plot a matching between two persistence diagrams.
+
+    Dispatches on ``matching`` type: for Wasserstein (``DiagramMatching``)
+    all edge categories are drawn by default; for ``BottleneckMatching`` only
+    finite-to-finite edges are drawn and the longest edge(s) are overlaid in
+    the highlight style.
+
+    ``dgm_a`` and ``dgm_b`` must be 2D numpy arrays (one homology dimension).
+    """
+    if not _HAS_MATPLOTLIB:
+        raise ImportError("matplotlib is required for plot_matching.")
+
+    # Avoid circular import
+    from .matching import (
+        BottleneckMatching,
+        DiagramMatching,
+        point_to_diagonal,
+    )
+
+    if not isinstance(matching, DiagramMatching):
+        raise TypeError("matching must be a DiagramMatching or BottleneckMatching instance.")
+
+    is_bottleneck = isinstance(matching, BottleneckMatching)
+
+    # Type-aware category-flag defaults
+    if plot_finite_to_finite is None:
+        plot_finite_to_finite = True
+    if plot_a_to_diagonal is None:
+        plot_a_to_diagonal = not is_bottleneck
+    if plot_b_to_diagonal is None:
+        plot_b_to_diagonal = not is_bottleneck
+    if plot_essential is None:
+        plot_essential = False
+    if highlight_longest is None:
+        highlight_longest = is_bottleneck
+
+    # Resolve style dicts
+    dgm_a_point_style = _resolve_style(dgm_a_point_style, default_diagram_a_point_style)
+    dgm_b_point_style = _resolve_style(dgm_b_point_style, default_diagram_b_point_style)
+    ordinary_edge_style = _resolve_style(ordinary_edge_style, default_matching_edge_style)
+    longest_edge_style = _resolve_style(longest_edge_style, default_longest_edge_style)
+    diagonal_style = _resolve_style(diagonal_style, default_diagonal_style)
+    diagonal_projection_a_style = _resolve_style(
+        diagonal_projection_a_style, default_diagonal_projection_a_style)
+    diagonal_projection_b_style = _resolve_style(
+        diagonal_projection_b_style, default_diagonal_projection_b_style)
+    inf_line_style = _resolve_style(inf_line_style, default_inf_line_style)
+
+    bounds = {} if axis_bounds is None else dict(axis_bounds)
+
+    dgm_a = _build_diagram_arrays(dgm_a)
+    dgm_b = _build_diagram_arrays(dgm_b)
+
+    # Collect finite coordinates for layout
+    def _finite_parts(dgm):
+        if dgm.shape[0] == 0:
+            return np.empty((0,), dtype=float), np.empty((0,), dtype=float)
+        finite = np.isfinite(dgm[:, 0]) & np.isfinite(dgm[:, 1])
+        return dgm[finite, 0], dgm[finite, 1]
+
+    a_fin_b, a_fin_d = _finite_parts(dgm_a)
+    b_fin_b, b_fin_d = _finite_parts(dgm_b)
+
+    # Essential births / deaths for layout (we want the plot to include them).
+    a_pos_inf_b = dgm_a[np.isfinite(dgm_a[:, 0]) & np.isposinf(dgm_a[:, 1]), 0] if dgm_a.size else np.empty((0,))
+    b_pos_inf_b = dgm_b[np.isfinite(dgm_b[:, 0]) & np.isposinf(dgm_b[:, 1]), 0] if dgm_b.size else np.empty((0,))
+    a_neg_inf_b = dgm_a[np.isfinite(dgm_a[:, 0]) & np.isneginf(dgm_a[:, 1]), 0] if dgm_a.size else np.empty((0,))
+    b_neg_inf_b = dgm_b[np.isfinite(dgm_b[:, 0]) & np.isneginf(dgm_b[:, 1]), 0] if dgm_b.size else np.empty((0,))
+    a_pos_inf_d = dgm_a[np.isposinf(dgm_a[:, 0]) & np.isfinite(dgm_a[:, 1]), 1] if dgm_a.size else np.empty((0,))
+    b_pos_inf_d = dgm_b[np.isposinf(dgm_b[:, 0]) & np.isfinite(dgm_b[:, 1]), 1] if dgm_b.size else np.empty((0,))
+    a_neg_inf_d = dgm_a[np.isneginf(dgm_a[:, 0]) & np.isfinite(dgm_a[:, 1]), 1] if dgm_a.size else np.empty((0,))
+    b_neg_inf_d = dgm_b[np.isneginf(dgm_b[:, 0]) & np.isfinite(dgm_b[:, 1]), 1] if dgm_b.size else np.empty((0,))
+
+    (x_min, x_max, y_min, y_max, x_span, y_span,
+     inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg) = _compute_plot_limits(
+        np.concatenate([a_fin_b, b_fin_b]) if a_fin_b.size or b_fin_b.size else np.empty((0,)),
+        np.concatenate([a_fin_d, b_fin_d]) if a_fin_d.size or b_fin_d.size else np.empty((0,)),
+        extra_xs=[a_pos_inf_b, b_pos_inf_b, a_neg_inf_b, b_neg_inf_b],
+        extra_ys=[a_pos_inf_d, b_pos_inf_d, a_neg_inf_d, b_neg_inf_d],
+        inf_line_margin=inf_line_margin,
+    )
+
+    any_pos_inf_d = (a_pos_inf_b.size + b_pos_inf_b.size) > 0
+    any_neg_inf_d = (a_neg_inf_b.size + b_neg_inf_b.size) > 0
+    any_pos_inf_b = (a_pos_inf_d.size + b_pos_inf_d.size) > 0
+    any_neg_inf_b = (a_neg_inf_d.size + b_neg_inf_d.size) > 0
+
+    if ax is None:
+        _, ax = plt.subplots()
+
+    # Diagonal
+    if plot_diagonal:
+        lo = min(x_min, y_min)
+        hi = max(x_max, y_max)
+        if any_pos_inf_d:
+            hi = max(hi, inf_y_pos)
+        if any_neg_inf_d:
+            lo = min(lo, inf_y_neg)
+        if any_pos_inf_b:
+            hi = max(hi, inf_x_pos)
+        if any_neg_inf_b:
+            lo = min(lo, inf_x_neg)
+        if hi <= lo:
+            hi = lo + 1.0
+        ax.plot([lo, hi], [lo, hi], **diagonal_style)
+
+    # Inf lines
+    if any_pos_inf_d:
+        ax.axhline(inf_y_pos, **inf_line_style)
+    if any_neg_inf_d:
+        ax.axhline(inf_y_neg, **inf_line_style)
+    if any_pos_inf_b:
+        ax.axvline(inf_x_pos, **inf_line_style)
+    if any_neg_inf_b:
+        ax.axvline(inf_x_neg, **inf_line_style)
+
+    # Diagram points
+    if plot_points and dgm_a.shape[0] > 0:
+        coords = np.array([
+            _point_coords_for_edge(dgm_a, i, inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
+            for i in range(dgm_a.shape[0])
+        ])
+        ax.scatter(coords[:, 0], coords[:, 1], label=dgm_a_label, **dgm_a_point_style)
+    if plot_points and dgm_b.shape[0] > 0:
+        coords = np.array([
+            _point_coords_for_edge(dgm_b, i, inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
+            for i in range(dgm_b.shape[0])
+        ])
+        ax.scatter(coords[:, 0], coords[:, 1], label=dgm_b_label, **dgm_b_point_style)
+
+    # Gather all edges to draw, grouped by category.
+    ordinary_segments: list[tuple[tuple[float, float], tuple[float, float]]] = []
+
+    if plot_finite_to_finite:
+        for ia, ib in matching.finite_to_finite:
+            pa = _point_coords_for_edge(dgm_a, ia, inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
+            pb = _point_coords_for_edge(dgm_b, ib, inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
+            ordinary_segments.append((pa, pb))
+
+    diag_proj_a_coords = []
+    diag_proj_b_coords = []
+
+    if plot_a_to_diagonal and len(matching.a_to_diagonal) > 0:
+        projs = point_to_diagonal(dgm_a, indices=matching.a_to_diagonal)
+        for local_i, ia in enumerate(matching.a_to_diagonal):
+            pa = _point_coords_for_edge(dgm_a, int(ia), inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
+            pproj = (float(projs[local_i, 0]), float(projs[local_i, 1]))
+            ordinary_segments.append((pa, pproj))
+            diag_proj_a_coords.append(pproj)
+
+    if plot_b_to_diagonal and len(matching.b_to_diagonal) > 0:
+        projs = point_to_diagonal(dgm_b, indices=matching.b_to_diagonal)
+        for local_i, ib in enumerate(matching.b_to_diagonal):
+            pb = _point_coords_for_edge(dgm_b, int(ib), inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
+            pproj = (float(projs[local_i, 0]), float(projs[local_i, 1]))
+            ordinary_segments.append((pb, pproj))
+            diag_proj_b_coords.append(pproj)
+
+    if plot_essential:
+        for _kind, pairs in matching.essential.items():
+            for ia, ib in pairs:
+                pa = _point_coords_for_edge(dgm_a, int(ia), inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
+                pb = _point_coords_for_edge(dgm_b, int(ib), inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
+                ordinary_segments.append((pa, pb))
+
+    if ordinary_segments:
+        ax.add_collection(LineCollection(ordinary_segments, **ordinary_edge_style))
+
+    # Diagonal projection markers (after edges so they sit on top).
+    if plot_diagonal_projections:
+        if diag_proj_a_coords:
+            arr = np.array(diag_proj_a_coords)
+            ax.scatter(arr[:, 0], arr[:, 1], **diagonal_projection_a_style)
+        if diag_proj_b_coords:
+            arr = np.array(diag_proj_b_coords)
+            ax.scatter(arr[:, 0], arr[:, 1], **diagonal_projection_b_style)
+
+    # Highlight longest edges for bottleneck.
+    if highlight_longest and is_bottleneck:
+        longest_segments = []
+        for e in matching.longest.finite:
+            longest_segments.append((e.point_a, e.point_b))
+        for _kind, edges in matching.longest.essential.items():
+            for e in edges:
+                pa = _point_coords_for_edge(dgm_a, e.idx_a, inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
+                pb = _point_coords_for_edge(dgm_b, e.idx_b, inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
+                longest_segments.append((pa, pb))
+        if longest_segments:
+            ax.add_collection(LineCollection(longest_segments, **longest_edge_style))
+
+    # Axis limits
+    x_left = None if "xmin" not in bounds else float(bounds["xmin"])
+    x_right = None if "xmax" not in bounds else float(bounds["xmax"])
+    y_bottom = None if "ymin" not in bounds else float(bounds["ymin"])
+    y_top = None if "ymax" not in bounds else float(bounds["ymax"])
+    if x_left is not None or x_right is not None:
+        ax.set_xlim(left=x_left, right=x_right)
+    if y_bottom is not None or y_top is not None:
+        ax.set_ylim(bottom=y_bottom, top=y_top)
+
+    ax.set_xlabel("birth")
+    ax.set_ylabel("death")
+    if title is not None:
+        ax.set_title(title)
+
+    # Legend: only the diagram-point labels are registered, so this is safe.
+    handles, labels = ax.get_legend_handles_labels()
+    if labels:
+        ax.legend()
 
     return ax

@@ -52,10 +52,17 @@ namespace hera {
         // return the interval (distMin, distMax) such that:
         // a) actual bottleneck distance between A and B is contained in the interval
         // b) if the interval is not (0,0), then  (distMax - distMin) / distMin < epsilon
+        //
+        // Optional out-parameters `all_edges_out` and `longest_edges_out`, when
+        // non-null, are filled with the full matching and with all edges tied
+        // for the max length. Collection happens after the binary search
+        // terminates, at the same threshold used for the singular longest edge.
         template<class Real>
         std::pair<Real, Real> bottleneckDistApproxInterval(DiagramPointSet<Real>& A, DiagramPointSet<Real>& B,
                                                            const Real epsilon, MatchingEdge<Real>& longest_edge,
-                                                           bool compute_longest_edge = false);
+                                                           bool compute_longest_edge = false,
+                                                           std::vector<MatchingEdge<Real>>* all_edges_out = nullptr,
+                                                           std::vector<MatchingEdge<Real>>* longest_edges_out = nullptr);
 
 
         // heuristic (sample diagram to estimate the distance)
@@ -68,17 +75,23 @@ namespace hera {
         // see bottleneckDistApproxInterval
         template<class Real>
         Real bottleneckDistApprox(DiagramPointSet<Real>& A, DiagramPointSet<Real>& B, const Real epsilon,
-                                  MatchingEdge<Real>& longest_edge, bool compute_longest_edge = false);
+                                  MatchingEdge<Real>& longest_edge, bool compute_longest_edge = false,
+                                  std::vector<MatchingEdge<Real>>* all_edges_out = nullptr,
+                                  std::vector<MatchingEdge<Real>>* longest_edges_out = nullptr);
 
         // get exact bottleneck distance,
         template<class Real>
         Real bottleneckDistExact(DiagramPointSet<Real>& A, DiagramPointSet<Real>& B, const int decPrecision,
-                                 MatchingEdge<Real>& longest_edge, bool compute_longest_edge = false);
+                                 MatchingEdge<Real>& longest_edge, bool compute_longest_edge = false,
+                                 std::vector<MatchingEdge<Real>>* all_edges_out = nullptr,
+                                 std::vector<MatchingEdge<Real>>* longest_edges_out = nullptr);
 
         // get exact bottleneck distance,
         template<class Real>
         Real bottleneckDistExact(DiagramPointSet<Real>& A, DiagramPointSet<Real>& B, MatchingEdge<Real>& longest_edge,
-                                 bool compute_longest_edge = false);
+                                 bool compute_longest_edge = false,
+                                 std::vector<MatchingEdge<Real>>* all_edges_out = nullptr,
+                                 std::vector<MatchingEdge<Real>>* longest_edges_out = nullptr);
 
     } // end namespace bt
 

@@ -147,6 +147,57 @@ namespace hera {
     }
 
 
+    // -------------------------------------------------------------------
+    // Detailed variants: in addition to the bottleneck distance, return
+    // the full matching (`edges`) and every edge tied for the bottleneck
+    // cost (`longest_edges`). Ties are reported by exact equality on the
+    // per-edge length, which is meaningful e.g. on integer grids under L_inf.
+    // -------------------------------------------------------------------
+    template<class Real = double>
+    struct BottleneckResult
+    {
+        Real distance { 0 };
+        std::vector<hera::bt::MatchingEdge<Real>> edges;
+        std::vector<hera::bt::MatchingEdge<Real>> longest_edges;
+    };
+
+    template<class PairContainer>
+    BottleneckResult<typename DiagramTraits<PairContainer>::RealType>
+    bottleneckDetailedApprox(PairContainer& A, PairContainer& B,
+                             const typename DiagramTraits<PairContainer>::RealType delta)
+    {
+        using Real = typename DiagramTraits<PairContainer>::RealType;
+        hera::bt::DiagramPointSet<Real> a(A);
+        hera::bt::DiagramPointSet<Real> b(B);
+
+        BottleneckResult<Real> result;
+        hera::bt::MatchingEdge<Real> dummy_longest_edge;
+        result.distance = hera::bt::bottleneckDistApprox(
+            a, b, delta,
+            dummy_longest_edge, /*compute_longest_edge=*/false,
+            &result.edges, &result.longest_edges);
+        return result;
+    }
+
+    template<class PairContainer>
+    BottleneckResult<typename DiagramTraits<PairContainer>::RealType>
+    bottleneckDetailedExact(PairContainer& A, PairContainer& B,
+                            const int decPrecision = 14)
+    {
+        using Real = typename DiagramTraits<PairContainer>::RealType;
+        hera::bt::DiagramPointSet<Real> a(A);
+        hera::bt::DiagramPointSet<Real> b(B);
+
+        BottleneckResult<Real> result;
+        hera::bt::MatchingEdge<Real> dummy_longest_edge;
+        result.distance = hera::bt::bottleneckDistExact(
+            a, b, decPrecision,
+            dummy_longest_edge, /*compute_longest_edge=*/false,
+            &result.edges, &result.longest_edges);
+        return result;
+    }
+
+
 } // end namespace hera
 
 #endif

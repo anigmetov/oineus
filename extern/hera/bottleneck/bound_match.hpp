@@ -254,6 +254,56 @@ namespace hera {
             return edge;
         }
 
+        template<class R>
+        std::vector<MatchingEdge<R>> Matching<R>::get_longest_edges() const
+        {
+            // Per-edge length using the same convention as get_longest_edge:
+            // for skew edges (DIAG<->NORMAL) the length is the persistence of
+            // the normal endpoint; for NORMAL<->NORMAL it is l-infinity.
+            auto edge_len = [](const DgmPoint& a, const DgmPoint& b) -> R {
+                if (a.is_diagonal() and b.is_normal()) {
+                    return b.persistence_lp(hera::get_infinity());
+                } else if (a.is_normal() and b.is_diagonal()) {
+                    return a.persistence_lp(hera::get_infinity());
+                } else {
+                    return dist_l_inf(a, b);
+                }
+            };
+
+            R max_dist = R(-1);
+            for (const auto& x : AToB) {
+                R curr_dist = edge_len(x.first, x.second);
+                if (curr_dist > max_dist)
+                    max_dist = curr_dist;
+            }
+
+            std::vector<MatchingEdge<R>> result;
+            if (max_dist < R(0))
+                return result;
+
+            for (const auto& x : AToB) {
+                if (x.first.is_diagonal() and x.second.is_diagonal())
+                    continue;  // skip skew diag<->diag edges
+                R curr_dist = edge_len(x.first, x.second);
+                if (curr_dist == max_dist)
+                    result.emplace_back(x.first, x.second);
+            }
+            return result;
+        }
+
+        template<class R>
+        std::vector<MatchingEdge<R>> Matching<R>::get_edges() const
+        {
+            std::vector<MatchingEdge<R>> result;
+            result.reserve(AToB.size());
+            for (const auto& x : AToB) {
+                if (x.first.is_diagonal() and x.second.is_diagonal())
+                    continue;  // skip skew diag<->diag edges
+                result.emplace_back(x.first, x.second);
+            }
+            return result;
+        }
+
         // ------- BoundMatchOracle --------------
 
         template<class R, class NO>

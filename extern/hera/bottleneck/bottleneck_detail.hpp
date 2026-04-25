@@ -234,7 +234,9 @@ namespace hera {
         template<class Real>
         inline std::pair<Real, Real>
         bottleneckDistApproxInterval(DiagramPointSet<Real>& A, DiagramPointSet<Real>& B, const Real epsilon,
-                                     MatchingEdge<Real>& edge, bool compute_longest_edge)
+                                     MatchingEdge<Real>& edge, bool compute_longest_edge,
+                                     std::vector<MatchingEdge<Real>>* all_edges_out,
+                                     std::vector<MatchingEdge<Real>>* longest_edges_out)
         {
             using MatchingEdgeR = MatchingEdge<Real>;
             using CostEdgePairR = CostEdgePair<Real>;
@@ -279,12 +281,22 @@ namespace hera {
             Real distProbe { getFurthestDistance3Approx<Real, DiagramPointSet<Real>>(A, B) };
             binarySearch(epsilon, result, oracle, false, distProbe);
             // to compute longest edge a perfect matching is needed
-            if (compute_longest_edge and result.first > infinity_cost) {
+            bool need_oracle_rematch = compute_longest_edge and result.first > infinity_cost;
+            if (need_oracle_rematch or all_edges_out or longest_edges_out) {
                 oracle.isMatchLess(result.second);
-                edge = oracle.get_longest_edge();
+                if (compute_longest_edge and result.first > infinity_cost) {
+                    edge = oracle.get_longest_edge();
+                }
+                if (all_edges_out) {
+                    *all_edges_out = oracle.get_edges();
+                }
+                if (longest_edges_out) {
+                    *longest_edges_out = oracle.get_longest_edges();
+                }
             }
             return result;
         }
+
 
         template<class Real>
         void sampleDiagramForHeur(const DiagramPointSet <Real>& dgmIn, DiagramPointSet <Real>& dgmOut)
@@ -432,11 +444,14 @@ namespace hera {
         // see bottleneckDistApproxInterval
         template<class Real>
         Real bottleneckDistApprox(DiagramPointSet <Real>& A, DiagramPointSet <Real>& B, const Real epsilon,
-                                  MatchingEdge <Real>& longest_edge, bool compute_longest_edge)
+                                  MatchingEdge <Real>& longest_edge, bool compute_longest_edge,
+                                  std::vector<MatchingEdge<Real>>* all_edges_out,
+                                  std::vector<MatchingEdge<Real>>* longest_edges_out)
         {
             // must compute here: infinity points will be erased in bottleneckDistApproxInterval
             Real infCost = getInfinityCost(A, B).cost;
-            auto interval = bottleneckDistApproxInterval<Real>(A, B, epsilon, longest_edge, compute_longest_edge);
+            auto interval = bottleneckDistApproxInterval<Real>(A, B, epsilon, longest_edge, compute_longest_edge,
+                                                               all_edges_out, longest_edges_out);
             return std::max(infCost, interval.second);
         }
 
@@ -445,7 +460,9 @@ namespace hera {
         Real bottleneckDistExactFromSortedPwDist(DiagramPointSet <Real>& A, DiagramPointSet <Real>& B,
                                                  const std::vector<Real>& pairwiseDist,
                                                  const int decPrecision, MatchingEdge <Real>& longest_edge,
-                                                 bool compute_longest_edge = false)
+                                                 bool compute_longest_edge = false,
+                                                 std::vector<MatchingEdge<Real>>* all_edges_out = nullptr,
+                                                 std::vector<MatchingEdge<Real>>* longest_edges_out = nullptr)
         {
             // trivial case: we have only one candidate
             if (pairwiseDist.size() == 1) {
@@ -483,9 +500,17 @@ namespace hera {
             }
             idxMid = static_cast<size_t>(floor(idxMin + idxMax) / 2);
             Real result = pairwiseDist[idxMid];
-            if (compute_longest_edge) {
+            if (compute_longest_edge or all_edges_out or longest_edges_out) {
                 oracle.isMatchLess(result + distEpsilon / 2);
-                longest_edge = oracle.get_longest_edge();
+                if (compute_longest_edge) {
+                    longest_edge = oracle.get_longest_edge();
+                }
+                if (all_edges_out) {
+                    *all_edges_out = oracle.get_edges();
+                }
+                if (longest_edges_out) {
+                    *longest_edges_out = oracle.get_longest_edges();
+                }
             }
             return result;
         }
@@ -494,14 +519,19 @@ namespace hera {
         template<class Real>
         Real
         bottleneckDistExact(DiagramPointSet <Real>& A, DiagramPointSet <Real>& B, MatchingEdge <Real>& longest_edge,
-                            bool compute_longest_edge)
+                            bool compute_longest_edge,
+                            std::vector<MatchingEdge<Real>>* all_edges_out,
+                            std::vector<MatchingEdge<Real>>* longest_edges_out)
         {
-            return bottleneckDistExact(A, B, 14, longest_edge, compute_longest_edge);
+            return bottleneckDistExact(A, B, 14, longest_edge, compute_longest_edge,
+                                       all_edges_out, longest_edges_out);
         }
 
         template<class Real>
         Real bottleneckDistExact(DiagramPointSet <Real>& A, DiagramPointSet <Real>& B, const int decPrecision,
-                                 MatchingEdge <Real>& longest_edge, bool compute_longest_edge)
+                                 MatchingEdge <Real>& longest_edge, bool compute_longest_edge,
+                                 std::vector<MatchingEdge<Real>>* all_edges_out,
+                                 std::vector<MatchingEdge<Real>>* longest_edges_out)
         {
             using DgmPoint = DiagramPoint<Real>;
 
@@ -509,7 +539,8 @@ namespace hera {
 
             Real infCost = getInfinityCost(A, B, true).cost;
 
-            auto interval = bottleneckDistApproxInterval(A, B, epsilon, longest_edge, true);
+            auto interval = bottleneckDistApproxInterval(A, B, epsilon, longest_edge, true,
+                                                         all_edges_out, longest_edges_out);
             // if the longest edge is on infinity, the answer is already exact
             // this will be detected here and all the code after if
             // may assume that the longest edge is on finite points
@@ -618,7 +649,8 @@ namespace hera {
                 pw_dists.push_back(d);
             }
 
-            Real exactFinite = bottleneckDistExactFromSortedPwDist(A, B, pw_dists, decPrecision, longest_edge, compute_longest_edge);
+            Real exactFinite = bottleneckDistExactFromSortedPwDist(A, B, pw_dists, decPrecision, longest_edge, compute_longest_edge,
+                                                                   all_edges_out, longest_edges_out);
 
             return std::max(infCost, exactFinite);
         }

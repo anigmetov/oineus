@@ -57,6 +57,13 @@ public:
     bool isPerfect() const;
     void trimMatching(const Real newThreshold);
     MatchingEdge<Real> get_longest_edge() const;
+    // Return all edges in the matching whose per-edge length equals the
+    // maximum (exact equality on the per-edge length computation used by
+    // get_longest_edge, no relative-error slack). Preserves ties.
+    std::vector<MatchingEdge<Real>> get_longest_edges() const;
+    // Return every matched pair in AToB, skipping diagonal<->diagonal
+    // skew edges (which are length 0 and uninteresting to users).
+    std::vector<MatchingEdge<Real>> get_edges() const;
 #ifndef FOR_R_TDA
     template<class R>
     friend std::ostream& operator<<(std::ostream& output, const Matching<R>& m);
@@ -84,6 +91,8 @@ public:
     bool isMatchLess(Real r);
     bool buildMatchingForThreshold(const Real r);
     MatchingEdge<Real> get_longest_edge() const { return M.get_longest_edge(); }
+    std::vector<MatchingEdge<Real>> get_longest_edges() const { return M.get_longest_edges(); }
+    std::vector<MatchingEdge<Real>> get_edges() const { return M.get_edges(); }
 private:
     DgmPointSet A, B;
     Matching<Real> M;

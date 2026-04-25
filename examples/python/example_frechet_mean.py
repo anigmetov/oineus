@@ -124,7 +124,7 @@ def main() -> None:
         print(f"  start={run['start']}: objective={run['objective']:.6f}, size={len(run['barycenter'])}")
 
     fig, axes = plt.subplots(1, 6, figsize=(26, 5))
-    oin.plot_persistence_diagram(
+    oin.plot_diagram(
         {idx: dgm for idx, dgm in enumerate(diagrams)},
         ax=axes[0],
         title="Input Diagrams",
@@ -136,7 +136,7 @@ def main() -> None:
     axes[0].legend(handles, [f"Diagram {idx}" for idx in range(1, len(diagrams) + 1)], frameon=False, loc="upper left")
 
     for ax, barycenter, color, title in zip(axes[1:], barycenters, barycenter_colors, barycenter_titles):
-        oin.plot_persistence_diagram(
+        oin.plot_diagram(
             barycenter,
             ax=ax,
             title=title,
