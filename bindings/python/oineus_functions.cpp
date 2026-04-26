@@ -95,40 +95,104 @@ Diagram python_object_to_diagram(const nb::handle& obj)
     throw nb::type_error("Expected a persistence diagram as list[DiagramPoint] or NumPy array with shape (n_points, 2)");
 }
 
-struct WassersteinMatchingFinite {
-    // Finite-to-finite matching (parallel arrays)
-    std::vector<int> a_to_b;      // indices in finite_dgm_a
-    std::vector<int> b_from_a;    // corresponding indices in finite_dgm_b
+// Allocate a (n, 2) int64 ndarray from a vector of (int, int) pairs.
+// One linear copy; the user has explicitly opted in to plain copies for
+// matching index transport.
+nb::ndarray<int64_t, nb::numpy> pairs_to_numpy(const std::vector<std::pair<int, int>>& pairs)
+{
+    size_t n = pairs.size();
+    auto* ptr = new int64_t[n * 2];
+    for (size_t i = 0; i < n; ++i) {
+        ptr[2 * i]     = pairs[i].first;
+        ptr[2 * i + 1] = pairs[i].second;
+    }
+    nb::capsule owner(ptr, [](void* p) noexcept {
+        delete[] static_cast<int64_t*>(p);
+    });
+    return nb::ndarray<int64_t, nb::numpy>(
+        ptr, {n, static_cast<size_t>(2)}, owner);
+}
 
-    // Finite-to-diagonal matching
-    std::vector<int> a_to_diag;   // indices in finite_dgm_a matched to diagonal
-    std::vector<int> b_to_diag;   // indices in finite_dgm_b matched to diagonal
+// Allocate a (n,) int64 ndarray from a vector<int>.
+nb::ndarray<int64_t, nb::numpy> ints_to_numpy(const std::vector<int>& ints)
+{
+    size_t n = ints.size();
+    auto* ptr = new int64_t[n];
+    for (size_t i = 0; i < n; ++i) ptr[i] = ints[i];
+    nb::capsule owner(ptr, [](void* p) noexcept {
+        delete[] static_cast<int64_t*>(p);
+    });
+    return nb::ndarray<int64_t, nb::numpy>(ptr, {n}, owner);
+}
+
+// Strip essential (infinite-coordinate) points from a diagram in place.
+// Used when ignore_inf_points=True.
+void strip_essentials(Diagram& dgm)
+{
+    dgm.erase(std::remove_if(dgm.begin(), dgm.end(),
+        [](const DiagramPoint& p) {
+            return !std::isfinite(p.birth) || !std::isfinite(p.death);
+        }), dgm.end());
+}
+
+// ---------------------------------------------------------------------------
+// Grouped views over the per-family essential pair / longest-edge arrays.
+//
+// These are presentation-only adapters that expose the four families
+// (inf_death, neg_inf_death, inf_birth, neg_inf_birth) as both attribute
+// access (m.essential.inf_death) and dict-like indexing (m.essential["..."]
+// or m.essential[InfKind.INF_DEATH]). They hold a const pointer to the
+// parent Hera struct's array; nanobind keep_alive on the parent's
+// `essential`/`longest` properties keeps the parent live for the view's
+// lifetime.
+// ---------------------------------------------------------------------------
+
+constexpr const char* kInfKindNames[hera::kNumInfKinds] = {
+    "inf_death", "neg_inf_death", "inf_birth", "neg_inf_birth"
 };
 
-// A single edge in the bottleneck matching whose length equals the
-// bottleneck distance (one of possibly many tied edges).
-// Exactly one of idx_a / idx_b may be -1, indicating that endpoint is
-// a diagonal projection of the other side.
-struct BottleneckLongestEdge {
-    int      idx_a;
-    int      idx_b;
-    oin_real length;
-    oin_real a_x;
-    oin_real a_y;
-    oin_real b_x;
-    oin_real b_y;
+// Resolve a Python key (str | InfKind) into [0, 4) or throw KeyError.
+int parse_inf_kind_key(nb::handle key)
+{
+    // InfKind enum case
+    if (nb::isinstance<hera::InfKind>(key)) {
+        return static_cast<int>(nb::cast<hera::InfKind>(key));
+    }
+    // String case
+    if (nb::isinstance<nb::str>(key)) {
+        std::string s = nb::cast<std::string>(key);
+        for (int k = 0; k < hera::kNumInfKinds; ++k)
+            if (s == kInfKindNames[k]) return k;
+    }
+    throw nb::key_error(("Unknown essential family key: " +
+                         nb::cast<std::string>(nb::repr(key))).c_str());
+}
+
+template<class Real>
+struct EssentialMatchesView {
+    using Inner = std::array<std::vector<std::pair<int, int>>, hera::kNumInfKinds>;
+    const Inner* arrays;
+    explicit EssentialMatchesView(const Inner& a) : arrays(&a) {}
+    nb::ndarray<int64_t, nb::numpy> get(int k) const { return pairs_to_numpy((*arrays)[k]); }
 };
 
-struct BottleneckMatchingFinite {
-    // Full finite matching (same groupings as WassersteinMatchingFinite):
-    std::vector<int> a_to_b;
-    std::vector<int> b_from_a;
-    std::vector<int> a_to_diag;
-    std::vector<int> b_to_diag;
-    // Every edge whose length equals `distance`:
-    std::vector<BottleneckLongestEdge> longest_edges;
-    oin_real distance { 0 };
+template<class Real>
+struct EssentialLongestEdgesView {
+    using Inner = std::array<std::vector<hera::EssentialLongestEdge<Real>>, hera::kNumInfKinds>;
+    const Inner* arrays;
+    explicit EssentialLongestEdgesView(const Inner& a) : arrays(&a) {}
+    const std::vector<hera::EssentialLongestEdge<Real>>& get(int k) const { return (*arrays)[k]; }
 };
+
+template<class Real>
+struct LongestEdgesView {
+    const std::vector<hera::FiniteLongestEdge<Real>>* finite;
+    EssentialLongestEdgesView<Real> essential;
+    LongestEdgesView(const std::vector<hera::FiniteLongestEdge<Real>>& f,
+                     const typename EssentialLongestEdgesView<Real>::Inner& e)
+        : finite(&f), essential(e) {}
+};
+
 
 std::vector<Diagram> python_object_to_diagrams(const nb::list& diagrams)
 {
@@ -141,203 +205,48 @@ std::vector<Diagram> python_object_to_diagrams(const nb::list& diagrams)
     return result;
 }
 
-WassersteinMatchingFinite wasserstein_matching_finite_impl(
-    const NumpyDiagram& finite_a_np,
-    const NumpyDiagram& finite_b_np,
-    oin_real wasserstein_q,
-    oin_real wasserstein_delta,
-    oin_real internal_p)
+// Build a hera::Diagram from a numpy (n, 2) array, assigning each point
+// id = its original position in the input. This is the entry point to the
+// new detailed Hera matching functions; the user-side `id` flows through
+// auction + 1D essential matching and surfaces in the returned struct.
+Diagram numpy_to_diagram_with_pos_ids(const NumpyDiagram& dgm)
 {
-    // Convert NumPy diagrams to Hera format
-    Diagram finite_a = numpy_to_diagram(finite_a_np);
-    Diagram finite_b = numpy_to_diagram(finite_b_np);
+    if (dgm.ndim() != 2 || dgm.shape(1) != 2)
+        throw nb::value_error("Expected NumPy array with shape (n_points, 2)");
+    Diagram out;
+    out.reserve(dgm.shape(0));
+    const auto* p = static_cast<const oin_real*>(dgm.data());
+    for (size_t i = 0; i < dgm.shape(0); ++i) {
+        out.emplace_back(p[2 * i], p[2 * i + 1]);
+        out.back().id = static_cast<oin::id_type>(i);
+    }
+    return out;
+}
 
-    WassersteinMatchingFinite result;
+hera::WassersteinMatching<oin_real> wasserstein_matching_detailed_impl(
+    const NumpyDiagram& dgm_a_np,
+    const NumpyDiagram& dgm_b_np,
+    oin_real q,
+    oin_real delta,
+    oin_real internal_p,
+    bool ignore_inf_points)
+{
+    Diagram dgm_a = numpy_to_diagram_with_pos_ids(dgm_a_np);
+    Diagram dgm_b = numpy_to_diagram_with_pos_ids(dgm_b_np);
 
-    // Handle empty diagrams
-    if (finite_a.empty() && finite_b.empty()) {
-        return result;  // Both empty, return empty matching
+    if (ignore_inf_points) {
+        strip_essentials(dgm_a);
+        strip_essentials(dgm_b);
     }
 
-    // Check if diagrams are identical (or very close)
-    if (finite_a.size() == finite_b.size()) {
-        bool identical = true;
-        constexpr oin_real eps = 1e-10;
-
-        for (size_t i = 0; i < finite_a.size() && identical; ++i) {
-            if (std::abs(finite_a[i].birth - finite_b[i].birth) > eps ||
-                std::abs(finite_a[i].death - finite_b[i].death) > eps) {
-                identical = false;
-            }
-        }
-
-        if (identical) {
-            // Diagrams are identical, match each point to itself
-            for (size_t i = 0; i < finite_a.size(); ++i) {
-                result.a_to_b.push_back(i);
-                result.b_from_a.push_back(i);
-            }
-            return result;
-        }
-    }
-
-    // Call Hera directly on the original diagrams
-    // Hera will build the augmented diagrams internally
     hera::AuctionParams<oin_real> params;
-    params.wasserstein_power = wasserstein_q;
-    params.delta = wasserstein_delta;
-    params.internal_p = internal_p;
-    params.return_matching = true;
-    params.match_inf_points = false;  // Finite points only!
+    params.wasserstein_power = q;
+    params.delta             = delta;
+    params.internal_p        = internal_p;
 
-    auto hera_res = hera::wasserstein_cost_detailed(finite_a, finite_b, params);
-
-    // Parse Hera's matching result
-    // Important: Sort by a_id to maintain parallel array correspondence
-    std::vector<std::pair<int, int>> finite_matches;
-    std::vector<int> a_diag_matches, b_diag_matches;
-
-    for (const auto& [a_id, b_id] : hera_res.matching_a_to_b_) {
-        if (a_id >= 0 && b_id >= 0) {
-            finite_matches.emplace_back(a_id, b_id);
-        } else if (a_id >= 0 && b_id < 0) {
-            a_diag_matches.push_back(a_id);
-        } else if (a_id < 0 && b_id >= 0) {
-            b_diag_matches.push_back(b_id);
-        }
-    }
-
-    // Sort finite matches by a_id to create proper parallel arrays
-    std::sort(finite_matches.begin(), finite_matches.end());
-
-    for (const auto& [a_id, b_id] : finite_matches) {
-        result.a_to_b.push_back(a_id);
-        result.b_from_a.push_back(b_id);
-    }
-
-    // Sort diagonal matches for consistency
-    std::sort(a_diag_matches.begin(), a_diag_matches.end());
-    std::sort(b_diag_matches.begin(), b_diag_matches.end());
-
-    result.a_to_diag = std::move(a_diag_matches);
-    result.b_to_diag = std::move(b_diag_matches);
-
-    return result;
+    return hera::wasserstein_matching_detailed(dgm_a, dgm_b, params);
 }
 
-BottleneckMatchingFinite bottleneck_matching_finite_impl(
-    const NumpyDiagram& finite_a_np,
-    const NumpyDiagram& finite_b_np,
-    oin_real delta)
-{
-    Diagram finite_a = numpy_to_diagram(finite_a_np);
-    Diagram finite_b = numpy_to_diagram(finite_b_np);
-
-    BottleneckMatchingFinite result;
-
-    if (finite_a.empty() && finite_b.empty()) {
-        return result;
-    }
-
-    // Fast path: identical diagrams.
-    if (finite_a.size() == finite_b.size()) {
-        bool identical = true;
-        constexpr oin_real eps = 1e-10;
-        for (size_t i = 0; i < finite_a.size() && identical; ++i) {
-            if (std::abs(finite_a[i].birth - finite_b[i].birth) > eps ||
-                std::abs(finite_a[i].death - finite_b[i].death) > eps) {
-                identical = false;
-            }
-        }
-        if (identical) {
-            for (size_t i = 0; i < finite_a.size(); ++i) {
-                result.a_to_b.push_back(static_cast<int>(i));
-                result.b_from_a.push_back(static_cast<int>(i));
-            }
-            result.distance = 0;
-            return result;
-        }
-    }
-
-    hera::BottleneckResult<oin_real> hera_res = (delta == 0.0)
-        ? hera::bottleneckDetailedExact(finite_a, finite_b)
-        : hera::bottleneckDetailedApprox(finite_a, finite_b, delta);
-
-    result.distance = hera_res.distance;
-
-    // Parse the full matching into a_to_b / a_to_diag / b_to_diag groups.
-    // Hera gives us pairs of DiagramPoint; each DiagramPoint carries a
-    // user_tag that is the original index (for NORMAL) or -1 - other_side_tag
-    // (for DIAG projections).
-    std::vector<std::pair<int, int>> finite_matches;
-    std::vector<int> a_diag_matches;
-    std::vector<int> b_diag_matches;
-
-    using DP = hera::DiagramPoint<oin_real>;
-    auto a_original_idx = [](const DP& p) -> int {
-        return p.is_normal() ? p.user_tag : -1;
-    };
-    auto b_original_idx = [](const DP& p) -> int {
-        return p.is_normal() ? p.user_tag : -1;
-    };
-
-    // Note: Hera's oracle builds a complete matching over the combined
-    // (original + projections) point set, so every edge returned by
-    // get_edges() has a NORMAL endpoint somewhere; endpoints from side A
-    // land in `first` and side B in `second` with high probability, but
-    // addProjections may have shuffled ownership. We disambiguate via
-    // user_tag sign convention: non-negative => original on that side;
-    // negative => projection coming from the OTHER side.
-    for (const auto& edge : hera_res.edges) {
-        const DP& pa = edge.first;
-        const DP& pb = edge.second;
-        int ia = a_original_idx(pa);
-        int ib = b_original_idx(pb);
-        if (ia >= 0 && ib >= 0) {
-            finite_matches.emplace_back(ia, ib);
-        } else if (ia >= 0 && ib < 0) {
-            a_diag_matches.push_back(ia);
-        } else if (ia < 0 && ib >= 0) {
-            b_diag_matches.push_back(ib);
-        }
-        // diag<->diag edges are already filtered out by get_edges().
-    }
-
-    std::sort(finite_matches.begin(), finite_matches.end());
-    for (const auto& [ia, ib] : finite_matches) {
-        result.a_to_b.push_back(ia);
-        result.b_from_a.push_back(ib);
-    }
-    std::sort(a_diag_matches.begin(), a_diag_matches.end());
-    std::sort(b_diag_matches.begin(), b_diag_matches.end());
-    result.a_to_diag = std::move(a_diag_matches);
-    result.b_to_diag = std::move(b_diag_matches);
-
-    // Translate longest edges.
-    for (const auto& edge : hera_res.longest_edges) {
-        const DP& pa = edge.first;
-        const DP& pb = edge.second;
-        BottleneckLongestEdge le;
-        le.idx_a = a_original_idx(pa);
-        le.idx_b = b_original_idx(pb);
-        le.a_x = pa.getRealX();
-        le.a_y = pa.getRealY();
-        le.b_x = pb.getRealX();
-        le.b_y = pb.getRealY();
-        // Edge length matches the Hera-internal convention: L_inf for
-        // non-diagonal pairs, persistence for diag<->normal pairs.
-        if (pa.is_diagonal() && pb.is_normal()) {
-            le.length = pb.persistence_lp(hera::get_infinity<oin_real>());
-        } else if (pa.is_normal() && pb.is_diagonal()) {
-            le.length = pa.persistence_lp(hera::get_infinity<oin_real>());
-        } else {
-            le.length = hera::dist_l_inf(pa, pb);
-        }
-        result.longest_edges.push_back(le);
-    }
-
-    return result;
-}
 
 } // namespace
 
@@ -457,73 +366,310 @@ void init_oineus_functions(nb::module_& m)
             nb::call_guard<nb::gil_scoped_release>(),
             "Compute q-Wasserstein distance between NumPy-array persistence diagrams of shape (n_points, 2).");
 
-    // Bind WassersteinMatchingFinite struct
-    nb::class_<WassersteinMatchingFinite>(m, "WassersteinMatchingFinite",
-            "Matching information for Wasserstein distance between two finite diagrams")
-        .def_ro("a_to_b", &WassersteinMatchingFinite::a_to_b,
-            "Indices in finite_dgm_a matched to finite points in dgm_b")
-        .def_ro("b_from_a", &WassersteinMatchingFinite::b_from_a,
-            "Corresponding indices in finite_dgm_b")
-        .def_ro("a_to_diag", &WassersteinMatchingFinite::a_to_diag,
-            "Indices in finite_dgm_a matched to diagonal")
-        .def_ro("b_to_diag", &WassersteinMatchingFinite::b_to_diag,
-            "Indices in finite_dgm_b matched to diagonal");
+    // ---- enum + grouped views ----
+    nb::enum_<hera::InfKind>(m, "InfKind",
+            "The four families of essential (infinite-coordinate) diagram points.")
+        .value("INF_DEATH",      hera::InfKind::InfDeath,
+               "(finite, +inf) — homology class born finitely, never dies.")
+        .value("NEG_INF_DEATH",  hera::InfKind::NegInfDeath,
+               "(finite, -inf).")
+        .value("INF_BIRTH",      hera::InfKind::InfBirth,
+               "(+inf, finite).")
+        .value("NEG_INF_BIRTH",  hera::InfKind::NegInfBirth,
+               "(-inf, finite).");
 
-    // Bind wasserstein_matching_finite function
-    func_name = "wasserstein_matching_finite";
+    using EssView = EssentialMatchesView<oin_real>;
+    nb::class_<EssView>(m, "EssentialMatches",
+            "Grouped view over essential-point matches by family.")
+        .def_prop_ro("inf_death",
+            [](const EssView& v) { return v.get(0); }, nb::rv_policy::move)
+        .def_prop_ro("neg_inf_death",
+            [](const EssView& v) { return v.get(1); }, nb::rv_policy::move)
+        .def_prop_ro("inf_birth",
+            [](const EssView& v) { return v.get(2); }, nb::rv_policy::move)
+        .def_prop_ro("neg_inf_birth",
+            [](const EssView& v) { return v.get(3); }, nb::rv_policy::move)
+        .def("__getitem__",
+            [](const EssView& v, nb::handle key) { return v.get(parse_inf_kind_key(key)); },
+            nb::rv_policy::move)
+        .def("__contains__",
+            [](const EssView&, nb::handle key) {
+                try { parse_inf_kind_key(key); return true; }
+                catch (...) { return false; }
+            })
+        .def("__iter__",
+            [](const EssView&) {
+                return nb::iter(nb::cast(std::vector<std::string>{
+                    kInfKindNames[0], kInfKindNames[1],
+                    kInfKindNames[2], kInfKindNames[3]}));
+            })
+        .def("__len__", [](const EssView&) { return hera::kNumInfKinds; })
+        .def("keys",
+            [](const EssView&) {
+                return nb::cast(std::vector<std::string>{
+                    kInfKindNames[0], kInfKindNames[1],
+                    kInfKindNames[2], kInfKindNames[3]});
+            })
+        .def("values",
+            [](const EssView& v) {
+                nb::list out;
+                for (int k = 0; k < hera::kNumInfKinds; ++k) out.append(v.get(k));
+                return out;
+            })
+        .def("items",
+            [](const EssView& v) {
+                nb::list out;
+                for (int k = 0; k < hera::kNumInfKinds; ++k) {
+                    nb::tuple t = nb::make_tuple(kInfKindNames[k], v.get(k));
+                    out.append(t);
+                }
+                return out;
+            })
+        .def("__repr__",
+            [](const EssView& v) {
+                std::stringstream ss;
+                ss << "EssentialMatches(";
+                for (int k = 0; k < hera::kNumInfKinds; ++k) {
+                    if (k) ss << ", ";
+                    ss << kInfKindNames[k] << "=" << (*v.arrays)[k].size();
+                }
+                ss << ")";
+                return ss.str();
+            });
+
+    using EssLongView = EssentialLongestEdgesView<oin_real>;
+    nb::class_<EssLongView>(m, "EssentialLongestEdges",
+            "Grouped view over per-family tied-longest edges.")
+        .def_prop_ro("inf_death",
+            [](const EssLongView& v) { return v.get(0); })
+        .def_prop_ro("neg_inf_death",
+            [](const EssLongView& v) { return v.get(1); })
+        .def_prop_ro("inf_birth",
+            [](const EssLongView& v) { return v.get(2); })
+        .def_prop_ro("neg_inf_birth",
+            [](const EssLongView& v) { return v.get(3); })
+        .def("__getitem__",
+            [](const EssLongView& v, nb::handle key) {
+                return v.get(parse_inf_kind_key(key));
+            })
+        .def("__contains__",
+            [](const EssLongView&, nb::handle key) {
+                try { parse_inf_kind_key(key); return true; }
+                catch (...) { return false; }
+            })
+        .def("__iter__",
+            [](const EssLongView&) {
+                return nb::iter(nb::cast(std::vector<std::string>{
+                    kInfKindNames[0], kInfKindNames[1],
+                    kInfKindNames[2], kInfKindNames[3]}));
+            })
+        .def("__len__", [](const EssLongView&) { return hera::kNumInfKinds; })
+        .def("keys",
+            [](const EssLongView&) {
+                return nb::cast(std::vector<std::string>{
+                    kInfKindNames[0], kInfKindNames[1],
+                    kInfKindNames[2], kInfKindNames[3]});
+            })
+        .def("values",
+            [](const EssLongView& v) {
+                nb::list out;
+                for (int k = 0; k < hera::kNumInfKinds; ++k) out.append(v.get(k));
+                return out;
+            })
+        .def("items",
+            [](const EssLongView& v) {
+                nb::list out;
+                for (int k = 0; k < hera::kNumInfKinds; ++k)
+                    out.append(nb::make_tuple(kInfKindNames[k], v.get(k)));
+                return out;
+            })
+        .def("__repr__",
+            [](const EssLongView& v) {
+                std::stringstream ss;
+                ss << "EssentialLongestEdges(";
+                for (int k = 0; k < hera::kNumInfKinds; ++k) {
+                    if (k) ss << ", ";
+                    ss << kInfKindNames[k] << "=" << (*v.arrays)[k].size();
+                }
+                ss << ")";
+                return ss.str();
+            });
+
+    using LongView = LongestEdgesView<oin_real>;
+    nb::class_<LongView>(m, "LongestEdges",
+            "Bottleneck longest-edge data, split into finite and essential parts.")
+        .def_prop_ro("finite",
+            [](const LongView& v) { return *v.finite; })
+        .def_prop_ro("essential",
+            [](LongView& v) -> EssLongView& { return v.essential; },
+            nb::rv_policy::reference_internal)
+        .def("__repr__",
+            [](const LongView& v) {
+                int ess_total = 0;
+                for (int k = 0; k < hera::kNumInfKinds; ++k)
+                    ess_total += (*v.essential.arrays)[k].size();
+                std::stringstream ss;
+                ss << "LongestEdges(finite=" << v.finite->size()
+                   << ", essential=" << ess_total << ")";
+                return ss.str();
+            });
+
+
+    // ---- DiagramMatching: hera::WassersteinMatching, exposed under the
+    // user-facing Python name. Keeps the grouped-view interface.  ----
+    using HeraWasserMatch = hera::WassersteinMatching<oin_real>;
+    nb::class_<HeraWasserMatch>(m, "DiagramMatching",
+            "Optimal Wasserstein matching: bucketed pair indices, cost, distance.")
+        .def_prop_ro("finite_to_finite",
+            [](const HeraWasserMatch& self) { return pairs_to_numpy(self.finite_to_finite); },
+            nb::rv_policy::move,
+            "(n, 2) int64 ndarray of (idx_a, idx_b) pairs for finite-to-finite matches.")
+        .def_prop_ro("a_to_diagonal",
+            [](const HeraWasserMatch& self) { return ints_to_numpy(self.a_to_diagonal); },
+            nb::rv_policy::move,
+            "1-D int64 ndarray of indices in dgm_a matched to the diagonal.")
+        .def_prop_ro("b_to_diagonal",
+            [](const HeraWasserMatch& self) { return ints_to_numpy(self.b_to_diagonal); },
+            nb::rv_policy::move,
+            "1-D int64 ndarray of indices in dgm_b matched to the diagonal.")
+        .def_prop_ro("essential",
+            [](const HeraWasserMatch& self) {
+                return EssentialMatchesView<oin_real>(self.essential);
+            },
+            nb::keep_alive<0, 1>(),
+            "Grouped view of essential-point matches per family.")
+        .def_ro("cost", &HeraWasserMatch::cost,
+            "Total Wasserstein cost (== distance ** q).")
+        .def_ro("distance", &HeraWasserMatch::distance,
+            "Wasserstein distance.")
+        .def("__str__",
+            [](const HeraWasserMatch& self) {
+                // Substitute the C++ name with the Python class name for the
+                // user-facing summary.
+                std::stringstream ss; ss << self;
+                std::string s = ss.str();
+                if (s.compare(0, 19, "WassersteinMatching") == 0)
+                    s.replace(0, 19, "DiagramMatching");
+                return s;
+            })
+        .def("__repr__",
+            [](const HeraWasserMatch& self) {
+                std::string s = hera::to_str_debug(self);
+                if (s.compare(0, 19, "WassersteinMatching") == 0)
+                    s.replace(0, 19, "DiagramMatching");
+                return s;
+            });
+
+    func_name = "wasserstein_matching_detailed";
     m.def(func_name.c_str(),
-        &wasserstein_matching_finite_impl,
-        nb::arg("finite_dgm_a"),
-        nb::arg("finite_dgm_b"),
-        nb::arg("wasserstein_q") = 1.0,
+        &wasserstein_matching_detailed_impl,
+        nb::arg("dgm_a"),
+        nb::arg("dgm_b"),
+        nb::arg("wasserstein_q") = 2.0,
         nb::arg("wasserstein_delta") = 0.01,
         nb::arg("internal_p") = hera::get_infinity<oin_real>(),
+        nb::arg("ignore_inf_points") = true,
         nb::call_guard<nb::gil_scoped_release>(),
-        "Compute Wasserstein matching between two finite diagrams (no essential points). "
-        "Returns matching information as a WassersteinMatchingFinite object.");
+        "Full Wasserstein matching: cost, distance, and bucketed pair indices "
+        "for finite-to-finite, a-to-diagonal, b-to-diagonal, and the four "
+        "essential families. ignore_inf_points=True drops essentials before matching.");
 
-    // Bind BottleneckLongestEdge struct
-    nb::class_<BottleneckLongestEdge>(m, "BottleneckLongestEdge",
-            "One edge in the bottleneck matching whose length equals the bottleneck distance. "
-            "Either idx_a or idx_b may be -1, indicating a diagonal-projected endpoint.")
-        .def_ro("idx_a", &BottleneckLongestEdge::idx_a,
-            "Index of the endpoint in finite_dgm_a, or -1 if the endpoint is a diagonal projection.")
-        .def_ro("idx_b", &BottleneckLongestEdge::idx_b,
-            "Index of the endpoint in finite_dgm_b, or -1 if the endpoint is a diagonal projection.")
-        .def_ro("length", &BottleneckLongestEdge::length,
-            "Length of this edge (equals bottleneck distance).")
-        .def_ro("a_x", &BottleneckLongestEdge::a_x)
-        .def_ro("a_y", &BottleneckLongestEdge::a_y)
-        .def_ro("b_x", &BottleneckLongestEdge::b_x)
-        .def_ro("b_y", &BottleneckLongestEdge::b_y);
 
-    // Bind BottleneckMatchingFinite struct
-    nb::class_<BottleneckMatchingFinite>(m, "BottleneckMatchingFinite",
-            "Full bottleneck matching between two finite diagrams, plus all edges tied for the bottleneck distance.")
-        .def_ro("a_to_b", &BottleneckMatchingFinite::a_to_b,
-            "Indices in finite_dgm_a matched to finite points in finite_dgm_b.")
-        .def_ro("b_from_a", &BottleneckMatchingFinite::b_from_a,
-            "Corresponding indices in finite_dgm_b (parallel to a_to_b).")
-        .def_ro("a_to_diag", &BottleneckMatchingFinite::a_to_diag,
-            "Indices in finite_dgm_a matched to the diagonal.")
-        .def_ro("b_to_diag", &BottleneckMatchingFinite::b_to_diag,
-            "Indices in finite_dgm_b matched to the diagonal.")
-        .def_ro("longest_edges", &BottleneckMatchingFinite::longest_edges,
-            "All edges whose length equals `distance` (ties preserved).")
-        .def_ro("distance", &BottleneckMatchingFinite::distance,
-            "Bottleneck distance (L_infinity) between the finite parts.");
+    // ---- bottleneck longest-edge records + matching ----
+    using HeraBtFiniteEdge = hera::FiniteLongestEdge<oin_real>;
+    nb::class_<HeraBtFiniteEdge>(m, "FiniteLongestEdge",
+            "One edge tied for the bottleneck distance in the finite part of "
+            "a matching. ``idx_a`` or ``idx_b`` is ``None`` if that endpoint "
+            "is a diagonal projection.")
+        .def_ro("length", &HeraBtFiniteEdge::length)
+        .def_prop_ro("idx_a",
+            [](const HeraBtFiniteEdge& e) -> nb::object {
+                return e.idx_a < 0 ? nb::none() : nb::cast(e.idx_a);
+            })
+        .def_prop_ro("idx_b",
+            [](const HeraBtFiniteEdge& e) -> nb::object {
+                return e.idx_b < 0 ? nb::none() : nb::cast(e.idx_b);
+            })
+        .def_prop_ro("point_a",
+            [](const HeraBtFiniteEdge& e) {
+                return nb::make_tuple(e.a_x, e.a_y);
+            })
+        .def_prop_ro("point_b",
+            [](const HeraBtFiniteEdge& e) {
+                return nb::make_tuple(e.b_x, e.b_y);
+            })
+        .def("__repr__",
+            [](const HeraBtFiniteEdge& e) {
+                std::stringstream ss;
+                auto fmt_idx = [](int i) -> std::string {
+                    return i < 0 ? std::string("None") : std::to_string(i);
+                };
+                ss << "FiniteLongestEdge(length=" << e.length
+                   << ", idx_a=" << fmt_idx(e.idx_a)
+                   << ", idx_b=" << fmt_idx(e.idx_b)
+                   << ", point_a=(" << e.a_x << ", " << e.a_y << ")"
+                   << ", point_b=(" << e.b_x << ", " << e.b_y << "))";
+                return ss.str();
+            });
 
-    // Bind bottleneck_matching_finite function (no internal_p: Hera bottleneck is L_infinity-only).
-    func_name = "bottleneck_matching_finite";
+    using HeraBtEssEdge = hera::EssentialLongestEdge<oin_real>;
+    nb::class_<HeraBtEssEdge>(m, "EssentialLongestEdge",
+            "One edge tied for the bottleneck distance within a single "
+            "essential family.")
+        .def_ro("length",  &HeraBtEssEdge::length)
+        .def_ro("idx_a",   &HeraBtEssEdge::idx_a)
+        .def_ro("idx_b",   &HeraBtEssEdge::idx_b)
+        .def_ro("coord_a", &HeraBtEssEdge::coord_a)
+        .def_ro("coord_b", &HeraBtEssEdge::coord_b)
+        .def("__repr__",
+            [](const HeraBtEssEdge& e) {
+                std::stringstream ss;
+                ss << "EssentialLongestEdge(length=" << e.length
+                   << ", idx_a=" << e.idx_a << ", idx_b=" << e.idx_b
+                   << ", coord_a=" << e.coord_a << ", coord_b=" << e.coord_b << ")";
+                return ss.str();
+            });
+
+    using HeraBtMatch = hera::BottleneckMatching<oin_real>;
+    // Inherits all properties of DiagramMatching (finite_to_finite,
+    // a_to_diagonal, b_to_diagonal, essential, cost, distance) via the
+    // C++ inheritance declared in hera::BottleneckMatching.
+    nb::class_<HeraBtMatch, HeraWasserMatch>(m, "BottleneckMatching",
+            "Optimal bottleneck matching: inherits the DiagramMatching "
+            "interface and adds longest-edge data via the .longest view.")
+        .def_prop_ro("longest",
+            [](const HeraBtMatch& s) {
+                return LongestEdgesView<oin_real>(s.longest_finite, s.longest_essential);
+            },
+            nb::keep_alive<0, 1>(),
+            "View over tied-longest edges, with `.finite` (a list of "
+            "FiniteLongestEdge) and `.essential` (an EssentialLongestEdges "
+            "grouped view).")
+        .def("__str__",
+            [](const HeraBtMatch& s) { std::stringstream ss; ss << s; return ss.str(); })
+        .def("__repr__",
+            [](const HeraBtMatch& s) { return hera::to_str_debug(s); });
+
+    func_name = "bottleneck_matching_detailed";
     m.def(func_name.c_str(),
-        &bottleneck_matching_finite_impl,
-        nb::arg("finite_dgm_a"),
-        nb::arg("finite_dgm_b"),
+        [](const NumpyDiagram& dgm_a_np, const NumpyDiagram& dgm_b_np,
+           oin_real delta, bool ignore_inf_points) {
+            Diagram dgm_a = numpy_to_diagram_with_pos_ids(dgm_a_np);
+            Diagram dgm_b = numpy_to_diagram_with_pos_ids(dgm_b_np);
+            if (ignore_inf_points) {
+                strip_essentials(dgm_a);
+                strip_essentials(dgm_b);
+            }
+            return hera::bottleneck_matching_detailed(dgm_a, dgm_b, delta);
+        },
+        nb::arg("dgm_a"),
+        nb::arg("dgm_b"),
         nb::arg("delta") = 0.01,
+        nb::arg("ignore_inf_points") = true,
         nb::call_guard<nb::gil_scoped_release>(),
-        "Compute bottleneck matching between two finite diagrams (no essential points). "
-        "delta=0.0 runs the exact algorithm. Returns a BottleneckMatchingFinite with the full "
-        "matching and all edges tied for the bottleneck distance.");
+        "Full bottleneck matching: distance, bucketed pair indices for "
+        "finite-to-finite/diagonal/essentials, and tied-longest edges. "
+        "delta=0.0 runs the exact algorithm.");
 
     func_name = "init_frechet_mean_first_diagram";
     m.def(func_name.c_str(),

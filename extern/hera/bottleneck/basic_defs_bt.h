@@ -352,11 +352,17 @@ namespace hera {
                 isLinked = false;
                 clear();
                 IdType uniqueId = 0;
-                IdType user_id = 0;
                 for (const auto& pt : dgm_cont) {
                     Real x = Traits::get_x(pt);
                     Real y = Traits::get_y(pt);
-                    insert(DgmPoint(x, y, DgmPoint::NORMAL, uniqueId++, user_id++));
+                    // Pass the caller-supplied id through as user_tag so the
+                    // matching output can be related back to the original
+                    // diagram. Prior versions overwrote user_tag with a
+                    // sequential counter; that's strictly less informative
+                    // because the caller could always pass a 0..n-1 id when
+                    // it wants positional indexing.
+                    insert(DgmPoint(x, y, DgmPoint::NORMAL, uniqueId++,
+                                    Traits::get_id(pt)));
                 }
             }
 

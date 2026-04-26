@@ -15,9 +15,9 @@ except ImportError:
 # Skip all tests if PyTorch is not available
 pytestmark = pytest.mark.skipif(not TORCH_AVAILABLE, reason="PyTorch not available")
 
-# Add build directory to path for local testing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../build/bindings/python'))
-
+# NB: import oineus from whatever PYTHONPATH the test runner provides; do
+# NOT hardcode a build directory here (the prior `sys.path.insert(0, ...)`
+# pinned a stale Python-version-specific build dir and broke other configs).
 import oineus
 import oineus.diff as oin_diff
 
@@ -140,7 +140,7 @@ class TestEssentialPoints:
             [0.7, float('inf')]  # Two essential points
         ], dtype=torch.float64)
 
-        with pytest.raises(ValueError, match="Essential point cardinalities must match"):
+        with pytest.raises(ValueError, match="essential point cardinalities must match"):
             oin_diff.wasserstein_cost(dgm_a, dgm_b, ignore_inf_points=False)
 
     def test_ignore_inf_points_flag(self):
@@ -257,7 +257,7 @@ class TestEssentialPoints:
         ], dtype=torch.float64)
 
         # Should raise error for (finite, -inf) mismatch (0 vs 1)
-        with pytest.raises(ValueError, match="Essential point cardinalities must match"):
+        with pytest.raises(ValueError, match="essential point cardinalities must match"):
             oin_diff.wasserstein_cost(dgm_a, dgm_b, ignore_inf_points=False)
 
     def test_essential_posinf_vs_neginf(self):
@@ -271,7 +271,7 @@ class TestEssentialPoints:
         ], dtype=torch.float64)
 
         # Different categories - should raise error
-        with pytest.raises(ValueError, match="Essential point cardinalities must match"):
+        with pytest.raises(ValueError, match="essential point cardinalities must match"):
             oin_diff.wasserstein_cost(dgm_a, dgm_b, ignore_inf_points=False)
 
     def test_essential_birth_vs_death_inf(self):
@@ -285,7 +285,7 @@ class TestEssentialPoints:
         ], dtype=torch.float64)
 
         # Different categories - should raise error
-        with pytest.raises(ValueError, match="Essential point cardinalities must match"):
+        with pytest.raises(ValueError, match="essential point cardinalities must match"):
             oin_diff.wasserstein_cost(dgm_a, dgm_b, ignore_inf_points=False)
 
     def test_essential_multiple_category_mismatch(self):
@@ -302,7 +302,7 @@ class TestEssentialPoints:
         ], dtype=torch.float64)
 
         # Should raise error for (finite, -inf) category (0 vs 1)
-        with pytest.raises(ValueError, match="Essential point cardinalities must match"):
+        with pytest.raises(ValueError, match="essential point cardinalities must match"):
             oin_diff.wasserstein_cost(dgm_a, dgm_b, ignore_inf_points=False)
 
 
@@ -750,6 +750,296 @@ class TestDifferentiability:
 
         # Cost should decrease
         assert new_cost < initial_cost
+
+
+class TestEssentialSortMatching:
+    """Verify that the four essential families are paired by sorted-rank of the
+    finite coordinate even when input order is scrambled.
+
+    Layout: 14 points per side = 3 of each essential family + 2 finite. Within
+    each family the finite-coord magnitudes are deliberately on different
+    decade scales (essentials in 1, 10, 100, 1000; finite in 5000+) so that
+    any incorrect cross-family pairing would yield a wildly wrong cost.
+
+    Hand-derived pairings (sorted by finite coord, paired by rank):
+
+      inf_death (axis 0, birth):
+        a: idx9(0.1), idx1(0.5), idx5(0.9)
+        b: idx1(0.2), idx7(0.6), idx10(0.8)
+        |Δ|^2 = 0.01 + 0.01 + 0.01 = 0.03
+
+      neg_inf_death (axis 0, birth):
+        a: idx13(6.0), idx4(8.0), idx10(9.5)
+        b: idx6(5.5),  idx13(7.5), idx0(10.0)
+        |Δ|^2 = 0.25 + 0.25 + 0.25 = 0.75
+
+      inf_birth (axis 1, death):
+        a: idx6(60.0), idx0(75.0),  idx11(90.0)
+        b: idx5(55.0), idx2(80.0),  idx12(95.0)
+        |Δ|^2 = 25 + 25 + 25 = 75
+
+      neg_inf_birth (axis 1, death):
+        a: idx7(600.0), idx12(750.0), idx3(900.0)
+        b: idx3(550.0), idx11(800.0), idx8(950.0)
+        |Δ|^2 = 2500 + 2500 + 2500 = 7500
+
+      finite (W2, internal_p=inf):
+        a2=(5000,5100) ↔ b4=(5005,5105): max(|5|,|5|)^2 = 25
+        a8=(8000,8100) ↔ b9=(8005,8105): max(|5|,|5|)^2 = 25
+        total finite contribution = 50.
+
+      grand total = 50 + 0.03 + 0.75 + 75 + 7500 = 7625.78
+    """
+
+    # --- shared input data: hard-coded, scrambled, no random ---
+    @staticmethod
+    def _make_dgm_a():
+        INF = float("inf")
+        return torch.tensor([
+            [INF,    75.0],     # 0  inf_birth
+            [0.5,    INF],      # 1  inf_death
+            [5000.0, 5100.0],   # 2  finite
+            [-INF,   900.0],    # 3  neg_inf_birth
+            [8.0,    -INF],     # 4  neg_inf_death
+            [0.9,    INF],      # 5  inf_death
+            [INF,    60.0],     # 6  inf_birth
+            [-INF,   600.0],    # 7  neg_inf_birth
+            [8000.0, 8100.0],   # 8  finite
+            [0.1,    INF],      # 9  inf_death
+            [9.5,    -INF],     # 10 neg_inf_death
+            [INF,    90.0],     # 11 inf_birth
+            [-INF,   750.0],    # 12 neg_inf_birth
+            [6.0,    -INF],     # 13 neg_inf_death
+        ], dtype=torch.float64)
+
+    @staticmethod
+    def _make_dgm_b():
+        INF = float("inf")
+        return torch.tensor([
+            [10.0,   -INF],     # 0  neg_inf_death
+            [0.2,    INF],      # 1  inf_death
+            [INF,    80.0],     # 2  inf_birth
+            [-INF,   550.0],    # 3  neg_inf_birth
+            [5005.0, 5105.0],   # 4  finite
+            [INF,    55.0],     # 5  inf_birth
+            [5.5,    -INF],     # 6  neg_inf_death
+            [0.6,    INF],      # 7  inf_death
+            [-INF,   950.0],    # 8  neg_inf_birth
+            [8005.0, 8105.0],   # 9  finite
+            [0.8,    INF],      # 10 inf_death
+            [-INF,   800.0],    # 11 neg_inf_birth
+            [INF,    95.0],     # 12 inf_birth
+            [7.5,    -INF],     # 13 neg_inf_death
+        ], dtype=torch.float64)
+
+    # Index sets for each family on each side. Used to assert grad patterns.
+    A_FAM = {
+        "inf_death":     [1, 5, 9],
+        "neg_inf_death": [4, 10, 13],
+        "inf_birth":     [0, 6, 11],
+        "neg_inf_birth": [3, 7, 12],
+        "finite":        [2, 8],
+    }
+    A_FINITE_AXIS = {
+        "inf_death":     0,
+        "neg_inf_death": 0,
+        "inf_birth":     1,
+        "neg_inf_birth": 1,
+    }
+
+    # Finite-only sub-diagrams used to validate the finite contribution
+    # without re-using wasserstein_cost on the full input (avoids circularity).
+    @staticmethod
+    def _make_finite_a():
+        return torch.tensor([[5000.0, 5100.0], [8000.0, 8100.0]],
+                            dtype=torch.float64)
+
+    @staticmethod
+    def _make_finite_b():
+        return torch.tensor([[5005.0, 5105.0], [8005.0, 8105.0]],
+                            dtype=torch.float64)
+
+    # Per-family essential cost contributions (sum of |Δ|^q over rank-paired
+    # finite coords). Hard-coded from the comment block above for q=2.
+    EXPECTED_ESSENTIAL_COST_Q2 = {
+        "inf_death":     0.03,
+        "neg_inf_death": 0.75,
+        "inf_birth":     75.0,
+        "neg_inf_birth": 7500.0,
+    }
+    EXPECTED_FINITE_COST_Q2 = 50.0   # 25 + 25 under L_inf, q=2
+    EXPECTED_TOTAL_COST_Q2  = 7625.78  # 50 + 0.03 + 0.75 + 75 + 7500
+
+    DELTA = 0.001  # tight; finite distances are exact, essentials closed-form
+
+    # ------------------------------------------------------------------
+    def test_ignore_inf_points_drops_essentials(self):
+        """ignore_inf_points=True must drop all 12 essentials per side and
+        return the cost of matching just the two finite points."""
+        dgm_a = self._make_dgm_a()
+        dgm_b = self._make_dgm_b()
+
+        cost = oin_diff.wasserstein_cost(
+            dgm_a, dgm_b,
+            wasserstein_q=2.0, wasserstein_delta=self.DELTA,
+            ignore_inf_points=True,
+        )
+
+        # Hand-built finite-only diagrams should produce the same cost.
+        finite_a = self._make_finite_a()
+        finite_b = self._make_finite_b()
+        finite_cost = oin_diff.wasserstein_cost(
+            finite_a, finite_b,
+            wasserstein_q=2.0, wasserstein_delta=self.DELTA,
+            ignore_inf_points=True,
+        )
+
+        assert torch.isclose(
+            cost, finite_cost, rtol=self.DELTA * 10
+        ), f"cost={cost.item()} vs finite_cost={finite_cost.item()}"
+        assert torch.isclose(
+            cost,
+            torch.tensor(self.EXPECTED_FINITE_COST_Q2, dtype=torch.float64),
+            rtol=self.DELTA * 10,
+        ), f"cost={cost.item()} vs expected={self.EXPECTED_FINITE_COST_Q2}"
+
+    # ------------------------------------------------------------------
+    def test_essentials_paired_by_rank_value(self):
+        """With ignore_inf_points=False, the cost must equal the
+        finite-only contribution plus the per-family rank-paired sum-of-
+        squared finite-coord differences."""
+        dgm_a = self._make_dgm_a()
+        dgm_b = self._make_dgm_b()
+
+        cost = oin_diff.wasserstein_cost(
+            dgm_a, dgm_b,
+            wasserstein_q=2.0, wasserstein_delta=self.DELTA,
+            ignore_inf_points=False,
+        )
+
+        # Build the expected total by hand from the per-family rule. We do
+        # NOT call wasserstein_cost on the same essentials to avoid
+        # circularity; the constants come from the comment block above.
+        expected = self.EXPECTED_FINITE_COST_Q2 + sum(
+            self.EXPECTED_ESSENTIAL_COST_Q2.values()
+        )
+        assert abs(expected - self.EXPECTED_TOTAL_COST_Q2) < 1e-9
+
+        assert torch.isclose(
+            cost,
+            torch.tensor(self.EXPECTED_TOTAL_COST_Q2, dtype=torch.float64),
+            rtol=self.DELTA * 10,
+        ), f"cost={cost.item()} vs expected={self.EXPECTED_TOTAL_COST_Q2}"
+
+        # Also assert each family's contribution matches the per-pair sum
+        # we expect by sorted-rank pairing — a stronger statement than just
+        # the total. We compute the per-family contribution directly from
+        # the input tensors here (no call to wasserstein_cost).
+        per_family_expected = {}
+        for name, axis in self.A_FINITE_AXIS.items():
+            a_idx = self.A_FAM[name]
+            # Identify the b-side indices for this family by matching the
+            # infinite-axis sign pattern (independent of order).
+            b_idx = []
+            for i in range(dgm_b.shape[0]):
+                bx, by = dgm_b[i, 0].item(), dgm_b[i, 1].item()
+                if name == "inf_death" and np.isfinite(bx) and by == float("inf"):
+                    b_idx.append(i)
+                elif name == "neg_inf_death" and np.isfinite(bx) and by == float("-inf"):
+                    b_idx.append(i)
+                elif name == "inf_birth" and bx == float("inf") and np.isfinite(by):
+                    b_idx.append(i)
+                elif name == "neg_inf_birth" and bx == float("-inf") and np.isfinite(by):
+                    b_idx.append(i)
+            assert len(a_idx) == len(b_idx) == 3, name
+            a_coords = sorted(dgm_a[i, axis].item() for i in a_idx)
+            b_coords = sorted(dgm_b[i, axis].item() for i in b_idx)
+            per_family_expected[name] = sum(
+                (a - b) ** 2 for a, b in zip(a_coords, b_coords)
+            )
+        # Check the per-family cost we computed matches the hard-coded
+        # constants used to build the total (sanity on our table).
+        for k, v in per_family_expected.items():
+            assert abs(v - self.EXPECTED_ESSENTIAL_COST_Q2[k]) < 1e-9, (
+                k, v, self.EXPECTED_ESSENTIAL_COST_Q2[k]
+            )
+
+    # ------------------------------------------------------------------
+    def test_essentials_gradient_flow(self):
+        """Backprop through the full diagram with essentials present must
+        give non-zero gradients on the finite axis of every essential and
+        exactly-zero (and finite) gradients on the infinite axis."""
+        dgm_a = self._make_dgm_a().requires_grad_(True)
+        dgm_b = self._make_dgm_b()
+
+        cost = oin_diff.wasserstein_cost(
+            dgm_a, dgm_b,
+            wasserstein_q=2.0, wasserstein_delta=self.DELTA,
+            ignore_inf_points=False,
+        )
+        cost.backward()
+
+        grad = dgm_a.grad
+        assert grad is not None
+        # No NaN/Inf must propagate from the essentials.
+        assert not torch.isnan(grad).any().item(), grad
+        assert not torch.isinf(grad).any().item(), grad
+
+        # For each essential family: finite-axis grad must be non-zero,
+        # infinite-axis grad must be exactly zero.
+        for name, axis in self.A_FINITE_AXIS.items():
+            inf_axis = 1 - axis
+            for i in self.A_FAM[name]:
+                g_finite = grad[i, axis].item()
+                g_inf    = grad[i, inf_axis].item()
+                assert g_finite != 0.0, (
+                    f"{name} a-row {i}: finite-axis grad is zero")
+                assert g_inf == 0.0, (
+                    f"{name} a-row {i}: inf-axis grad is {g_inf}, expected 0")
+
+        # Finite rows that actually got matched (under L_inf at the chosen
+        # input scales they all do) must have at least one non-zero entry.
+        for i in self.A_FAM["finite"]:
+            row = grad[i]
+            assert torch.any(row != 0).item(), (
+                f"finite a-row {i} has all-zero gradient: {row}")
+
+        # Compare against the ignore_inf_points=True run: essentials should
+        # then contribute zero gradient (only finite-finite matches feed back).
+        dgm_a2 = self._make_dgm_a().requires_grad_(True)
+        cost2 = oin_diff.wasserstein_cost(
+            dgm_a2, dgm_b,
+            wasserstein_q=2.0, wasserstein_delta=self.DELTA,
+            ignore_inf_points=True,
+        )
+        cost2.backward()
+        grad2 = dgm_a2.grad
+        for name in self.A_FINITE_AXIS:
+            for i in self.A_FAM[name]:
+                assert torch.all(grad2[i] == 0).item(), (
+                    f"{name} a-row {i} should have zero grad when essentials"
+                    f" are ignored, got {grad2[i]}")
+
+    # ------------------------------------------------------------------
+    def test_essentials_gradient_zero_when_ignored(self):
+        """Standalone: ignore_inf_points=True backward => all essential
+        rows in dgm_a.grad are exactly zero."""
+        dgm_a = self._make_dgm_a().requires_grad_(True)
+        dgm_b = self._make_dgm_b()
+
+        cost = oin_diff.wasserstein_cost(
+            dgm_a, dgm_b,
+            wasserstein_q=2.0, wasserstein_delta=self.DELTA,
+            ignore_inf_points=True,
+        )
+        cost.backward()
+
+        grad = dgm_a.grad
+        assert grad is not None
+        for name in self.A_FINITE_AXIS:
+            for i in self.A_FAM[name]:
+                assert torch.all(grad[i] == 0).item(), (
+                    f"{name} a-row {i}: expected all-zero grad, got {grad[i]}")
 
 
 if __name__ == "__main__":

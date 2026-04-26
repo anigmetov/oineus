@@ -1,10 +1,26 @@
-"""Differentiable Wasserstein distance for persistence diagrams."""
+"""Differentiable Wasserstein cost for persistence diagrams.
 
-import torch
+Single function that calls the new detailed Hera matching once on the full
+diagrams (essentials included), then walks the bucketed result and rebuilds
+the cost in torch so gradients flow through every matched pair (finite-to-
+finite, finite-to-diagonal, and essential-to-essential).
+"""
+
 import numpy as np
+import torch
+
 from .. import _oineus
 from .._dtype import as_real_numpy
-from .wasserstein_utils import _project_to_diagonal, _split_finite_essential, _match_essential_1d
+
+# Mapping from essential family attribute name to the index of the finite
+# coordinate axis (0 = birth, 1 = death). Used to compute the per-pair
+# 1D distance: the infinite axis matches itself with cost 0.
+_ESSENTIAL_FINITE_AXIS = (
+    ("inf_death",     0),
+    ("neg_inf_death", 0),
+    ("inf_birth",     1),
+    ("neg_inf_birth", 1),
+)
 
 
 def wasserstein_cost(
@@ -13,124 +29,87 @@ def wasserstein_cost(
     wasserstein_q: float = 1.0,
     wasserstein_delta: float = 0.05,
     ignore_inf_points: bool = True,
-    internal_p: float = float('inf')
+    internal_p: float = float("inf"),
 ) -> torch.Tensor:
-    """
-    Compute differentiable Wasserstein cost between two persistence diagrams.
+    """Differentiable Wasserstein cost between two persistence diagrams.
 
-    The cost C satisfies: Wasserstein_q distance = C^(1/q)
+    Returns ``cost = sum_pair dist(p_a, p_b) ** wasserstein_q`` so that
+    ``Wasserstein_q distance == cost ** (1 / wasserstein_q)``.
 
     Args:
-        dgm_a: (N, 2) tensor of (birth, death) points
-        dgm_b: (M, 2) tensor of (birth, death) points
-        wasserstein_q: Wasserstein power parameter (default 1.0 for W_1)
-        wasserstein_delta: Relative error for Hera approximation (default 0.05)
-        ignore_inf_points: If True, only consider finite points (default True)
-        internal_p: Internal L_p norm for point distances (default inf)
+        dgm_a: ``(N, 2)`` tensor of (birth, death) points.
+        dgm_b: ``(M, 2)`` tensor of (birth, death) points.
+        wasserstein_q: Wasserstein power (default 1.0 → W_1).
+        wasserstein_delta: Hera relative-error parameter (must be > 0).
+        ignore_inf_points: If True, drop essential (±inf) points before
+            matching. If False, every essential family must have equal
+            cardinalities on both sides; the matching pairs them by
+            sorted-rank of the finite coordinate.
+        internal_p: Ground metric in the (birth, death) plane. ``inf``
+            selects L_∞.
 
     Returns:
-        Scalar tensor with Wasserstein cost^q
-        To get distance: wasserstein_cost(...) ** (1/wasserstein_q)
-
-    Notes:
-        - Diagonal projections are detached (do not receive gradients)
-        - Essential points (with inf coordinates) are matched separately if ignore_inf_points=False
-        - Gradients flow through matched finite points
-
-    Example:
-        >>> import torch
-        >>> import oineus.diff as oin_diff
-        >>> dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], requires_grad=True)
-        >>> dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]])
-        >>> cost = oin_diff.wasserstein_cost(dgm_a, dgm_b, wasserstein_q=2.0)
-        >>> cost.backward()
-        >>> print(dgm_a.grad)  # Gradients flow through matched points
+        Scalar tensor with the cost. Gradients flow through every matched
+        finite point on both sides (and through the finite coord of every
+        matched essential). Diagonal projections are detached.
     """
-    # Split into finite and essential
-    fin_a, ess_a = _split_finite_essential(dgm_a)
-    fin_b, ess_b = _split_finite_essential(dgm_b)
+    device = dgm_a.device
+    dtype  = dgm_a.dtype
 
-    total_cost = torch.tensor(0.0, dtype=dgm_a.dtype, device=dgm_a.device)
+    # Convert to numpy and call the bucketed Hera matching once.
+    dgm_a_np = as_real_numpy(dgm_a.detach().cpu().numpy())
+    dgm_b_np = as_real_numpy(dgm_b.detach().cpu().numpy())
+    internal_p_hera = -1.0 if np.isinf(internal_p) else internal_p
 
-    # Handle essential points if requested
-    if not ignore_inf_points:
-        ess_names = ["(finite, +inf)", "(finite, -inf)", "(+inf, finite)", "(-inf, finite)"]
-        for coords1, coords2, name in zip(ess_a, ess_b, ess_names):
-            if len(coords1) != len(coords2):
-                raise ValueError(
-                    f"Essential point cardinalities must match. "
-                    f"Got {len(coords1)} and {len(coords2)} points with {name}."
-                )
-            if len(coords1) > 0:
-                # Compute 1D matching cost: sum_i |a_i - b_i|^q
-                cost_1d = _match_essential_1d(coords1, coords2, q=wasserstein_q)
-                total_cost = total_cost + cost_1d
-
-    # Handle finite points
-    if len(fin_a) == 0 and len(fin_b) == 0:
-        return total_cost
-
-    # Convert finite diagrams to numpy for C++ matching
-    fin_a_np = as_real_numpy(fin_a.detach().cpu().numpy())
-    fin_b_np = as_real_numpy(fin_b.detach().cpu().numpy())
-
-    # Convert internal_p: Hera uses -1.0 to represent L_inf norm
-    internal_p_for_hera = -1.0 if np.isinf(internal_p) else internal_p
-
-    # Compute matching using C++
-    matching = _oineus.wasserstein_matching_finite(
-        fin_a_np, fin_b_np,
+    matching = _oineus.wasserstein_matching_detailed(
+        dgm_a_np, dgm_b_np,
         wasserstein_q=wasserstein_q,
         wasserstein_delta=wasserstein_delta,
-        internal_p=internal_p_for_hera
+        internal_p=internal_p_hera,
+        ignore_inf_points=ignore_inf_points,
     )
 
-    # 1. Finite-to-finite matching
-    if len(matching.a_to_b) > 0:
-        idx_a = torch.tensor(matching.a_to_b, dtype=torch.long, device=fin_a.device)
-        idx_b = torch.tensor(matching.b_from_a, dtype=torch.long, device=fin_b.device)
+    total = torch.zeros((), dtype=dtype, device=device)
 
-        pts_a = fin_a[idx_a]
-        pts_b = fin_b[idx_b]
-
-        # Compute L_p distance between matched points
+    def _pair_dist(pts_a, pts_b):
+        diff = pts_a - pts_b
         if np.isinf(internal_p):
-            # L_inf norm: max absolute difference
-            dists = torch.max(torch.abs(pts_a - pts_b), dim=1)[0]
-        else:
-            # L_p norm
-            dists = torch.sum(torch.abs(pts_a - pts_b) ** internal_p, dim=1) ** (1.0 / internal_p)
+            return torch.max(torch.abs(diff), dim=1)[0]
+        return torch.sum(torch.abs(diff) ** internal_p, dim=1) ** (1.0 / internal_p)
 
-        total_cost = total_cost + torch.sum(dists ** wasserstein_q)
+    # 1. finite-to-finite
+    ftf = matching.finite_to_finite
+    if ftf.shape[0] > 0:
+        ia = torch.from_numpy(ftf[:, 0]).to(device).long()
+        ib = torch.from_numpy(ftf[:, 1]).to(device).long()
+        total = total + torch.sum(_pair_dist(dgm_a[ia], dgm_b[ib]) ** wasserstein_q)
 
-    # 2. Finite-to-diagonal matching (dgm_a points)
-    if len(matching.a_to_diag) > 0:
-        idx_a = torch.tensor(matching.a_to_diag, dtype=torch.long, device=fin_a.device)
-        pts_a = fin_a[idx_a]
+    # 2. finite-to-diagonal (a side)
+    if matching.a_to_diagonal.shape[0] > 0:
+        ia = torch.from_numpy(matching.a_to_diagonal).to(device).long()
+        pts = dgm_a[ia]
+        mid = ((pts[:, 0] + pts[:, 1]) / 2.0).detach()
+        diag_proj = torch.stack([mid, mid], dim=1)
+        total = total + torch.sum(_pair_dist(pts, diag_proj) ** wasserstein_q)
 
-        # Diagonal projection: ((b+d)/2, (b+d)/2) - DETACHED!
-        diag_proj = _project_to_diagonal(pts_a).detach()
+    # 3. finite-to-diagonal (b side)
+    if matching.b_to_diagonal.shape[0] > 0:
+        ib = torch.from_numpy(matching.b_to_diagonal).to(device).long()
+        pts = dgm_b[ib]
+        mid = ((pts[:, 0] + pts[:, 1]) / 2.0).detach()
+        diag_proj = torch.stack([mid, mid], dim=1)
+        total = total + torch.sum(_pair_dist(pts, diag_proj) ** wasserstein_q)
 
-        # Distance from point to its diagonal projection
-        if np.isinf(internal_p):
-            dists = torch.max(torch.abs(pts_a - diag_proj), dim=1)[0]
-        else:
-            dists = torch.sum(torch.abs(pts_a - diag_proj) ** internal_p, dim=1) ** (1.0 / internal_p)
+    # 4. essentials, per family — the shared infinite coord contributes 0
+    # to the ground metric for any internal_p, so cost is just
+    # |finite_a - finite_b| ** wasserstein_q on the finite axis.
+    for name, axis in _ESSENTIAL_FINITE_AXIS:
+        pairs = getattr(matching.essential, name)
+        if pairs.shape[0] == 0:
+            continue
+        ia = torch.from_numpy(pairs[:, 0]).to(device).long()
+        ib = torch.from_numpy(pairs[:, 1]).to(device).long()
+        d = torch.abs(dgm_a[ia, axis] - dgm_b[ib, axis])
+        total = total + torch.sum(d ** wasserstein_q)
 
-        total_cost = total_cost + torch.sum(dists ** wasserstein_q)
-
-    # 3. Finite-to-diagonal matching (dgm_b points)
-    if len(matching.b_to_diag) > 0:
-        idx_b = torch.tensor(matching.b_to_diag, dtype=torch.long, device=fin_b.device)
-        pts_b = fin_b[idx_b]
-
-        diag_proj = _project_to_diagonal(pts_b).detach()
-
-        if np.isinf(internal_p):
-            dists = torch.max(torch.abs(pts_b - diag_proj), dim=1)[0]
-        else:
-            dists = torch.sum(torch.abs(pts_b - diag_proj) ** internal_p, dim=1) ** (1.0 / internal_p)
-
-        total_cost = total_cost + torch.sum(dists ** wasserstein_q)
-
-    return total_cost
+    return total

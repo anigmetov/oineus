@@ -32,6 +32,13 @@ derivative works thereof, in binary and source code form.
 #include <vector>
 #include <map>
 #include <math.h>
+#include <stdexcept>
+#include <array>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <algorithm>
 
 #include "wasserstein/def_debug_ws.h"
 #include "wasserstein/basic_defs_ws.h"
@@ -49,26 +56,61 @@ namespace hera
 namespace ws
 {
 
-    // compare as multisets
+    // Compare diagrams as multisets, with a small numerical tolerance.
+    //
+    // Without a tolerance, ULP-level differences (e.g. caused by translating
+    // a point cloud by a non-exactly-representable float) make the early
+    // exit in `wasserstein_cost_detailed` miss the "essentially identical"
+    // case, and the auction is then asked to certify a relative error
+    // against a near-zero true cost — an unsatisfiable termination
+    // criterion that makes the auction spin forever.
+    //
+    // The threshold below is the same convention used elsewhere in the
+    // pipeline (Oineus's matching fast path uses 1e-10): well above ULP
+    // noise, well below any meaningful Wasserstein distance.
     template<class PairContainer>
     inline bool are_equal(const PairContainer& dgm1, const PairContainer& dgm2)
     {
         using Traits = typename hera::DiagramTraits<PairContainer>;
         using PointType = typename Traits::PointType;
+        using RealType = typename Traits::RealType;
 
-        std::map<PointType, int> m1, m2;
+        constexpr RealType eps = RealType(1e-10);
 
-        for(auto&& pair1 : dgm1) {
-            if (Traits::get_x(pair1) != Traits::get_y(pair1))
-                m1[pair1]++;
+        auto coord_eq = [eps](RealType a, RealType b) -> bool {
+            if (std::isinf(a) || std::isinf(b))
+                return a == b;  // both inf with same sign, or neither
+            return std::abs(a - b) <= eps;
+        };
+
+        std::vector<PointType> v1, v2;
+        v1.reserve(dgm1.size());
+        v2.reserve(dgm2.size());
+        for(auto&& p : dgm1) {
+            if (Traits::get_x(p) != Traits::get_y(p))
+                v1.push_back(p);
         }
-
-        for(auto&& pair2 : dgm2) {
-            if (Traits::get_x(pair2) != Traits::get_y(pair2))
-                m2[pair2]++;
+        for(auto&& p : dgm2) {
+            if (Traits::get_x(p) != Traits::get_y(p))
+                v2.push_back(p);
         }
+        if (v1.size() != v2.size())
+            return false;
 
-        return m1 == m2;
+        auto less = [](const PointType& a, const PointType& b) {
+            if (Traits::get_x(a) != Traits::get_x(b))
+                return Traits::get_x(a) < Traits::get_x(b);
+            return Traits::get_y(a) < Traits::get_y(b);
+        };
+        std::sort(v1.begin(), v1.end(), less);
+        std::sort(v2.begin(), v2.end(), less);
+
+        for(size_t i = 0; i < v1.size(); ++i) {
+            if (!coord_eq(Traits::get_x(v1[i]), Traits::get_x(v2[i])) ||
+                !coord_eq(Traits::get_y(v1[i]), Traits::get_y(v2[i])))
+                return false;
+        }
+        return true;
     }
 
     // to handle points with one coordinate = infinity
@@ -216,6 +258,53 @@ namespace ws
             return AuctionResult<RealType>();
         }
 
+        // Tolerant identical-vectors fast path. The auction's relative-error
+        // termination criterion can't be satisfied when the true cost is
+        // zero (or near zero); calling it with two equal-up-to-ULP point
+        // sets makes it spin forever. This happens in practice when the
+        // caller (wasserstein_cost_detailed) hands us two diagrams whose
+        // finite parts agree but whose essential parts differ.
+        if (A.size() == B.size()) {
+            constexpr RealType eps = RealType(1e-10);
+            using DP = DiagramPoint<RealType>;
+            std::vector<DP> a_sorted = A, b_sorted = B;
+            auto less = [](const DP& p, const DP& q) {
+                if (p.getRealX() != q.getRealX()) return p.getRealX() < q.getRealX();
+                return p.getRealY() < q.getRealY();
+            };
+            std::sort(a_sorted.begin(), a_sorted.end(), less);
+            std::sort(b_sorted.begin(), b_sorted.end(), less);
+            bool identical = true;
+            for (size_t i = 0; i < a_sorted.size() && identical; ++i) {
+                RealType dx = std::abs(a_sorted[i].getRealX() - b_sorted[i].getRealX());
+                RealType dy = std::abs(a_sorted[i].getRealY() - b_sorted[i].getRealY());
+                if (dx > eps || dy > eps) identical = false;
+            }
+            if (identical) {
+                AuctionResult<RealType> r;
+                r.cost = 0;
+                if (params.return_matching) {
+                    // Pair NORMAL_A points with NORMAL_B points and
+                    // DIAG_A points with DIAG_B points by id matching.
+                    // For the bucketing in wasserstein_matching_detailed
+                    // to do the right thing, every NORMAL A point must
+                    // be matched to its corresponding NORMAL B counterpart,
+                    // and every DIAG slot to its corresponding DIAG slot.
+                    // Easy: match by user id (id field). Build maps.
+                    std::unordered_map<int, int> a_by_id, b_by_id;
+                    for (size_t i = 0; i < A.size(); ++i) a_by_id[A[i].id] = static_cast<int>(i);
+                    for (size_t i = 0; i < B.size(); ++i) b_by_id[B[i].id] = static_cast<int>(i);
+                    for (auto&& kv : a_by_id) {
+                        auto it = b_by_id.find(kv.first);
+                        if (it != b_by_id.end()) {
+                            r.add_to_matching(kv.first, kv.first);
+                        }
+                    }
+                }
+                return r;
+            }
+        }
+
         // just use Gauss-Seidel
         AuctionRunnerGS<RealType> auction(A, B, params);
 
@@ -282,6 +371,19 @@ wasserstein_cost_detailed(const PairContainer& A,
 
     constexpr RealType plus_inf = std::numeric_limits<RealType>::infinity();
     constexpr RealType minus_inf = -std::numeric_limits<RealType>::infinity();
+
+    // The auction algorithm is inherently approximate: it terminates when the
+    // relative error drops below `delta`. With `delta <= 0` the termination
+    // criterion can never be satisfied and the auction will spin forever.
+    // Bottleneck distance has a separate exact algorithm (delta == 0 OK there);
+    // Wasserstein does not.
+    if (params.delta <= RealType(0)) {
+        throw std::invalid_argument(
+            "hera::wasserstein_cost: delta must be strictly positive "
+            "(the auction algorithm has no exact mode for Wasserstein). "
+            "Use a small positive value, e.g. delta=0.01.");
+    }
+
     // TODO: return matching here too?
     if (hera::ws::are_equal(A, B)) {
         return AuctionResult<RealType>();
@@ -430,6 +532,183 @@ wasserstein_dist(const PairContainer& A,
 {
     using Real = typename DiagramTraits<PairContainer>::RealType;
     return std::pow(hera::wasserstein_cost(A, B, params), Real(1.)/params.wasserstein_power);
+}
+
+
+// ---------------------------------------------------------------------------
+// Detailed matching: returns the bucketed matching plus the cost.
+//
+// The four families of essential (infinite-coordinate) diagram points,
+// indexed in this order so callers can use the integer value as an index
+// into WassersteinMatching::essential / BottleneckMatching::essential.
+// ---------------------------------------------------------------------------
+enum class InfKind : int {
+    InfDeath     = 0,   // (finite,    +inf)
+    NegInfDeath  = 1,   // (finite,    -inf)
+    InfBirth     = 2,   // (+inf,    finite)
+    NegInfBirth  = 3,   // (-inf,    finite)
+};
+
+constexpr int kNumInfKinds = 4;
+
+template<class Real>
+struct WassersteinMatching {
+    // Indices in every vector are positions in the original input
+    // diagrams (preserved through the auction via the user-side `id` field
+    // on each point).
+    std::vector<std::pair<int, int>> finite_to_finite;
+    std::vector<int> a_to_diagonal;
+    std::vector<int> b_to_diagonal;
+    std::array<std::vector<std::pair<int, int>>, kNumInfKinds> essential;
+    Real cost { 0 };
+    Real distance { 0 };  // cost ** (1 / wasserstein_power)
+};
+
+template<class Real>
+inline std::ostream& operator<<(std::ostream& out, const WassersteinMatching<Real>& m)
+{
+    int ess_total = 0;
+    for (const auto& v : m.essential) ess_total += static_cast<int>(v.size());
+    out << "WassersteinMatching(finite_to_finite=" << m.finite_to_finite.size()
+        << ", a_to_diagonal=" << m.a_to_diagonal.size()
+        << ", b_to_diagonal=" << m.b_to_diagonal.size()
+        << ", essential=" << ess_total
+        << ", distance=" << m.distance << ")";
+    return out;
+}
+
+template<class Real>
+inline std::string to_str_debug(const WassersteinMatching<Real>& m)
+{
+    static const char* names[] = {"inf_death", "neg_inf_death", "inf_birth", "neg_inf_birth"};
+    std::stringstream ss;
+    ss << "WassersteinMatching {\n"
+       << "  cost: " << m.cost << "\n"
+       << "  distance: " << m.distance << "\n"
+       << "  finite_to_finite (" << m.finite_to_finite.size() << "):";
+    for (auto&& pr : m.finite_to_finite) ss << " (" << pr.first << "," << pr.second << ")";
+    ss << "\n  a_to_diagonal:";
+    for (auto i : m.a_to_diagonal) ss << " " << i;
+    ss << "\n  b_to_diagonal:";
+    for (auto i : m.b_to_diagonal) ss << " " << i;
+    for (int k = 0; k < kNumInfKinds; ++k) {
+        ss << "\n  essential[" << names[k] << "]:";
+        for (auto&& pr : m.essential[k])
+            ss << " (" << pr.first << "," << pr.second << ")";
+    }
+    ss << "\n}";
+    return ss.str();
+}
+
+
+// Build a full bucketed Wasserstein matching by post-processing
+// `wasserstein_cost_detailed`'s flat matching:
+//   - id < 0 endpoints encode diagonal projections (-orig_id - 1);
+//   - both ids >= 0 means either finite-to-finite or essential-to-essential
+//     (distinguished by inspecting the original points).
+//
+// Throws if essentials cardinalities mismatch in any family (Hera reports
+// `cost = +inf` in that case; we surface it as an exception so callers
+// don't silently get a non-matching result).
+template<class PairContainer>
+WassersteinMatching<typename DiagramTraits<PairContainer>::RealType>
+wasserstein_matching_detailed(const PairContainer& A,
+                              const PairContainer& B,
+                              const AuctionParams<typename DiagramTraits<PairContainer>::RealType>& params_in)
+{
+    using Traits   = DiagramTraits<PairContainer>;
+    using RealType = typename Traits::RealType;
+
+    AuctionParams<RealType> params = params_in;
+    params.return_matching   = true;
+    params.match_inf_points  = true;
+
+    auto auction = wasserstein_cost_detailed(A, B, params);
+
+    WassersteinMatching<RealType> result;
+    result.cost = auction.cost;
+    result.distance = std::pow(result.cost, RealType(1) / params.wasserstein_power);
+
+    constexpr RealType plus_inf  =  std::numeric_limits<RealType>::infinity();
+    constexpr RealType minus_inf = -std::numeric_limits<RealType>::infinity();
+
+    if (result.cost == plus_inf) {
+        throw std::invalid_argument(
+            "hera::wasserstein_matching_detailed: essential point cardinalities "
+            "must match between the two diagrams in every family.");
+    }
+
+    auto classify = [&](RealType x, RealType y) -> int {
+        if (std::isfinite(x) && y == plus_inf)  return static_cast<int>(InfKind::InfDeath);
+        if (std::isfinite(x) && y == minus_inf) return static_cast<int>(InfKind::NegInfDeath);
+        if (x == plus_inf  && std::isfinite(y)) return static_cast<int>(InfKind::InfBirth);
+        if (x == minus_inf && std::isfinite(y)) return static_cast<int>(InfKind::NegInfBirth);
+        return -1;
+    };
+
+    // Identical-diagrams fast path: wasserstein_cost_detailed returns an
+    // empty AuctionResult (cost = 0, no matching). Populate the identity
+    // matching ourselves: for each off-diagonal point, pair it with the
+    // point at the same id in the other diagram (which our caller is
+    // expected to have built via numpy_to_diagram_with_pos_ids).
+    if (auction.matching_a_to_b_.empty() && result.cost == RealType(0)) {
+        for (auto&& p : A) {
+            RealType x = Traits::get_x(p);
+            RealType y = Traits::get_y(p);
+            int id = Traits::get_id(p);
+            if (x == y) continue;  // diagonal noise
+            if (std::isfinite(x) && std::isfinite(y)) {
+                result.finite_to_finite.emplace_back(id, id);
+            } else {
+                int k = classify(x, y);
+                if (k >= 0)
+                    result.essential[k].emplace_back(id, id);
+            }
+        }
+        return result;
+    }
+
+    // id -> (x, y) lookup for both diagrams. O(|A| + |B|).
+    // PairContainer iteration order isn't guaranteed to match the user-side
+    // `id`, so we can't index by position; an unordered_map is robust and
+    // more than fast enough at the sizes Hera realistically handles.
+    std::unordered_map<int, std::pair<RealType, RealType>> a_pts, b_pts;
+    a_pts.reserve(A.size());
+    b_pts.reserve(B.size());
+    for (auto&& p : A)
+        a_pts.emplace(Traits::get_id(p),
+                      std::make_pair(Traits::get_x(p), Traits::get_y(p)));
+    for (auto&& p : B)
+        b_pts.emplace(Traits::get_id(p),
+                      std::make_pair(Traits::get_x(p), Traits::get_y(p)));
+
+    for (auto&& kv : auction.matching_a_to_b_) {
+        int a_id = kv.first;
+        int b_id = kv.second;
+        if (a_id < 0 && b_id < 0) {
+            // DIAG-to-DIAG filler match between two projections; ignore.
+            continue;
+        } else if (a_id < 0) {
+            // A-side slot is a DIAG projection -> the actual point is on B.
+            result.b_to_diagonal.push_back(b_id);
+        } else if (b_id < 0) {
+            result.a_to_diagonal.push_back(a_id);
+        } else {
+            auto it = a_pts.find(a_id);
+            if (it == a_pts.end()) continue;  // defensive: unknown id
+            RealType ax = it->second.first;
+            RealType ay = it->second.second;
+            if (std::isfinite(ax) && std::isfinite(ay)) {
+                result.finite_to_finite.emplace_back(a_id, b_id);
+            } else {
+                int k = classify(ax, ay);
+                if (k >= 0)
+                    result.essential[k].emplace_back(a_id, b_id);
+            }
+        }
+    }
+
+    return result;
 }
 
 } // end of namespace hera
