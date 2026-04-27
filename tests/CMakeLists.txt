@@ -51,183 +51,68 @@ else()
     add_dependencies(tests copy_py_test_files)
     add_dependencies(tests_parallel_col_to_row copy_py_test_files)
 
-    add_test(NAME py-bindings-cells
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_cells_api.py")
-    set_tests_properties(py-bindings-cells PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    # Convention: CTest case <foo-bar> runs ${CMAKE_CURRENT_BINARY_DIR}/test_<foo_bar>.py
+    # (dashes in the test name become underscores in the file name).
 
-    add_test(NAME py-bindings-common
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_common_api.py")
-    set_tests_properties(py-bindings-common PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    # Pytest-driven tests.
+    foreach(NAME IN ITEMS
+            api-cells
+            api-common
+            api-dgm
+            api-fil
+            api-kicr
+            bot-match
+            cube
+            cube-dgm
+            dcmp-restore-elz
+            dgm-dist
+            diff-cube-fil
+            diff-grad
+            diff-wass
+            fr-dgm-random
+            fr-dgm-vertebra
+            frechet
+            ind-match
+            kicr
+            match-rv-policy
+            pickle
+            plot
+            sliced-wass
+            wass-match)
+        string(REPLACE "-" "_" STEM "${NAME}")
+        add_test(NAME py-${NAME}
+                COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_${STEM}.py")
+        set_tests_properties(py-${NAME} PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    endforeach()
 
-    add_test(NAME py-bindings-decomposition
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_decomposition_api.py" -k "not test_decomposition_diagram_overloads_cube_1d")
-    set_tests_properties(py-bindings-decomposition PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    # Decomposition API: skip the cube-1d overload until the cube path is finished.
+    add_test(NAME py-api-dcmp
+            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_api_dcmp.py" -k "not test_decomposition_diagram_overloads_cube_1d")
+    set_tests_properties(py-api-dcmp PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-    add_test(NAME py-restore-elz
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_restore_elz_parallel.py")
-    set_tests_properties(py-restore-elz PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-bindings-diagram
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_diagram_api.py")
-    set_tests_properties(py-bindings-diagram PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-diagram-distances
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_diagram_distances.py")
-    set_tests_properties(py-diagram-distances PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-frechet-mean
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_frechet_mean.py")
-    set_tests_properties(py-frechet-mean PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-bindings-filtration
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_filtration_api.py")
-    set_tests_properties(py-bindings-filtration PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-bindings-kicr
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bindings_kicr_api.py")
-    set_tests_properties(py-bindings-kicr PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-cube
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_cube.py")
-    set_tests_properties(py-cube PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-cubical-dgms
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_cubical_dgms.py")
-    set_tests_properties(py-cubical-dgms PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-induced-matching
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/induced-matching-pytest.py")
-    set_tests_properties(py-induced-matching PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-kernel
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-pytest.py")
-    set_tests_properties(py-kernel PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-sliced-wasserstein
-          COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_sliced_wasserstein_pytest.py")
-    set_tests_properties(py-sliced-wasserstein PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-differentiable-wasserstein
-          COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_differentiable_wasserstein.py")
-    set_tests_properties(py-differentiable-wasserstein PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-wasserstein-matching
-          COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_wasserstein_matching.py")
-    set_tests_properties(py-wasserstein-matching PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-bottleneck-matching
-          COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bottleneck_matching.py")
-    set_tests_properties(py-bottleneck-matching PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-plot-matching
-          COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_plot_matching.py")
-    set_tests_properties(py-plot-matching PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-matching-rv-policy
-          COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_matching_nanobind_rv_policy.py")
-    set_tests_properties(py-matching-rv-policy PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    # TODO: enable after updating to current KICR API.
-    add_test(NAME py-kernel-legacy
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-test-1.py")
-    set_tests_properties(py-kernel-legacy PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    # TODO: this file is a CLI script and not a pytest module yet.
-    # add_test(NAME py-oin
-    #         COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_oin.py")
-    # set_tests_properties(py-oin PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-oin-random
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_oin_random.py")
-    set_tests_properties(py-oin-random PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-oin-vertebra
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_oin_vertebra.py")
-    set_tests_properties(py-oin-vertebra PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    # TODO: this file has no pytest tests yet (script-style debugging helper).
-    # add_test(NAME py-kicr-legacy-1
-    #         COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_kicr_1.py")
-    # set_tests_properties(py-kicr-legacy-1 PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    # TODO: this file has no pytest tests yet (script-style debugging helper).
-    # add_test(NAME py-kicr-legacy-2
-    #         COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_kicr_2.py")
-    # set_tests_properties(py-kicr-legacy-2 PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-pickle
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_pickle.py")
-    set_tests_properties(py-pickle PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-example-cone
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_cone.py")
-    set_tests_properties(py-example-cone PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    # Script-style example tests (no pytest discovery, just run the file).
+    foreach(NAME IN ITEMS
+            example-diff-cube
+            example-diff-cyl
+            example-kicr-cyl
+            example-opt-fr
+            example-opt-vr
+            example-opt-wass)
+        string(REPLACE "-" "_" STEM "${NAME}")
+        add_test(NAME py-${NAME}
+                COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_${STEM}.py")
+        set_tests_properties(py-${NAME} PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    endforeach()
 
     # TODO: enable after fixing API issues in this example script.
     # add_test(NAME py-example-cone-diff
     #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_cone_diff.py")
     # set_tests_properties(py-example-cone-diff PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-    add_test(NAME py-example-cube
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_cube.py")
-    set_tests_properties(py-example-cube PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-example-diff-cyl
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_diff_cyl.py")
-    set_tests_properties(py-example-diff-cyl PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-example-diff-vr-dists
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_diff_vr_dists.py")
-    set_tests_properties(py-example-diff-vr-dists PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-example-diff-vr-pts
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_diff_vr_pts.py")
-    set_tests_properties(py-example-diff-vr-pts PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-example-diff-cube
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_diff_cube.py")
-    set_tests_properties(py-example-diff-cube PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
     # TODO: enable after updating to the current kernel/cokernel API.
     # add_test(NAME py-example-kernel
     #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_kernel.py")
     # set_tests_properties(py-example-kernel PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-example-kernel-cyl
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_kernel_cyl.py")
-    set_tests_properties(py-example-kernel-cyl PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-example-manual
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_manual.py")
-    set_tests_properties(py-example-manual PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-example-opt
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_opt.py")
-    set_tests_properties(py-example-opt PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-example-opt-vr
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_opt_vr.py")
-    set_tests_properties(py-example-opt-vr PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-example-vr
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_vr.py")
-    set_tests_properties(py-example-vr PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-example-wasserstein-opt
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_wasserstein_opt.py")
-    set_tests_properties(py-example-wasserstein-opt PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-differentiable-diagram
-            COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_differentiable_diagram.py")
-    set_tests_properties(py-differentiable-diagram PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-diff-cube-filtration
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_diff_cube_filtration.py")
-    set_tests_properties(py-diff-cube-filtration PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    add_test(NAME py-diff-gradients
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_diff_gradients.py")
-    set_tests_properties(py-diff-gradients PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_custom_target(py-tests
             COMMAND ${CMAKE_CTEST_COMMAND} --test-dir "${CMAKE_BINARY_DIR}" --output-on-failure -R "^py-")
