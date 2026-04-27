@@ -37,7 +37,7 @@ IntOut comb(IntIn n, IntIn k)
 template<typename IntIn, typename IntOut>
 IntOut simplex_uid(const std::vector<IntIn>& vertices)
 {
-    IntOut dim_info = (vertices.size() + 1) << (8 * sizeof(IntOut) - 4);
+    IntOut dim_info = static_cast<IntOut>(vertices.size() + 1) << (8 * sizeof(IntOut) - 4);
     IntOut uid = 0;
     for(IntIn i = 0; i < static_cast<IntIn>(vertices.size()); i++) {
         uid += comb<IntIn, IntOut>(vertices[i], i + 1);
