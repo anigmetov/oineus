@@ -935,43 +935,27 @@ def compute_diagrams_vr(data: np.ndarray, from_pwdists: bool=False, max_dim: int
     return dcmp.diagram(fil=fil, include_inf_points=include_inf_points)
 
 
-def compute_diagrams_alpha(points: np.ndarray,
-                           weights: typing.Optional[np.ndarray]=None,
-                           params: typing.Optional[ReductionParams]=None,
-                           include_inf_points: bool=True,
-                           dualize: bool=False,
-                           exact: bool=False,
-                           periodic: bool=False,
-                           compute_bounding_box: bool=True,
-                           bbox_min: typing.Optional[typing.Union[np.ndarray, typing.List[float]]]=None,
-                           bbox_max: typing.Optional[typing.Union[np.ndarray, typing.List[float]]]=None,
-                           ):
-    """Compute alpha-shape persistence diagrams.
+def _alpha_shapes_filtration(points: np.ndarray,
+                             weights: typing.Optional[np.ndarray]=None,
+                             exact: bool=False,
+                             periodic: bool=False,
+                             compute_bounding_box: bool=True,
+                             bbox_min=None,
+                             bbox_max=None,
+                             n_threads: int=1):
+    """Build an _oineus.Filtration from alpha-shape combinatorics via diode.
 
-    Args:
-        points: NumPy array of shape (n, 2) or (n, 3).
-        weights: Optional 1D array of length n. If provided, computes weighted
-            alpha-shapes (currently 3D only).
-        params: Reduction parameters. Defaults to ReductionParams().
-        include_inf_points: Include points at infinity in output diagrams.
-        dualize: If True, compute cohomology; otherwise homology.
-        exact: Passed to diode. If True, uses exact CGAL kernel.
-        periodic: If True, uses periodic alpha-shapes. Duplicate simplices
-            reported by diode are deduplicated before building the filtration.
-        compute_bounding_box: If True, use the bounding box of the data for periodic
-            otherwise diode defaults (unit box) will be used.
-        bbox_min: lexicographically smallest point of the bounding box.
-             NumPy array or list of floats. Ignored, if compute_bounding_box is True.
-             Origin will be used, if compute_bounding_box is False and bbox_min is None.
-        bbox_max: lexicographically largest point of the bounding box.
-             NumPy array or list of floats. Ignored, if compute_bounding_box is True
-
-    Returns:
-        Diagrams object indexed by homology dimension.
+    Internal helper shared by compute_diagrams_alpha and the differentiable
+    Cech-Delaunay path. The filtration values produced here are alpha values
+    from diode; downstream callers may overwrite them (e.g. with squared MEB
+    radii in the differentiable case).
     """
-    if params is None:
-        params = _oineus.ReductionParams()
-    assert _HAS_DIODE, "Cannot compute alpha-shapes without diode"
+    if not _HAS_DIODE:
+        raise ImportError(
+            "Alpha-shape construction requires the `diode` package "
+            "(https://github.com/mrzv/diode). Install it via "
+            "`pip install diode` or build from source."
+        )
     assert points.ndim == 2
     assert points.shape[1] in [2, 3], "Alpha-shapes only support 2D and 3D point clouds"
 
@@ -1010,10 +994,58 @@ def compute_diagrams_alpha(points: np.ndarray,
         else:
             fil_diode = diode.fill_alpha_shapes(points, exact=exact)
 
-    fil = _oineus.Filtration(
+    return _oineus.Filtration(
         fil_diode,
         duplicates_possible=periodic,
-        n_threads=params.n_threads
+        n_threads=n_threads,
+    )
+
+
+def compute_diagrams_alpha(points: np.ndarray,
+                           weights: typing.Optional[np.ndarray]=None,
+                           params: typing.Optional[ReductionParams]=None,
+                           include_inf_points: bool=True,
+                           dualize: bool=False,
+                           exact: bool=False,
+                           periodic: bool=False,
+                           compute_bounding_box: bool=True,
+                           bbox_min: typing.Optional[typing.Union[np.ndarray, typing.List[float]]]=None,
+                           bbox_max: typing.Optional[typing.Union[np.ndarray, typing.List[float]]]=None,
+                           ):
+    """Compute alpha-shape persistence diagrams.
+
+    Args:
+        points: NumPy array of shape (n, 2) or (n, 3).
+        weights: Optional 1D array of length n. If provided, computes weighted
+            alpha-shapes (currently 3D only).
+        params: Reduction parameters. Defaults to ReductionParams().
+        include_inf_points: Include points at infinity in output diagrams.
+        dualize: If True, compute cohomology; otherwise homology.
+        exact: Passed to diode. If True, uses exact CGAL kernel.
+        periodic: If True, uses periodic alpha-shapes. Duplicate simplices
+            reported by diode are deduplicated before building the filtration.
+        compute_bounding_box: If True, use the bounding box of the data for periodic
+            otherwise diode defaults (unit box) will be used.
+        bbox_min: lexicographically smallest point of the bounding box.
+             NumPy array or list of floats. Ignored, if compute_bounding_box is True.
+             Origin will be used, if compute_bounding_box is False and bbox_min is None.
+        bbox_max: lexicographically largest point of the bounding box.
+             NumPy array or list of floats. Ignored, if compute_bounding_box is True
+
+    Returns:
+        Diagrams object indexed by homology dimension.
+    """
+    if params is None:
+        params = _oineus.ReductionParams()
+    fil = _alpha_shapes_filtration(
+        points,
+        weights=weights,
+        exact=exact,
+        periodic=periodic,
+        compute_bounding_box=compute_bounding_box,
+        bbox_min=bbox_min,
+        bbox_max=bbox_max,
+        n_threads=params.n_threads,
     )
     dcmp = _oineus.Decomposition(fil, dualize)
     dcmp.reduce(params)

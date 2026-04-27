@@ -1,9 +1,8 @@
 import time
 import numpy as np
 import torch
-import diode
 
-from .. import _oineus
+from .. import _alpha_shapes_filtration
 from .diff_filtration import DiffFiltration
 
 def triangle_meb(p0, p1, p2, eps=1e-12):
@@ -173,20 +172,29 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False):
     return centers, min_radii_sq
 
 
-def cech_delaunay_filtration(alpha_fil, points, eps=0.0, print_time: bool=False):
-    """
-    :param alpha_fil: Alpha filtration from diode or oineus
-    :param points: Tensor of point coordinates
-    :param eps: Small value for numerical stability
-    :return: differentiable Cech-Delaunay filtration
+def cech_delaunay_filtration(points, eps: float = 0.0, print_time: bool = False):
+    """Build a differentiable Cech-Delaunay filtration from a point cloud.
+
+    The combinatorics of the alpha complex are computed via diode (CGAL); the
+    filtration values are recomputed differentiably as squared minimum
+    enclosing ball radii of each simplex, so gradients flow back to ``points``.
+
+    Args:
+        points: ``(n, d)`` torch.Tensor with ``d in {2, 3}``. Differentiable.
+        eps: Small value for numerical stability in the MEB computation.
+        print_time: If True, print per-stage timings.
+
+    Returns:
+        DiffFiltration whose values are squared MEB radii.
     """
     if print_time:
         start = time.time()
-    if type(alpha_fil) is not _oineus.Filtration:
-        alpha_fil = _oineus.Filtration([_oineus.Simplex(vs, val) for vs, val in alpha_fil])
+
+    points_np = points.detach().cpu().numpy()
+    alpha_fil = _alpha_shapes_filtration(points_np)
     if print_time:
         elapsed = time.time() - start
-        print(f"alpha_fil conversion elapsed: {elapsed:.3f}")
+        print(f"alpha_fil construction elapsed: {elapsed:.3f}")
 
     if print_time:
         start = time.time()

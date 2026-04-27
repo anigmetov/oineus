@@ -84,7 +84,8 @@ class PersistenceDiagrams:
     """
 
     def __init__(self, fil: DiffFiltration, dualize: bool, include_inf_points: bool,
-                 gradient_method: str, lr: float, conflict_strategy: str, rp = None):
+                 gradient_method: str, lr: float, conflict_strategy: str, rp = None,
+                 n_threads = None):
         if not isinstance(fil.values, torch.Tensor):
             raise TypeError("fil.values must be a torch.Tensor for differentiable diagrams")
 
@@ -93,7 +94,10 @@ class PersistenceDiagrams:
 
         self._fil = fil
         self._dualize = dualize
-        dcmp = _oineus.Decomposition(fil.under_fil, dualize=dualize)
+        if n_threads is None:
+            dcmp = _oineus.Decomposition(fil.under_fil, dualize=dualize)
+        else:
+            dcmp = _oineus.Decomposition(fil.under_fil, dualize=dualize, n_threads=n_threads)
         dcmp.reduce(rp)
         if dualize:
             self._dcmp_coh, self._dcmp_hom = dcmp, None
@@ -161,7 +165,8 @@ def persistence_diagram(
     include_inf_points: bool = False,
     gradient_method: str = "dgm-loss",
     lr: float = 1.0,
-    conflict_strategy: str = "avg"
+    conflict_strategy: str = "avg",
+    n_threads = None,
 ) -> PersistenceDiagrams:
     """
     Compute differentiable persistence diagrams from a DiffFiltration.
@@ -206,5 +211,6 @@ def persistence_diagram(
         include_inf_points=include_inf_points,
         gradient_method=gradient_method,
         lr=lr,
-        conflict_strategy=conflict_strategy
+        conflict_strategy=conflict_strategy,
+        n_threads=n_threads,
     )
