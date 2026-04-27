@@ -332,15 +332,6 @@ class TestEmptyDiagrams:
         assert matching.distance > 0
 
 
-# TODO: wasserstein_matching has no fast-path for near-equal inputs
-# (wasserstein_distance does, via _diagram_arrays_equal_for_zero_check). Under
-# float32 the auction spins on these inputs because Hera's relative termination
-# criterion can't make progress when the true cost is below precision. Skip
-# under float32 until the wrapper or Hera grows an eps-tolerant equality check.
-@pytest.mark.skipif(
-    REAL_DTYPE == np.float32,
-    reason="wasserstein_matching wrapper hangs on near-equal inputs in float32 build",
-)
 class TestNearIdenticalDiagrams:
     """Regression: near-identical (ULP-level) inputs used to hang Hera's
     auction because its termination criterion is relative and the true

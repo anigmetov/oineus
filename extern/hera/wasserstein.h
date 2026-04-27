@@ -39,6 +39,7 @@ derivative works thereof, in binary and source code form.
 #include <unordered_map>
 #include <utility>
 #include <algorithm>
+#include <type_traits>
 
 #include "wasserstein/def_debug_ws.h"
 #include "wasserstein/basic_defs_ws.h"
@@ -65,9 +66,10 @@ namespace ws
     // against a near-zero true cost — an unsatisfiable termination
     // criterion that makes the auction spin forever.
     //
-    // The threshold below is the same convention used elsewhere in the
-    // pipeline (Oineus's matching fast path uses 1e-10): well above ULP
-    // noise, well below any meaningful Wasserstein distance.
+    // The threshold scales with RealType precision: 1e-10 for double (well
+    // below any meaningful Wasserstein distance, well above float64 ULP),
+    // 1e-5 for float (above the float32 ULP floor, still negligible compared
+    // to typical Wasserstein distances).
     template<class PairContainer>
     inline bool are_equal(const PairContainer& dgm1, const PairContainer& dgm2)
     {
@@ -75,7 +77,8 @@ namespace ws
         using PointType = typename Traits::PointType;
         using RealType = typename Traits::RealType;
 
-        constexpr RealType eps = RealType(1e-10);
+        constexpr RealType eps = std::is_same<RealType, float>::value
+                                 ? RealType(1e-5) : RealType(1e-10);
 
         auto coord_eq = [eps](RealType a, RealType b) -> bool {
             if (std::isinf(a) || std::isinf(b))
