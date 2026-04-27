@@ -144,11 +144,12 @@ def test_wasserstein_distance_accepts_list_and_numpy():
     dgm_1_np = np.array([[0.0, 3.0]], dtype=np.float64)
     dgm_2_np = np.array([[1.0, 5.0]], dtype=np.float64)
 
-    ws_inf_list = oin.wasserstein_distance(dgm_1_list, dgm_2_list, q=2.0, delta=0.0, internal_p=np.inf)
-    ws_inf_np = oin.wasserstein_distance(dgm_1_np, dgm_2_np, q=2.0, delta=0.0, internal_p=np.inf)
-    ws_l1_list = oin.wasserstein_distance(dgm_1_list, dgm_2_list, q=2.0, delta=0.0, internal_p=1.0)
-    ws_l1_np = oin.wasserstein_distance(dgm_1_np, dgm_2_np, q=2.0, delta=0.0, internal_p=1.0)
-    ws_l1_alias = oin.wasserstein_distance(dgm_1_np, dgm_2_np, wasserstein_q=2.0, delta=0.0, internal_p=1.0)
+    # delta must be > 0 for Wasserstein (the auction has no exact mode).
+    ws_inf_list = oin.wasserstein_distance(dgm_1_list, dgm_2_list, q=2.0, delta=0.01, internal_p=np.inf)
+    ws_inf_np = oin.wasserstein_distance(dgm_1_np, dgm_2_np, q=2.0, delta=0.01, internal_p=np.inf)
+    ws_l1_list = oin.wasserstein_distance(dgm_1_list, dgm_2_list, q=2.0, delta=0.01, internal_p=1.0)
+    ws_l1_np = oin.wasserstein_distance(dgm_1_np, dgm_2_np, q=2.0, delta=0.01, internal_p=1.0)
+    ws_l1_alias = oin.wasserstein_distance(dgm_1_np, dgm_2_np, wasserstein_q=2.0, delta=0.01, internal_p=1.0)
 
     assert ws_inf_list == pytest.approx(ws_inf_np, abs=1e-12)
     assert np.isfinite(ws_inf_list)
@@ -165,24 +166,26 @@ def test_distance_functions_accept_oineus_diagrams_with_dim():
 
     dgm_dim_0 = dgms[0]
 
-    bt = oin.bottleneck_distance(dgms, dgm_dim_0, dim=0, delta=0.0)
-    ws = oin.wasserstein_distance(dgms, dgm_dim_0, dim=0, q=2.0, delta=1e-3, internal_p=np.inf)
+    bt = oin.bottleneck_distance(dgms.in_dimension(0), dgm_dim_0, delta=0.0)
+    ws = oin.wasserstein_distance(dgms.in_dimension(0), dgm_dim_0, q=2.0, delta=1e-3, internal_p=np.inf)
 
     assert bt == pytest.approx(0.0, abs=1e-12)
     assert ws == pytest.approx(0.0, abs=1e-12)
 
 
-def test_distance_functions_require_dim_for_multidim_oineus_diagrams():
+def test_distance_functions_reject_multidim_oineus_diagrams():
     fil = _make_simplex_filtration()
     dcmp = oin.Decomposition(fil, dualize=False, n_threads=1)
     params = oin.ReductionParams()
     dcmp.reduce(params)
     dgms = dcmp.diagram(fil, include_inf_points=True)
 
-    with pytest.raises(ValueError, match="specify dim"):
+    # Multi-dim Diagrams must be reduced to a single dimension by the caller
+    # via dgm.in_dimension(d) before passing to a distance function.
+    with pytest.raises(TypeError, match="single-dimension"):
         _ = oin.bottleneck_distance(dgms, dgms)
 
-    with pytest.raises(ValueError, match="specify dim"):
+    with pytest.raises(TypeError, match="single-dimension"):
         _ = oin.wasserstein_distance(dgms, dgms)
 
 

@@ -346,12 +346,14 @@ class TestNearIdenticalDiagrams:
         db = oineus.compute_diagrams_vr(points_b, max_dim=1)
 
         # Used to hang. Should now return promptly with near-zero distance.
-        m = oineus.wasserstein_matching(da, db, q=2.0, delta=0.01, dim=0)
+        m = oineus.wasserstein_matching(da.in_dimension(0), db.in_dimension(0),
+                                        q=2.0, delta=0.01)
         assert m.distance < 1e-6
         assert m.cost < 1e-6
 
         # Standalone wasserstein_distance used to hang on the same input.
-        d = oineus.wasserstein_distance(da, db, q=2.0, delta=0.01, dim=0)
+        d = oineus.wasserstein_distance(da.in_dimension(0), db.in_dimension(0),
+                                        q=2.0, delta=0.01)
         assert d < 1e-6
 
     def test_ulp_perturbed_diagrams_no_hang(self):

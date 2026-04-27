@@ -16,10 +16,14 @@ def test_distance_values_for_simple_case():
     dgm_2 = np.array([[0.0, 3.2]], dtype=np.float64)
 
     bt = oin.bottleneck_distance(dgm_1, dgm_2, delta=0.0)
-    ws_l1 = oin.wasserstein_distance(dgm_1, dgm_2, q=2.0, delta=0.0, internal_p=1.0)
+    # Wasserstein has no exact mode; delta=0 is rejected by Hera. Use a tight
+    # positive tolerance and check the result against the analytical value
+    # within that relative window.
+    delta = 1e-6
+    ws_l1 = oin.wasserstein_distance(dgm_1, dgm_2, q=2.0, delta=delta, internal_p=1.0)
 
     assert bt == pytest.approx(0.2, abs=1e-12)
-    assert ws_l1 == pytest.approx(0.2, abs=1e-12)
+    assert ws_l1 == pytest.approx(0.2, rel=delta * 10)
 
 
 def test_wasserstein_zero_fast_path_skips_cpp(monkeypatch):

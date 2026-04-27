@@ -287,53 +287,38 @@ def _resolve_multistart_seed(diagrams,
     raise ValueError(f"Unknown Fréchet-mean seed '{seed}'")
 
 
-def _prepare_distance_args(dgm_1, dgm_2, dim):
-    """Coerce inputs into one of the C++ overloads' supported shapes.
+def _prepare_distance_args(dgm_1, dgm_2):
+    """Coerce two single-dimension diagram inputs for the C++ distance entry.
 
-    Returns either ``(Diagrams, Diagrams, dim)`` — when both are Diagrams —
-    or ``(x, y)`` where each of ``x``, ``y`` is a list/numpy and nanobind will
-    pick the matching overload. Mixed Diagrams + numpy/list is resolved by
-    extracting the named ``dim`` slice from the Diagrams side.
+    Both inputs must be a numpy ``(n, 2)`` array or a ``list[DiagramPoint]``.
+    A multi-dimensional ``oineus.Diagrams`` is rejected — the caller must
+    extract a single dimension first via ``dgm.in_dimension(d)``.
     """
-    dgm_1 = as_real_numpy(_check_numpy_diagram_shape(dgm_1))
-    dgm_2 = as_real_numpy(_check_numpy_diagram_shape(dgm_2))
-    is_d1 = isinstance(dgm_1, Diagrams)
-    is_d2 = isinstance(dgm_2, Diagrams)
-
-    if is_d1 and is_d2:
-        if dim is None:
-            raise ValueError("When passing oineus.Diagrams, specify dim=...")
-        return (dgm_1, dgm_2, dim)
-
-    if is_d1:
-        if dim is None:
-            raise ValueError("When passing oineus.Diagrams, specify dim=...")
-        dgm_1 = dgm_1.in_dimension(dim, as_numpy=True)
-    if is_d2:
-        if dim is None:
-            raise ValueError("When passing oineus.Diagrams, specify dim=...")
-        dgm_2 = dgm_2.in_dimension(dim, as_numpy=True)
-
-    return (dgm_1, dgm_2)
+    def coerce(dgm):
+        if isinstance(dgm, Diagrams):
+            raise TypeError(
+                "Pass a single-dimension diagram: use `dgm.in_dimension(d)` "
+                "instead of passing the multi-dimensional Diagrams object.")
+        return as_real_numpy(_check_numpy_diagram_shape(dgm))
+    return (coerce(dgm_1), coerce(dgm_2))
 
 
-def bottleneck_distance(dgm_1, dgm_2, delta: float=0.01, dim: typing.Optional[int]=None):
+def bottleneck_distance(dgm_1, dgm_2, delta: float=0.01):
     """Compute the bottleneck distance between two persistence diagrams.
 
     Args:
-        dgm_1: Persistence diagram as either `list[DiagramPoint]`, an Oineus
-            `Diagrams` object, or a NumPy array with shape `(n_points, 2)`.
-        dgm_2: Persistence diagram as either `list[DiagramPoint]`, an Oineus
-            `Diagrams` object, or a NumPy array with shape `(n_points, 2)`.
+        dgm_1: Single-dimension persistence diagram: a NumPy array of shape
+            ``(n_points, 2)`` or a ``list[DiagramPoint]``. To pass an Oineus
+            ``Diagrams`` object, extract the dimension first via
+            ``dgm.in_dimension(d)``.
+        dgm_2: Same forms as ``dgm_1``.
         delta: Relative error requested from Hera. Set `delta=0.0` to request
             the exact bottleneck distance.
-        dim: Homology dimension to extract when `dgm_1` or `dgm_2` is an
-            Oineus `Diagrams` object.
 
     Returns:
         The bottleneck distance as a Python float.
     """
-    return _bottleneck_distance_cpp(*_prepare_distance_args(dgm_1, dgm_2, dim), delta=delta)
+    return _bottleneck_distance_cpp(*_prepare_distance_args(dgm_1, dgm_2), delta=delta)
 
 
 def _diagram_arrays_equal_for_zero_check(dgm_1, dgm_2):
@@ -372,15 +357,15 @@ def _diagram_arrays_equal_for_zero_check(dgm_1, dgm_2):
 
 def wasserstein_distance(dgm_1, dgm_2, q: float=2.0, delta: float=0.01, internal_p: float=np.inf,
                          wasserstein_q: typing.Optional[float]=None,
-                         check_for_zero: bool=True,
-                         dim: typing.Optional[int]=None):
+                         check_for_zero: bool=True):
     """Compute the q-Wasserstein distance between two persistence diagrams.
 
     Args:
-        dgm_1: Persistence diagram as either `list[DiagramPoint]`, an Oineus
-            `Diagrams` object, or a NumPy array with shape `(n_points, 2)`.
-        dgm_2: Persistence diagram as either `list[DiagramPoint]`, an Oineus
-            `Diagrams` object, or a NumPy array with shape `(n_points, 2)`.
+        dgm_1: Single-dimension persistence diagram: a NumPy array of shape
+            ``(n_points, 2)`` or a ``list[DiagramPoint]``. To pass an Oineus
+            ``Diagrams`` object, extract the dimension first via
+            ``dgm.in_dimension(d)``.
+        dgm_2: Same forms as ``dgm_1``.
         q: Wasserstein exponent.
         delta: Relative error requested from Hera.
         internal_p: Ground-metric norm in the plane. Use `np.inf` for the
@@ -388,8 +373,6 @@ def wasserstein_distance(dgm_1, dgm_2, q: float=2.0, delta: float=0.01, internal
         wasserstein_q: Alias for `q`, kept for API compatibility.
         check_for_zero: If `True`, skip Hera when the two inputs are numpy
             arrays of equal points.
-        dim: Homology dimension to extract when `dgm_1` or `dgm_2` is an
-            Oineus `Diagrams` object.
 
     Returns:
         The Wasserstein distance as a Python float.
@@ -399,9 +382,9 @@ def wasserstein_distance(dgm_1, dgm_2, q: float=2.0, delta: float=0.01, internal
     if np.isinf(internal_p):
         internal_p = -1.0
 
-    prepared = _prepare_distance_args(dgm_1, dgm_2, dim)
+    prepared = _prepare_distance_args(dgm_1, dgm_2)
 
-    if check_for_zero and len(prepared) == 2 and _diagram_arrays_equal_for_zero_check(*prepared):
+    if check_for_zero and _diagram_arrays_equal_for_zero_check(*prepared):
         return 0.0
 
     return _wasserstein_distance_cpp(*prepared, q=q, delta=delta, internal_p=internal_p)

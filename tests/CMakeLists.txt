@@ -115,6 +115,18 @@ else()
           COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_wasserstein_matching.py")
     set_tests_properties(py-wasserstein-matching PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
+    add_test(NAME py-bottleneck-matching
+          COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_bottleneck_matching.py")
+    set_tests_properties(py-bottleneck-matching PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
+    add_test(NAME py-plot-matching
+          COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_plot_matching.py")
+    set_tests_properties(py-plot-matching PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
+    add_test(NAME py-matching-rv-policy
+          COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_matching_nanobind_rv_policy.py")
+    set_tests_properties(py-matching-rv-policy PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
     # TODO: enable after updating to current KICR API.
     add_test(NAME py-kernel-legacy
             COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/kernel-test-1.py")

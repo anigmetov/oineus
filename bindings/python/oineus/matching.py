@@ -93,19 +93,21 @@ def point_to_diagonal(dgm, indices=None):
     return result
 
 
-def _to_matching_array(dgm, dim):
-    """Coerce a diagram input to a ``(n, 2)`` ndarray.
+def _to_matching_array(dgm):
+    """Coerce a single-dimension diagram input to a ``(n, 2)`` ndarray.
 
-    Accepts: numpy ``(n, 2)`` arrays, ``oineus.Diagrams`` (with ``dim``), and
-    ``list[DiagramPoint]`` (e.g. the output of ``in_dimension(d, as_numpy=False)``).
+    Accepts: numpy ``(n, 2)`` arrays and ``list[DiagramPoint]`` (e.g.
+    the output of ``Diagrams.in_dimension(d, as_numpy=False)``).
+    Multi-dimensional ``oineus.Diagrams`` is rejected — the caller must
+    extract a single dimension first via ``dgm.in_dimension(d)``.
     """
     # Local import to avoid circular dependency with oineus/__init__.py.
     from . import _check_numpy_diagram_shape
 
     if hasattr(dgm, "in_dimension"):  # oineus.Diagrams
-        if dim is None:
-            raise ValueError("When passing oineus.Diagrams, specify dim=...")
-        return dgm.in_dimension(dim, as_numpy=True)
+        raise TypeError(
+            "Pass a single-dimension diagram: use `dgm.in_dimension(d)` "
+            "instead of passing the multi-dimensional Diagrams object.")
     if isinstance(dgm, list):
         if len(dgm) == 0:
             return np.zeros((0, 2), dtype=REAL_DTYPE)
@@ -121,15 +123,16 @@ def wasserstein_matching(
     delta: float = 0.01,
     internal_p: float = np.inf,
     ignore_inf_points: bool = True,
-    dim: typing.Optional[int] = None,
 ) -> DiagramMatching:
     """Compute the optimal q-Wasserstein matching between two persistence diagrams.
 
     Parameters
     ----------
-    dgm_1, dgm_2 : array-like or oineus.Diagrams
-        Persistence diagrams as ``(n_points, 2)`` arrays of (birth, death) or
-        as ``oineus.Diagrams`` objects (in which case ``dim`` is required).
+    dgm_1, dgm_2 : array-like or list[DiagramPoint]
+        Single-dimension persistence diagrams: a ``(n_points, 2)`` numpy
+        array of (birth, death), or a ``list[DiagramPoint]``. To pass an
+        ``oineus.Diagrams`` object, extract the dimension first via
+        ``dgm.in_dimension(d)``.
     q : float, default 2.0
         Wasserstein exponent. ``distance == cost ** (1/q)``.
     delta : float, default 0.01
@@ -142,9 +145,6 @@ def wasserstein_matching(
         If True, essential (infinite-coordinate) points are dropped. If False,
         each of the four essential families must have equal cardinality on
         both sides; otherwise ValueError is raised.
-    dim : int, optional
-        Homology dimension to extract when an input is an ``oineus.Diagrams``
-        object.
 
     Returns
     -------
@@ -178,8 +178,8 @@ def wasserstein_matching(
     >>> m.essential[oineus.InfKind.INF_DEATH].tolist()
     [[1, 1]]
     """
-    dgm_1 = _to_matching_array(dgm_1, dim)
-    dgm_2 = _to_matching_array(dgm_2, dim)
+    dgm_1 = _to_matching_array(dgm_1)
+    dgm_2 = _to_matching_array(dgm_2)
     internal_p_hera = -1.0 if np.isinf(internal_p) else internal_p
     return _oineus.wasserstein_matching_detailed(
         dgm_1, dgm_2,
@@ -196,7 +196,6 @@ def bottleneck_matching(
     *,
     delta: float = 0.01,
     ignore_inf_points: bool = True,
-    dim: typing.Optional[int] = None,
 ) -> BottleneckMatching:
     """Compute the optimal bottleneck matching between two persistence diagrams.
 
@@ -214,8 +213,8 @@ def bottleneck_matching(
     >>> len(m.longest.finite)
     1
     """
-    dgm_1 = _to_matching_array(dgm_1, dim)
-    dgm_2 = _to_matching_array(dgm_2, dim)
+    dgm_1 = _to_matching_array(dgm_1)
+    dgm_2 = _to_matching_array(dgm_2)
     return _oineus.bottleneck_matching_detailed(
         dgm_1, dgm_2,
         delta=delta,

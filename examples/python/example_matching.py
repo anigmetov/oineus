@@ -250,14 +250,10 @@ oineus.plot_matching(
 # ---------------------------------------------------------------------------
 # Section 5 — Native Oineus diagram inputs (no numpy conversion needed)
 # ---------------------------------------------------------------------------
-# The matching functions accept three input forms:
-#   1. numpy (n, 2) arrays                             — used in sections 1-4
-#   2. an oineus.Diagrams object plus dim=...          — what reduce produces
-#   3. list[DiagramPoint]                              — what
-#                                                       Diagrams.in_dimension(
-#                                                       d, as_numpy=False)
-#                                                       returns
-# Verify all three work end-to-end.
+# The matching functions accept single-dimension diagrams as numpy arrays
+# (used in sections 1-4) or as list[DiagramPoint] (the result of
+# Diagrams.in_dimension(d, as_numpy=False)). To pass a multi-dim
+# oineus.Diagrams, extract a single dimension first via in_dimension(d).
 
 rng = np.random.default_rng(0)
 points_a = rng.random((20, 2))
@@ -266,18 +262,10 @@ points_b = points_a + 0.02
 diagrams_a = oineus.compute_diagrams_vr(points_a, max_dim=1)
 diagrams_b = oineus.compute_diagrams_vr(points_b, max_dim=1)
 
-# (2) Pass full Diagrams objects + dim.
-oineus.wasserstein_matching(diagrams_a, diagrams_b, q=2.0, delta=0.01, dim=0)
-oineus.bottleneck_matching(diagrams_a, diagrams_b, delta=0.0, dim=0)
-
-# (3) Pass list[DiagramPoint] (in_dimension with as_numpy=False).
+# Pass list[DiagramPoint] (in_dimension with as_numpy=False).
 list_a = diagrams_a.in_dimension(0, as_numpy=False)
 list_b = diagrams_b.in_dimension(0, as_numpy=False)
 oineus.wasserstein_matching(list_a, list_b, q=2.0, delta=0.01)
 oineus.bottleneck_matching(list_a, list_b, delta=0.0)
-
-# (cross check) Mix-and-match: numpy on one side, Diagrams on the other.
-arr_a = diagrams_a.in_dimension(0, as_numpy=True)
-oineus.wasserstein_matching(arr_a, diagrams_b, q=2.0, delta=0.01, dim=0)
 
 plt.show()
