@@ -2,6 +2,7 @@ import pickle
 
 import numpy as np
 import oineus as oin
+from oineus._dtype import REAL_DTYPE
 
 
 def test_combinatorial_simplex_api():
@@ -131,7 +132,7 @@ def test_griddomain_3d_api():
 
 
 def test_grid_1d_api():
-    data = np.array([0.0, 1.0], dtype=float)
+    data = np.array([0.0, 1.0], dtype=REAL_DTYPE)
     grid = oin.Grid_1D(data, wrap=False, values_on="vertices")
 
     _ = grid.data_location
@@ -142,7 +143,7 @@ def test_grid_1d_api():
 
 
 def test_grid_2d_api():
-    data = np.zeros((2, 2), dtype=float)
+    data = np.zeros((2, 2), dtype=REAL_DTYPE)
     grid = oin.Grid_2D(data, wrap=False, values_on="vertices")
 
     _ = grid.data_location
@@ -153,7 +154,7 @@ def test_grid_2d_api():
 
 
 def test_grid_3d_api():
-    data = np.zeros((2, 2, 2), dtype=float)
+    data = np.zeros((2, 2, 2), dtype=REAL_DTYPE)
     grid = oin.Grid_3D(data, wrap=False, values_on="vertices")
 
     _ = grid.data_location

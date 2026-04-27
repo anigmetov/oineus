@@ -12,6 +12,11 @@ from oineus import (
     bottleneck_matching,
     bottleneck_distance,
 )
+from oineus._dtype import REAL_DTYPE
+
+# Bottleneck is exact, but Hera computes in REAL_DTYPE so non-machine-representable
+# answers (e.g. 0.2 in float32) carry roundoff at the precision floor.
+ABS_TOL = 1e-9 if REAL_DTYPE == np.float64 else 1e-5
 
 
 class TestBasic:
@@ -40,7 +45,7 @@ class TestFiniteMatching:
         dgm_b = np.array([[1.0, 6.0]])
         # bottleneck L-inf: matching A0<->B0 gives distance 1.0 (cheaper than both to diag at 2.5).
         m = bottleneck_matching(dgm_a, dgm_b, delta=0.0)
-        assert m.distance == pytest.approx(1.0, abs=1e-9)
+        assert m.distance == pytest.approx(1.0, abs=ABS_TOL)
         assert len(m.finite_to_finite) == 1
         assert len(m.longest.finite) == 1
 
@@ -48,14 +53,14 @@ class TestFiniteMatching:
         assert isinstance(e, FiniteLongestEdge)
         assert e.idx_a == 0
         assert e.idx_b == 0
-        assert e.length == pytest.approx(1.0, abs=1e-9)
+        assert e.length == pytest.approx(1.0, abs=ABS_TOL)
 
     def test_match_to_diagonal(self):
         # Single low-persistence point vs empty: must match to diagonal.
         dgm_a = np.array([[0.0, 0.5]])
         dgm_b = np.empty((0, 2))
         m = bottleneck_matching(dgm_a, dgm_b, delta=0.0)
-        assert m.distance == pytest.approx(0.25, abs=1e-9)
+        assert m.distance == pytest.approx(0.25, abs=ABS_TOL)
         assert m.a_to_diagonal.tolist() == [0]
         assert len(m.longest.finite) == 1
         e = m.longest.finite[0]
@@ -69,7 +74,7 @@ class TestFiniteMatching:
         dgm_a = np.array([[0.0, 1.0], [10.0, 11.0]])
         dgm_b = np.array([[1.0, 2.0], [11.0, 12.0]])
         m = bottleneck_matching(dgm_a, dgm_b, delta=0.0)
-        assert m.distance == pytest.approx(0.5, abs=1e-9)
+        assert m.distance == pytest.approx(0.5, abs=ABS_TOL)
         # Full matching: every point matched to its own diagonal.
         assert sorted(m.a_to_diagonal.tolist()) == [0, 1]
         assert sorted(m.b_to_diagonal.tolist()) == [0, 1]
@@ -77,7 +82,7 @@ class TestFiniteMatching:
         # All four edges tied for the bottleneck.
         assert len(m.longest.finite) == 4
         for e in m.longest.finite:
-            assert e.length == pytest.approx(0.5, abs=1e-9)
+            assert e.length == pytest.approx(0.5, abs=ABS_TOL)
             assert (e.idx_a is None) ^ (e.idx_b is None)  # exactly one side diagonal
 
 
@@ -98,7 +103,7 @@ class TestEssential:
         assert e[0].idx_b == 1
         assert e[0].coord_a == pytest.approx(0.5)
         assert e[0].coord_b == pytest.approx(0.7)
-        assert e[0].length == pytest.approx(0.2, abs=1e-9)
+        assert e[0].length == pytest.approx(0.2, abs=ABS_TOL)
 
     def test_essential_cardinality_mismatch_raises(self):
         dgm_a = np.array([[0.0, 1.0], [0.5, np.inf]])
@@ -111,11 +116,11 @@ class TestEssential:
         dgm_a = np.array([[0.0, 1.0], [0.5, np.inf]])
         dgm_b = np.array([[0.1, 0.9], [5.0, np.inf]])  # essential gap = 4.5
         m = bottleneck_matching(dgm_a, dgm_b, delta=0.0, ignore_inf_points=False)
-        assert m.distance == pytest.approx(4.5, abs=1e-9)
+        assert m.distance == pytest.approx(4.5, abs=ABS_TOL)
         # Essential longest records the 4.5-long edge.
         ess = m.longest.essential.inf_death
         assert len(ess) == 1
-        assert ess[0].length == pytest.approx(4.5, abs=1e-9)
+        assert ess[0].length == pytest.approx(4.5, abs=ABS_TOL)
         # Finite longest is still populated with the finite-part's local max.
         assert len(m.longest.finite) >= 1
         for e in m.longest.finite:
@@ -135,7 +140,7 @@ class TestCrossCheck:
         dgm_b = np.array([[0.2, 2.5], [0.7, 3.9]])
         bd = bottleneck_distance(dgm_a, dgm_b, delta=0.0)
         m = bottleneck_matching(dgm_a, dgm_b, delta=0.0)
-        assert m.distance == pytest.approx(bd, abs=1e-9)
+        assert m.distance == pytest.approx(bd, abs=ABS_TOL)
 
     def test_approx_distance_within_delta(self):
         rng = np.random.default_rng(42)
@@ -148,8 +153,8 @@ class TestCrossCheck:
         exact = bottleneck_distance(dgm_a, dgm_b, delta=0.0)
         m = bottleneck_matching(dgm_a, dgm_b, delta=0.01)
         # Approx answer is within (1+delta) of exact.
-        assert m.distance <= exact * (1 + 0.01 + 1e-9)
-        assert m.distance >= exact * (1 - 0.01 - 1e-9)
+        assert m.distance <= exact * (1 + 0.01 + ABS_TOL)
+        assert m.distance >= exact * (1 - 0.01 - ABS_TOL)
 
 
 class TestTypeAPI:

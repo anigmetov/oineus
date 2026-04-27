@@ -4,16 +4,29 @@ import pytest
 
 import oineus as oin
 import oineus.diff as od
+from oineus._dtype import REAL_DTYPE
 
 try:
     import torch
     HAS_TORCH = True
+    TORCH_DTYPE = torch.float32 if REAL_DTYPE == np.float32 else torch.float64
 except ImportError:
     HAS_TORCH = False
+    TORCH_DTYPE = None
+
+# Tolerances follow Real precision: float32 FD has ~1e-3 truncation noise.
+if REAL_DTYPE == np.float32:
+    FD_EPS = 1e-3
+    FD_ATOL = 1e-2
+    FD_RTOL = 1e-2
+else:
+    FD_EPS = 1e-6
+    FD_ATOL = 1e-5
+    FD_RTOL = 1e-5
 
 
 def _random_grid(rng, shape):
-    return rng.uniform(-1.0, 1.0, size=shape).astype(np.float64)
+    return rng.uniform(-1.0, 1.0, size=shape).astype(REAL_DTYPE)
 
 
 @pytest.mark.parametrize("shape", [(7,), (4, 5), (3, 4, 3)])
@@ -44,13 +57,13 @@ def test_fil_equivalent_to_non_diff(shape, values_on, negate):
 
 
 def test_wrap_rejected():
-    data = np.zeros((3, 3), dtype=np.float64)
+    data = np.zeros((3, 3), dtype=REAL_DTYPE)
     with pytest.raises(RuntimeError, match="wrap"):
         od.cube_filtration(data, wrap=True)
 
 
 def test_unsupported_ndim_rejected():
-    data = np.zeros((2, 2, 2, 2), dtype=np.float64)
+    data = np.zeros((2, 2, 2, 2), dtype=REAL_DTYPE)
     with pytest.raises(RuntimeError, match="ndim"):
         od.cube_filtration(data)
 
@@ -78,17 +91,16 @@ def test_torch_autograd_finite_difference():
     loss.backward()
     grad_auto = data.grad.clone().detach().numpy()
 
-    eps = 1e-6
     grad_fd = np.zeros_like(data_np)
     for idx in np.ndindex(data_np.shape):
         base = data_np.copy()
-        base[idx] += eps
+        base[idx] += FD_EPS
         hi = float((od.cube_filtration(base, max_dim=2).values ** 2).sum())
-        base[idx] -= 2 * eps
+        base[idx] -= 2 * FD_EPS
         lo = float((od.cube_filtration(base, max_dim=2).values ** 2).sum())
-        grad_fd[idx] = (hi - lo) / (2 * eps)
+        grad_fd[idx] = (hi - lo) / (2 * FD_EPS)
 
-    np.testing.assert_allclose(grad_auto, grad_fd, atol=1e-5, rtol=1e-5)
+    np.testing.assert_allclose(grad_auto, grad_fd, atol=FD_ATOL, rtol=FD_RTOL)
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="requires torch")

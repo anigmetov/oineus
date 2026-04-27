@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 import oineus as oin
+from oineus._dtype import REAL_DTYPE
 
 def sample_data():
     # sample points from the unit circle
@@ -28,7 +29,7 @@ def sample_data():
 
 
 def topological_loss(pts: torch.Tensor, dim: int=1, n: int=2):
-    pts_as_numpy = pts.clone().detach().numpy().astype(np.float64)
+    pts_as_numpy = pts.clone().detach().numpy().astype(REAL_DTYPE)
     fil, edges = oin.vr_filtration(pts_as_numpy, with_critical_edges=True, n_threads=4)
     top_opt = oin.TopologyOptimizer(fil)
 

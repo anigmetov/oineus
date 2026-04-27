@@ -6,6 +6,9 @@ import torch
 
 import oineus as oin
 import oineus.diff
+from oineus._dtype import REAL_DTYPE
+
+TORCH_DTYPE = torch.float32 if REAL_DTYPE == np.float32 else torch.float64
 
 
 torch.manual_seed(0)
@@ -14,7 +17,7 @@ np.random.seed(0)
 # Small 2D image with a few local minima / saddles -> non-trivial H0 diagram.
 data = torch.tensor(
     np.random.uniform(-1.0, 1.0, size=(6, 6)),
-    dtype=torch.float64,
+    dtype=TORCH_DTYPE,
     requires_grad=True,
 )
 
@@ -34,7 +37,7 @@ for step in range(10):
     critical_sets = top_opt.singletons(indices, values)
     crit_indices, crit_values = top_opt.combine_loss(critical_sets, oin.ConflictStrategy.Max)
     crit_indices = np.asarray(crit_indices, dtype=np.int64)
-    crit_values = torch.tensor(crit_values, dtype=torch.float64)
+    crit_values = torch.tensor(crit_values, dtype=TORCH_DTYPE)
 
     loss = torch.mean((fil.values[crit_indices] - crit_values) ** 2)
     if initial_loss is None:

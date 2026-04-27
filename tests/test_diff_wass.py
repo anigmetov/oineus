@@ -5,12 +5,21 @@ import numpy as np
 import sys
 import os
 
+from oineus._dtype import REAL_DTYPE
+
 # Check if PyTorch is available (optional dependency)
 try:
     import torch
     TORCH_AVAILABLE = True
+    TORCH_DTYPE = torch.float32 if REAL_DTYPE == np.float32 else torch.float64
 except ImportError:
     TORCH_AVAILABLE = False
+    TORCH_DTYPE = None
+
+# Tight: cost on identical diagrams should be effectively zero.
+# Grad: precision floor for analytical gradient checks.
+ABS_TIGHT = 1e-10 if REAL_DTYPE == np.float64 else 1e-5
+GRAD_TOL = 1e-6 if REAL_DTYPE == np.float64 else 1e-3
 
 # Skip all tests if PyTorch is not available
 pytestmark = pytest.mark.skipif(not TORCH_AVAILABLE, reason="PyTorch not available")
@@ -27,8 +36,8 @@ class TestWassersteinCostBasics:
 
     def test_cost_matches_nondifferentiable_distance(self):
         """Verify cost^(1/q) matches non-differentiable wasserstein_distance."""
-        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=torch.float64)
-        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=TORCH_DTYPE)
+        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=TORCH_DTYPE)
 
         q = 2.0
         delta = 0.01
@@ -48,22 +57,22 @@ class TestWassersteinCostBasics:
 
         # Allow for approximation error from delta
         assert torch.allclose(
-            cost_diff, torch.tensor(expected_cost, dtype=torch.float64),
+            cost_diff, torch.tensor(expected_cost, dtype=TORCH_DTYPE),
             rtol=delta * 10
         )
 
     def test_identical_diagrams(self):
         """Cost should be zero for identical diagrams."""
-        dgm = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=torch.float64)
+        dgm = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=TORCH_DTYPE)
 
         cost = oin_diff.wasserstein_cost(dgm, dgm.clone())
 
-        assert cost < 1e-10, f"Cost should be near zero, got {cost.item()}"
+        assert cost < ABS_TIGHT, f"Cost should be near zero, got {cost.item()}"
 
     def test_different_q_values(self):
         """Test with different Wasserstein power parameters."""
-        dgm_a = torch.tensor([[0.0, 1.0]], dtype=torch.float64)
-        dgm_b = torch.tensor([[0.1, 0.9]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1.0]], dtype=TORCH_DTYPE)
+        dgm_b = torch.tensor([[0.1, 0.9]], dtype=TORCH_DTYPE)
 
         for q in [1.0, 2.0, 3.0]:
             cost = oin_diff.wasserstein_cost(dgm_a, dgm_b, wasserstein_q=q)
@@ -71,8 +80,8 @@ class TestWassersteinCostBasics:
 
     def test_different_internal_p(self):
         """Test with different internal L_p norms."""
-        dgm_a = torch.tensor([[0.0, 1.0]], dtype=torch.float64)
-        dgm_b = torch.tensor([[0.2, 0.8]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1.0]], dtype=TORCH_DTYPE)
+        dgm_b = torch.tensor([[0.2, 0.8]], dtype=TORCH_DTYPE)
 
         # L_1 norm
         cost_1 = oin_diff.wasserstein_cost(dgm_a, dgm_b, internal_p=1.0)
@@ -91,16 +100,16 @@ class TestEmptyDiagrams:
 
     def test_both_empty(self):
         """Both diagrams empty."""
-        dgm_a = torch.zeros((0, 2), dtype=torch.float64)
-        dgm_b = torch.zeros((0, 2), dtype=torch.float64)
+        dgm_a = torch.zeros((0, 2), dtype=TORCH_DTYPE)
+        dgm_b = torch.zeros((0, 2), dtype=TORCH_DTYPE)
 
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b)
         assert cost == 0.0
 
     def test_one_empty(self):
         """One diagram empty, one non-empty."""
-        dgm_a = torch.zeros((0, 2), dtype=torch.float64)
-        dgm_b = torch.tensor([[0.0, 1.0], [0.5, 1.5]], dtype=torch.float64)
+        dgm_a = torch.zeros((0, 2), dtype=TORCH_DTYPE)
+        dgm_b = torch.tensor([[0.0, 1.0], [0.5, 1.5]], dtype=TORCH_DTYPE)
 
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b)
 
@@ -108,7 +117,7 @@ class TestEmptyDiagrams:
         # For point (b, d), cost to diagonal = persistence^q / 2^q
         # With q=1 (default), cost = |d-b|/2 for each point
         expected = (1.0 / 2.0 + 1.0 / 2.0)  # Two points with persistence 1.0 each
-        assert torch.allclose(cost, torch.tensor(expected, dtype=torch.float64), rtol=0.1)
+        assert torch.allclose(cost, torch.tensor(expected, dtype=TORCH_DTYPE), rtol=0.1)
 
 
 class TestEssentialPoints:
@@ -119,11 +128,11 @@ class TestEssentialPoints:
         dgm_a = torch.tensor([
             [0.0, 1.0],
             [0.5, float('inf')]  # Essential point (finite, +inf)
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
         dgm_b = torch.tensor([
             [0.1, 0.9],
             [0.6, float('inf')]  # Essential point (finite, +inf)
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b, ignore_inf_points=False)
         assert cost >= 0
@@ -133,12 +142,12 @@ class TestEssentialPoints:
         dgm_a = torch.tensor([
             [0.0, 1.0],
             [0.5, float('inf')]  # One essential point
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
         dgm_b = torch.tensor([
             [0.1, 0.9],
             [0.6, float('inf')],
             [0.7, float('inf')]  # Two essential points
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         with pytest.raises(ValueError, match="essential point cardinalities must match"):
             oin_diff.wasserstein_cost(dgm_a, dgm_b, ignore_inf_points=False)
@@ -148,12 +157,12 @@ class TestEssentialPoints:
         dgm_a = torch.tensor([
             [0.0, 1.0],
             [0.5, float('inf')]  # One essential point
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
         dgm_b = torch.tensor([
             [0.1, 0.9],
             [0.6, float('inf')],
             [0.7, float('inf')]  # Two essential points
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         # Should not raise error with ignore_inf_points=True (default)
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b, ignore_inf_points=True)
@@ -164,27 +173,27 @@ class TestEssentialPoints:
         dgm_a = torch.tensor([
             [0.5, float('inf')],
             [1.0, float('inf')]
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
         dgm_b = torch.tensor([
             [0.6, float('inf')],
             [1.1, float('inf')]
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b, ignore_inf_points=False)
 
         # Cost should be sum of |0.6-0.5| + |1.1-1.0| = 0.1 + 0.1 = 0.2 for q=1
-        assert torch.allclose(cost, torch.tensor(0.2, dtype=torch.float64), rtol=0.01)
+        assert torch.allclose(cost, torch.tensor(0.2, dtype=TORCH_DTYPE), rtol=0.01)
 
     def test_essential_points_q2(self):
         """Test essential points with q=2."""
         dgm_a = torch.tensor([
             [0.5, float('inf')],
             [1.0, float('inf')]
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
         dgm_b = torch.tensor([
             [0.6, float('inf')],
             [1.1, float('inf')]
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         q = 2.0
         cost_diff = oin_diff.wasserstein_cost(dgm_a, dgm_b, wasserstein_q=q, ignore_inf_points=False)
@@ -193,7 +202,7 @@ class TestEssentialPoints:
         # For q=2: cost = distance^2
         # distance^2 = (|0.6-0.5|^2 + |1.1-1.0|^2) = (0.1^2 + 0.1^2) = 0.02
         expected_cost = dist_nondiff ** q
-        assert torch.allclose(cost_diff, torch.tensor(expected_cost, dtype=torch.float64), rtol=0.01), (
+        assert torch.allclose(cost_diff, torch.tensor(expected_cost, dtype=TORCH_DTYPE), rtol=0.01), (
             f"Essential q=2: cost={cost_diff.item()}, expected={expected_cost}, distance={dist_nondiff}"
         )
 
@@ -203,12 +212,12 @@ class TestEssentialPoints:
             [0.5, float('inf')],
             [1.0, float('inf')],
             [1.5, float('inf')]
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
         dgm_b = torch.tensor([
             [0.7, float('inf')],
             [1.2, float('inf')],
             [1.6, float('inf')]
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         q = 3.0
         cost_diff = oin_diff.wasserstein_cost(dgm_a, dgm_b, wasserstein_q=q, ignore_inf_points=False)
@@ -217,7 +226,7 @@ class TestEssentialPoints:
         # For q=3: cost = distance^3
         # distance^3 = (|0.7-0.5|^3 + |1.2-1.0|^3 + |1.6-1.5|^3)
         expected_cost = dist_nondiff ** q
-        assert torch.allclose(cost_diff, torch.tensor(expected_cost, dtype=torch.float64), rtol=0.01), (
+        assert torch.allclose(cost_diff, torch.tensor(expected_cost, dtype=TORCH_DTYPE), rtol=0.01), (
             f"Essential q=3: cost={cost_diff.item()}, expected={expected_cost}, distance={dist_nondiff}"
         )
 
@@ -229,14 +238,14 @@ class TestEssentialPoints:
             [1.0, float('-inf')],  # (finite, -inf)
             [float('inf'), 2.0],   # (+inf, finite)
             [float('-inf'), 3.0]   # (-inf, finite)
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
         dgm_b = torch.tensor([
             [0.1, 0.9],  # Finite
             [0.6, float('inf')],   # (finite, +inf)
             [1.1, float('-inf')],  # (finite, -inf)
             [float('inf'), 2.1],   # (+inf, finite)
             [float('-inf'), 3.1]   # (-inf, finite)
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b, ignore_inf_points=False)
         assert cost >= 0
@@ -247,14 +256,14 @@ class TestEssentialPoints:
         dgm_a = torch.tensor([
             [0.0, 1.0],
             [0.5, float('inf')]  # (finite, +inf)
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         # dgm_b has both (finite, +inf) and (finite, -inf)
         dgm_b = torch.tensor([
             [0.1, 0.9],
             [0.6, float('inf')],   # (finite, +inf)
             [0.7, float('-inf')]   # (finite, -inf)
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         # Should raise error for (finite, -inf) mismatch (0 vs 1)
         with pytest.raises(ValueError, match="essential point cardinalities must match"):
@@ -264,11 +273,11 @@ class TestEssentialPoints:
         """Test (finite, +inf) vs (finite, -inf) mismatch."""
         dgm_a = torch.tensor([
             [0.5, float('inf')]   # (finite, +inf)
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         dgm_b = torch.tensor([
             [0.5, float('-inf')]  # (finite, -inf)
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         # Different categories - should raise error
         with pytest.raises(ValueError, match="essential point cardinalities must match"):
@@ -278,11 +287,11 @@ class TestEssentialPoints:
         """Test (+inf, finite) vs (finite, +inf) mismatch."""
         dgm_a = torch.tensor([
             [float('inf'), 2.0]   # (+inf, finite)
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         dgm_b = torch.tensor([
             [2.0, float('inf')]   # (finite, +inf)
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         # Different categories - should raise error
         with pytest.raises(ValueError, match="essential point cardinalities must match"):
@@ -293,13 +302,13 @@ class TestEssentialPoints:
         dgm_a = torch.tensor([
             [0.5, float('inf')],   # (finite, +inf)
             [float('inf'), 2.0]    # (+inf, finite)
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         dgm_b = torch.tensor([
             [0.6, float('inf')],    # (finite, +inf)
             [1.0, float('-inf')],   # (finite, -inf)
             [float('inf'), 2.1]     # (+inf, finite)
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         # Should raise error for (finite, -inf) category (0 vs 1)
         with pytest.raises(ValueError, match="essential point cardinalities must match"):
@@ -311,8 +320,8 @@ class TestGradients:
 
     def test_gradient_flow_finite_to_finite(self):
         """Gradients should flow through finite-to-finite matches."""
-        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=torch.float64, requires_grad=True)
-        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=TORCH_DTYPE, requires_grad=True)
+        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=TORCH_DTYPE)
 
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b)
         cost.backward()
@@ -330,8 +339,8 @@ class TestGradients:
         """
         # Create two diagrams where points will match to diagonal
         # (they're far apart, so each matches to its own diagonal projection)
-        dgm_a = torch.tensor([[1.0, 2.0]], dtype=torch.float64, requires_grad=True)
-        dgm_b = torch.tensor([[100.0, 101.0]], dtype=torch.float64)
+        dgm_a = torch.tensor([[1.0, 2.0]], dtype=TORCH_DTYPE, requires_grad=True)
+        dgm_b = torch.tensor([[100.0, 101.0]], dtype=TORCH_DTYPE)
 
         # Use W_2 with internal_p=2 for easier gradient computation
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b, wasserstein_q=2.0, internal_p=2.0)
@@ -342,7 +351,7 @@ class TestGradients:
         grad_d = dgm_a.grad[0, 1].item()  # gradient w.r.t. death
 
         # Gradients should have equal magnitude, opposite signs
-        assert abs(abs(grad_b) - abs(grad_d)) < 1e-6, \
+        assert abs(abs(grad_b) - abs(grad_d)) < GRAD_TOL, \
             f"Gradient magnitudes should be equal: |{grad_b}| vs |{grad_d}|"
 
         assert grad_b * grad_d < 0, \
@@ -360,8 +369,8 @@ class TestGradients:
         d(cost)/d(d) = d - b
         """
         b, d = 1.0, 2.0
-        dgm_a = torch.tensor([[b, d]], dtype=torch.float64, requires_grad=True)
-        dgm_b = torch.tensor([[100.0, 101.0]], dtype=torch.float64)
+        dgm_a = torch.tensor([[b, d]], dtype=TORCH_DTYPE, requires_grad=True)
+        dgm_b = torch.tensor([[100.0, 101.0]], dtype=TORCH_DTYPE)
 
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b, wasserstein_q=2.0, internal_p=2.0)
         cost.backward()
@@ -373,10 +382,10 @@ class TestGradients:
         grad_b = dgm_a.grad[0, 0].item()
         grad_d = dgm_a.grad[0, 1].item()
 
-        assert abs(grad_b - expected_grad_b) < 1e-6, \
+        assert abs(grad_b - expected_grad_b) < GRAD_TOL, \
             f"Gradient w.r.t. birth mismatch: {grad_b} vs {expected_grad_b}"
 
-        assert abs(grad_d - expected_grad_d) < 1e-6, \
+        assert abs(grad_d - expected_grad_d) < GRAD_TOL, \
             f"Gradient w.r.t. death mismatch: {grad_d} vs {expected_grad_d}"
 
     def test_gradient_with_multiple_points_to_diagonal(self):
@@ -384,8 +393,8 @@ class TestGradients:
         dgm_a = torch.tensor([
             [1.0, 2.0],
             [3.0, 5.0]
-        ], dtype=torch.float64, requires_grad=True)
-        dgm_b = torch.tensor([[100.0, 101.0]], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE, requires_grad=True)
+        dgm_b = torch.tensor([[100.0, 101.0]], dtype=TORCH_DTYPE)
 
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b, wasserstein_q=2.0, internal_p=2.0)
         cost.backward()
@@ -396,7 +405,7 @@ class TestGradients:
             grad_d = dgm_a.grad[i, 1].item()
 
             # Equal magnitude, opposite signs
-            assert abs(abs(grad_b) - abs(grad_d)) < 1e-6
+            assert abs(abs(grad_b) - abs(grad_d)) < GRAD_TOL
             assert grad_b * grad_d < 0
 
 
@@ -405,16 +414,16 @@ class TestNumericalStability:
 
     def test_very_small_diagrams(self):
         """Diagrams with very small persistence."""
-        dgm_a = torch.tensor([[0.0, 1e-10]], dtype=torch.float64)
-        dgm_b = torch.tensor([[0.0, 2e-10]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1e-10]], dtype=TORCH_DTYPE)
+        dgm_b = torch.tensor([[0.0, 2e-10]], dtype=TORCH_DTYPE)
 
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b)
         assert torch.isfinite(cost)
 
     def test_very_large_diagrams(self):
         """Diagrams with very large values."""
-        dgm_a = torch.tensor([[0.0, 1e10]], dtype=torch.float64)
-        dgm_b = torch.tensor([[0.0, 1.1e10]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1e10]], dtype=TORCH_DTYPE)
+        dgm_b = torch.tensor([[0.0, 1.1e10]], dtype=TORCH_DTYPE)
 
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b)
         assert torch.isfinite(cost)
@@ -439,8 +448,8 @@ class TestConsistency:
 
     def test_consistency_with_nondifferentiable_wasserstein_q1(self):
         """Differentiable cost should match non-differentiable distance for q=1."""
-        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0], [1.0, 2.5]], dtype=torch.float64)
-        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8], [1.1, 2.3]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0], [1.0, 2.5]], dtype=TORCH_DTYPE)
+        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8], [1.1, 2.3]], dtype=TORCH_DTYPE)
 
         q = 1.0
         delta = 0.01
@@ -455,14 +464,14 @@ class TestConsistency:
 
         # For q=1, cost should equal distance
         assert torch.allclose(
-            cost_diff, torch.tensor(dist_nondiff, dtype=torch.float64),
+            cost_diff, torch.tensor(dist_nondiff, dtype=TORCH_DTYPE),
             rtol=delta * 10
         ), f"Cost mismatch: {cost_diff.item()} vs {dist_nondiff}"
 
     def test_consistency_with_nondifferentiable_wasserstein_q2(self):
         """Differentiable cost^(1/q) should match non-differentiable distance for q=2."""
-        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0], [1.0, 2.5]], dtype=torch.float64)
-        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8], [1.1, 2.3]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0], [1.0, 2.5]], dtype=TORCH_DTYPE)
+        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8], [1.1, 2.3]], dtype=TORCH_DTYPE)
 
         q = 2.0
         delta = 0.01
@@ -479,14 +488,14 @@ class TestConsistency:
         dist_from_cost = cost_diff ** (1.0 / q)
 
         assert torch.allclose(
-            dist_from_cost, torch.tensor(dist_nondiff, dtype=torch.float64),
+            dist_from_cost, torch.tensor(dist_nondiff, dtype=TORCH_DTYPE),
             rtol=delta * 10
         ), f"Distance mismatch: {dist_from_cost.item()} vs {dist_nondiff}"
 
     def test_consistency_with_nondifferentiable_wasserstein_q3(self):
         """Differentiable cost^(1/q) should match non-differentiable distance for q=3."""
-        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=torch.float64)
-        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=TORCH_DTYPE)
+        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=TORCH_DTYPE)
 
         q = 3.0
         delta = 0.01
@@ -503,14 +512,14 @@ class TestConsistency:
         dist_from_cost = cost_diff ** (1.0 / q)
 
         assert torch.allclose(
-            dist_from_cost, torch.tensor(dist_nondiff, dtype=torch.float64),
+            dist_from_cost, torch.tensor(dist_nondiff, dtype=TORCH_DTYPE),
             rtol=delta * 10
         ), f"Distance mismatch: {dist_from_cost.item()} vs {dist_nondiff}"
 
     def test_consistency_with_nondifferentiable_different_internal_p(self):
         """Test consistency with different internal_p values."""
-        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=torch.float64)
-        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=TORCH_DTYPE)
+        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=TORCH_DTYPE)
 
         q = 2.0
         delta = 0.01
@@ -530,7 +539,7 @@ class TestConsistency:
             dist_from_cost = cost_diff ** (1.0 / q)
 
             assert torch.allclose(
-                dist_from_cost, torch.tensor(dist_nondiff, dtype=torch.float64),
+                dist_from_cost, torch.tensor(dist_nondiff, dtype=TORCH_DTYPE),
                 rtol=delta * 10
             ), f"Distance mismatch for internal_p={internal_p}: {dist_from_cost.item()} vs {dist_nondiff}"
 
@@ -542,13 +551,13 @@ class TestConsistency:
             [0.5, float('inf')],  # essential at position 1
             [1.0, 2.0],           # finite
             [1.5, 3.0]            # finite
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
         dgm_b = torch.tensor([
             [0.1, 0.9],           # finite
             [0.6, float('inf')],  # essential at position 1
             [1.1, 1.9],           # finite
             [1.6, 2.9]            # finite
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         q = 1.0
         delta = 0.01
@@ -558,7 +567,7 @@ class TestConsistency:
 
         # For q=1, cost == distance
         assert torch.allclose(
-            cost_diff, torch.tensor(dist_nondiff, dtype=torch.float64),
+            cost_diff, torch.tensor(dist_nondiff, dtype=TORCH_DTYPE),
             rtol=delta * 10
         ), f"Distance mismatch with essential at pos 1: {cost_diff.item()} vs {dist_nondiff}"
 
@@ -570,13 +579,13 @@ class TestConsistency:
             [1.0, 2.0],           # finite
             [0.5, float('inf')],  # essential at position 2
             [1.5, 3.0]            # finite
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
         dgm_b = torch.tensor([
             [0.1, 0.9],           # finite
             [1.1, 1.9],           # finite
             [0.6, float('inf')],  # essential at position 2
             [1.6, 2.9]            # finite
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         q = 1.0
         delta = 0.01
@@ -586,7 +595,7 @@ class TestConsistency:
 
         # For q=1, cost == distance
         assert torch.allclose(
-            cost_diff, torch.tensor(dist_nondiff, dtype=torch.float64),
+            cost_diff, torch.tensor(dist_nondiff, dtype=TORCH_DTYPE),
             rtol=delta * 10
         ), f"Distance mismatch with essential at pos 2: {cost_diff.item()} vs {dist_nondiff}"
 
@@ -598,13 +607,13 @@ class TestConsistency:
             [1.0, 2.0],           # finite
             [1.5, 3.0],           # finite
             [0.5, float('inf')]   # essential at end
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
         dgm_b = torch.tensor([
             [0.1, 0.9],           # finite
             [1.1, 1.9],           # finite
             [1.6, 2.9],           # finite
             [0.6, float('inf')]   # essential at end
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         q = 1.0
         delta = 0.01
@@ -614,7 +623,7 @@ class TestConsistency:
 
         # For q=1, cost == distance
         assert torch.allclose(
-            cost_diff, torch.tensor(dist_nondiff, dtype=torch.float64),
+            cost_diff, torch.tensor(dist_nondiff, dtype=TORCH_DTYPE),
             rtol=delta * 10
         ), f"Distance mismatch with essential at end: {cost_diff.item()} vs {dist_nondiff}"
 
@@ -626,7 +635,7 @@ class TestConsistency:
         n_finite = 50
 
         # Generate random points from normal distribution
-        points_a = torch.randn(n_finite, 2, dtype=torch.float64) * 0.5 + 1.0
+        points_a = torch.randn(n_finite, 2, dtype=TORCH_DTYPE) * 0.5 + 1.0
 
         # Reflect below-diagonal points to ensure birth < death
         below_diag = points_a[:, 0] > points_a[:, 1]
@@ -645,13 +654,13 @@ class TestConsistency:
             [0.3, float('inf')],   # will be inserted at index 5
             [0.7, float('inf')],   # will be inserted at index 20
             [1.2, float('inf')]    # will be inserted at index 35
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         essential_b = torch.tensor([
             [0.35, float('inf')],
             [0.75, float('inf')],
             [1.25, float('inf')]
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
         # Insert essential points
         dgm_a = torch.cat([
@@ -703,8 +712,8 @@ class TestConsistency:
 
     def test_consistency_with_sliced_wasserstein(self):
         """Both Wasserstein and sliced Wasserstein should give reasonable results."""
-        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=torch.float64)
-        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=TORCH_DTYPE)
+        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=TORCH_DTYPE)
 
         cost_wass = oin_diff.wasserstein_cost(dgm_a, dgm_b, wasserstein_q=1.0)
         dist_sliced = oin_diff.sliced_wasserstein_distance(dgm_a, dgm_b, n_directions=100)
@@ -724,8 +733,8 @@ class TestDifferentiability:
 
     def test_backward_pass(self):
         """Test that backward pass completes without error."""
-        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=torch.float64, requires_grad=True)
-        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=TORCH_DTYPE, requires_grad=True)
+        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=TORCH_DTYPE)
 
         cost = oin_diff.wasserstein_cost(dgm_a, dgm_b, wasserstein_q=2.0)
         cost.backward()
@@ -734,8 +743,8 @@ class TestDifferentiability:
 
     def test_gradient_descent_step(self):
         """Test that gradient descent reduces cost."""
-        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=torch.float64, requires_grad=True)
-        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=torch.float64)
+        dgm_a = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=TORCH_DTYPE, requires_grad=True)
+        dgm_b = torch.tensor([[0.1, 0.9], [0.6, 1.8]], dtype=TORCH_DTYPE)
 
         initial_cost = oin_diff.wasserstein_cost(dgm_a, dgm_b, wasserstein_q=2.0)
         initial_cost.backward()
@@ -810,7 +819,7 @@ class TestEssentialSortMatching:
             [INF,    90.0],     # 11 inf_birth
             [-INF,   750.0],    # 12 neg_inf_birth
             [6.0,    -INF],     # 13 neg_inf_death
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
     @staticmethod
     def _make_dgm_b():
@@ -830,7 +839,7 @@ class TestEssentialSortMatching:
             [-INF,   800.0],    # 11 neg_inf_birth
             [INF,    95.0],     # 12 inf_birth
             [7.5,    -INF],     # 13 neg_inf_death
-        ], dtype=torch.float64)
+        ], dtype=TORCH_DTYPE)
 
     # Index sets for each family on each side. Used to assert grad patterns.
     A_FAM = {
@@ -852,12 +861,12 @@ class TestEssentialSortMatching:
     @staticmethod
     def _make_finite_a():
         return torch.tensor([[5000.0, 5100.0], [8000.0, 8100.0]],
-                            dtype=torch.float64)
+                            dtype=TORCH_DTYPE)
 
     @staticmethod
     def _make_finite_b():
         return torch.tensor([[5005.0, 5105.0], [8005.0, 8105.0]],
-                            dtype=torch.float64)
+                            dtype=TORCH_DTYPE)
 
     # Per-family essential cost contributions (sum of |Δ|^q over rank-paired
     # finite coords). Hard-coded from the comment block above for q=2.
@@ -899,7 +908,7 @@ class TestEssentialSortMatching:
         ), f"cost={cost.item()} vs finite_cost={finite_cost.item()}"
         assert torch.isclose(
             cost,
-            torch.tensor(self.EXPECTED_FINITE_COST_Q2, dtype=torch.float64),
+            torch.tensor(self.EXPECTED_FINITE_COST_Q2, dtype=TORCH_DTYPE),
             rtol=self.DELTA * 10,
         ), f"cost={cost.item()} vs expected={self.EXPECTED_FINITE_COST_Q2}"
 
@@ -927,7 +936,7 @@ class TestEssentialSortMatching:
 
         assert torch.isclose(
             cost,
-            torch.tensor(self.EXPECTED_TOTAL_COST_Q2, dtype=torch.float64),
+            torch.tensor(self.EXPECTED_TOTAL_COST_Q2, dtype=TORCH_DTYPE),
             rtol=self.DELTA * 10,
         ), f"cost={cost.item()} vs expected={self.EXPECTED_TOTAL_COST_Q2}"
 
@@ -958,9 +967,11 @@ class TestEssentialSortMatching:
                 (a - b) ** 2 for a, b in zip(a_coords, b_coords)
             )
         # Check the per-family cost we computed matches the hard-coded
-        # constants used to build the total (sanity on our table).
+        # constants used to build the total (sanity on our table). The
+        # per-family v is summed from tensor .item()s, so it carries
+        # REAL_DTYPE roundoff -- compare with the float-precision floor.
         for k, v in per_family_expected.items():
-            assert abs(v - self.EXPECTED_ESSENTIAL_COST_Q2[k]) < 1e-9, (
+            assert abs(v - self.EXPECTED_ESSENTIAL_COST_Q2[k]) < ABS_TIGHT, (
                 k, v, self.EXPECTED_ESSENTIAL_COST_Q2[k]
             )
 

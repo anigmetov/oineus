@@ -2,6 +2,7 @@ import pytest
 import numpy as np
 import oineus as oin
 from gudhi import CubicalComplex
+from oineus._dtype import REAL_DTYPE
 
 
 def get_gudhi_dgms(a, values_on):
@@ -33,8 +34,8 @@ def dgms_equal(dgms_1, dgms_2, tol=1e-4):
     assert len(dgms_1) == len(dgms_2), f"Different number of points: {len(dgms_1)} vs {len(dgms_2)}"
 
     for dim in range(len(dgms_1)):
-        d1 = np.sort(dgms_1[dim], axis=0).astype(np.float32)
-        d2 = np.sort(dgms_2[dim], axis=0).astype(np.float32)
+        d1 = np.sort(dgms_1[dim], axis=0).astype(REAL_DTYPE)
+        d2 = np.sort(dgms_2[dim], axis=0).astype(REAL_DTYPE)
         d1[d1 == np.inf] = 10000.0
         d2[d2 == np.inf] = 10000.0
 

@@ -1,6 +1,10 @@
 import numpy as np
 import pytest
 import oineus as oin
+from oineus._dtype import REAL_DTYPE
+
+# Tight tolerance for "two equivalent calls return the same value" checks.
+ABS_TOL = 1e-12 if REAL_DTYPE == np.float64 else 1e-5
 
 
 def _make_simplex_filtration():
@@ -127,22 +131,22 @@ def test_diagrams_pad_and_trim():
 def test_bottleneck_distance_accepts_list_and_numpy():
     dgm_1_list = [oin.DiagramPoint(0.0, 3.0)]
     dgm_2_list = [oin.DiagramPoint(1.0, 5.0)]
-    dgm_1_np = np.array([[0.0, 3.0]], dtype=np.float64)
-    dgm_2_np = np.array([[1.0, 5.0]], dtype=np.float64)
+    dgm_1_np = np.array([[0.0, 3.0]], dtype=REAL_DTYPE)
+    dgm_2_np = np.array([[1.0, 5.0]], dtype=REAL_DTYPE)
 
     dist_list = oin.bottleneck_distance(dgm_1_list, dgm_2_list, delta=0.0)
     dist_np = oin.bottleneck_distance(dgm_1_np, dgm_2_np, delta=0.0)
 
     assert np.isfinite(dist_list)
     assert np.isfinite(dist_np)
-    assert dist_list == pytest.approx(dist_np, abs=1e-12)
+    assert dist_list == pytest.approx(dist_np, abs=ABS_TOL)
 
 
 def test_wasserstein_distance_accepts_list_and_numpy():
     dgm_1_list = [oin.DiagramPoint(0.0, 3.0)]
     dgm_2_list = [oin.DiagramPoint(1.0, 5.0)]
-    dgm_1_np = np.array([[0.0, 3.0]], dtype=np.float64)
-    dgm_2_np = np.array([[1.0, 5.0]], dtype=np.float64)
+    dgm_1_np = np.array([[0.0, 3.0]], dtype=REAL_DTYPE)
+    dgm_2_np = np.array([[1.0, 5.0]], dtype=REAL_DTYPE)
 
     # delta must be > 0 for Wasserstein (the auction has no exact mode).
     ws_inf_list = oin.wasserstein_distance(dgm_1_list, dgm_2_list, q=2.0, delta=0.01, internal_p=np.inf)
@@ -151,10 +155,10 @@ def test_wasserstein_distance_accepts_list_and_numpy():
     ws_l1_np = oin.wasserstein_distance(dgm_1_np, dgm_2_np, q=2.0, delta=0.01, internal_p=1.0)
     ws_l1_alias = oin.wasserstein_distance(dgm_1_np, dgm_2_np, wasserstein_q=2.0, delta=0.01, internal_p=1.0)
 
-    assert ws_inf_list == pytest.approx(ws_inf_np, abs=1e-12)
+    assert ws_inf_list == pytest.approx(ws_inf_np, abs=ABS_TOL)
     assert np.isfinite(ws_inf_list)
-    assert ws_l1_list == pytest.approx(ws_l1_np, abs=1e-12)
-    assert ws_l1_alias == pytest.approx(ws_l1_np, abs=1e-12)
+    assert ws_l1_list == pytest.approx(ws_l1_np, abs=ABS_TOL)
+    assert ws_l1_alias == pytest.approx(ws_l1_np, abs=ABS_TOL)
 
 
 def test_distance_functions_accept_oineus_diagrams_with_dim():
@@ -169,8 +173,8 @@ def test_distance_functions_accept_oineus_diagrams_with_dim():
     bt = oin.bottleneck_distance(dgms.in_dimension(0), dgm_dim_0, delta=0.0)
     ws = oin.wasserstein_distance(dgms.in_dimension(0), dgm_dim_0, q=2.0, delta=1e-3, internal_p=np.inf)
 
-    assert bt == pytest.approx(0.0, abs=1e-12)
-    assert ws == pytest.approx(0.0, abs=1e-12)
+    assert bt == pytest.approx(0.0, abs=ABS_TOL)
+    assert ws == pytest.approx(0.0, abs=ABS_TOL)
 
 
 def test_distance_functions_reject_multidim_oineus_diagrams():
@@ -190,8 +194,8 @@ def test_distance_functions_reject_multidim_oineus_diagrams():
 
 
 def test_distance_array_shape_validation():
-    good = np.array([[0.0, 1.0]], dtype=np.float64)
-    bad = np.array([0.0, 1.0], dtype=np.float64)
+    good = np.array([[0.0, 1.0]], dtype=REAL_DTYPE)
+    bad = np.array([0.0, 1.0], dtype=REAL_DTYPE)
 
     with pytest.raises(ValueError):
         _ = oin.bottleneck_distance(bad, good)
