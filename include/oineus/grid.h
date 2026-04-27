@@ -16,6 +16,31 @@
 
 namespace oineus {
 
+// Throw if a Freudenthal grid filtration would overflow Simplex<Int>::Uid (signed long long,
+// 4 high bits reserved for dim_info, leaving a 60-bit budget for the combinatorial sum).
+// Compares n^(top_d+1) against (top_d+1)! * 2^60 in __int128 so the check itself can't
+// silently overflow.
+inline void check_freudenthal_uid_fits_long_long(std::size_t n_vertices, std::size_t top_d)
+{
+    constexpr int kBudgetBits = 60;
+    __int128 fact = 1;
+    for (std::size_t i = 1; i <= top_d + 1; ++i) fact *= i;
+    __int128 budget = (__int128(1) << kBudgetBits) * fact;
+
+    __int128 bound = 1;
+    for (std::size_t i = 0; i <= top_d; ++i) {
+        bound *= static_cast<__int128>(n_vertices);
+        if (bound >= budget) {
+            throw std::overflow_error(
+                "oineus::Grid::freudenthal_filtration: grid too large for Simplex Uid (long long). "
+                "Grid has " + std::to_string(n_vertices) + " vertices, top_d = " + std::to_string(top_d) +
+                "; the combinatorial Uid encoding overflows the 60-bit budget. "
+                "E.g. 128^3 with top_d>=2, or 64^3 with top_d>=3. "
+                "Reduce top_d / grid size, or use the cube filtration (Cube avoids the combinatorial encoding).");
+        }
+    }
+}
+
 template<typename Int_, typename Real_, size_t D>
 class Grid {
 public:
@@ -104,6 +129,8 @@ public:
         if (top_d > dim)
             throw std::runtime_error("bad dimension, top_d = " + std::to_string(top_d) + ", dim = " + std::to_string(dim));
 
+        check_freudenthal_uid_fits_long_long(static_cast<std::size_t>(size()), top_d);
+
         SimplexVec simplices;
         CriticalIndices vertices;
 
@@ -135,6 +162,8 @@ public:
     {
         if (top_d > dim)
             throw std::runtime_error("bad dimension, top_d = " + std::to_string(top_d) + ", dim = " + std::to_string(dim));
+
+        check_freudenthal_uid_fits_long_long(static_cast<std::size_t>(size()), top_d);
 
         SimplexVec simplices;
         CriticalIndices dummy_vertices;
