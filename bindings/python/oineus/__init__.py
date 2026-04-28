@@ -3,6 +3,7 @@ from __future__ import absolute_import
 __version__ = "0.9.26"
 
 import typing
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import scipy.sparse
 
@@ -227,14 +228,15 @@ def _resolve_multistart_seed(diagrams,
                              grid_n_x_bins,
                              grid_n_y_bins,
                              wasserstein_delta,
-                             internal_p):
+                             internal_p,
+                             n_threads: int = 1):
     if not isinstance(seed, str):
         return as_real_numpy(_check_numpy_diagram_shape(seed))
 
     if seed == "first":
         return init_frechet_mean_first_diagram(diagrams)
     if seed == "medoid":
-        return init_frechet_mean_medoid_diagram(diagrams, weights=weights)
+        return init_frechet_mean_medoid_diagram(diagrams, weights=weights, n_threads=n_threads)
     if seed == "grid":
         return init_frechet_mean_diagonal_grid(
             diagrams,
@@ -256,17 +258,23 @@ def _resolve_multistart_seed(diagrams,
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
     n = len(diagrams)
     d2 = np.zeros((n, n), dtype=REAL_DTYPE)
-    for i in range(n):
-        for j in range(i + 1, n):
-            dist = wasserstein_distance(
-                diagrams[i],
-                diagrams[j],
-                q=2.0,
-                delta=wasserstein_delta,
-                internal_p=internal_p,
-            )
-            d2[i, j] = dist * dist
-            d2[j, i] = d2[i, j]
+    pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
+
+    def pair_dist(ij):
+        i, j = ij
+        return wasserstein_distance(
+            diagrams[i], diagrams[j],
+            q=2.0, delta=wasserstein_delta, internal_p=internal_p,
+        )
+
+    if n_threads <= 1 or len(pairs) <= 1:
+        dists = [pair_dist(p) for p in pairs]
+    else:
+        with ThreadPoolExecutor(max_workers=n_threads) as executor:
+            dists = list(executor.map(pair_dist, pairs))
+    for (i, j), dist in zip(pairs, dists):
+        d2[i, j] = dist * dist
+        d2[j, i] = d2[i, j]
 
     medoid_idx = int(np.argmin(d2 @ normalized_weights))
 
@@ -407,9 +415,9 @@ def init_frechet_mean_random_diagram(diagrams,
     )
 
 
-def init_frechet_mean_medoid_diagram(diagrams, *, weights=None):
+def init_frechet_mean_medoid_diagram(diagrams, *, weights=None, n_threads: int = 1):
     return _init_frechet_mean_medoid_diagram_cpp(
-        [as_real_numpy(d) for d in diagrams], weights=weights
+        [as_real_numpy(d) for d in diagrams], weights=weights, n_threads=n_threads
     )
 
 
@@ -433,18 +441,26 @@ def frechet_mean_objective(diagrams,
                            *,
                            weights=None,
                            wasserstein_delta: float = 0.01,
-                           internal_p: float = np.inf):
+                           internal_p: float = np.inf,
+                           n_threads: int = 1):
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
-    return float(sum(
-        normalized_weights[i] * wasserstein_distance(
+
+    def term(i_diagram):
+        i, diagram = i_diagram
+        return normalized_weights[i] * wasserstein_distance(
             barycenter,
             diagram,
             q=2.0,
             delta=wasserstein_delta,
             internal_p=internal_p,
         ) ** 2
-        for i, diagram in enumerate(diagrams)
-    ))
+
+    if n_threads <= 1 or len(diagrams) <= 1:
+        return float(sum(term((i, d)) for i, d in enumerate(diagrams)))
+
+    with ThreadPoolExecutor(max_workers=n_threads) as executor:
+        terms = list(executor.map(term, enumerate(diagrams)))
+    return float(sum(terms))
 
 
 def make_frechet_mean_persistence_schedule(diagrams,
@@ -528,6 +544,7 @@ def frechet_mean_multistart(diagrams,
                             weights=None,
                             starts=("medoid", "second_medoid", "farthest_from_medoid"),
                             return_details: bool = False,
+                            n_threads: int = 1,
                             **kwargs):
     diagrams = [as_real_numpy(_check_numpy_diagram_shape(d)) for d in diagrams]
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
@@ -552,6 +569,7 @@ def frechet_mean_multistart(diagrams,
                 grid_n_y_bins=local_kwargs.get("grid_n_y_bins", 16),
                 wasserstein_delta=local_kwargs.get("wasserstein_delta", 0.01),
                 internal_p=local_kwargs.get("internal_p", np.inf),
+                n_threads=n_threads,
             )
         else:
             local_kwargs = dict(kwargs)
@@ -568,6 +586,7 @@ def frechet_mean_multistart(diagrams,
                 grid_n_y_bins=local_kwargs.get("grid_n_y_bins", 16),
                 wasserstein_delta=local_kwargs.get("wasserstein_delta", 0.01),
                 internal_p=local_kwargs.get("internal_p", np.inf),
+                n_threads=n_threads,
             )
 
         barycenter = frechet_mean(
@@ -575,6 +594,7 @@ def frechet_mean_multistart(diagrams,
             weights=normalized_weights,
             init_strategy=FrechetMeanInit.Custom,
             custom_initial_barycenter=seed,
+            n_threads=n_threads,
             **local_kwargs,
         )
         objective = frechet_mean_objective(
@@ -583,6 +603,7 @@ def frechet_mean_multistart(diagrams,
             weights=normalized_weights,
             wasserstein_delta=local_kwargs.get("wasserstein_delta", 0.01),
             internal_p=local_kwargs.get("internal_p", np.inf),
+            n_threads=n_threads,
         )
         results.append({"start": start, "barycenter": barycenter, "objective": objective})
 
@@ -603,6 +624,7 @@ def progressive_frechet_mean(diagrams,
                              support_update_predicate=None,
                              support_update_fn=None,
                              return_details: bool = False,
+                             n_threads: int = 1,
                              **kwargs):
     diagrams = _diagrams_to_numpy_list(diagrams)
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
@@ -650,6 +672,7 @@ def progressive_frechet_mean(diagrams,
                 grid_n_y_bins=local_kwargs.get("grid_n_y_bins", 16),
                 wasserstein_delta=local_kwargs.get("wasserstein_delta", 0.01),
                 internal_p=local_kwargs.get("internal_p", np.inf),
+                n_threads=n_threads,
             )
         else:
             seed = barycenter
@@ -687,6 +710,7 @@ def progressive_frechet_mean(diagrams,
             weights=normalized_weights,
             init_strategy=FrechetMeanInit.Custom,
             custom_initial_barycenter=seed,
+            n_threads=n_threads,
             **local_kwargs,
         )
 
@@ -696,6 +720,7 @@ def progressive_frechet_mean(diagrams,
             weights=normalized_weights,
             wasserstein_delta=local_kwargs.get("wasserstein_delta", 0.01),
             internal_p=local_kwargs.get("internal_p", np.inf),
+            n_threads=n_threads,
         )
         history.append({
             "stage_index": stage_idx,
@@ -716,6 +741,7 @@ def progressive_frechet_mean_multistart(diagrams,
                                         weights=None,
                                         starts=("medoid", "second_medoid", "farthest_from_medoid"),
                                         return_details: bool = False,
+                                        n_threads: int = 1,
                                         **kwargs):
     diagrams = [as_real_numpy(_check_numpy_diagram_shape(d)) for d in diagrams]
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
@@ -736,6 +762,7 @@ def progressive_frechet_mean_multistart(diagrams,
             weights=normalized_weights,
             initial_seed=initial_seed,
             return_details=True,
+            n_threads=n_threads,
             **local_kwargs,
         )
         objective = frechet_mean_objective(
@@ -744,6 +771,7 @@ def progressive_frechet_mean_multistart(diagrams,
             weights=normalized_weights,
             wasserstein_delta=local_kwargs.get("wasserstein_delta", 0.01),
             internal_p=local_kwargs.get("internal_p", np.inf),
+            n_threads=n_threads,
         )
         results.append({
             "start": start,
@@ -777,7 +805,8 @@ def frechet_mean(diagrams,
                  random_seed: int = 42,
                  grid_n_x_bins: int = 16,
                  grid_n_y_bins: int = 16,
-                 custom_initial_barycenter=None):
+                 custom_initial_barycenter=None,
+                 n_threads: int = 1):
     diagrams = [as_real_numpy(_check_numpy_diagram_shape(d)) for d in diagrams]
     if weights is not None:
         weights = np.asarray(weights)
@@ -804,7 +833,8 @@ def frechet_mean(diagrams,
                              random_seed=random_seed,
                              grid_n_x_bins=grid_n_x_bins,
                              grid_n_y_bins=grid_n_y_bins,
-                             custom_initial_barycenter=custom_initial_barycenter)
+                             custom_initial_barycenter=custom_initial_barycenter,
+                             n_threads=n_threads)
 
 
 def to_scipy_matrix(sparse_cols, shape=None):
