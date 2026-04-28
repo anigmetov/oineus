@@ -79,6 +79,17 @@ DEFAULT_INF_LINE_STYLE: dict = {
     "linewidth": 1.0,
 }
 
+DEFAULT_DIAGRAM_GRADIENT_STYLE: dict = {
+    "color": "tab:green",
+    "alpha": 0.85,
+    "width": 0.004,
+    "headwidth": 3.5,
+    "headlength": 5.0,
+    "angles": "xy",
+    "scale_units": "xy",
+    "scale": 1.0,
+}
+
 
 def default_point_style() -> dict:
     return dict(DEFAULT_POINT_STYLE)
@@ -114,6 +125,10 @@ def default_diagonal_projection_b_style() -> dict:
 
 def default_inf_line_style() -> dict:
     return dict(DEFAULT_INF_LINE_STYLE)
+
+
+def default_diagram_gradient_style() -> dict:
+    return dict(DEFAULT_DIAGRAM_GRADIENT_STYLE)
 
 
 def _resolve_style(user: typing.Optional[dict], default_getter) -> dict:
@@ -538,6 +553,236 @@ def plot_diagram(
         if labels:
             uniq = dict(zip(labels, handles))
             ax.legend(uniq.values(), uniq.keys(), title="dimension")
+
+    return ax
+
+
+# ---------------------------------------------------------------------------
+# plot_diagram_gradient
+# ---------------------------------------------------------------------------
+
+def _coerce_diagram_with_grad(diagram, gradient, dims):
+    """Normalize ``diagram`` + ``gradient`` to two parallel
+    ``dict[int, np.ndarray]``, both ``(n, 2)`` per dim.
+
+    Accepted ``diagram`` forms: ``torch.Tensor``, ``np.ndarray``, native
+    ``oineus.Diagrams``, dict-like (incl. ``oineus.diff.PersistenceDiagrams``).
+    When ``gradient`` is ``None`` the input must be torch-backed and the
+    gradient is pulled from ``.grad``.
+    """
+    try:
+        import torch
+        has_torch = True
+    except ImportError:  # pragma: no cover - torch is optional
+        torch = None
+        has_torch = False
+
+    def _torch_to_array(t):
+        return t.detach().cpu().numpy().astype(float, copy=False)
+
+    def _grad_for_tensor(t):
+        if t.grad is None:
+            raise ValueError(
+                "Torch diagram tensor has no .grad. Make sure a loss derived "
+                "from this tensor was followed by .backward(). For non-leaf "
+                "tensors (e.g. those returned by "
+                "oineus.diff.persistence_diagram), call dgm.retain_grad() "
+                "before .backward()."
+            )
+        return _torch_to_array(t.grad)
+
+    def _array_2d(a, what):
+        arr = np.asarray(a, dtype=float)
+        if arr.ndim != 2 or arr.shape[1] != 2:
+            raise ValueError(f"{what} must have shape (n, 2); got {arr.shape}.")
+        return arr
+
+    def _gradient_array(g):
+        if has_torch and isinstance(g, torch.Tensor):
+            return _array_2d(_torch_to_array(g), "gradient")
+        return _array_2d(g, "gradient")
+
+    if has_torch and isinstance(diagram, torch.Tensor):
+        if diagram.ndim != 2 or diagram.shape[1] != 2:
+            raise ValueError("torch diagram tensor must have shape (n, 2).")
+        pts = _torch_to_array(diagram)
+        grad = _grad_for_tensor(diagram) if gradient is None else _gradient_array(gradient)
+        return {0: pts}, {0: grad}
+
+    if isinstance(diagram, np.ndarray):
+        if gradient is None:
+            raise ValueError("When diagram is a numpy array, gradient must be supplied.")
+        return {0: _array_2d(diagram, "diagram")}, {0: _gradient_array(gradient)}
+
+    is_dict_like = isinstance(diagram, dict) or hasattr(diagram, "items")
+    if is_dict_like:
+        diag_items = list(diagram.items())
+        if dims is not None:
+            wanted = {int(d) for d in dims}
+            diag_items = [(d, v) for (d, v) in diag_items if int(d) in wanted]
+        grad_dict = gradient if isinstance(gradient, dict) else None
+        if gradient is not None and grad_dict is None:
+            raise ValueError(
+                "When diagram is dict-like, gradient must also be a "
+                "dict[int, ndarray | Tensor] or None."
+            )
+        pts_out: typing.Dict[int, np.ndarray] = {}
+        grad_out: typing.Dict[int, np.ndarray] = {}
+        for dim, val in diag_items:
+            dim_int = int(dim)
+            if has_torch and isinstance(val, torch.Tensor):
+                pts_out[dim_int] = _torch_to_array(val)
+                if grad_dict is not None and dim_int in grad_dict:
+                    grad_out[dim_int] = _gradient_array(grad_dict[dim_int])
+                elif gradient is None:
+                    grad_out[dim_int] = _grad_for_tensor(val)
+                else:
+                    raise ValueError(
+                        f"gradient dict is missing dimension {dim_int}."
+                    )
+            else:
+                pts_out[dim_int] = _array_2d(val, f"diagram[{dim_int}]")
+                if grad_dict is None or dim_int not in grad_dict:
+                    raise ValueError(
+                        f"Non-torch diagram entry at dim {dim_int} requires "
+                        "an explicit gradient."
+                    )
+                grad_out[dim_int] = _gradient_array(grad_dict[dim_int])
+        return pts_out, grad_out
+
+    if hasattr(diagram, "in_dimension"):
+        if not isinstance(gradient, dict):
+            raise ValueError(
+                "Native oineus.Diagrams requires gradient as a "
+                "dict[int, ndarray | Tensor]."
+            )
+        scan_dims = sorted(int(k) for k in gradient.keys()) if dims is None else [int(d) for d in dims]
+        pts_out = {}
+        grad_out = {}
+        for dim in scan_dims:
+            try:
+                arr = diagram.in_dimension(int(dim), as_numpy=True)
+            except (IndexError, RuntimeError):
+                continue
+            if int(dim) not in gradient:
+                raise ValueError(f"gradient dict is missing dimension {dim}.")
+            pts_out[int(dim)] = _array_2d(arr, f"diagram[{dim}]")
+            grad_out[int(dim)] = _gradient_array(gradient[int(dim)])
+        return pts_out, grad_out
+
+    raise TypeError(
+        f"Unsupported diagram type: {type(diagram).__name__}. Expected "
+        "torch.Tensor, numpy.ndarray, native oineus.Diagrams, "
+        "oineus.diff.PersistenceDiagrams, or dict[int, ndarray | Tensor]."
+    )
+
+
+def plot_diagram_gradient(
+    diagram,
+    gradient=None,
+    *,
+    ax=None,
+    dims: typing.Optional[typing.Iterable[int]] = None,
+    descent: bool = False,
+    plot_points: bool = True,
+    log_x: bool = False,
+    log_y: bool = False,
+    title: typing.Optional[str] = None,
+    axis_bounds: typing.Optional[typing.Mapping[str, float]] = None,
+    inf_line_margin: float = 0.05,
+    quiver_style: typing.Optional[dict] = None,
+    point_style: typing.Optional[dict] = None,
+    diagonal_style: typing.Optional[dict] = None,
+    inf_line_style: typing.Optional[dict] = None,
+    dim_label_fmt: str = "H{dim}",
+):
+    """Plot a gradient vector field on top of a persistence diagram.
+
+    For every diagram point at ``(birth, death)`` an arrow with components
+    ``(d/dbirth, d/ddeath)`` is drawn at that point. Useful for inspecting
+    where an optimization step would move each persistence pair when
+    minimizing or maximizing a topology-aware loss.
+
+    Inputs:
+        diagram: One of
+            - ``torch.Tensor`` of shape ``(n, 2)``,
+            - ``numpy.ndarray`` of shape ``(n, 2)``,
+            - native ``oineus.Diagrams``,
+            - differentiable ``oineus.diff.PersistenceDiagrams``,
+            - ``dict[int, ndarray | torch.Tensor]``.
+        gradient: Same shape/structure as ``diagram``, or ``None``. When
+            ``None`` and the diagram is torch-backed, the gradient is pulled
+            from each tensor's ``.grad``. For non-torch inputs it is
+            required and must mirror the diagram's per-dimension layout.
+        descent: If ``True``, plot ``-grad`` (the descent direction). The
+            default plots the gradient as-is (steepest *increase*).
+        plot_points: If ``True`` (default), the underlying diagram is drawn
+            via ``plot_diagram`` before the arrows are overlaid.
+
+    Inf-death points are skipped (arrows for those rows are dropped). The
+    ``quiver_style`` kwarg accepts any ``Axes.quiver`` keyword; the default
+    uses ``angles='xy', scale_units='xy', scale=1.0`` so that ``(vx, vy)``
+    is interpreted in data coordinates -- the natural convention given
+    that diagram coordinates and gradient components share units.
+    """
+    if not _HAS_MATPLOTLIB:
+        raise ImportError("matplotlib is required for plot_diagram_gradient.")
+
+    quiver_style = _resolve_style(quiver_style, default_diagram_gradient_style)
+
+    points_by_dim, grad_by_dim = _coerce_diagram_with_grad(diagram, gradient, dims)
+    if not points_by_dim:
+        raise ValueError("No diagram points to plot.")
+
+    sign = -1.0 if descent else 1.0
+
+    finite_by_dim: typing.Dict[int, typing.Tuple[np.ndarray, np.ndarray]] = {}
+    for dim, pts in points_by_dim.items():
+        g = grad_by_dim[dim]
+        if pts.shape[0] != g.shape[0]:
+            raise ValueError(
+                f"Diagram and gradient row counts disagree for dim {dim}: "
+                f"{pts.shape[0]} vs {g.shape[0]}."
+            )
+        finite_mask = np.isfinite(pts).all(axis=1) & np.isfinite(g).all(axis=1)
+        finite_by_dim[dim] = (pts[finite_mask], sign * g[finite_mask])
+
+    if plot_points:
+        finite_dgms = {dim: pts for dim, (pts, _) in finite_by_dim.items()}
+        ax = plot_diagram(
+            finite_dgms,
+            ax=ax,
+            log_x=log_x,
+            log_y=log_y,
+            title=title,
+            axis_bounds=axis_bounds,
+            inf_line_margin=inf_line_margin,
+            point_style=point_style,
+            diagonal_style=diagonal_style,
+            inf_line_style=inf_line_style,
+            dim_label_fmt=dim_label_fmt,
+        )
+    elif ax is None:
+        _, ax = plt.subplots()
+
+    finite_births_parts = [pts[:, 0] for pts, _ in finite_by_dim.values() if pts.size]
+    finite_deaths_parts = [pts[:, 1] for pts, _ in finite_by_dim.values() if pts.size]
+    all_births = np.concatenate(finite_births_parts) if finite_births_parts else np.empty((0,), dtype=float)
+    all_deaths = np.concatenate(finite_deaths_parts) if finite_deaths_parts else np.empty((0,), dtype=float)
+    x_shift = _shift_for_log(all_births, log_x)
+    y_shift = _shift_for_log(all_deaths, log_y)
+
+    for dim in sorted(finite_by_dim.keys()):
+        pts, grads = finite_by_dim[dim]
+        if pts.shape[0] == 0:
+            continue
+        ax.quiver(
+            pts[:, 0] + x_shift,
+            pts[:, 1] + y_shift,
+            grads[:, 0],
+            grads[:, 1],
+            **quiver_style,
+        )
 
     return ax
 

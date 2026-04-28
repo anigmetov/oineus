@@ -30,6 +30,7 @@ from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, Cube
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
 from .vis_utils import (
     plot_diagram,
+    plot_diagram_gradient,
     plot_matching,
     default_point_style,
     default_diagram_a_point_style,
@@ -40,6 +41,7 @@ from .vis_utils import (
     default_diagonal_projection_a_style,
     default_diagonal_projection_b_style,
     default_inf_line_style,
+    default_diagram_gradient_style,
     DEFAULT_POINT_STYLE,
     DEFAULT_DIAGRAM_A_POINT_STYLE,
     DEFAULT_DIAGRAM_B_POINT_STYLE,
@@ -49,6 +51,7 @@ from .vis_utils import (
     DEFAULT_DIAGONAL_PROJECTION_A_STYLE,
     DEFAULT_DIAGONAL_PROJECTION_B_STYLE,
     DEFAULT_INF_LINE_STYLE,
+    DEFAULT_DIAGRAM_GRADIENT_STYLE,
 )
 from .matching import (
     DiagramMatching,
@@ -80,6 +83,7 @@ __all__ = [
     "get_boundary_matrix",
     "is_reduced",
     "plot_diagram",
+    "plot_diagram_gradient",
     "plot_matching",
     "bottleneck_distance",
     "wasserstein_distance",
@@ -103,6 +107,7 @@ __all__ = [
     "default_diagonal_projection_a_style",
     "default_diagonal_projection_b_style",
     "default_inf_line_style",
+    "default_diagram_gradient_style",
     "DEFAULT_POINT_STYLE",
     "DEFAULT_DIAGRAM_A_POINT_STYLE",
     "DEFAULT_DIAGRAM_B_POINT_STYLE",
@@ -112,6 +117,7 @@ __all__ = [
     "DEFAULT_DIAGONAL_PROJECTION_A_STYLE",
     "DEFAULT_DIAGONAL_PROJECTION_B_STYLE",
     "DEFAULT_INF_LINE_STYLE",
+    "DEFAULT_DIAGRAM_GRADIENT_STYLE",
     "init_frechet_mean_first_diagram",
     "init_frechet_mean_random_diagram",
     "init_frechet_mean_medoid_diagram",
