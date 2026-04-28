@@ -22,6 +22,8 @@
 #include "nanobind/operators.h"
 #include "nanobind/make_iterator.h"
 
+#include "uid128_caster.h"
+
 namespace nb = nanobind;
 
 using namespace nb::literals;

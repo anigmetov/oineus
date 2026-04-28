@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <iomanip>
 #include <limits>
 #include <vector>
 #include <ostream>
@@ -9,9 +11,31 @@
 #include <string>
 #include <sstream>
 
+#if !defined(__SIZEOF_INT128__)
+#  error "oineus::Simplex::Uid uses unsigned __int128; this requires gcc/clang. " \
+         "On MSVC or other compilers without __int128, supply a portable 128-bit " \
+         "integer (e.g. boost::multiprecision::uint128_t) and adapt the hash / " \
+         "operator<< definitions below."
+#endif
+
 //using namespace std::rel_ops;
 
 namespace oineus {
+
+// Neither libstdc++ nor libc++ ship operator<< for __int128, so provide one in
+// our namespace. Format: 0x{hi:016x}{lo:016x} -- readable and unambiguous.
+inline std::ostream& operator<<(std::ostream& os, unsigned __int128 v)
+{
+    auto saved_flags = os.flags();
+    auto saved_fill  = os.fill();
+    auto hi = static_cast<std::uint64_t>(v >> 64);
+    auto lo = static_cast<std::uint64_t>(v);
+    os << "0x" << std::hex << std::setw(16) << std::setfill('0') << hi
+              << std::setw(16) << std::setfill('0') << lo;
+    os.flags(saved_flags);
+    os.fill(saved_fill);
+    return os;
+}
 
 template<typename IntIn, typename IntOut>
 IntOut comb(IntIn n, IntIn k)
@@ -32,15 +56,16 @@ IntOut comb(IntIn n, IntIn k)
     return result;
 }
 
-// combinatorial simplex numbering, as in Ripser (see Bauer's paper)
-// encode dimension info in the 4 most significant bits of result
-template<typename IntIn, typename IntOut>
-IntOut simplex_uid(const std::vector<IntIn>& vertices)
+// combinatorial simplex numbering, as in Ripser (see Bauer's paper).
+// Encodes dimension info in the 4 most significant bits of the 128-bit result.
+template<typename IntIn>
+unsigned __int128 simplex_uid(const std::vector<IntIn>& vertices)
 {
-    IntOut dim_info = static_cast<IntOut>(vertices.size() + 1) << (8 * sizeof(IntOut) - 4);
-    IntOut uid = 0;
+    using Uid = unsigned __int128;
+    Uid dim_info = static_cast<Uid>(vertices.size() + 1) << (8 * sizeof(Uid) - 4);
+    Uid uid = 0;
     for(IntIn i = 0; i < static_cast<IntIn>(vertices.size()); i++) {
-        uid += comb<IntIn, IntOut>(vertices[i], i + 1);
+        uid += comb<IntIn, Uid>(vertices[i], i + 1);
     }
     return uid | dim_info;
 }
@@ -70,14 +95,14 @@ struct Simplex {
     using Int = Int_;
     using IdxVector = std::vector<Int>;
 
-    using Uid = long long;
+    using Uid = unsigned __int128;
     // for Z2 only for now
     using Boundary = std::vector<Uid>;
 
     static constexpr Int k_invalid_id = Int(-1);
 
     Int id_ {k_invalid_id};
-    Uid uid_ {k_invalid_id};
+    Uid uid_ {};
     IdxVector vertices_;
 
     Simplex() = default;
@@ -101,7 +126,7 @@ struct Simplex {
     }
 
     // uids are set in parallel
-    void set_uid() { uid_ = simplex_uid<Int, Uid>(vertices_); }
+    void set_uid() { uid_ = simplex_uid<Int>(vertices_); }
 
     dim_type dim() const { return static_cast<Int>(vertices_.size()) - 1; }
 
@@ -141,7 +166,7 @@ struct Simplex {
 
             // vertices_ is sorted -> tau is sorted automatically
 
-            boundary.push_back(simplex_uid<Int, Uid>(tau));
+            boundary.push_back(simplex_uid<Int>(tau));
         }
 
         return boundary;
@@ -211,6 +236,32 @@ std::ostream& operator<<(std::ostream& out, const Simplex<I>& s)
 }
 
 namespace std {
+
+// libc++ provides std::hash for __int128 as a non-standard extension; libstdc++
+// does not. Without these specializations, Simplex<Int>::UidHasher = std::hash<Uid>
+// would not compile on gcc.
+#if defined(__GLIBCXX__)
+template<>
+struct hash<unsigned __int128> {
+    std::size_t operator()(unsigned __int128 v) const noexcept
+    {
+        auto lo = static_cast<std::uint64_t>(v);
+        auto hi = static_cast<std::uint64_t>(v >> 64);
+        std::size_t seed = std::hash<std::uint64_t>{}(lo);
+        oineus::hash_combine(seed, hi);
+        return seed;
+    }
+};
+
+template<>
+struct hash<__int128> {
+    std::size_t operator()(__int128 v) const noexcept
+    {
+        return std::hash<unsigned __int128>{}(static_cast<unsigned __int128>(v));
+    }
+};
+#endif
+
 template<class Int>
 struct hash<oineus::VREdge<Int>> {
     std::size_t operator()(const oineus::VREdge<Int>& p) const
