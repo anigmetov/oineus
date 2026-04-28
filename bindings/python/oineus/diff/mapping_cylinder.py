@@ -30,4 +30,5 @@ def mapping_cylinder_filtration(fil_domain: DiffFiltration, fil_codomain: DiffFi
 
     cyl_values = concat_vals[cyl_val_inds].raw
 
+    under_cyl_fil.kind = _oineus.FiltrationKind.MappingCylinder
     return DiffFiltration(under_cyl_fil, cyl_values)

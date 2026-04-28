@@ -1064,11 +1064,13 @@ def _alpha_shapes_filtration(points: np.ndarray,
         else:
             fil_diode = diode.fill_alpha_shapes(points, exact=exact)
 
-    return _oineus.Filtration(
+    fil = _oineus.Filtration(
         fil_diode,
         duplicates_possible=periodic,
         n_threads=n_threads,
     )
+    fil.kind = _oineus.FiltrationKind.Alpha
+    return fil
 
 
 def compute_diagrams_alpha(points: np.ndarray,

@@ -15,6 +15,7 @@
 
 #include "timer.h"
 #include "decomposition.h"
+#include "filtration_kind.h"
 namespace oineus {
 
     template<typename Int_, typename Real_, size_t D>
@@ -94,6 +95,9 @@ namespace oineus {
         }
 
         size_t size() const { return cells_.size(); }
+
+        FiltrationKind kind() const { return kind_; }
+        void set_kind(FiltrationKind k) { kind_ = k; }
 
         auto dim_first(dim_type d) const { return dim_first_.at(d); }
         auto dim_last(dim_type d) const { return dim_last_.at(d); }
@@ -423,6 +427,7 @@ namespace oineus {
         bool negate_;
         CellVector cells_;
         bool is_subfiltration_ {false};
+        FiltrationKind kind_ {FiltrationKind::User};
 
         std::unordered_map<CellUid, Int, UidHasher> uid_to_sorted_id;
         std::vector<Int> id_to_sorted_id_;
@@ -565,6 +570,7 @@ namespace oineus {
         {
             // ignore id_ ?
             return negate_ == other.negate_ and is_subfiltration_ == other.is_subfiltration_
+                   and kind_ == other.kind_
                    and dim_first_ == other.dim_first_ and dim_last_ == other.dim_last_
                    and uid_to_sorted_id == other.uid_to_sorted_id and id_to_sorted_id_ == other.id_to_sorted_id_
                    and sorted_id_to_id_ == other.sorted_id_to_id_

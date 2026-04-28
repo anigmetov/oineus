@@ -40,7 +40,8 @@ void init_oineus_filtration(nb::module_& m)
                                             decltype(Filtration::id_to_sorted_id_),
                                             decltype(Filtration::sorted_id_to_id_),
                                             decltype(Filtration::dim_first_),
-                                            decltype(Filtration::dim_last_)
+                                            decltype(Filtration::dim_last_),
+                                            decltype(Filtration::kind_)
                                            >;
 
 
@@ -54,7 +55,8 @@ void init_oineus_filtration(nb::module_& m)
                                                 decltype(ProdFiltration::id_to_sorted_id_),
                                                 decltype(ProdFiltration::sorted_id_to_id_),
                                                 decltype(ProdFiltration::dim_first_),
-                                                decltype(ProdFiltration::dim_last_)
+                                                decltype(ProdFiltration::dim_last_),
+                                                decltype(ProdFiltration::kind_)
                                                >;
 
     using oin::VREdge;
@@ -163,9 +165,13 @@ void init_oineus_filtration(nb::module_& m)
               ss << fil;
               return ss.str();
             })
+            .def_prop_rw("kind", &Filtration::kind, &Filtration::set_kind,
+                "FiltrationKind tag set by the constructor that built this filtration "
+                "(or User for hand-built ones).")
             .def("__getstate__", [](const Filtration& fil) -> FiltrationStateTuple {
                   return std::make_tuple(fil.negate_, fil.cells_, fil.is_subfiltration_,
-                      fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_);
+                      fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_,
+                      fil.kind_);
                 })
             .def("__setstate__", [](Filtration& fil, const FiltrationStateTuple& t) {
                 new (&fil) Filtration();
@@ -177,6 +183,7 @@ void init_oineus_filtration(nb::module_& m)
                 fil.sorted_id_to_id_ = std::get<5>(t);
                 fil.dim_first_ = std::get<6>(t);
                 fil.dim_last_ = std::get<7>(t);
+                fil.kind_ = std::get<8>(t);
             })
     ;
 
@@ -215,9 +222,13 @@ void init_oineus_filtration(nb::module_& m)
             })
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
+            .def_prop_rw("kind", &ProdFiltration::kind, &ProdFiltration::set_kind,
+                "FiltrationKind tag set by the constructor that built this filtration "
+                "(or User for hand-built ones).")
             .def("__getstate__", [](const ProdFiltration& fil) -> ProdFiltrationStateTuple {
                   return std::make_tuple(fil.negate_, fil.cells_, fil.is_subfiltration_,
-                      fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_);
+                      fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_,
+                      fil.kind_);
                 })
             .def("__setstate__", [](ProdFiltration& fil, const ProdFiltrationStateTuple& t) {
                 new (&fil) ProdFiltration();
@@ -229,6 +240,7 @@ void init_oineus_filtration(nb::module_& m)
                 fil.sorted_id_to_id_ = std::get<5>(t);
                 fil.dim_first_ = std::get<6>(t);
                 fil.dim_last_ = std::get<7>(t);
+                fil.kind_ = std::get<8>(t);
             })
     ;
 
@@ -242,7 +254,8 @@ void init_oineus_filtration(nb::module_& m)
                                                 decltype(CubeFiltration_##DIM##D::id_to_sorted_id_), \
                                                 decltype(CubeFiltration_##DIM##D::sorted_id_to_id_), \
                                                 decltype(CubeFiltration_##DIM##D::dim_first_), \
-                                                decltype(CubeFiltration_##DIM##D::dim_last_) \
+                                                decltype(CubeFiltration_##DIM##D::dim_last_), \
+                                                decltype(CubeFiltration_##DIM##D::kind_) \
                                                >; \
         nb::class_<CubeFiltration_##DIM##D>(m, "CubeFiltration_" #DIM "D") \
             .def(nb::init<CubeFiltration_##DIM##D::CellVector, bool, int>(), \
@@ -290,9 +303,13 @@ void init_oineus_filtration(nb::module_& m)
                     ss << fil; \
                     return ss.str(); \
                 }) \
+            .def_prop_rw("kind", &CubeFiltration_##DIM##D::kind, &CubeFiltration_##DIM##D::set_kind, \
+                "FiltrationKind tag set by the constructor that built this filtration " \
+                "(or User for hand-built ones).") \
             .def("__getstate__", [](const CubeFiltration_##DIM##D& fil) -> CubeFiltration_##DIM##DStateTuple { \
                       return std::make_tuple(fil.negate_, fil.cells_, fil.is_subfiltration_, \
-                          fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_); \
+                          fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_, \
+                          fil.kind_); \
                     }) \
             .def("__setstate__", [](CubeFiltration_##DIM##D& fil, const CubeFiltration_##DIM##DStateTuple& t) { \
                 new (&fil) CubeFiltration_##DIM##D(); \
@@ -304,6 +321,7 @@ void init_oineus_filtration(nb::module_& m)
                 fil.sorted_id_to_id_ = std::get<5>(t); \
                 fil.dim_first_ = std::get<6>(t); \
                 fil.dim_last_ = std::get<7>(t); \
+                fil.kind_ = std::get<8>(t); \
             }) \
 
 

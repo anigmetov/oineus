@@ -871,6 +871,20 @@ def _resolve_source_kind(filtration, override):
                 f"source_kind must be 'points' or 'field', got {override!r}."
             )
         return override
+    # Prefer the FiltrationKind tag set by the constructor (Phase 2);
+    # fall back to type-based detection for hand-built filtrations
+    # whose kind was left at User.
+    kind = getattr(filtration, "kind", None)
+    if kind is not None:
+        try:
+            from .. import _oineus
+            FK = _oineus.FiltrationKind
+            if kind in (FK.Cubical, FK.Freudenthal):
+                return "field"
+            if kind in (FK.Vr, FK.Alpha, FK.WeakAlpha, FK.CechDelaunay):
+                return "points"
+        except (ImportError, AttributeError):
+            pass
     if _is_cubical_filtration(filtration):
         return "field"
     return "points"

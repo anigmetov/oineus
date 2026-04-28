@@ -1,5 +1,11 @@
 """
-Phase-1 correctness tests for the crit-sets backward in oineus.diff.
+Correctness tests for the crit-sets backward in oineus.diff.
+
+Phase 1: per-direction smoke + comparison against dgm-loss + Python
+combine vs C++ combine equivalence. Phase 2 adds laziness assertions
+on the new TopologyOptimizer.matrix_summary, fallback-re-reduce
+equivalence, the smarter dualize default keyed on FiltrationKind, and
+end-to-end FCA support.
 
 Small inputs only -- intentionally far from any size that could blow
 up the VR complex.
@@ -111,15 +117,19 @@ def test_all_conflict_strategies_run(strategy):
     assert torch.isfinite(pts.grad).all()
 
 
-def test_fix_crit_avg_raises_through_cpp_combine():
+def test_fix_crit_avg_runs_end_to_end():
+    # Phase 2 supports FCA via crit_sets_apply (the per-pair input doubles
+    # as the critical-prescribed map). Phase 1 raised RuntimeError here.
     pts = _seeded_circle()
     dgm1 = _h1_diagram(pts, gradient_method="crit-sets", conflict_strategy="fca")
     if dgm1.shape[0] == 0:
         pytest.skip("no H1 points")
     target = dgm1[0, 1].item() + 0.5
     loss = (dgm1[0, 1] - target) ** 2
-    with pytest.raises(RuntimeError):
-        loss.backward()
+    loss.backward()
+    assert pts.grad is not None
+    assert torch.isfinite(pts.grad).all()
+    assert pts.grad.norm().item() > 0.0
 
 
 def test_python_combine_matches_cpp_combine_avg():
@@ -200,3 +210,173 @@ def test_python_combine_fca_overrides_critical_simplices():
     assert out[0] == pytest.approx(2.0)
     assert out[1] == pytest.approx(7.0)
     assert out[2] == pytest.approx(9.0)
+
+
+# ---------------------------------------------------------------------
+# Phase 2: per-side lazy reduction + crit_sets_apply
+# ---------------------------------------------------------------------
+
+
+def _matrix_summary(top_opt):
+    """Returns (hom_status, coh_status) tuple."""
+    return top_opt.matrix_summary()
+
+
+def test_phase2_death_only_loop_skips_cohomology():
+    pts = _seeded_circle()
+    fil = oin_diff.vr_filtration(pts, max_dim=2)
+    dgms = oin_diff.persistence_diagram(fil, gradient_method="crit-sets")
+    dgm1 = dgms.in_dimension(1)
+    if dgm1.shape[0] == 0:
+        pytest.skip("no H1 points")
+    i = _most_persistent_index(dgm1)
+    target = dgm1[i, 1].item() + 0.5
+    ((dgm1[i, 1] - target) ** 2).backward()
+
+    top_opt = dgms._top_opt
+    hom, coh = _matrix_summary(top_opt)
+    assert hom.is_reduced
+    assert hom.has_v
+    assert hom.has_u, "death move requires U_hom"
+    assert not coh.is_reduced, (
+        "death-only loop must not reduce the cohomology side; "
+        f"got coh={coh}"
+    )
+
+
+def test_phase2_birth_only_loop_skips_homology_u():
+    pts = _seeded_circle()
+    fil = oin_diff.vr_filtration(pts, max_dim=2)
+    dgms = oin_diff.persistence_diagram(fil, gradient_method="crit-sets")
+    dgm1 = dgms.in_dimension(1)
+    if dgm1.shape[0] == 0:
+        pytest.skip("no H1 points")
+
+    non_zero_births = dgm1[:, 0] > 1e-6
+    if not non_zero_births.any():
+        pytest.skip("all births are zero")
+    j = int(non_zero_births.nonzero()[0].item())
+    # increase_birth: target_birth > current_birth -> needs V_coh, no U
+    target = dgm1[j, 0].item() + 0.2
+    ((dgm1[j, 0] - target) ** 2).backward()
+
+    top_opt = dgms._top_opt
+    hom, coh = _matrix_summary(top_opt)
+    # forward already reduced hom (R+V, clearing on, no U)
+    assert hom.is_reduced
+    assert not hom.has_u, "birth-only loop should leave U_hom unbuilt"
+    # coh side reduced for the birth move; increase_birth uses V_coh, no U
+    assert coh.is_reduced
+    assert coh.has_v
+    assert not coh.has_u
+    assert coh.clearing_opt_used, "no U on coh -> clearing should be on"
+
+
+def test_phase2_increase_death_re_reduces_hom_without_clearing():
+    pts = _seeded_circle()
+    fil = oin_diff.vr_filtration(pts, max_dim=2)
+    dgms = oin_diff.persistence_diagram(fil, gradient_method="crit-sets")
+    dgm1 = dgms.in_dimension(1)
+    if dgm1.shape[0] == 0:
+        pytest.skip("no H1 points")
+
+    # Confirm the forward reduced hom with clearing on.
+    hom_before, _ = _matrix_summary(dgms._top_opt)
+    assert hom_before.is_reduced
+    assert hom_before.clearing_opt_used
+    assert not hom_before.has_u
+
+    # Now drive an increase_death: needs U_hom, must re-reduce hom
+    # with clearing off.
+    i = _most_persistent_index(dgm1)
+    target = dgm1[i, 1].item() + 0.5
+    ((dgm1[i, 1] - target) ** 2).backward()
+
+    hom_after, _ = _matrix_summary(dgms._top_opt)
+    assert hom_after.has_u
+    assert not hom_after.clearing_opt_used
+
+
+def test_phase2_matches_phase1_numerically():
+    """Phase 2 should produce the same crit-sets gradient as Phase 1
+    (per-pair via TopologyOptimizer.singletons + combine_loss with
+    eager reduce_all)."""
+    pts_a = _seeded_circle()
+    pts_b = _seeded_circle()
+    assert torch.allclose(pts_a, pts_b)
+
+    # Phase-2 path: the production crit-sets backward.
+    fil_a = oin_diff.vr_filtration(pts_a, max_dim=2)
+    dgms_a = oin_diff.persistence_diagram(fil_a, gradient_method="crit-sets")
+    dgm_a = dgms_a.in_dimension(1)
+    if dgm_a.shape[0] == 0:
+        pytest.skip("no H1 points")
+    i = _most_persistent_index(dgm_a)
+    target = dgm_a[i, 1].item() + 0.5
+    ((dgm_a[i, 1] - target) ** 2).backward()
+    grad_phase2 = pts_a.grad.detach().clone()
+
+    # Phase-1-style reference: drive singletons + combine_loss directly.
+    fil_b = oin_diff.vr_filtration(pts_b, max_dim=2)
+    fil_values_b = fil_b.values.detach()
+    top_b = oineus._oineus.TopologyOptimizer(fil_b.under_fil)
+    top_b.reduce_all()
+    nondiff_b = top_b.compute_diagram(include_inf_points=False)
+
+    arr = nondiff_b.index_diagram_in_dimension(1, as_numpy=True).astype(np.int64)
+    # Pick the most-persistent pair on the same diagram.
+    fil_values_np = fil_values_b.numpy()
+    persist = fil_values_np[arr[:, 1]] - fil_values_np[arr[:, 0]]
+    j = int(persist.argmax())
+    b_idx, d_idx = int(arr[j, 0]), int(arr[j, 1])
+    d_cur = float(fil_values_np[d_idx])
+    b_grad_d = 2.0 * (d_cur - target)  # dL/d_d = 2(d - target)
+    d_tgt = d_cur - b_grad_d  # step_size = 1.0
+
+    flat_idx = [d_idx]
+    flat_tgt = [d_tgt]
+    crit_sets = top_b.singletons(flat_idx, flat_tgt)
+    indvals = top_b.combine_loss(crit_sets, oineus._oineus.ConflictStrategy.Avg)
+    indices = list(indvals[0])
+    targets_ref = list(indvals[1])
+
+    # Translate per-simplex grad into pts grad via autograd: build a
+    # synthetic loss whose gradient is sum_sigma (f(sigma) - f'(sigma))
+    # at the requested simplices.
+    indices_t = torch.tensor(indices, dtype=torch.long)
+    targets_t = torch.tensor(targets_ref, dtype=torch.float64)
+    surrogate = 0.5 * ((fil_b.values[indices_t] - targets_t) ** 2).sum()
+    surrogate.backward()
+    grad_phase1 = pts_b.grad.detach().clone()
+
+    diff = (grad_phase1 - grad_phase2).norm().item()
+    ref = max(grad_phase1.norm().item(), grad_phase2.norm().item(), 1e-12)
+    assert diff / ref < 1e-9, (
+        f"Phase-1 vs Phase-2 gradients diverge: rel diff {diff / ref:.3e}, "
+        f"abs diff {diff:.3e}"
+    )
+
+
+def test_phase2_dualize_default_picks_cohomology_for_vr():
+    pts = _seeded_circle()
+    fil = oin_diff.vr_filtration(pts, max_dim=2)
+    # When dualize is left unset on a VR filtration, dgm-loss should
+    # default to cohomology.
+    dgms = oin_diff.persistence_diagram(fil, gradient_method="dgm-loss")
+    assert dgms._dualize is True
+
+
+def test_phase2_dualize_default_picks_homology_for_alpha_like():
+    """For non-VR filtrations the default stays at homology."""
+    pts = _seeded_circle()[:, :2]  # weak_alpha needs 2D or 3D
+    fil = oin_diff.weak_alpha_filtration(pts.detach().requires_grad_(True))
+    dgms = oin_diff.persistence_diagram(fil, gradient_method="dgm-loss")
+    assert dgms._dualize is False
+
+
+def test_phase2_explicit_dualize_overrides_kind_default():
+    pts = _seeded_circle()
+    fil = oin_diff.vr_filtration(pts, max_dim=2)
+    dgms = oin_diff.persistence_diagram(fil, gradient_method="dgm-loss",
+                                        dualize=False)
+    assert dgms._dualize is False

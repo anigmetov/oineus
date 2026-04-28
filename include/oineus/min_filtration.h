@@ -65,6 +65,7 @@ std::tuple<Filtration<C, R>, std::vector<size_t>, std::vector<size_t>> min_filtr
     }
 
     Filtration<Cell, Real> new_fil(cells, negate);
+    new_fil.set_kind(FiltrationKind::MinFil);
 
     return { new_fil, perm_1, perm_2 };
 }

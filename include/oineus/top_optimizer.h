@@ -165,6 +165,78 @@ public:
         params_coh_.clearing_opt = false;
     }
 
+    // Phase-2 entry point: defer reductions, let the caller use
+    // ensure_reduced_hom / ensure_reduced_coh per backward to pick the
+    // cheapest reduction that still produces V (and U if needed).
+    // Tag-dispatch overload to keep intent explicit at call sites.
+    struct DeferReduction {};
+
+    TopologyOptimizer(const Fil& fil, DeferReduction)
+            :
+            negate_(fil.negate()),
+            fil_(fil),
+            decmp_hom_(fil, false),
+            decmp_coh_(fil, true)
+    {
+        // V is correct under clearing per the fast_critical_sets paper, so
+        // when the caller does not need U on a side we keep clearing on.
+        params_hom_.compute_v = true;
+        params_hom_.compute_u = false;
+        params_hom_.clearing_opt = true;
+        params_coh_.compute_v = true;
+        params_coh_.compute_u = false;
+        params_coh_.clearing_opt = true;
+    }
+
+    // Tracks how each side was last reduced (or that it has not been).
+    // matrix_summary() returns this for diagnostics + benchmarks; the
+    // ensure_reduced_* helpers also use it to skip work.
+    struct SideStatus {
+        bool is_reduced {false};
+        bool has_v {false};
+        bool has_u {false};
+        bool clearing_opt_used {false};
+
+        friend std::ostream& operator<<(std::ostream& out, const SideStatus& s)
+        {
+            out << "SideStatus(is_reduced=" << (s.is_reduced ? "true" : "false")
+                << ", has_v=" << (s.has_v ? "true" : "false")
+                << ", has_u=" << (s.has_u ? "true" : "false")
+                << ", clearing_opt_used=" << (s.clearing_opt_used ? "true" : "false") << ")";
+            return out;
+        }
+    };
+
+    SideStatus side_status(const Decomposition& dcmp, const Params& params) const
+    {
+        SideStatus s;
+        s.is_reduced = dcmp.is_reduced;
+        s.has_v = dcmp.is_reduced and params.compute_v;
+        s.has_u = dcmp.has_matrix_u();
+        s.clearing_opt_used = params.clearing_opt;
+        return s;
+    }
+
+    SideStatus hom_status() const { return side_status(decmp_hom_, params_hom_); }
+    SideStatus coh_status() const { return side_status(decmp_coh_, params_coh_); }
+
+    // Per-side reduction policy for the Phase-2 crit-sets path.
+    // Always produces V; produces U when need_u is true. Clearing is on
+    // when no U is needed; off when U is needed (in-band U requires a
+    // non-cleared R). If the side is already reduced and the existing
+    // state covers what is asked for, returns immediately. Otherwise
+    // rebuilds from scratch -- this is the "fallback re-reduce" the
+    // Phase-2 plan accepts in exchange for simpler logic.
+    void ensure_reduced_hom(bool need_u)
+    {
+        ensure_reduced_side(decmp_hom_, params_hom_, /*dualize*/false, need_u);
+    }
+
+    void ensure_reduced_coh(bool need_u)
+    {
+        ensure_reduced_side(decmp_coh_, params_coh_, /*dualize*/true, need_u);
+    }
+
     bool cmp(Real a, Real b) const
     {
         if (negate_)
@@ -509,6 +581,109 @@ public:
         return combine_loss(singletons(indices, values), strategy);
     }
 
+    // Phase-2 fused entry point: per-pair critical-set walk + conflict
+    // resolution, in one C++ call with no intermediate Python lists.
+    // Caller responsibility:
+    //   - call ensure_reduced_hom(need_u_hom) and ensure_reduced_coh(need_u_coh)
+    //     beforehand with flags that match the move directions in
+    //     (indices, values). This is what the oineus.diff backward does.
+    // For FCA the (indices, values) input doubles as the per-critical-
+    // simplex target map: each input pair declares one critical simplex
+    // whose target is its accompanying value.
+    IndicesValues crit_sets_apply(const Indices& indices, const Values& values,
+                                  ConflictStrategy strategy)
+    {
+        CALI_CXX_MARK_FUNCTION;
+        if (indices.size() != values.size())
+            throw std::runtime_error("crit_sets_apply: indices and values must have the same size");
+
+        // First pass: per-pair walk, accumulate into a flat (id -> values)
+        // multimap. Critical simplices (the input ones, for FCA) are
+        // remembered with their prescribed target value.
+        std::unordered_map<size_t, Values> per_simplex_targets;
+        std::unordered_map<size_t, Real> critical_prescribed;
+        per_simplex_targets.reserve(indices.size() * 4);
+        if (strategy == ConflictStrategy::FixCritAvg)
+            critical_prescribed.reserve(indices.size());
+
+        for (size_t i = 0; i < indices.size(); ++i) {
+            size_t idx = indices[i];
+            Real target = values[i];
+            Real current = fil_.get_cell_value(idx);
+            if (current == target)
+                continue;
+
+            // cmp(a, b) is true when a is filtration-strictly-less than b
+            // (it respects negate). cmp(current, target) thus means
+            // "the move is filtration-increasing", i.e. increase_*;
+            // cmp(target, current) means decrease_*.
+            Indices crit;
+            if (decmp_hom_.is_negative(idx)) {
+                if (cmp(current, target))
+                    crit = increase_death(idx, target);
+                else
+                    crit = decrease_death(idx, target);
+            } else {
+                if (cmp(current, target))
+                    crit = increase_birth(idx, target);
+                else
+                    crit = decrease_birth(idx, target);
+            }
+
+            for (auto sid : crit)
+                per_simplex_targets[sid].push_back(target);
+
+            if (strategy == ConflictStrategy::FixCritAvg)
+                critical_prescribed[idx] = target;
+        }
+
+        // Second pass: conflict resolution. Output sizes are bounded by
+        // per_simplex_targets.size() except for Sum, which expands to
+        // the total number of contributions.
+        IndicesValues out;
+        if (strategy == ConflictStrategy::Sum) {
+            size_t total = 0;
+            for (const auto& [sid, vs] : per_simplex_targets)
+                total += vs.size();
+            out.indices.reserve(total);
+            out.values.reserve(total);
+        } else {
+            out.indices.reserve(per_simplex_targets.size());
+            out.values.reserve(per_simplex_targets.size());
+        }
+
+        if (strategy == ConflictStrategy::Max) {
+            for (auto&& [sid, vs] : per_simplex_targets) {
+                Real cur = fil_.get_cell_value(sid);
+                Real picked = *std::max_element(vs.begin(), vs.end(),
+                    [cur](Real a, Real b) { return std::abs(a - cur) < std::abs(b - cur); });
+                out.emplace_back(sid, picked);
+            }
+        } else if (strategy == ConflictStrategy::Avg) {
+            for (auto&& [sid, vs] : per_simplex_targets) {
+                Real avg = std::accumulate(vs.begin(), vs.end(), static_cast<Real>(0)) / vs.size();
+                out.emplace_back(sid, avg);
+            }
+        } else if (strategy == ConflictStrategy::Sum) {
+            for (auto&& [sid, vs] : per_simplex_targets) {
+                for (auto v : vs)
+                    out.emplace_back(sid, v);
+            }
+        } else if (strategy == ConflictStrategy::FixCritAvg) {
+            for (auto&& [sid, vs] : per_simplex_targets) {
+                auto it = critical_prescribed.find(sid);
+                Real picked;
+                if (it == critical_prescribed.end())
+                    picked = std::accumulate(vs.begin(), vs.end(), static_cast<Real>(0)) / vs.size();
+                else
+                    picked = it->second;
+                out.emplace_back(sid, picked);
+            }
+        }
+
+        return out;
+    }
+
     Dgms compute_diagram(bool include_inf_points)
     {
         if (!decmp_hom_.is_reduced)
@@ -686,6 +861,29 @@ public:
     bool cmp(Real a, Real b)
     {
         return negate_ ? a > b : a < b;
+    }
+
+    // Helper for ensure_reduced_hom / ensure_reduced_coh.
+    void ensure_reduced_side(Decomposition& dcmp, Params& params,
+                             bool dualize, bool need_u)
+    {
+        const bool needed_clearing = !need_u;
+        const bool already_ok = dcmp.is_reduced
+                                and params.compute_v
+                                and (not need_u or dcmp.has_matrix_u())
+                                and (not need_u or not params.clearing_opt);
+        if (already_ok)
+            return;
+
+        // Rebuild from scratch: when the prior reduction used clearing
+        // and the new request needs U, the cleared R is irrecoverable;
+        // when the prior reduction was incomplete (V missing, U missing
+        // when needed), restarting is the simplest correct option.
+        params.compute_v = true;
+        params.compute_u = need_u;
+        params.clearing_opt = needed_clearing;
+        dcmp = Decomposition(fil_, dualize);
+        dcmp.reduce_serial(params);
     }
 
     Indices change_birth(size_t positive_simplex_idx, Real target_birth)

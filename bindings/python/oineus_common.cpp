@@ -9,6 +9,7 @@ void init_oineus_common(nb::module_& m)
     using oin::ConflictStrategy;
     using oin::DiagramPlaneDomain;
     using oin::FrechetMeanInit;
+    using oin::FiltrationKind;
     using ReductionParams = oin::Params;
     using KICRParams = oin::KICRParams;
     std::string vr_edge_name = "VREdge";
@@ -215,6 +216,22 @@ void init_oineus_common(nb::module_& m)
             .value("Sum", ConflictStrategy::Sum, "sum gradients")
             .value("FixCritAvg", ConflictStrategy::FixCritAvg, "use matching on critical, average gradients on other cells")
             .def("as_str", [](const ConflictStrategy& self) { return conflict_strategy_to_string(self); });
+
+    nb::enum_<FiltrationKind>(m, "FiltrationKind",
+            "Hint set by built-in filtration constructors. Lets oineus.diff "
+            "pick reduction defaults and oineus.vis pick rendering "
+            "(point cloud vs scalar field) automatically. User is the safe "
+            "default for hand-built filtrations.")
+            .value("User", FiltrationKind::User)
+            .value("Vr", FiltrationKind::Vr)
+            .value("Alpha", FiltrationKind::Alpha)
+            .value("WeakAlpha", FiltrationKind::WeakAlpha)
+            .value("CechDelaunay", FiltrationKind::CechDelaunay)
+            .value("Freudenthal", FiltrationKind::Freudenthal)
+            .value("Cubical", FiltrationKind::Cubical)
+            .value("MinFil", FiltrationKind::MinFil)
+            .value("MappingCylinder", FiltrationKind::MappingCylinder)
+            .def("as_str", [](const FiltrationKind& self) { return oin::to_string(self); });
 
     nb::enum_<DiagramPlaneDomain>(m, "DiagramPlaneDomain")
             .value("AboveDiagonal", DiagramPlaneDomain::AboveDiagonal)

@@ -2,7 +2,7 @@ import time
 import numpy as np
 import torch
 
-from .. import _alpha_shapes_filtration
+from .. import _alpha_shapes_filtration, _oineus
 from .diff_filtration import DiffFiltration
 
 def triangle_meb(p0, p1, p2, eps=1e-12):
@@ -323,6 +323,7 @@ def cech_delaunay_filtration(points, eps: float = 0.0, print_time: bool = False)
 
     if print_time:
         start = time.time()
+    alpha_fil.kind = _oineus.FiltrationKind.CechDelaunay
     result = DiffFiltration(alpha_fil, sorted_vals)
     if print_time:
         elapsed = time.time() - start

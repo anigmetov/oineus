@@ -121,6 +121,7 @@ public:
         }
 
         auto fil = GridFiltration(simplices, negate, n_threads);
+        fil.set_kind(FiltrationKind::Freudenthal);
 
         CriticalIndices sorted_vertices;
 
@@ -151,7 +152,9 @@ public:
             add_freudenthal_simplices(d, negate, simplices, dummy_vertices, false);
         }
 
-        return GridFiltration(simplices, negate, n_threads);
+        auto fil = GridFiltration(simplices, negate, n_threads);
+        fil.set_kind(FiltrationKind::Freudenthal);
+        return fil;
     }
 
     const Domain& domain() const { return computational_domain_; }
@@ -279,6 +282,7 @@ public:
 
         timer.reset();
         auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads);
+        fil.set_kind(FiltrationKind::Cubical);
         auto fil_elapsed = timer.elapsed_reset();
         if (verbose)
             std::cerr << "fil_elapsed : " << fil_elapsed << "\n";
@@ -406,6 +410,7 @@ public:
 
         timer.reset();
         auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads);
+        fil.set_kind(FiltrationKind::Cubical);
         auto fil_elapsed = timer.elapsed_reset();
         if (verbose)
             std::cerr << "fil_elapsed : " << fil_elapsed << "\n";

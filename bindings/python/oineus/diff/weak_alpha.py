@@ -11,7 +11,7 @@ import time
 import numpy as np
 import torch
 
-from .. import _alpha_shapes_filtration
+from .. import _alpha_shapes_filtration, _oineus
 from .diff_filtration import DiffFiltration
 
 
@@ -93,4 +93,5 @@ def weak_alpha_filtration(points, print_time: bool = False):
         elapsed = time.time() - start
         print(f"sort values elapsed: {elapsed:.3f}")
 
+    alpha_fil.kind = _oineus.FiltrationKind.WeakAlpha
     return DiffFiltration(alpha_fil, sorted_vals)

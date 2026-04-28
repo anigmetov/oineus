@@ -59,6 +59,7 @@ class PersistenceDiagramHelper(torch.autograd.Function):
         ctx.dim = dim
         ctx.top_opt = top_opt
         ctx.conflict_strategy = conflict_strategy
+        ctx.negate = bool(fil.negate)
 
         n_total = len(index_dgm)
 
@@ -95,15 +96,16 @@ class PersistenceDiagramHelper(torch.autograd.Function):
         if ctx.gradient_method != "crit-sets":
             raise RuntimeError(f"unknown gradient_method {ctx.gradient_method!r}")
 
-        # Crit-sets path. We restrict to finite pairs; rows of grad_output match
+        # Crit-sets path. Restrict to finite pairs; rows of grad_output match
         # the layout produced by forward (finite pairs first when
-        # include_inf_points is True). For include_inf_points=False, every row
-        # is finite by construction.
+        # include_inf_points is True). For include_inf_points=False every
+        # row is finite by construction.
         n_total = index_dgm.shape[0]
         device = grad_output.device
+        grad_vals = torch.zeros(fil_len, dtype=grad_output.dtype, device=device)
 
         if n_total == 0:
-            return torch.zeros(fil_len, dtype=grad_output.dtype, device=device), None, None, None, None, None, None, None, None
+            return grad_vals, None, None, None, None, None, None, None, None
 
         if ctx.include_inf_points:
             fin_mask = (index_dgm[:, 0] >= 0) & (index_dgm[:, 0] < fil_len) & (index_dgm[:, 1] >= 0) & (index_dgm[:, 1] < fil_len)
@@ -113,8 +115,6 @@ class PersistenceDiagramHelper(torch.autograd.Function):
         else:
             fin_idx_dgm = index_dgm
             fin_grad = grad_output
-
-        grad_vals = torch.zeros(fil_len, dtype=grad_output.dtype, device=device)
 
         if fin_idx_dgm.shape[0] == 0:
             return grad_vals, None, None, None, None, None, None, None, None
@@ -126,31 +126,51 @@ class PersistenceDiagramHelper(torch.autograd.Function):
         step = ctx.step_size
         b_tgt = b_cur - step * fin_grad[:, 0]
         d_tgt = d_cur - step * fin_grad[:, 1]
-
-        # Drop no-op moves and concatenate (b_idx, b_tgt) with (d_idx, d_tgt).
         b_move = b_tgt != b_cur
         d_move = d_tgt != d_cur
+
+        # Classify the requested moves to decide which decompositions and
+        # which U matrices we actually need. The C++ side compares
+        # current vs target via fil.cmp() which respects negate; we
+        # mirror that here so we ask for U on a side only when at least
+        # one move on that side reads U.
+        negate = bool(ctx.negate)
+        if negate:
+            # filtration-increasing means value-decreasing
+            need_u_hom = bool((d_tgt[d_move] < d_cur[d_move]).any().item()) if d_move.any() else False
+            need_u_coh = bool((b_tgt[b_move] > b_cur[b_move]).any().item()) if b_move.any() else False
+        else:
+            need_u_hom = bool((d_tgt[d_move] > d_cur[d_move]).any().item()) if d_move.any() else False
+            need_u_coh = bool((b_tgt[b_move] < b_cur[b_move]).any().item()) if b_move.any() else False
+
+        any_death = bool(d_move.any().item())
+        any_birth = bool(b_move.any().item())
+
+        top_opt = ctx.top_opt
+        if any_death:
+            top_opt.ensure_reduced_hom(need_u=need_u_hom)
+        if any_birth:
+            top_opt.ensure_reduced_coh(need_u=need_u_coh)
+
         flat_idx = torch.cat([b_idx[b_move], d_idx[d_move]])
         flat_tgt = torch.cat([b_tgt[b_move], d_tgt[d_move]])
 
         if flat_idx.numel() == 0:
             return grad_vals, None, None, None, None, None, None, None, None
 
-        flat_idx_np = flat_idx.detach().cpu().numpy().tolist()
+        flat_idx_np = flat_idx.detach().cpu().numpy().astype(np.uintp).tolist()
         flat_tgt_np = flat_tgt.detach().cpu().to(torch.float64).numpy().tolist()
 
-        top_opt = ctx.top_opt
-        crit_sets = top_opt.singletons(flat_idx_np, flat_tgt_np)
         strategy = _resolve_strategy(ctx.conflict_strategy)
-        indvals = top_opt.combine_loss(crit_sets, strategy)
-        indices = list(indvals[0])
-        targets = list(indvals[1])
+        indvals = top_opt.crit_sets_apply(flat_idx_np, flat_tgt_np, strategy)
+        out_idx_np = np.asarray(indvals.indices_array(), copy=True)
+        out_tgt_np = np.asarray(indvals.values_array(), copy=True)
 
-        if not indices:
+        if out_idx_np.size == 0:
             return grad_vals, None, None, None, None, None, None, None, None
 
-        idx_t = torch.tensor(indices, dtype=torch.long, device=device)
-        tgt_t = torch.tensor(targets, dtype=grad_output.dtype, device=device)
+        idx_t = torch.from_numpy(out_idx_np.astype(np.int64)).to(device=device)
+        tgt_t = torch.from_numpy(out_tgt_np).to(dtype=grad_output.dtype, device=device)
 
         if strategy == _oineus.ConflictStrategy.Sum:
             # Sum may emit duplicate indices: aggregate per-index gradients.
@@ -173,7 +193,7 @@ class PersistenceDiagrams:
         loss.backward()
     """
 
-    def __init__(self, fil: DiffFiltration, dualize: bool, include_inf_points: bool,
+    def __init__(self, fil: DiffFiltration, dualize, include_inf_points: bool,
                  gradient_method: str, step_size: float, conflict_strategy,
                  rp=None, n_threads=None):
         if not isinstance(fil.values, torch.Tensor):
@@ -181,6 +201,12 @@ class PersistenceDiagrams:
 
         if rp is None:
             rp = _oineus.ReductionParams()
+
+        # If the caller did not pin dualize, prefer cohomology for VR
+        # (where coh+clearing wins decisively); homology for everything
+        # else.
+        if dualize is None:
+            dualize = (fil.under_fil.kind == _oineus.FiltrationKind.Vr)
 
         self._fil = fil
         self._dualize = dualize
@@ -190,8 +216,9 @@ class PersistenceDiagrams:
         self._conflict_strategy = conflict_strategy
 
         if gradient_method == "crit-sets":
-            top_opt = _oineus.TopologyOptimizer(fil.under_fil)
-            top_opt.reduce_all()
+            # Phase-2: defer reductions; backward calls ensure_reduced_*
+            # per side with the right need_u flag.
+            top_opt = _oineus.TopologyOptimizer(fil.under_fil, defer_reduction=True)
             nondiff_dgms = top_opt.compute_diagram(include_inf_points=include_inf_points)
             self._top_opt = top_opt
         elif gradient_method == "dgm-loss":
@@ -255,7 +282,7 @@ class PersistenceDiagrams:
 
 def persistence_diagram(
     fil: DiffFiltration,
-    dualize: bool = False,
+    dualize=None,
     include_inf_points: bool = False,
     gradient_method: str = "dgm-loss",
     step_size: float = 1.0,
@@ -267,14 +294,18 @@ def persistence_diagram(
 
     Args:
         fil: DiffFiltration with differentiable `values` tensor.
-        dualize: cohomology if True, homology if False. Used only for
-            "dgm-loss"; "crit-sets" always builds both decompositions.
-        include_inf_points: if True, include infinite points (deaths set
-            to float('inf')); only finite pairs receive crit-sets gradient.
+        dualize: cohomology if True, homology if False. None (default)
+            picks cohomology for VR filtrations (where coh+clearing
+            wins decisively) and homology otherwise. Used only for
+            "dgm-loss"; "crit-sets" reduces each side lazily based on
+            the moves it actually sees.
+        include_inf_points: if True, include infinite points (deaths
+            set to float('inf')); only finite pairs receive crit-sets
+            gradient.
         gradient_method: "dgm-loss" or "crit-sets".
         step_size: scales grad_output to a target diagram (target =
-            current - step_size * grad_output) for the "crit-sets" pass.
-            Ignored for "dgm-loss".
+            current - step_size * grad_output) for the "crit-sets"
+            pass. Ignored for "dgm-loss".
         conflict_strategy: "avg", "max", "sum", or "fca", or any
             _oineus.ConflictStrategy. Used only for "crit-sets".
         n_threads: passed to the underlying decomposition for "dgm-loss".

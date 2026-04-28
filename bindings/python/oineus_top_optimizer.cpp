@@ -100,6 +100,28 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
               else
                   throw std::out_of_range("IndicesValues: i must be  0 or 1");
             })
+            // Zero-copy numpy views; lifetime is tied to the IndicesValues
+            // instance via nb::rv_policy::reference_internal.
+            .def("indices_array",
+                 [](IndicesValues& iv) {
+                   return nb::ndarray<typename Indices::value_type, nb::numpy>(
+                       iv.indices.data(),
+                       {iv.indices.size()},
+                       nb::find(&iv));
+                 },
+                 nb::rv_policy::reference_internal,
+                 "Zero-copy numpy view over the indices vector. The view "
+                 "is invalidated by any operation that mutates the underlying "
+                 "IndicesValues; copy via np.array(...) to detach.")
+            .def("values_array",
+                 [](IndicesValues& iv) {
+                   return nb::ndarray<oin_real, nb::numpy>(
+                       iv.values.data(),
+                       {iv.values.size()},
+                       nb::find(&iv));
+                 },
+                 nb::rv_policy::reference_internal,
+                 "Zero-copy numpy view over the values vector.")
             .def("__repr__", [](const IndicesValues& iv) {
               std::stringstream ss;
               ss << iv;
@@ -116,9 +138,33 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                 iv.values = std::get<1>(t);
             });
 
+    using SideStatus = typename TopologyOptimizer::SideStatus;
+    nb::class_<SideStatus>(m, (opt_name + "SideStatus").c_str(),
+            "Reduction state of one side (homology or cohomology) of a "
+            "TopologyOptimizer; produced by matrix_summary().")
+            .def_ro("is_reduced", &SideStatus::is_reduced)
+            .def_ro("has_v", &SideStatus::has_v)
+            .def_ro("has_u", &SideStatus::has_u)
+            .def_ro("clearing_opt_used", &SideStatus::clearing_opt_used)
+            .def("__repr__", [](const SideStatus& s) {
+                std::stringstream ss; ss << s; return ss.str();
+            });
+
     // optimization
+    using DeferReduction = typename TopologyOptimizer::DeferReduction;
     nb::class_<TopologyOptimizer>(m, opt_name.c_str())
             .def(nb::init<const Filtration&>())
+            .def("__init__", [](TopologyOptimizer* p, const Filtration& fil, bool defer_reduction) {
+                if (defer_reduction)
+                    new (p) TopologyOptimizer(fil, DeferReduction{});
+                else
+                    new (p) TopologyOptimizer(fil);
+            },
+            nb::arg("fil"), nb::arg("defer_reduction"),
+            "Construct without eagerly setting compute_v/compute_u flags. "
+            "Use ensure_reduced_hom / ensure_reduced_coh per backward to "
+            "produce only the matrices needed by the requested moves; "
+            "clearing stays on for sides that do not need U.")
             .def("compute_diagram", [](TopologyOptimizer& opt, bool include_inf_points) { return PyOineusDiagrams<oin_real>(opt.compute_diagram(include_inf_points)); },
                     nb::arg("include_inf_points"),
                     "compute diagrams in all dimensions")
@@ -160,6 +206,35 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     nb::arg("strategy"),
                     nb::call_guard<nb::gil_scoped_release>(),
                     "combine critical sets into well-defined assignment of new values to indices")
+            .def("crit_sets_apply", &TopologyOptimizer::crit_sets_apply,
+                    nb::arg("indices"), nb::arg("values"), nb::arg("strategy"),
+                    nb::call_guard<nb::gil_scoped_release>(),
+                    "Phase-2 fused entry point: per-pair critical-set walk + "
+                    "conflict resolution in one C++ call. Caller must run "
+                    "ensure_reduced_hom / ensure_reduced_coh first with "
+                    "matching need_u flags. Returns IndicesValues; use "
+                    ".indices_array() / .values_array() for zero-copy numpy.")
+            .def("ensure_reduced_hom", &TopologyOptimizer::ensure_reduced_hom,
+                    nb::arg("need_u"),
+                    nb::call_guard<nb::gil_scoped_release>(),
+                    "Reduce the homology side once, picking compute_v=true and "
+                    "compute_u=need_u with clearing_opt set so that U is only "
+                    "produced when needed. If the existing reduction state "
+                    "covers the request, returns immediately; otherwise "
+                    "rebuilds from scratch.")
+            .def("ensure_reduced_coh", &TopologyOptimizer::ensure_reduced_coh,
+                    nb::arg("need_u"),
+                    nb::call_guard<nb::gil_scoped_release>(),
+                    "Same policy as ensure_reduced_hom but for the cohomology "
+                    "side.")
+            .def("matrix_summary",
+                    [](TopologyOptimizer& opt) {
+                        return std::make_pair(opt.hom_status(), opt.coh_status());
+                    },
+                    "Return a (hom_status, coh_status) pair describing the "
+                    "current reduction state of each side. Used by tests and "
+                    "benchmarks to confirm that lazy reduction skipped what "
+                    "it was supposed to skip.")
             .def("update", &TopologyOptimizer::update)
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)

@@ -243,6 +243,7 @@ namespace oineus {
         bron_kerbosch(current, candidates, excluded_end, max_dim, neighbor, functor, check_initial);
         // Filtration constructor will sort simplices and assign sorted ids
         auto fil = Filtration(std::move(simplices), negate, n_threads);
+        fil.set_kind(FiltrationKind::Vr);
 
         // use sorted info from fil to rearrange edges
         Edges sorted_edges;
@@ -296,6 +297,7 @@ namespace oineus {
         bron_kerbosch(current, candidates, excluded_end, max_dim, neighbor, functor, check_initial);
         // Filtration constructor will sort simplices and assign sorted ids
         auto fil = Filtration(std::move(simplices), negate, n_threads);
+        fil.set_kind(FiltrationKind::Vr);
 
         // use sorted info from fil to rearrange edges
         std::vector<VREdge<Int>> sorted_edges;
@@ -338,7 +340,9 @@ namespace oineus {
 
         bron_kerbosch(current, candidates, excluded_end, max_dim, neighbor, functor, check_initial);
         // Filtration constructor will sort simplices and assign sorted ids
-        return Filtration<Simplex<Int>, Real>(std::move(simplices), negate, n_threads);
+        Filtration<Simplex<Int>, Real> fil(std::move(simplices), negate, n_threads);
+        fil.set_kind(FiltrationKind::Vr);
+        return fil;
     }
 
     template<class Int, class Real>
@@ -375,7 +379,9 @@ namespace oineus {
 
         bron_kerbosch(current, candidates, excluded_end, max_dim, neighbor, functor, check_initial);
         // Filtration constructor will sort simplices and assign sorted ids
-        return Filtration(std::move(simplices), negate, n_threads);
+        Filtration fil(std::move(simplices), negate, n_threads);
+        fil.set_kind(FiltrationKind::Vr);
+        return fil;
     }
 
 
