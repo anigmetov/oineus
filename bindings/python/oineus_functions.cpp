@@ -702,7 +702,8 @@ void init_oineus_functions(nb::module_& m)
     func_name = "init_frechet_mean_medoid_diagram";
     m.def(func_name.c_str(),
             [](const nb::list& diagrams,
-               nb::object weights) {
+               nb::object weights,
+               int n_threads) {
                 auto diagram_vec = python_object_to_diagrams(diagrams);
                 std::vector<oin_real> weight_vec;
                 if (!weights.is_none()) {
@@ -711,10 +712,17 @@ void init_oineus_functions(nb::module_& m)
                     for (auto item : weight_seq)
                         weight_vec.push_back(nb::cast<oin_real>(item));
                 }
-                return diagram_to_numpy(oin::init_frechet_mean_medoid_diagram<oin_real>(diagram_vec, weight_vec));
+                typename oin::Diagrams<oin_real>::Dgm result;
+                {
+                    nb::gil_scoped_release release;
+                    result = oin::init_frechet_mean_medoid_diagram<oin_real>(
+                            diagram_vec, weight_vec, std::max(1, n_threads));
+                }
+                return diagram_to_numpy(result);
             },
             nb::arg("diagrams"),
             nb::arg("weights") = nb::none(),
+            nb::arg("n_threads") = 1,
             "Return the weighted Wasserstein medoid diagram used as a Fréchet-mean initializer.");
 
     func_name = "init_frechet_mean_diagonal_grid";
@@ -760,7 +768,8 @@ void init_oineus_functions(nb::module_& m)
                size_t random_seed,
                size_t grid_n_x_bins,
                size_t grid_n_y_bins,
-               nb::object custom_initial_barycenter) {
+               nb::object custom_initial_barycenter,
+               int n_threads) {
                 auto diagram_vec = python_object_to_diagrams(diagrams);
                 std::vector<oin_real> weight_vec;
                 if (!weights.is_none()) {
@@ -778,6 +787,7 @@ void init_oineus_functions(nb::module_& m)
                 params.init_strategy = init_strategy;
                 params.domain = domain;
                 params.ignore_infinite_points = ignore_infinite_points;
+                params.n_threads = std::max(1, n_threads);
                 params.random_init_params.noise_scale = random_noise_scale;
                 params.random_init_params.random_seed = random_seed;
                 params.random_init_params.domain = domain;
@@ -789,7 +799,11 @@ void init_oineus_functions(nb::module_& m)
                 if (!custom_initial_barycenter.is_none())
                     custom_dgm = python_object_to_diagram(custom_initial_barycenter);
 
-                auto result = oin::frechet_mean<oin_real>(diagram_vec, weight_vec, params, custom_dgm);
+                typename oin::Diagrams<oin_real>::Dgm result;
+                {
+                    nb::gil_scoped_release release;
+                    result = oin::frechet_mean<oin_real>(diagram_vec, weight_vec, params, custom_dgm);
+                }
                 return diagram_to_numpy(result);
             },
             nb::arg("diagrams"),
@@ -806,5 +820,6 @@ void init_oineus_functions(nb::module_& m)
             nb::arg("grid_n_x_bins") = 16,
             nb::arg("grid_n_y_bins") = 16,
             nb::arg("custom_initial_barycenter") = nb::none(),
+            nb::arg("n_threads") = 1,
             "Compute a Frechet mean (W2 barycenter) of persistence diagrams.");
 }

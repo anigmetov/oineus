@@ -292,3 +292,69 @@ def test_progressive_frechet_mean_multistart_picks_best_requested_start():
     assert details["objective"] == pytest.approx(min(objectives), abs=ABS_TIGHT)
     assert barycenter.shape[1] == 2
     assert details["thresholds"] == pytest.approx([3.0, 0.0])
+
+
+def _random_diagram_set(n_diagrams=8, points_per_diagram=20, seed=12345):
+    rng = np.random.default_rng(seed)
+    diagrams = []
+    for _ in range(n_diagrams):
+        births = rng.uniform(0.0, 1.0, points_per_diagram)
+        deaths = births + rng.uniform(0.1, 1.0, points_per_diagram)
+        diagrams.append(np.column_stack((births, deaths)).astype(REAL_DTYPE))
+    return diagrams
+
+
+def test_init_frechet_mean_medoid_diagram_parallel_matches_serial():
+    diagrams = _random_diagram_set()
+    serial = oin.init_frechet_mean_medoid_diagram(diagrams, n_threads=1)
+    parallel = oin.init_frechet_mean_medoid_diagram(diagrams, n_threads=4)
+    # Medoid is a discrete argmin: must be bit-identical regardless of n_threads.
+    assert np.array_equal(serial, parallel)
+
+
+def test_frechet_mean_parallel_matches_serial():
+    diagrams = _random_diagram_set()
+    common = dict(
+        init_strategy=oin.FrechetMeanInit.MedoidDiagram,
+        wasserstein_delta=TEST_WASSERSTEIN_DELTA,
+        max_iter=20,
+    )
+    serial = oin.frechet_mean(diagrams, n_threads=1, **common)
+    parallel = oin.frechet_mean(diagrams, n_threads=4, **common)
+    assert _sort_diagram_rows(serial) == pytest.approx(_sort_diagram_rows(parallel), abs=ABS_LOOSE)
+
+
+def test_frechet_mean_objective_parallel_matches_serial():
+    diagrams = _random_diagram_set()
+    barycenter = oin.frechet_mean(
+        diagrams,
+        init_strategy=oin.FrechetMeanInit.MedoidDiagram,
+        wasserstein_delta=TEST_WASSERSTEIN_DELTA,
+        max_iter=20,
+    )
+    serial = oin.frechet_mean_objective(
+        diagrams, barycenter, wasserstein_delta=TEST_WASSERSTEIN_DELTA, n_threads=1)
+    parallel = oin.frechet_mean_objective(
+        diagrams, barycenter, wasserstein_delta=TEST_WASSERSTEIN_DELTA, n_threads=4)
+    assert serial == pytest.approx(parallel, abs=ABS_TIGHT)
+
+
+def test_frechet_mean_multistart_accepts_n_threads():
+    diagrams = _random_diagram_set(n_diagrams=5)
+    serial, _ = oin.frechet_mean_multistart(
+        diagrams,
+        starts=("medoid", "first"),
+        wasserstein_delta=TEST_WASSERSTEIN_DELTA,
+        max_iter=15,
+        return_details=True,
+        n_threads=1,
+    )
+    parallel, _ = oin.frechet_mean_multistart(
+        diagrams,
+        starts=("medoid", "first"),
+        wasserstein_delta=TEST_WASSERSTEIN_DELTA,
+        max_iter=15,
+        return_details=True,
+        n_threads=4,
+    )
+    assert _sort_diagram_rows(serial) == pytest.approx(_sort_diagram_rows(parallel), abs=ABS_LOOSE)

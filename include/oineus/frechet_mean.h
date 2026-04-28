@@ -13,6 +13,8 @@
 
 #include "diagram.h"
 #include "hera/wasserstein.h"
+#include "taskflow/taskflow.hpp"
+#include "taskflow/algorithm/for_each.hpp"
 
 namespace oineus {
 
@@ -52,6 +54,7 @@ namespace oineus {
         FrechetMeanInit init_strategy {FrechetMeanInit::Grid};
         DiagramPlaneDomain domain {DiagramPlaneDomain::AboveDiagonal};
         bool ignore_infinite_points {false};
+        int n_threads {1};
         FrechetMeanInitRandomParams<Real> random_init_params {};
         FrechetMeanInitGridParams grid_init_params {};
     };
@@ -68,7 +71,8 @@ namespace oineus {
     template<class Real>
     typename Diagrams<Real>::Dgm init_frechet_mean_medoid_diagram(
             const std::vector<typename Diagrams<Real>::Dgm>& diagrams,
-            const std::vector<Real>& weights = {});
+            const std::vector<Real>& weights = {},
+            int n_threads = 1);
 
     template<class Real>
     typename Diagrams<Real>::Dgm init_frechet_mean_diagonal_grid(
@@ -532,7 +536,7 @@ namespace oineus {
         case FrechetMeanInit::FirstDiagram:
             return init_frechet_mean_first_diagram<Real>(diagrams);
         case FrechetMeanInit::MedoidDiagram:
-            return init_frechet_mean_medoid_diagram<Real>(diagrams, weights);
+            return init_frechet_mean_medoid_diagram<Real>(diagrams, weights, params.n_threads);
         case FrechetMeanInit::RandomDiagram: {
             auto random_params = params.random_init_params;
             random_params.domain = params.domain;
@@ -554,7 +558,8 @@ namespace oineus {
             const std::vector<typename Diagrams<Real>::Dgm>& diagrams,
             const std::vector<Real>& weights,
             Real delta,
-            Real internal_p)
+            Real internal_p,
+            int n_threads = 1)
     {
         if (diagrams.empty())
             return {};
@@ -566,22 +571,30 @@ namespace oineus {
 
         validate_same_infinite_cardinalities<Real>(split_diagrams);
 
-        size_t best_idx = 0;
-        Real best_cost = std::numeric_limits<Real>::infinity();
+        std::vector<Real> per_i_cost(diagrams.size(), std::numeric_limits<Real>::infinity());
 
-        for (size_t i = 0; i < diagrams.size(); ++i) {
+        auto compute_cost_for_i = [&](size_t i) {
             Real total_cost = static_cast<Real>(0);
             for (size_t j = 0; j < diagrams.size(); ++j) {
                 if (i == j)
                     continue;
                 total_cost += weights[j] * wasserstein_cost_q2<Real>(split_diagrams[i], split_diagrams[j], delta, internal_p);
             }
-            if (total_cost < best_cost) {
-                best_cost = total_cost;
-                best_idx = i;
-            }
+            per_i_cost[i] = total_cost;
+        };
+
+        if (n_threads <= 1) {
+            for (size_t i = 0; i < diagrams.size(); ++i)
+                compute_cost_for_i(i);
+        } else {
+            tf::Executor executor(n_threads);
+            tf::Taskflow flow;
+            flow.for_each_index(size_t(0), diagrams.size(), size_t(1), compute_cost_for_i);
+            executor.run(flow).get();
         }
 
+        const auto best_it = std::min_element(per_i_cost.begin(), per_i_cost.end());
+        const size_t best_idx = static_cast<size_t>(std::distance(per_i_cost.begin(), best_it));
         return diagrams[best_idx];
     }
 
@@ -648,14 +661,16 @@ namespace oineus {
     template<class Real>
     typename Diagrams<Real>::Dgm init_frechet_mean_medoid_diagram(
             const std::vector<typename Diagrams<Real>::Dgm>& diagrams,
-            const std::vector<Real>& weights)
+            const std::vector<Real>& weights,
+            int n_threads)
     {
         const auto normalized_weights = normalized_frechet_weights<Real>(diagrams.size(), weights);
         return medoid_diagram_with_params<Real>(
                 diagrams,
                 normalized_weights,
                 static_cast<Real>(1e-2),
-                std::numeric_limits<Real>::infinity());
+                std::numeric_limits<Real>::infinity(),
+                n_threads);
     }
 
     // Initialize by rotating points by 45 degrees, binning them, and averaging each occupied cell.
@@ -847,15 +862,25 @@ namespace oineus {
         }
 
         for (size_t iter = 0; iter < params.max_iter; ++iter) {
-            std::vector<hera::AuctionResult<Real>> matchings;
-            matchings.reserve(split_diagrams.size());
+            std::vector<hera::AuctionResult<Real>> matchings(split_diagrams.size());
 
-            for (const auto& diagram : split_diagrams) {
+            auto compute_matching = [&](size_t i) {
                 auto matching = wasserstein_matching_result_q2<Real>(
-                        barycenter_parts.finite, diagram.finite, params.wasserstein_delta, params.internal_p);
+                        barycenter_parts.finite, split_diagrams[i].finite,
+                        params.wasserstein_delta, params.internal_p);
                 if (std::isinf(matching.cost))
                     throw std::runtime_error("frechet_mean: encountered infinite Wasserstein cost during matching");
-                matchings.push_back(std::move(matching));
+                matchings[i] = std::move(matching);
+            };
+
+            if (params.n_threads <= 1) {
+                for (size_t i = 0; i < split_diagrams.size(); ++i)
+                    compute_matching(i);
+            } else {
+                tf::Executor executor(params.n_threads);
+                tf::Taskflow flow;
+                flow.for_each_index(size_t(0), split_diagrams.size(), size_t(1), compute_matching);
+                executor.run(flow).get();
             }
 
             SplitDiagram<Real> updated_barycenter;
