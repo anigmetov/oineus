@@ -147,8 +147,10 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
             .def_prop_ro("homology_decomposition", &TopologyOptimizer::get_homology_decompostion)
             .def_prop_ro("cohomology_decomposition", &TopologyOptimizer::get_cohomology_decompostion)
             .def("singleton", &TopologyOptimizer::singleton)
-            .def("singletons", &TopologyOptimizer::singletons)
-            .def("reduce_all", &TopologyOptimizer::reduce_all)
+            .def("singletons", &TopologyOptimizer::singletons,
+                    nb::call_guard<nb::gil_scoped_release>())
+            .def("reduce_all", &TopologyOptimizer::reduce_all,
+                    nb::call_guard<nb::gil_scoped_release>())
             .def("increase_death", nb::overload_cast<size_t>(&TopologyOptimizer::increase_death, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for increasing death to inf")
             .def("decrease_death", nb::overload_cast<size_t>(&TopologyOptimizer::decrease_death, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for decreasing death to -inf")
             .def("increase_birth", nb::overload_cast<size_t>(&TopologyOptimizer::increase_birth, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for increasing birth to inf")
@@ -156,6 +158,7 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
             .def("combine_loss", static_cast<IndicesValues (TopologyOptimizer::*)(const CriticalSets&, ConflictStrategy)>(&TopologyOptimizer::combine_loss),
                     nb::arg("critical_sets"),
                     nb::arg("strategy"),
+                    nb::call_guard<nb::gil_scoped_release>(),
                     "combine critical sets into well-defined assignment of new values to indices")
             .def("update", &TopologyOptimizer::update)
             .def(nb::self == nb::self)

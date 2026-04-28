@@ -67,6 +67,7 @@ else()
             cube-dgm
             dcmp-restore-elz
             dgm-dist
+            diff-critical-sets
             diff-cube-fil
             diff-grad
             diff-wass

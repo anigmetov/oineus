@@ -5,22 +5,48 @@ import numpy as np
 from .diff_filtration import DiffFiltration
 
 
+_STRATEGY_MAP = {
+    "avg": _oineus.ConflictStrategy.Avg,
+    "max": _oineus.ConflictStrategy.Max,
+    "sum": _oineus.ConflictStrategy.Sum,
+    "fca": _oineus.ConflictStrategy.FixCritAvg,
+}
+
+
+def _resolve_strategy(strategy):
+    if isinstance(strategy, _oineus.ConflictStrategy):
+        return strategy
+    try:
+        return _STRATEGY_MAP[strategy.lower()]
+    except (AttributeError, KeyError):
+        raise ValueError(
+            f"unknown conflict_strategy {strategy!r}; expected one of "
+            f"{sorted(_STRATEGY_MAP)} or an _oineus.ConflictStrategy"
+        )
+
+
 class PersistenceDiagramHelper(torch.autograd.Function):
     """
     Autograd function for extracting a single dimension's diagram.
 
-    Forward: subscripts fil.values at birth/death indices
-    Backward: accumulates gradients at those indices (dgm-loss)
-              or expands to critical sets (crit-sets)
+    Forward: subscripts fil.values at birth/death indices.
+    Backward:
+        - "dgm-loss": gradients only on the two simplices that define each pair.
+        - "crit-sets": gradients on the full critical set of every moved pair,
+          conflicts resolved via Max/Avg/Sum/FixCritAvg.
     """
 
     @staticmethod
-    def forward(ctx, fil_values, fil, dcmp_hom, dcmp_coh, dgms, dim, include_inf_points,
-                gradient_method, lr, conflict_strategy):
+    def forward(ctx, fil_values, fil, top_opt, dgms, dim, include_inf_points,
+                gradient_method, step_size, conflict_strategy):
         """
         Extract diagram for dimension `dim` as a differentiable tensor.
+
+        `top_opt` carries the reduction state. For "dgm-loss" it is a
+        single Decomposition (homology or cohomology). For "crit-sets" it
+        is a TopologyOptimizer with both decompositions and U/V matrices
+        already materialised.
         """
-        # Get index diagram (list of IndexDiagramPoint)
         index_dgm = dgms.index_diagram_in_dimension(dim, as_numpy=True).astype(np.int64)
         index_dgm = torch.from_numpy(index_dgm).to(fil_values.device)
 
@@ -29,13 +55,15 @@ class PersistenceDiagramHelper(torch.autograd.Function):
         ctx.gradient_method = gradient_method
         ctx.fil_len = fil_len
         ctx.include_inf_points = include_inf_points
-        ctx.lr = lr
-        ctx.conflict_strategy = conflict_strategy
+        ctx.step_size = step_size
         ctx.dim = dim
+        ctx.top_opt = top_opt
+        ctx.conflict_strategy = conflict_strategy
 
         n_total = len(index_dgm)
 
         if n_total == 0:
+            ctx.save_for_backward(index_dgm, fil_values)
             return torch.zeros((0, 2), dtype=fil_values.dtype, device=fil_values.device)
 
         if include_inf_points:
@@ -50,42 +78,104 @@ class PersistenceDiagramHelper(torch.autograd.Function):
         else:
             diagram = fil_values[index_dgm]
 
-        # Save for backward
-        ctx.save_for_backward(index_dgm)
+        ctx.save_for_backward(index_dgm, fil_values)
 
         return diagram
 
     @staticmethod
     def backward(ctx, grad_output):
-        """
-        Backward pass: propagate gradients to fil_values.
-        """
+        index_dgm, fil_values = ctx.saved_tensors
+        fil_len = ctx.fil_len
+
         if ctx.gradient_method == "dgm-loss":
-            # w.r.t. fil_values, fil, dcmp_hom, dcmp_coh, dgms, dim,  include_inf_points, gradient_method, lr, conflict_strategy
-            fil_len = ctx.fil_len
-            index_dgm = ctx.saved_tensors[0]
             grad_vals = torch.zeros(fil_len, dtype=grad_output.dtype, device=grad_output.device)
             grad_vals[index_dgm.flatten()] = grad_output.flatten()
-            return grad_vals, None, None, None, None, None, None, None, None, None
+            return grad_vals, None, None, None, None, None, None, None, None
+
+        if ctx.gradient_method != "crit-sets":
+            raise RuntimeError(f"unknown gradient_method {ctx.gradient_method!r}")
+
+        # Crit-sets path. We restrict to finite pairs; rows of grad_output match
+        # the layout produced by forward (finite pairs first when
+        # include_inf_points is True). For include_inf_points=False, every row
+        # is finite by construction.
+        n_total = index_dgm.shape[0]
+        device = grad_output.device
+
+        if n_total == 0:
+            return torch.zeros(fil_len, dtype=grad_output.dtype, device=device), None, None, None, None, None, None, None, None
+
+        if ctx.include_inf_points:
+            fin_mask = (index_dgm[:, 0] >= 0) & (index_dgm[:, 0] < fil_len) & (index_dgm[:, 1] >= 0) & (index_dgm[:, 1] < fil_len)
+            n_fin = int(fin_mask.sum().item())
+            fin_idx_dgm = index_dgm[fin_mask]
+            fin_grad = grad_output[:n_fin]
         else:
-            raise RuntimeError("Gradient method not implemented yet.")
+            fin_idx_dgm = index_dgm
+            fin_grad = grad_output
+
+        grad_vals = torch.zeros(fil_len, dtype=grad_output.dtype, device=device)
+
+        if fin_idx_dgm.shape[0] == 0:
+            return grad_vals, None, None, None, None, None, None, None, None
+
+        b_idx = fin_idx_dgm[:, 0]
+        d_idx = fin_idx_dgm[:, 1]
+        b_cur = fil_values[b_idx]
+        d_cur = fil_values[d_idx]
+        step = ctx.step_size
+        b_tgt = b_cur - step * fin_grad[:, 0]
+        d_tgt = d_cur - step * fin_grad[:, 1]
+
+        # Drop no-op moves and concatenate (b_idx, b_tgt) with (d_idx, d_tgt).
+        b_move = b_tgt != b_cur
+        d_move = d_tgt != d_cur
+        flat_idx = torch.cat([b_idx[b_move], d_idx[d_move]])
+        flat_tgt = torch.cat([b_tgt[b_move], d_tgt[d_move]])
+
+        if flat_idx.numel() == 0:
+            return grad_vals, None, None, None, None, None, None, None, None
+
+        flat_idx_np = flat_idx.detach().cpu().numpy().tolist()
+        flat_tgt_np = flat_tgt.detach().cpu().to(torch.float64).numpy().tolist()
+
+        top_opt = ctx.top_opt
+        crit_sets = top_opt.singletons(flat_idx_np, flat_tgt_np)
+        strategy = _resolve_strategy(ctx.conflict_strategy)
+        indvals = top_opt.combine_loss(crit_sets, strategy)
+        indices = list(indvals[0])
+        targets = list(indvals[1])
+
+        if not indices:
+            return grad_vals, None, None, None, None, None, None, None, None
+
+        idx_t = torch.tensor(indices, dtype=torch.long, device=device)
+        tgt_t = torch.tensor(targets, dtype=grad_output.dtype, device=device)
+
+        if strategy == _oineus.ConflictStrategy.Sum:
+            # Sum may emit duplicate indices: aggregate per-index gradients.
+            contrib = fil_values[idx_t] - tgt_t
+            grad_vals.scatter_add_(0, idx_t, contrib)
+        else:
+            grad_vals[idx_t] = fil_values[idx_t] - tgt_t
+
+        return grad_vals, None, None, None, None, None, None, None, None
 
 
 class PersistenceDiagrams:
     """
     Container for differentiable persistence diagrams in all dimensions.
-    Provides access to diagrams in each dimension as differentiable tensors.
 
     Usage:
         dgms = persistence_diagram(fil, dualize=True)
         dgm1 = dgms[1]  # H1 diagram as tensor (N, 2)
-        loss = dgm1[:, 1].sum()
+        loss = (dgm1[:, 1] - dgm1[:, 0]).pow(2).sum()
         loss.backward()
     """
 
     def __init__(self, fil: DiffFiltration, dualize: bool, include_inf_points: bool,
-                 gradient_method: str, lr: float, conflict_strategy: str, rp = None,
-                 n_threads = None):
+                 gradient_method: str, step_size: float, conflict_strategy,
+                 rp=None, n_threads=None):
         if not isinstance(fil.values, torch.Tensor):
             raise TypeError("fil.values must be a torch.Tensor for differentiable diagrams")
 
@@ -94,39 +184,45 @@ class PersistenceDiagrams:
 
         self._fil = fil
         self._dualize = dualize
-        if n_threads is None:
-            dcmp = _oineus.Decomposition(fil.under_fil, dualize=dualize)
-        else:
-            dcmp = _oineus.Decomposition(fil.under_fil, dualize=dualize, n_threads=n_threads)
-        dcmp.reduce(rp)
-        if dualize:
-            self._dcmp_coh, self._dcmp_hom = dcmp, None
-        else:
-            self._dcmp_coh, self._dcmp_hom = None, dcmp
         self._include_inf_points = include_inf_points
         self._gradient_method = gradient_method
-        self._lr = lr
+        self._step_size = step_size
         self._conflict_strategy = conflict_strategy
 
-        nondiff_dgms = dcmp.diagram(fil.under_fil, include_inf_points=include_inf_points)
+        if gradient_method == "crit-sets":
+            top_opt = _oineus.TopologyOptimizer(fil.under_fil)
+            top_opt.reduce_all()
+            nondiff_dgms = top_opt.compute_diagram(include_inf_points=include_inf_points)
+            self._top_opt = top_opt
+        elif gradient_method == "dgm-loss":
+            kwargs = {"dualize": dualize}
+            if n_threads is not None:
+                kwargs["n_threads"] = n_threads
+            dcmp = _oineus.Decomposition(fil.under_fil, **kwargs)
+            dcmp.reduce(rp)
+            nondiff_dgms = dcmp.diagram(fil.under_fil, include_inf_points=include_inf_points)
+            self._top_opt = dcmp
+        else:
+            raise ValueError(
+                f"unknown gradient_method {gradient_method!r}; expected 'dgm-loss' or 'crit-sets'"
+            )
 
-        self._diagrams = { dim : PersistenceDiagramHelper.apply(
+        self._diagrams = {
+            dim: PersistenceDiagramHelper.apply(
                 self._fil.values,
                 self._fil.under_fil,
-                self._dcmp_hom,
-                self._dcmp_coh,
+                self._top_opt,
                 nondiff_dgms,
                 dim,
                 self._include_inf_points,
                 self._gradient_method,
-                self._lr,
-                self._conflict_strategy
+                self._step_size,
+                self._conflict_strategy,
             )
-        for dim in range(self._fil.max_dim()) }
-
+            for dim in range(self._fil.max_dim())
+        }
 
     def __getitem__(self, dim: int) -> torch.Tensor:
-        """Get diagram in dimension dim."""
         if dim not in self._diagrams:
             raise KeyError(f"No diagram for dimension {dim}. Available: {list(self._diagrams.keys())}")
         return self._diagrams[dim]
@@ -150,12 +246,10 @@ class PersistenceDiagrams:
         return self._diagrams.items()
 
     def in_dimension(self, dim: int) -> torch.Tensor:
-        """Alias for __getitem__."""
         return self[dim]
 
     @property
     def max_dim(self) -> int:
-        """Maximum dimension available."""
         return max(self._diagrams.keys())
 
 
@@ -164,53 +258,37 @@ def persistence_diagram(
     dualize: bool = False,
     include_inf_points: bool = False,
     gradient_method: str = "dgm-loss",
-    lr: float = 1.0,
-    conflict_strategy: str = "avg",
-    n_threads = None,
+    step_size: float = 1.0,
+    conflict_strategy="avg",
+    n_threads=None,
 ) -> PersistenceDiagrams:
     """
     Compute differentiable persistence diagrams from a DiffFiltration.
 
-    Efficiently computes the decomposition once and returns diagrams for
-    all dimensions. The returned object can be indexed by dimension.
-
     Args:
-        fil: DiffFiltration with differentiable `values` tensor
-        dualize: If True, compute cohomology (default). If False, homology.
-        include_inf_points: If True, include infinite points in diagrams.
-                           Infinite deaths are represented as float('inf').
-        gradient_method: "dgm-loss" (gradient to critical simplices only)
-                        or "crit-sets" (gradient to all simplices in critical sets)
-        lr: Learning rate for crit-sets target computation (default: 1.0)
-        conflict_strategy: Conflict resolution for crit-sets: "avg", "max", "sum"
+        fil: DiffFiltration with differentiable `values` tensor.
+        dualize: cohomology if True, homology if False. Used only for
+            "dgm-loss"; "crit-sets" always builds both decompositions.
+        include_inf_points: if True, include infinite points (deaths set
+            to float('inf')); only finite pairs receive crit-sets gradient.
+        gradient_method: "dgm-loss" or "crit-sets".
+        step_size: scales grad_output to a target diagram (target =
+            current - step_size * grad_output) for the "crit-sets" pass.
+            Ignored for "dgm-loss".
+        conflict_strategy: "avg", "max", "sum", or "fca", or any
+            _oineus.ConflictStrategy. Used only for "crit-sets".
+        n_threads: passed to the underlying decomposition for "dgm-loss".
 
     Returns:
-        PersistenceDiagrams: dict-like object mapping dimension -> Tensor (N, 2)
-        Each tensor has birth values in column 0, death values in column 1.
-        Gradients flow back to fil.values automatically.
-
-    Example:
-        # Create VR filtration from points
-        pts = torch.tensor([[0., 0.], [1., 0.], [0.5, 1.]], requires_grad=True)
-        fil = oin.diff.vr_filtration(pts, max_dim=2)
-
-        # Get all diagrams
-        dgms = oin.diff.persistence_diagram(fil, dualize=True)
-
-        # Access specific dimension
-        dgm1 = dgms[1]  # H1 diagram
-
-        # Compute loss and backpropagate
-        loss = (dgm1[:, 1] - 2.0).pow(2).sum()
-        loss.backward()
-        print(pts.grad)
+        PersistenceDiagrams: dict-like, dim -> Tensor (N, 2). Gradients
+        flow back to fil.values.
     """
     return PersistenceDiagrams(
         fil=fil,
         dualize=dualize,
         include_inf_points=include_inf_points,
         gradient_method=gradient_method,
-        lr=lr,
+        step_size=step_size,
         conflict_strategy=conflict_strategy,
         n_threads=n_threads,
     )
