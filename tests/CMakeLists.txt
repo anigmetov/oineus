@@ -58,6 +58,7 @@ else()
     foreach(NAME IN ITEMS
             api-cells
             api-common
+            api-dcmp
             api-dgm
             api-fil
             api-kicr
@@ -86,11 +87,6 @@ else()
                 COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_${STEM}.py")
         set_tests_properties(py-${NAME} PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     endforeach()
-
-    # Decomposition API: skip the cube-1d overload until the cube path is finished.
-    add_test(NAME py-api-dcmp
-            COMMAND ${Python_EXECUTABLE} -m pytest "${CMAKE_CURRENT_BINARY_DIR}/test_api_dcmp.py" -k "not test_decomposition_diagram_overloads_cube_1d")
-    set_tests_properties(py-api-dcmp PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     # Script-style example tests (no pytest discovery, just run the file).
     foreach(NAME IN ITEMS

@@ -37,8 +37,9 @@ def _make_prod_filtration():
 def _make_cube_filtration_1d():
     dom = oin.GridDomain_1D(2)
     v0 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[], domain=dom, value=0.0)
+    v1 = oin.Cube_1D(anchor_vertex=[1], spanning_dims=[], domain=dom, value=0.1)
     e01 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[0], domain=dom, value=0.5)
-    return oin.CubeFiltration_1D([v0, e01], negate=False, n_threads=1)
+    return oin.CubeFiltration_1D([v0, v1, e01], negate=False, n_threads=1)
 
 
 def test_decomposition_api():
