@@ -77,6 +77,8 @@ else()
             match-rv-policy
             pickle
             plot
+            plot-chain
+            plot-gradient
             sliced-wass
             wass-match)
         string(REPLACE "-" "_" STEM "${NAME}")

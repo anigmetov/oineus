@@ -28,10 +28,11 @@ from ._oineus import frechet_mean as _frechet_mean_cpp
 from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D, CubeFiltration_1D
 from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, CubeFiltration_2D
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
-from .vis_utils import (
+from .vis import (
     plot_diagram,
     plot_diagram_gradient,
     plot_matching,
+    plot_chain,
     default_point_style,
     default_diagram_a_point_style,
     default_diagram_b_point_style,
@@ -43,6 +44,11 @@ from .vis_utils import (
     default_inf_line_style,
     default_diagram_gradient_style,
     default_density_style,
+    default_chain_vertex_style,
+    default_chain_edge_style,
+    default_chain_triangle_style,
+    default_chain_tetrahedron_style,
+    default_point_cloud_style,
     DEFAULT_POINT_STYLE,
     DEFAULT_DIAGRAM_A_POINT_STYLE,
     DEFAULT_DIAGRAM_B_POINT_STYLE,
@@ -57,7 +63,14 @@ from .vis_utils import (
     DEFAULT_DENSITY_THRESHOLD,
     DEFAULT_MATCHING_EDGE_QUANTILE,
     DEFAULT_GRADIENT_TOP_K_ARROWS,
+    DEFAULT_CHAIN_VERTEX_STYLE,
+    DEFAULT_CHAIN_EDGE_STYLE,
+    DEFAULT_CHAIN_TRIANGLE_STYLE,
+    DEFAULT_CHAIN_TETRAHEDRON_STYLE,
+    DEFAULT_POINT_CLOUD_STYLE,
 )
+# Keep vis_utils as a backward-compat alias.
+from . import vis_utils  # noqa: F401
 from .matching import (
     DiagramMatching,
     BottleneckMatching,
@@ -90,6 +103,7 @@ __all__ = [
     "plot_diagram",
     "plot_diagram_gradient",
     "plot_matching",
+    "plot_chain",
     "bottleneck_distance",
     "wasserstein_distance",
     "wasserstein_matching",
@@ -114,6 +128,11 @@ __all__ = [
     "default_inf_line_style",
     "default_diagram_gradient_style",
     "default_density_style",
+    "default_chain_vertex_style",
+    "default_chain_edge_style",
+    "default_chain_triangle_style",
+    "default_chain_tetrahedron_style",
+    "default_point_cloud_style",
     "DEFAULT_POINT_STYLE",
     "DEFAULT_DIAGRAM_A_POINT_STYLE",
     "DEFAULT_DIAGRAM_B_POINT_STYLE",
@@ -128,6 +147,11 @@ __all__ = [
     "DEFAULT_DENSITY_THRESHOLD",
     "DEFAULT_MATCHING_EDGE_QUANTILE",
     "DEFAULT_GRADIENT_TOP_K_ARROWS",
+    "DEFAULT_CHAIN_VERTEX_STYLE",
+    "DEFAULT_CHAIN_EDGE_STYLE",
+    "DEFAULT_CHAIN_TRIANGLE_STYLE",
+    "DEFAULT_CHAIN_TETRAHEDRON_STYLE",
+    "DEFAULT_POINT_CLOUD_STYLE",
     "init_frechet_mean_first_diagram",
     "init_frechet_mean_random_diagram",
     "init_frechet_mean_medoid_diagram",
