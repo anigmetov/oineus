@@ -90,6 +90,28 @@ DEFAULT_DIAGRAM_GRADIENT_STYLE: dict = {
     "scale": 1.0,
 }
 
+# Above this point count we switch large diagrams from per-point scatter to
+# a density-aggregated raster (via mpl_scatter_density). Tuned so that the
+# perceptual oversaturation that starts around 5k is mostly hidden, while
+# small diagrams still get the crisp scatter rendering users expect.
+DEFAULT_DENSITY_THRESHOLD: int = 20_000
+
+# Style passed to the underlying ScatterDensityArtist. The norm is set by
+# the caller (defaults to PowerNorm(0.5) inside _add_density_artist).
+DEFAULT_DENSITY_STYLE: dict = {
+    "cmap": "viridis",
+    "dpi": 72,
+    "downres_factor": 4,
+}
+
+# Edges with length below this quantile are hidden in matching-density mode.
+# 0.99 keeps the top 1% of edges -- typically the ones that carry the
+# matching-cost signal.
+DEFAULT_MATCHING_EDGE_QUANTILE: float = 0.99
+
+# Number of arrows to draw in gradient-density mode (largest |grad| points).
+DEFAULT_GRADIENT_TOP_K_ARROWS: int = 200
+
 
 def default_point_style() -> dict:
     return dict(DEFAULT_POINT_STYLE)
@@ -129,6 +151,46 @@ def default_inf_line_style() -> dict:
 
 def default_diagram_gradient_style() -> dict:
     return dict(DEFAULT_DIAGRAM_GRADIENT_STYLE)
+
+
+def default_density_style() -> dict:
+    return dict(DEFAULT_DENSITY_STYLE)
+
+
+def _require_scatter_density():
+    if not _HAS_MPL_SCATTER_DENSITY:
+        raise ImportError(
+            "Density rendering requires the mpl_scatter_density package. "
+            "Install it via `pip install mpl-scatter-density`, or disable "
+            "density rendering with use_density=False / "
+            "density_threshold=<larger value>."
+        )
+
+
+def _add_density_artist(ax, x, y, *, color=None, style=None, norm=None):
+    """Attach a ScatterDensityArtist to a regular matplotlib Axes.
+
+    Returns the artist. Uses ``ScatterDensityArtist`` directly so the caller
+    is not forced to construct the Axes with ``projection='scatter_density'``.
+
+    ``color`` selects the monochromatic-fade-to-transparent rendering (used
+    when overlaying multiple diagrams in the same plot, e.g. matching). When
+    ``color`` is ``None`` the artist uses ``style['cmap']``.
+    """
+    _require_scatter_density()
+    from mpl_scatter_density import ScatterDensityArtist
+    import matplotlib.colors as mcolors
+
+    if norm is None:
+        norm = mcolors.PowerNorm(gamma=0.5)
+
+    kwargs = dict(style if style is not None else DEFAULT_DENSITY_STYLE)
+    if color is not None:
+        kwargs["color"] = color
+        kwargs.pop("cmap", None)
+    artist = ScatterDensityArtist(ax, x, y, norm=norm, **kwargs)
+    ax.add_artist(artist)
+    return artist
 
 
 def _resolve_style(user: typing.Optional[dict], default_getter) -> dict:
@@ -300,9 +362,10 @@ def plot_diagram(
     dims: typing.Optional[typing.Iterable[int]] = None,
     max_dimension: typing.Optional[int] = None,
     use_density: bool = True,
-    density_threshold: int = 50000,
+    density_threshold: int = DEFAULT_DENSITY_THRESHOLD,
     near_diagonal_fraction: float = 0.03,
     density_cmap: str = "viridis",
+    density_style: typing.Optional[dict] = None,
     inf_line_margin: float = 0.05,
     point_style: typing.Optional[dict] = None,
     diagonal_style: typing.Optional[dict] = None,
@@ -311,9 +374,16 @@ def plot_diagram(
 ):
     """Plot one or more persistence diagrams.
 
-    Style-dict kwargs (``point_style``, ``diagonal_style``, ``inf_line_style``)
-    default to copies of the module-level ``DEFAULT_*_STYLE`` dicts. Per-dim
-    colouring is overridden via ``color`` (dict[int, color] or list).
+    Above ``density_threshold`` finite points the bulk near the diagonal is
+    rendered as a 2D density (via mpl_scatter_density) while points further
+    than ``near_diagonal_fraction`` of the axis range from the diagonal are
+    still drawn as crisp scatter -- so high-persistence (topologically
+    meaningful) features are never aggregated.
+
+    Style-dict kwargs (``point_style``, ``diagonal_style``, ``inf_line_style``,
+    ``density_style``) default to copies of the module-level ``DEFAULT_*_STYLE``
+    dicts. Per-dim colouring is overridden via ``color`` (dict[int, color]
+    or list).
     """
     if not _HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plot_diagram.")
@@ -425,24 +495,11 @@ def plot_diagram(
     near_y = np.concatenate(near_y_parts) if near_y_parts else np.empty((0,), dtype=float)
 
     use_density_plot = use_density and all_finite_births.size >= density_threshold and near_x.size > 0
-    if use_density_plot and not _HAS_MPL_SCATTER_DENSITY:
-        raise ImportError(
-            "mpl_scatter_density is required when density rendering is used. "
-            "Install mpl_scatter_density, or disable density plotting "
-            "(use_density=False / increase density_threshold)."
-        )
+    if use_density_plot:
+        _require_scatter_density()
 
     if ax is None:
-        if use_density_plot:
-            fig = plt.figure()
-            ax = fig.add_subplot(1, 1, 1, projection="scatter_density")
-        else:
-            _, ax = plt.subplots()
-    elif use_density_plot and not hasattr(ax, "scatter_density"):
-        raise ValueError(
-            "For density rendering, axis must use projection='scatter_density'. "
-            "Pass ax=None or create the axis with that projection."
-        )
+        _, ax = plt.subplots()
 
     y_values_for_shift = all_finite_deaths
     if any_pos_inf:
@@ -454,7 +511,14 @@ def plot_diagram(
     y_shift = _shift_for_log(y_values_for_shift, log_y)
 
     if use_density_plot:
-        ax.scatter_density(near_x + x_shift, near_y + y_shift, cmap=density_cmap)
+        density_style_resolved = _resolve_style(density_style, default_density_style)
+        density_style_resolved.setdefault("cmap", density_cmap)
+        _add_density_artist(
+            ax,
+            near_x + x_shift,
+            near_y + y_shift,
+            style=density_style_resolved,
+        )
 
     # When a per-dim color override is supplied, it wins over point_style's "c".
     base_scatter_kwargs = dict(point_style)
@@ -685,6 +749,9 @@ def plot_diagram_gradient(
     dims: typing.Optional[typing.Iterable[int]] = None,
     descent: bool = False,
     plot_points: bool = True,
+    use_density: bool = True,
+    density_threshold: int = DEFAULT_DENSITY_THRESHOLD,
+    top_k_arrows: typing.Optional[int] = None,
     log_x: bool = False,
     log_y: bool = False,
     title: typing.Optional[str] = None,
@@ -694,6 +761,7 @@ def plot_diagram_gradient(
     point_style: typing.Optional[dict] = None,
     diagonal_style: typing.Optional[dict] = None,
     inf_line_style: typing.Optional[dict] = None,
+    density_style: typing.Optional[dict] = None,
     dim_label_fmt: str = "H{dim}",
 ):
     """Plot a gradient vector field on top of a persistence diagram.
@@ -724,6 +792,13 @@ def plot_diagram_gradient(
     uses ``angles='xy', scale_units='xy', scale=1.0`` so that ``(vx, vy)``
     is interpreted in data coordinates -- the natural convention given
     that diagram coordinates and gradient components share units.
+
+    Above ``density_threshold`` total points the underlying scatter is
+    rendered as density (inherited from ``plot_diagram``) and arrows are
+    restricted to the top ``top_k_arrows`` points by gradient magnitude.
+    When ``top_k_arrows`` is ``None`` it defaults to
+    ``DEFAULT_GRADIENT_TOP_K_ARROWS`` whenever the threshold is exceeded;
+    set it explicitly to apply the cap below the threshold too.
     """
     if not _HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plot_diagram_gradient.")
@@ -747,6 +822,9 @@ def plot_diagram_gradient(
         finite_mask = np.isfinite(pts).all(axis=1) & np.isfinite(g).all(axis=1)
         finite_by_dim[dim] = (pts[finite_mask], sign * g[finite_mask])
 
+    total_finite = sum(pts.shape[0] for pts, _ in finite_by_dim.values())
+    density_active = use_density and total_finite >= density_threshold
+
     if plot_points:
         finite_dgms = {dim: pts for dim, (pts, _) in finite_by_dim.items()}
         ax = plot_diagram(
@@ -760,10 +838,41 @@ def plot_diagram_gradient(
             point_style=point_style,
             diagonal_style=diagonal_style,
             inf_line_style=inf_line_style,
+            density_style=density_style,
+            use_density=use_density,
+            density_threshold=density_threshold,
             dim_label_fmt=dim_label_fmt,
         )
     elif ax is None:
         _, ax = plt.subplots()
+
+    effective_top_k = top_k_arrows
+    if effective_top_k is None and density_active:
+        effective_top_k = DEFAULT_GRADIENT_TOP_K_ARROWS
+
+    if effective_top_k is not None:
+        dim_arrs, local_arrs, mag_arrs = [], [], []
+        for dim, (pts, g) in finite_by_dim.items():
+            n = pts.shape[0]
+            if n == 0:
+                continue
+            dim_arrs.append(np.full(n, dim, dtype=np.int64))
+            local_arrs.append(np.arange(n, dtype=np.int64))
+            mag_arrs.append(np.hypot(g[:, 0], g[:, 1]))
+        if dim_arrs:
+            dim_concat = np.concatenate(dim_arrs)
+            local_concat = np.concatenate(local_arrs)
+            mag_concat = np.concatenate(mag_arrs)
+            if mag_concat.size > effective_top_k:
+                keep = np.argpartition(mag_concat, -effective_top_k)[-effective_top_k:]
+                keep_dim = dim_concat[keep]
+                keep_local = local_concat[keep]
+                new_finite = {}
+                for dim, (pts, g) in finite_by_dim.items():
+                    mask = np.zeros(pts.shape[0], dtype=bool)
+                    mask[keep_local[keep_dim == dim]] = True
+                    new_finite[dim] = (pts[mask], g[mask])
+                finite_by_dim = new_finite
 
     finite_births_parts = [pts[:, 0] for pts, _ in finite_by_dim.values() if pts.size]
     finite_deaths_parts = [pts[:, 1] for pts, _ in finite_by_dim.values() if pts.size]
@@ -846,6 +955,11 @@ def plot_matching(
     plot_points: bool = True,
     plot_diagonal_projections: bool = False,
     plot_diagonal: bool = True,
+    use_density: bool = True,
+    density_threshold: int = DEFAULT_DENSITY_THRESHOLD,
+    near_diagonal_fraction: float = 0.03,
+    edge_quantile: float = DEFAULT_MATCHING_EDGE_QUANTILE,
+    density_style: typing.Optional[dict] = None,
     dgm_a_point_style: typing.Optional[dict] = None,
     dgm_b_point_style: typing.Optional[dict] = None,
     ordinary_edge_style: typing.Optional[dict] = None,
@@ -868,6 +982,14 @@ def plot_matching(
     the highlight style.
 
     ``dgm_a`` and ``dgm_b`` must be 2D numpy arrays (one homology dimension).
+
+    Above ``density_threshold`` total points the diagram is rendered as a
+    density background (near-diagonal points only) plus crisp scatter for
+    high-persistence outliers. Ordinary matching edges are filtered to those
+    with length above the ``edge_quantile``-th quantile, since most edges in
+    a large matching are short noise-to-noise pairs that obscure the
+    informative tail. The ``highlight_longest`` overlay (always drawn for
+    bottleneck matchings) is unaffected.
     """
     if not _HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plot_matching.")
@@ -950,6 +1072,27 @@ def plot_matching(
     if ax is None:
         _, ax = plt.subplots()
 
+    # Decide whether to switch to density mode for the bulk near the diagonal.
+    n_finite_total = a_fin_b.size + b_fin_b.size
+    use_density_plot = (
+        use_density
+        and plot_points
+        and n_finite_total >= density_threshold
+    )
+    if use_density_plot:
+        _require_scatter_density()
+
+    near_thr = near_diagonal_fraction * max(x_span, y_span)
+
+    def _split_near_diagonal(births, deaths):
+        if births.size == 0:
+            return births, deaths, births, deaths
+        near_mask = np.abs(deaths - births) <= near_thr
+        return (
+            births[near_mask], deaths[near_mask],
+            births[~near_mask], deaths[~near_mask],
+        )
+
     # Diagonal
     if plot_diagonal:
         lo = min(x_min, y_min)
@@ -976,19 +1119,38 @@ def plot_matching(
     if any_neg_inf_b:
         ax.axvline(inf_x_neg, **inf_line_style)
 
-    # Diagram points
-    if plot_points and dgm_a.shape[0] > 0:
+    # Diagram points: split near-diagonal bulk (density when enabled) from
+    # outliers (always scatter so high-persistence features stay crisp).
+    def _draw_diagram_points(dgm, point_style, label):
+        if dgm.shape[0] == 0:
+            return
         coords = np.array([
-            _point_coords_for_edge(dgm_a, i, inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
-            for i in range(dgm_a.shape[0])
+            _point_coords_for_edge(dgm, i, inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
+            for i in range(dgm.shape[0])
         ])
-        ax.scatter(coords[:, 0], coords[:, 1], label=dgm_a_label, **dgm_a_point_style)
-    if plot_points and dgm_b.shape[0] > 0:
-        coords = np.array([
-            _point_coords_for_edge(dgm_b, i, inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
-            for i in range(dgm_b.shape[0])
-        ])
-        ax.scatter(coords[:, 0], coords[:, 1], label=dgm_b_label, **dgm_b_point_style)
+        if not use_density_plot:
+            ax.scatter(coords[:, 0], coords[:, 1], label=label, **point_style)
+            return
+        finite_mask = np.isfinite(coords[:, 0]) & np.isfinite(coords[:, 1])
+        finite = coords[finite_mask]
+        non_finite = coords[~finite_mask]
+        near_b, near_d, far_b, far_d = _split_near_diagonal(finite[:, 0], finite[:, 1])
+        if near_b.size:
+            _add_density_artist(
+                ax, near_b, near_d,
+                color=point_style.get("c"),
+                style=_resolve_style(density_style, default_density_style),
+            )
+        scatter_label = label if (far_b.size or non_finite.size) else None
+        if far_b.size:
+            ax.scatter(far_b, far_d, label=scatter_label, **point_style)
+            scatter_label = None
+        if non_finite.size:
+            ax.scatter(non_finite[:, 0], non_finite[:, 1], label=scatter_label, **point_style)
+
+    if plot_points:
+        _draw_diagram_points(dgm_a, dgm_a_point_style, dgm_a_label)
+        _draw_diagram_points(dgm_b, dgm_b_point_style, dgm_b_label)
 
     # Gather all edges to draw, grouped by category.
     ordinary_segments: list[tuple[tuple[float, float], tuple[float, float]]] = []
@@ -1024,6 +1186,19 @@ def plot_matching(
                 pa = _point_coords_for_edge(dgm_a, int(ia), inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
                 pb = _point_coords_for_edge(dgm_b, int(ib), inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
                 ordinary_segments.append((pa, pb))
+
+    if ordinary_segments and use_density_plot and 0.0 < edge_quantile < 1.0:
+        # In density mode keep only the longest few percent of ordinary edges.
+        # Most matchings of large diagrams are dominated by short noise-to-noise
+        # pairs near the diagonal that pile up into a featureless gray hairball.
+        seg_arr = np.array(ordinary_segments, dtype=float)
+        lengths = np.hypot(
+            seg_arr[:, 1, 0] - seg_arr[:, 0, 0],
+            seg_arr[:, 1, 1] - seg_arr[:, 0, 1],
+        )
+        threshold = float(np.quantile(lengths, edge_quantile))
+        keep = lengths >= threshold
+        ordinary_segments = [s for s, k in zip(ordinary_segments, keep) if k]
 
     if ordinary_segments:
         ax.add_collection(LineCollection(ordinary_segments, **ordinary_edge_style))

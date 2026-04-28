@@ -16,6 +16,13 @@ def _fresh_ax():
     return fig, ax
 
 
+def _has_density_artist(ax):
+    # ScatterDensityArtist is registered as a non-Collection artist, so we
+    # walk the artists list rather than ax.collections.
+    from mpl_scatter_density import ScatterDensityArtist
+    return any(isinstance(a, ScatterDensityArtist) for a in ax.get_children())
+
+
 class TestPlotDiagram:
     def test_single_dim_numpy(self):
         dgm = np.array([[0.0, 1.0], [0.5, 2.0], [1.0, 3.0]])
@@ -42,6 +49,56 @@ class TestPlotDiagram:
         dgms = {0: np.array([[0.0, 1.0]]), 1: np.array([[0.5, 2.0]])}
         fig, ax = _fresh_ax()
         oineus.plot_diagram(dgms, ax=ax, color={0: "tab:red", 1: "tab:blue"})
+        plt.close(fig)
+
+
+class TestPlotDiagramDensity:
+    """Density rendering kicks in above DEFAULT_DENSITY_THRESHOLD."""
+
+    @pytest.fixture
+    def big_diagram(self):
+        # Most points sit near the diagonal (noise); a handful are outliers.
+        rng = np.random.default_rng(0)
+        n = oineus.DEFAULT_DENSITY_THRESHOLD + 500
+        births = rng.uniform(0.0, 1.0, n)
+        deaths = births + rng.exponential(0.01, n)  # mostly low persistence
+        outlier_idx = rng.choice(n, 20, replace=False)
+        deaths[outlier_idx] = births[outlier_idx] + 1.0  # high-persistence
+        return np.column_stack([births, deaths])
+
+    def test_density_artist_added_above_threshold(self, big_diagram):
+        pytest.importorskip("mpl_scatter_density")
+        fig, ax = _fresh_ax()
+        oineus.plot_diagram(big_diagram, ax=ax)
+        assert _has_density_artist(ax), "expected a ScatterDensityArtist for big diagram"
+        plt.close(fig)
+
+    def test_no_density_below_threshold(self):
+        # Stay well under the threshold.
+        n = max(10, oineus.DEFAULT_DENSITY_THRESHOLD // 100)
+        dgm = np.column_stack([np.linspace(0, 1, n), np.linspace(0, 1, n) + 0.5])
+        fig, ax = _fresh_ax()
+        oineus.plot_diagram(dgm, ax=ax)
+        # Below threshold there should be only ordinary scatter.
+        if oineus.vis_utils._HAS_MPL_SCATTER_DENSITY:
+            assert not _has_density_artist(ax)
+        plt.close(fig)
+
+    def test_outliers_still_scatter_in_density_mode(self, big_diagram):
+        pytest.importorskip("mpl_scatter_density")
+        fig, ax = _fresh_ax()
+        oineus.plot_diagram(big_diagram, ax=ax)
+        # Outliers go to a regular scatter even when bulk is density.
+        assert any(c.__class__.__name__ == "PathCollection" for c in ax.collections)
+        plt.close(fig)
+
+    def test_user_axes_work_without_projection(self, big_diagram):
+        # The whole point of dropping the projection requirement: user can
+        # pass any plain matplotlib axes.
+        pytest.importorskip("mpl_scatter_density")
+        fig, ax = plt.subplots()  # vanilla axes, no projection
+        oineus.plot_diagram(big_diagram, ax=ax)
+        assert _has_density_artist(ax)
         plt.close(fig)
 
 
@@ -133,6 +190,63 @@ class TestPlotMatchingBottleneck:
         lcs = [c for c in ax.collections if isinstance(c, LineCollection)]
         # Expect the ordinary-edge LineCollection plus a longest-edge overlay.
         assert len(lcs) >= 1
+        plt.close(fig)
+
+
+class TestPlotMatchingDensity:
+    """Above threshold, matching switches to density bulk + top-quantile edges."""
+
+    def _big_pair(self):
+        rng = np.random.default_rng(1)
+        n = oineus.DEFAULT_DENSITY_THRESHOLD // 2 + 500
+        a_b = rng.uniform(0.0, 1.0, n)
+        a_d = a_b + rng.exponential(0.01, n)
+        b_b = rng.uniform(0.0, 1.0, n)
+        b_d = b_b + rng.exponential(0.01, n)
+        return np.column_stack([a_b, a_d]), np.column_stack([b_b, b_d])
+
+    def test_density_artist_added_above_threshold(self):
+        pytest.importorskip("mpl_scatter_density")
+        dgm_a, dgm_b = self._big_pair()
+        m = oineus.wasserstein_matching(dgm_a, dgm_b, q=2.0)
+        fig, ax = _fresh_ax()
+        oineus.plot_matching(dgm_a, dgm_b, m, ax=ax)
+        assert _has_density_artist(ax)
+        plt.close(fig)
+
+    def test_edge_quantile_filters_ordinary_edges(self):
+        pytest.importorskip("mpl_scatter_density")
+        dgm_a, dgm_b = self._big_pair()
+        m = oineus.wasserstein_matching(dgm_a, dgm_b, q=2.0)
+
+        fig, ax_quantile = _fresh_ax()
+        oineus.plot_matching(dgm_a, dgm_b, m, ax=ax_quantile, edge_quantile=0.99)
+        n_quantile = sum(
+            len(c.get_segments())
+            for c in ax_quantile.collections
+            if isinstance(c, LineCollection)
+        )
+        plt.close(ax_quantile.figure)
+
+        fig, ax_no_filter = _fresh_ax()
+        oineus.plot_matching(dgm_a, dgm_b, m, ax=ax_no_filter, use_density=False)
+        n_no_filter = sum(
+            len(c.get_segments())
+            for c in ax_no_filter.collections
+            if isinstance(c, LineCollection)
+        )
+        plt.close(ax_no_filter.figure)
+
+        # Quantile mode keeps only the longest few percent.
+        assert 0 < n_quantile < n_no_filter
+
+    def test_use_density_false_disables_density(self):
+        dgm_a, dgm_b = self._big_pair()
+        m = oineus.wasserstein_matching(dgm_a, dgm_b, q=2.0)
+        fig, ax = _fresh_ax()
+        oineus.plot_matching(dgm_a, dgm_b, m, ax=ax, use_density=False)
+        if oineus.vis_utils._HAS_MPL_SCATTER_DENSITY:
+            assert not _has_density_artist(ax)
         plt.close(fig)
 
 
