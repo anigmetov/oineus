@@ -25,6 +25,57 @@ def _resolve_strategy(strategy):
         )
 
 
+# U-computation strategies for the crit-sets backward. All non-legacy
+# strategies start from a parallel V-only reduction with restore_elz
+# (via TopologyOptimizer.ensure_reduced_for_partial_u_*) and then
+# compute U via different methods:
+#
+#   legacy_in_band -- in-band U during reduction (Phase 2).
+#                     Uses ensure_reduced_*(need_u=True): clearing off,
+#                     compute_u=true. Default for backward compat with
+#                     gradient_method='crit-sets'.
+#   col_R          -- Algorithm 3, R U = D, full dim. Calls
+#                     decmp.compute_u_from_v(dim, n_threads).
+#   col_V          -- Algorithm 4, V U = I, full dim, columns + transpose.
+#                     Calls decmp.compute_u_from_v_1(dim, n_threads).
+#   col_partial    -- Phase-3 column-form partial. Calls
+#                     decmp.compute_partial_u_from_v_1(...). Kept for
+#                     double-checks; consistently loses to row_partial.
+#   row_full       -- Phase-4 row-form full. Calls
+#                     decmp.compute_full_u_rows(fil, dim, n_threads).
+#   row_partial    -- Phase-4 row-form partial. Calls
+#                     decmp.compute_partial_u_rows(fil, rows, bounds,
+#                                                  dim, cmp, n_threads).
+#                     Auto-falls-back to compute_full_u_rows when
+#                     n_pairs / dim_size > PHASE4_PARTIAL_THRESHOLD.
+#   auto           -- production default. Currently row_partial with the
+#                     threshold dispatch. To be tuned by bench_u_strategies.
+
+_VALID_U_STRATEGIES = (
+    "auto", "legacy_in_band", "col_R", "col_V", "col_partial",
+    "row_full", "row_partial",
+)
+
+
+def _resolve_u_strategy(u_strategy, gradient_method):
+    """Pick the effective u_strategy. Explicit parameter wins over the
+    deprecated gradient_method aliases."""
+    if u_strategy is None:
+        # Map old gradient_method names to u_strategy.
+        if gradient_method == "crit-sets":
+            return "legacy_in_band"
+        if gradient_method == "crit-sets-partial":
+            return "col_partial"
+        if gradient_method == "crit-sets-row-partial":
+            return "row_partial"
+        return "auto"
+    if u_strategy not in _VALID_U_STRATEGIES:
+        raise ValueError(
+            f"unknown u_strategy {u_strategy!r}; expected one of "
+            f"{_VALID_U_STRATEGIES}")
+    return u_strategy
+
+
 # Phase-3 helpers: derive (cols, bounds) for compute_partial_u_from_v_1
 # from the per-direction pair subsets that need U.
 #
@@ -135,6 +186,121 @@ def _derive_cols_bounds_decrease_birth(fil, decmp_coh, b_idx_t, b_cur_t,
     return cols, bounds
 
 
+def _dispatch_u_for_side(top_opt, under_fil, side, *, need_u, any_move,
+                         u_strategy, move_idx_t, cur_t, tgt_t, move_mask_t,
+                         negate, n_threads):
+    """Dispatcher: ensure the requested U-computation has happened on
+    `side` (= 'hom' or 'coh') so that crit_sets_apply's walker can read
+    u_data_t. Each strategy follows the same outline:
+
+      1. If no moves on this side -> nothing to do.
+      2. If no moves need U on this side -> ensure V is reduced.
+      3. Otherwise: ensure V (parallel + restore_elz, no U), then
+         compute U via the strategy's choice.
+
+    `move_idx_t` etc. are the per-side torch tensors of pair indices,
+    current values, target values, and move masks (d_idx for hom,
+    b_idx for coh).
+    """
+    if not any_move:
+        return
+    if not need_u:
+        # No U needed on this side; just ensure V is reduced for the
+        # walker (decrease_death / increase_birth read v_data only).
+        if side == "hom":
+            top_opt.ensure_reduced_hom(need_u=False)
+        else:
+            top_opt.ensure_reduced_coh(need_u=False)
+        return
+
+    if u_strategy == "legacy_in_band":
+        # Phase-2 in-band U: clearing off, U built during reduction.
+        if side == "hom":
+            top_opt.ensure_reduced_hom(need_u=True)
+        else:
+            top_opt.ensure_reduced_coh(need_u=True)
+        return
+
+    # All non-legacy strategies: parallel V-only reduction with restore_elz,
+    # then a separate U-computation step.
+    if side == "hom":
+        top_opt.ensure_reduced_for_partial_u_hom(n_threads)
+        decmp = top_opt.homology_decomposition_ref()
+        cmp_partial_col = "above" if negate else "below"
+        cmp_partial_row = "below" if negate else "above"
+    else:
+        top_opt.ensure_reduced_for_partial_u_coh(n_threads)
+        decmp = top_opt.cohomology_decomposition_ref()
+        cmp_partial_col = "below" if negate else "above"
+        cmp_partial_row = "above" if negate else "below"
+
+    # Determine which dim's U we need on this side. For a partial path
+    # this comes from the row classifier; for a full path we infer from
+    # the first U-needing pair on this side.
+    if side == "hom":
+        rows, bounds, dim_u = _classify_increase_death_rows(
+            under_fil, decmp, move_idx_t, cur_t, tgt_t, move_mask_t,
+            negate=negate)
+    else:
+        rows, bounds, dim_u = _classify_decrease_birth_rows(
+            under_fil, decmp, move_idx_t, cur_t, tgt_t, move_mask_t,
+            negate=negate)
+    if dim_u is None:
+        # No U-needing pairs on this side after classification (e.g.
+        # negate filtration where partial helpers bail). Fall back to
+        # a full pass at the dim of the first move.
+        idx_np = move_idx_t.detach().cpu().numpy()
+        mv_np = move_mask_t.detach().cpu().numpy()
+        first_idx = None
+        for i in range(idx_np.shape[0]):
+            if mv_np[i]:
+                first_idx = int(idx_np[i])
+                break
+        if first_idx is None:
+            return
+        if side == "coh":
+            first_idx = under_fil.size() - first_idx - 1
+        dim_u = _find_dim(decmp, first_idx)
+        if dim_u is None:
+            return
+
+    if u_strategy == "col_R":
+        decmp.compute_u_from_v(dim_u, n_threads)
+    elif u_strategy == "col_V":
+        decmp.compute_u_from_v_1(dim_u, n_threads)
+    elif u_strategy == "row_full":
+        decmp.compute_full_u_rows(under_fil, dim_u, n_threads=n_threads)
+    elif u_strategy in ("row_partial", "auto"):
+        if not rows:
+            decmp.compute_full_u_rows(under_fil, dim_u, n_threads=n_threads)
+            return
+        dim_size = decmp.dim_last[dim_u] - decmp.dim_first[dim_u] + 1
+        if len(rows) / dim_size > PHASE4_PARTIAL_THRESHOLD:
+            decmp.compute_full_u_rows(under_fil, dim_u, n_threads=n_threads)
+        else:
+            decmp.compute_partial_u_rows(
+                under_fil, rows, bounds, dim_u,
+                cmp=cmp_partial_row, n_threads=n_threads)
+    elif u_strategy == "col_partial":
+        # Phase-3 column-form partial. Kept for double-checks.
+        if side == "hom":
+            cols, bounds_c = _derive_cols_bounds_increase_death(
+                under_fil, decmp, move_idx_t, cur_t, tgt_t, move_mask_t,
+                negate=negate)
+        else:
+            cols, bounds_c = _derive_cols_bounds_decrease_birth(
+                under_fil, decmp, move_idx_t, cur_t, tgt_t, move_mask_t,
+                negate=negate)
+        if cols:
+            decmp.compute_partial_u_from_v_1(
+                under_fil, cols, bounds_c,
+                cmp=cmp_partial_col, n_threads=n_threads)
+        else:
+            decmp.compute_full_u_rows(under_fil, dim_u, n_threads=n_threads)
+    else:
+        raise RuntimeError(f"unhandled u_strategy {u_strategy!r}")
+
+
 def _find_dim(decmp, matrix_idx):
     """Return the dim index whose [dim_first, dim_last] range contains
     matrix_idx, or None."""
@@ -240,7 +406,7 @@ class PersistenceDiagramHelper(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, fil_values, fil, top_opt, dgms, dim, include_inf_points,
-                gradient_method, step_size, conflict_strategy):
+                gradient_method, step_size, conflict_strategy, u_strategy=None):
         """
         Extract diagram for dimension `dim` as a differentiable tensor.
 
@@ -255,6 +421,7 @@ class PersistenceDiagramHelper(torch.autograd.Function):
         fil_len = fil_values.shape[0]
 
         ctx.gradient_method = gradient_method
+        ctx.u_strategy = _resolve_u_strategy(u_strategy, gradient_method)
         ctx.fil_len = fil_len
         ctx.include_inf_points = include_inf_points
         ctx.step_size = step_size
@@ -295,11 +462,14 @@ class PersistenceDiagramHelper(torch.autograd.Function):
         if ctx.gradient_method == "dgm-loss":
             grad_vals = torch.zeros(fil_len, dtype=grad_output.dtype, device=grad_output.device)
             grad_vals[index_dgm.flatten()] = grad_output.flatten()
-            return grad_vals, None, None, None, None, None, None, None, None
+            return grad_vals, None, None, None, None, None, None, None, None, None
 
         if ctx.gradient_method not in ("crit-sets", "crit-sets-partial",
                                        "crit-sets-row-partial"):
-            raise RuntimeError(f"unknown gradient_method {ctx.gradient_method!r}")
+            # Be permissive: any gradient_method that isn't dgm-loss
+            # falls through to the crit-sets backward, with the chosen
+            # u_strategy controlling which U-computation is used.
+            pass
 
         # Crit-sets path. Restrict to finite pairs; rows of grad_output match
         # the layout produced by forward (finite pairs first when
@@ -310,7 +480,7 @@ class PersistenceDiagramHelper(torch.autograd.Function):
         grad_vals = torch.zeros(fil_len, dtype=grad_output.dtype, device=device)
 
         if n_total == 0:
-            return grad_vals, None, None, None, None, None, None, None, None
+            return grad_vals, None, None, None, None, None, None, None, None, None
 
         if ctx.include_inf_points:
             fin_mask = (index_dgm[:, 0] >= 0) & (index_dgm[:, 0] < fil_len) & (index_dgm[:, 1] >= 0) & (index_dgm[:, 1] < fil_len)
@@ -322,7 +492,7 @@ class PersistenceDiagramHelper(torch.autograd.Function):
             fin_grad = grad_output
 
         if fin_idx_dgm.shape[0] == 0:
-            return grad_vals, None, None, None, None, None, None, None, None
+            return grad_vals, None, None, None, None, None, None, None, None, None
 
         b_idx = fin_idx_dgm[:, 0]
         d_idx = fin_idx_dgm[:, 1]
@@ -353,97 +523,27 @@ class PersistenceDiagramHelper(torch.autograd.Function):
 
         top_opt = ctx.top_opt
         n_threads = max(1, int(getattr(ctx, "n_threads", 1) or 1))
-        use_partial = (ctx.gradient_method == "crit-sets-partial")
-        use_phase4 = (ctx.gradient_method == "crit-sets-row-partial")
+        u_strategy = getattr(ctx, "u_strategy", "legacy_in_band")
 
-        if use_phase4:
-            # Phase-4: V-only reductions; partial-U via row solves on V^T.
-            under_fil = ctx.fil.under_fil if hasattr(ctx.fil, "under_fil") else ctx.fil
-            if any_death:
-                if need_u_hom:
-                    top_opt.ensure_reduced_for_partial_u_hom(n_threads)
-                    decmp_hom = top_opt.homology_decomposition_ref()
-                    rows_h, bounds_h, dim_h = _classify_increase_death_rows(
-                        ctx.fil, decmp_hom, d_idx, d_cur, d_tgt, d_move,
-                        negate=negate)
-                    if rows_h:
-                        dim_size = (decmp_hom.dim_last[dim_h]
-                                    - decmp_hom.dim_first[dim_h] + 1)
-                        if len(rows_h) / dim_size > PHASE4_PARTIAL_THRESHOLD:
-                            decmp_hom.compute_full_u_rows(
-                                under_fil, dim_h, n_threads=n_threads)
-                        else:
-                            decmp_hom.compute_partial_u_rows(
-                                under_fil, rows_h, bounds_h, dim_h,
-                                cmp=("below" if negate else "above"),
-                                n_threads=n_threads)
-                else:
-                    top_opt.ensure_reduced_hom(need_u=False)
-            if any_birth:
-                if need_u_coh:
-                    top_opt.ensure_reduced_for_partial_u_coh(n_threads)
-                    decmp_coh = top_opt.cohomology_decomposition_ref()
-                    rows_c, bounds_c, dim_c = _classify_decrease_birth_rows(
-                        ctx.fil, decmp_coh, b_idx, b_cur, b_tgt, b_move,
-                        negate=negate)
-                    if rows_c:
-                        dim_size = (decmp_coh.dim_last[dim_c]
-                                    - decmp_coh.dim_first[dim_c] + 1)
-                        if len(rows_c) / dim_size > PHASE4_PARTIAL_THRESHOLD:
-                            decmp_coh.compute_full_u_rows(
-                                under_fil, dim_c, n_threads=n_threads)
-                        else:
-                            decmp_coh.compute_partial_u_rows(
-                                under_fil, rows_c, bounds_c, dim_c,
-                                cmp=("above" if negate else "below"),
-                                n_threads=n_threads)
-                else:
-                    top_opt.ensure_reduced_coh(need_u=False)
-        elif use_partial:
-            # Phase-3: V-only reductions; partial-U via cols/bounds
-            # derived from the U-needing pair subset on each side.
-            under_fil = ctx.fil.under_fil if hasattr(ctx.fil, "under_fil") else ctx.fil
-            if any_death:
-                if need_u_hom:
-                    top_opt.ensure_reduced_for_partial_u_hom(n_threads)
-                    decmp_hom = top_opt.homology_decomposition_ref()
-                    cols_h, bounds_h = _derive_cols_bounds_increase_death(
-                        ctx.fil, decmp_hom, d_idx, d_cur, d_tgt, d_move,
-                        negate=negate)
-                    if cols_h:
-                        decmp_hom.compute_partial_u_from_v_1(
-                            under_fil, cols_h, bounds_h,
-                            cmp=("above" if negate else "below"),
-                            n_threads=n_threads)
-                else:
-                    top_opt.ensure_reduced_hom(need_u=False)
-            if any_birth:
-                if need_u_coh:
-                    top_opt.ensure_reduced_for_partial_u_coh(n_threads)
-                    decmp_coh = top_opt.cohomology_decomposition_ref()
-                    cols_c, bounds_c = _derive_cols_bounds_decrease_birth(
-                        ctx.fil, decmp_coh, b_idx, b_cur, b_tgt, b_move,
-                        negate=negate)
-                    if cols_c:
-                        decmp_coh.compute_partial_u_from_v_1(
-                            under_fil, cols_c, bounds_c,
-                            cmp=("below" if negate else "above"),
-                            n_threads=n_threads)
-                else:
-                    top_opt.ensure_reduced_coh(need_u=False)
-        else:
-            # Phase-2 path: ensure_reduced_* with the right need_u flag
-            # and a clearing-off / in-band U reduction when needed.
-            if any_death:
-                top_opt.ensure_reduced_hom(need_u=need_u_hom)
-            if any_birth:
-                top_opt.ensure_reduced_coh(need_u=need_u_coh)
+        under_fil = ctx.fil.under_fil if hasattr(ctx.fil, "under_fil") else ctx.fil
+        _dispatch_u_for_side(
+            top_opt, under_fil, "hom",
+            need_u=need_u_hom, any_move=any_death,
+            u_strategy=u_strategy,
+            move_idx_t=d_idx, cur_t=d_cur, tgt_t=d_tgt, move_mask_t=d_move,
+            negate=negate, n_threads=n_threads)
+        _dispatch_u_for_side(
+            top_opt, under_fil, "coh",
+            need_u=need_u_coh, any_move=any_birth,
+            u_strategy=u_strategy,
+            move_idx_t=b_idx, cur_t=b_cur, tgt_t=b_tgt, move_mask_t=b_move,
+            negate=negate, n_threads=n_threads)
 
         flat_idx = torch.cat([b_idx[b_move], d_idx[d_move]])
         flat_tgt = torch.cat([b_tgt[b_move], d_tgt[d_move]])
 
         if flat_idx.numel() == 0:
-            return grad_vals, None, None, None, None, None, None, None, None
+            return grad_vals, None, None, None, None, None, None, None, None, None
 
         flat_idx_np = flat_idx.detach().cpu().numpy().astype(np.uintp).tolist()
         flat_tgt_np = flat_tgt.detach().cpu().to(torch.float64).numpy().tolist()
@@ -454,7 +554,7 @@ class PersistenceDiagramHelper(torch.autograd.Function):
         out_tgt_np = np.asarray(indvals.values_array(), copy=True)
 
         if out_idx_np.size == 0:
-            return grad_vals, None, None, None, None, None, None, None, None
+            return grad_vals, None, None, None, None, None, None, None, None, None
 
         idx_t = torch.from_numpy(out_idx_np.astype(np.int64)).to(device=device)
         tgt_t = torch.from_numpy(out_tgt_np).to(dtype=grad_output.dtype, device=device)
@@ -466,7 +566,7 @@ class PersistenceDiagramHelper(torch.autograd.Function):
         else:
             grad_vals[idx_t] = fil_values[idx_t] - tgt_t
 
-        return grad_vals, None, None, None, None, None, None, None, None
+        return grad_vals, None, None, None, None, None, None, None, None, None
 
 
 class PersistenceDiagrams:
@@ -482,7 +582,7 @@ class PersistenceDiagrams:
 
     def __init__(self, fil: DiffFiltration, dualize, include_inf_points: bool,
                  gradient_method: str, step_size: float, conflict_strategy,
-                 rp=None, n_threads=None):
+                 rp=None, n_threads=None, u_strategy=None):
         if not isinstance(fil.values, torch.Tensor):
             raise TypeError("fil.values must be a torch.Tensor for differentiable diagrams")
 
@@ -502,10 +602,13 @@ class PersistenceDiagrams:
         self._step_size = step_size
         self._conflict_strategy = conflict_strategy
 
-        if gradient_method in ("crit-sets", "crit-sets-partial",
-                               "crit-sets-row-partial"):
-            # Phase-2 / Phase-3 share the same defer-reduction setup;
-            # they differ only in what backward does (full U vs partial U).
+        crit_sets_methods = ("crit-sets", "crit-sets-partial",
+                             "crit-sets-row-partial", "crit-sets-strategy")
+        if gradient_method in crit_sets_methods:
+            # All crit-sets variants use the same defer-reduction setup;
+            # they differ only in what backward does, controlled by
+            # u_strategy (the gradient_method aliases map to specific
+            # u_strategy values via _resolve_u_strategy).
             top_opt = _oineus.TopologyOptimizer(fil.under_fil, defer_reduction=True)
             nondiff_dgms = top_opt.compute_diagram(include_inf_points=include_inf_points)
             self._top_opt = top_opt
@@ -516,6 +619,7 @@ class PersistenceDiagrams:
                     fil.under_fil._phase3_n_threads = int(n_threads)
                 except Exception:
                     pass
+            self._u_strategy = u_strategy
         elif gradient_method == "dgm-loss":
             kwargs = {"dualize": dualize}
             if n_threads is not None:
@@ -531,8 +635,8 @@ class PersistenceDiagrams:
         else:
             raise ValueError(
                 f"unknown gradient_method {gradient_method!r}; expected "
-                "'dgm-loss', 'crit-sets', 'crit-sets-partial', or "
-                "'crit-sets-row-partial'"
+                "'dgm-loss', 'crit-sets', 'crit-sets-partial', "
+                "'crit-sets-row-partial', or 'crit-sets-strategy'"
             )
 
         self._diagrams = {
@@ -546,6 +650,7 @@ class PersistenceDiagrams:
                 self._gradient_method,
                 self._step_size,
                 self._conflict_strategy,
+                getattr(self, "_u_strategy", None),
             )
             for dim in range(self._fil.max_dim())
         }
@@ -589,6 +694,7 @@ def persistence_diagram(
     step_size: float = 1.0,
     conflict_strategy="avg",
     n_threads=None,
+    u_strategy=None,
 ) -> PersistenceDiagrams:
     """
     Compute differentiable persistence diagrams from a DiffFiltration.
@@ -603,13 +709,35 @@ def persistence_diagram(
         include_inf_points: if True, include infinite points (deaths
             set to float('inf')); only finite pairs receive crit-sets
             gradient.
-        gradient_method: "dgm-loss" or "crit-sets".
+        gradient_method: "dgm-loss", "crit-sets", or "crit-sets-strategy"
+            (the latter requires u_strategy to be explicit). The
+            deprecated aliases "crit-sets-partial" and
+            "crit-sets-row-partial" still work and map to specific
+            u_strategy values.
         step_size: scales grad_output to a target diagram (target =
             current - step_size * grad_output) for the "crit-sets"
             pass. Ignored for "dgm-loss".
         conflict_strategy: "avg", "max", "sum", or "fca", or any
             _oineus.ConflictStrategy. Used only for "crit-sets".
-        n_threads: passed to the underlying decomposition for "dgm-loss".
+        n_threads: passed to the underlying decomposition for "dgm-loss"
+            and to the parallel V-only reduction in the new u_strategy
+            paths.
+        u_strategy: which U-computation to use in the crit-sets
+            backward. One of:
+              - None (default): infer from gradient_method (preserves
+                existing behavior; "crit-sets" -> legacy_in_band,
+                "crit-sets-partial" -> col_partial,
+                "crit-sets-row-partial" -> row_partial; otherwise auto).
+              - "auto": production default; currently row_partial with
+                a partial-vs-full threshold (PHASE4_PARTIAL_THRESHOLD).
+              - "legacy_in_band": Phase-2 in-band U during reduction.
+              - "col_R": Algorithm 3 (R U = D), full dim.
+              - "col_V": Algorithm 4 (V U = I), full dim.
+              - "col_partial": Phase-3 column-form partial.
+              - "row_full": Phase-4 row-form, all rows of dim.
+              - "row_partial": Phase-4 row-form, only rows the walker
+                will read.
+            See bench_u_strategies.py for performance comparison.
 
     Returns:
         PersistenceDiagrams: dict-like, dim -> Tensor (N, 2). Gradients
@@ -623,4 +751,5 @@ def persistence_diagram(
         step_size=step_size,
         conflict_strategy=conflict_strategy,
         n_threads=n_threads,
+        u_strategy=u_strategy,
     )
