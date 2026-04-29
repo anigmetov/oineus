@@ -588,6 +588,30 @@ namespace oineus {
         IntSparseColumn compute_u_column_1(size_t col_idx) const;
         void compute_u_from_v_1(dim_type dim, size_t n_threads=1, bool verbose=false);
 
+        // Phase-3 bounded solvers. ValueAt is a callable
+        //     Real value_at(Int idx)
+        // mapping a column index in this decomposition's matrix space
+        // to a filtration value. CmpOp is a callable
+        //     bool cmp_op(Real piv_value, Real value_bound)
+        // that returns true to stop emitting the current pivot into
+        // the result. Algorithm 3 (compute_u_column) treats the bound
+        // as a post-filter only; Algorithm 4 (compute_u_column_1)
+        // truncates the residual loop the first time cmp_op fires --
+        // see the plan for the asymmetry. Real is the filtration's
+        // real type; templates avoid pulling Filtration into
+        // decomposition.h.
+        template<typename Real, typename ValueAt, typename CmpOp>
+        IntSparseColumn compute_u_column_bounded(size_t col_idx,
+                                                 Real value_bound,
+                                                 ValueAt&& value_at,
+                                                 CmpOp&& cmp_op) const;
+
+        template<typename Real, typename ValueAt, typename CmpOp>
+        IntSparseColumn compute_u_column_1_bounded(size_t col_idx,
+                                                   Real value_bound,
+                                                   ValueAt&& value_at,
+                                                   CmpOp&& cmp_op) const;
+
         size_t range_start_(dim_type dim) const;
         size_t range_end_(dim_type dim) const;
     };
@@ -1893,6 +1917,79 @@ namespace oineus {
         }
 
         if (result.empty()) {
+            result.push_back(col_idx);
+        } else {
+            std::sort(result.begin(), result.end());
+        }
+
+        return result;
+    }
+
+    template<typename Int_>
+    template<typename Real, typename ValueAt, typename CmpOp>
+    typename VRUDecomposition<Int_>::IntSparseColumn
+    VRUDecomposition<Int_>::compute_u_column_bounded(size_t col_idx,
+                                                     Real value_bound,
+                                                     ValueAt&& value_at,
+                                                     CmpOp&& cmp_op) const
+    {
+        // Algorithm 3 (R u_c = D[c]). Pivot column-indices visited
+        // are not monotonic in iteration order, so we cannot truncate
+        // the residual loop on the value bound; we apply the bound as
+        // a post-filter on the produced result.
+        IntSparseColumn full = compute_u_column(col_idx);
+        IntSparseColumn out;
+        out.reserve(full.size());
+        for (auto piv : full) {
+            if (!cmp_op(value_at(piv), value_bound)) {
+                out.push_back(piv);
+            }
+        }
+        return out;
+    }
+
+    template<typename Int_>
+    template<typename Real, typename ValueAt, typename CmpOp>
+    typename VRUDecomposition<Int_>::IntSparseColumn
+    VRUDecomposition<Int_>::compute_u_column_1_bounded(size_t col_idx,
+                                                       Real value_bound,
+                                                       ValueAt&& value_at,
+                                                       CmpOp&& cmp_op) const
+    {
+        // Algorithm 4 (V u_c = e_c). Visited pivots are
+        // piv = low(residual), strictly decreasing each iteration,
+        // so pivot indices (and therefore filtration values) are
+        // monotonic. We can truncate the residual loop the first
+        // time cmp_op fires and still get a correct prefix of the
+        // full column.
+        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
+
+        if (not is_reduced)
+            throw std::runtime_error("Cannot compute U column from non-reduced decomposisition");
+        if (not has_matrix_v())
+            throw std::runtime_error("Cannot compute U column from non-reduced decomposisition");
+
+        IntSparseColumn result;
+        auto residual = MatrixTraits::cached_identity_column(col_idx);
+
+        while (not MatrixTraits::is_zero(residual)) {
+            auto piv_col_idx = MatrixTraits::low(residual);
+            if (cmp_op(value_at(piv_col_idx), value_bound)) {
+                // Past the bound. The result so far is a correct
+                // prefix of the full column.
+                break;
+            }
+            result.push_back(piv_col_idx);
+            MatrixTraits::add_to_cached(v_data[piv_col_idx], residual);
+        }
+
+        if (result.empty()) {
+            // Diagonal-element invariant: when nothing was emitted,
+            // the only valid column is {col_idx} (true also for the
+            // unbounded case when col_idx is the single contributor).
+            // Note: under a strict bound this clause may produce
+            // {col_idx} even when the unbounded result was {col_idx, ...},
+            // which is still a correct prefix.
             result.push_back(col_idx);
         } else {
             std::sort(result.begin(), result.end());
