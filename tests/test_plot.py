@@ -252,10 +252,12 @@ class TestPlotMatchingDensity:
 
 class TestStylePlumbing:
     def test_getter_returns_copy(self):
+        # color was promoted to a top-level match_color arg; the dict
+        # only carries the non-color keys now.
         s = oineus.default_matching_edge_style()
-        s["color"] = "totally-new-color"
+        s["linewidth"] = 99.0
         # Module-level dict unchanged.
-        assert oineus.DEFAULT_MATCHING_EDGE_STYLE["color"] != "totally-new-color"
+        assert oineus.DEFAULT_MATCHING_EDGE_STYLE["linewidth"] != 99.0
 
     def test_global_mutation_propagates(self):
         original = oineus.DEFAULT_MATCHING_EDGE_STYLE["linewidth"]

@@ -206,9 +206,11 @@ class TestDensityMode:
 
 class TestStylePlumbing:
     def test_default_style_getter_returns_copy(self):
+        # color is no longer in the dict (promoted to top-level
+        # grad_color). Non-color entries still pass through.
         s = oineus.default_diagram_gradient_style()
-        s["color"] = "totally-new-color"
-        assert oineus.DEFAULT_DIAGRAM_GRADIENT_STYLE["color"] != "totally-new-color"
+        s["alpha"] = 0.123
+        assert oineus.DEFAULT_DIAGRAM_GRADIENT_STYLE["alpha"] != 0.123
 
     def test_custom_quiver_style(self):
         dgm = np.array([[0.0, 1.0]])
@@ -225,3 +227,59 @@ class TestStylePlumbing:
         assert fc.shape[0] >= 1
         assert abs(fc[0, 0] - 1.0) < 1e-6 and abs(fc[0, 1] - 0.0) < 1e-6 and abs(fc[0, 2] - 1.0) < 1e-6
         plt.close(fig)
+
+
+class TestTopLevelColorArgs:
+    """Regression tests for the promoted color/cmap top-level arguments."""
+
+    def test_grad_color_top_level(self):
+        dgm = np.array([[0.0, 1.0]])
+        grad = np.array([[0.1, 0.1]])
+        fig, ax = _fresh_ax()
+        oineus.plot_diagram_gradient(dgm, grad, ax=ax, grad_color="cyan")
+        q = _quivers(ax)[0]
+        fc = q.get_facecolor()
+        # cyan = (0, 1, 1, alpha)
+        assert abs(fc[0, 0] - 0.0) < 1e-6 and abs(fc[0, 1] - 1.0) < 1e-6 and abs(fc[0, 2] - 1.0) < 1e-6
+        plt.close(fig)
+
+    def test_diagram_color_solo_with_multi_dim_warns(self):
+        import warnings
+        dgms = {0: np.array([[0.0, 1.0]]), 1: np.array([[0.2, 0.5]])}
+        fig, ax = _fresh_ax()
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            oineus.plot_diagram(dgms, ax=ax, color="black")
+        msgs = [str(x.message) for x in w if issubclass(x.category, UserWarning)]
+        assert any("single color" in m for m in msgs)
+        plt.close(fig)
+
+    def test_diagram_color_dict_form_silent(self):
+        import warnings
+        dgms = {0: np.array([[0.0, 1.0]]), 1: np.array([[0.2, 0.5]])}
+        fig, ax = _fresh_ax()
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            oineus.plot_diagram(dgms, ax=ax, color={0: "red", 1: "blue"})
+        assert not any(
+            issubclass(x.category, UserWarning) and "single color" in str(x.message)
+            for x in w
+        )
+        plt.close(fig)
+
+    def test_plot_chain_chain_and_point_cloud_color(self):
+        # Build a tiny VR filtration in 2D.
+        import oineus.diff as oin_diff
+        import torch
+        torch.manual_seed(0)
+        pts = torch.tensor(
+            np.random.RandomState(0).randn(10, 2),
+            dtype=torch.float64, requires_grad=True,
+        )
+        fil = oin_diff.cech_delaunay_filtration(pts)
+        fig, ax = _fresh_ax()
+        oineus.plot_chain(
+            pts.detach().numpy(), fil.under_fil, [0, 1, 2],
+            ax=ax, chain_color="purple", point_cloud_color="khaki",
+        )
+        plt.close(fig)  # smoke test: no exception

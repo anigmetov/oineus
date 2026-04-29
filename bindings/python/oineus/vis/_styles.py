@@ -19,13 +19,25 @@ DEFAULT_POINT_STYLE: dict = {
     "edgecolors": "none",
 }
 
-DEFAULT_DIAGRAM_A_POINT_STYLE: dict = {**DEFAULT_POINT_STYLE, "c": "tab:red"}
-DEFAULT_DIAGRAM_B_POINT_STYLE: dict = {**DEFAULT_POINT_STYLE, "c": "tab:blue"}
+# Color lives outside the style dicts: callers pass it explicitly via
+# the top-level color / color_dgm_a / color_dgm_b arguments on
+# plot_diagram / plot_matching. The defaults below remain matplotlib
+# kwargs (marker, size, alpha, edge styling) only.
+DEFAULT_DIAGRAM_A_POINT_STYLE: dict = dict(DEFAULT_POINT_STYLE)
+DEFAULT_DIAGRAM_B_POINT_STYLE: dict = dict(DEFAULT_POINT_STYLE)
+
+# Default colors when the user does not pass color / color_dgm_a / color_dgm_b.
+DEFAULT_DIAGRAM_A_COLOR: str = "tab:red"
+DEFAULT_DIAGRAM_B_COLOR: str = "tab:blue"
+DEFAULT_DIAGRAM_GRADIENT_DIAGRAM_COLOR: str = "tab:blue"
+DEFAULT_DIAGRAM_GRADIENT_GRAD_COLOR: str = "tab:green"
+DEFAULT_MATCHING_EDGE_COLOR: str = "gray"
+DEFAULT_CHAIN_COLOR: str = "tab:orange"
+DEFAULT_POINT_CLOUD_COLOR: str = "lightgray"
 
 DEFAULT_MATCHING_EDGE_STYLE: dict = {
     "linewidth": 0.8,
     "linestyle": "-",
-    "color": "gray",
     "alpha": 0.5,
 }
 
@@ -43,18 +55,17 @@ DEFAULT_DIAGONAL_STYLE: dict = {
     "linewidth": 1.0,
 }
 
+# Color is filled in by plot_matching from color_dgm_a / color_dgm_b.
 DEFAULT_DIAGONAL_PROJECTION_A_STYLE: dict = {
     "marker": "x",
     "s": 30.0,
     "alpha": 0.8,
-    "c": "tab:red",
 }
 
 DEFAULT_DIAGONAL_PROJECTION_B_STYLE: dict = {
     "marker": "x",
     "s": 30.0,
     "alpha": 0.8,
-    "c": "tab:blue",
 }
 
 DEFAULT_INF_LINE_STYLE: dict = {
@@ -64,14 +75,17 @@ DEFAULT_INF_LINE_STYLE: dict = {
 }
 
 DEFAULT_DIAGRAM_GRADIENT_STYLE: dict = {
-    "color": "tab:green",
     "alpha": 0.85,
     "width": 0.004,
     "headwidth": 3.5,
     "headlength": 5.0,
     "angles": "xy",
     "scale_units": "xy",
-    "scale": 1.0,
+    # In data coordinates, scale > 1 makes arrows shorter than the raw
+    # gradient by that factor. Default scale=4.0 keeps arrows from
+    # leaving the diagram bounding box on noisy inputs; pass scale=1.0
+    # in quiver_style to recover raw-gradient lengths.
+    "scale": 4.0,
 }
 
 # Above this point count we switch large diagrams from per-point scatter to
@@ -97,27 +111,23 @@ DEFAULT_MATCHING_EDGE_QUANTILE: float = 0.99
 DEFAULT_GRADIENT_TOP_K_ARROWS: int = 200
 
 
-# Chain rendering. Default to a single accent colour (orange) so the chain
-# stands out against a desaturated grey point cloud / scalar-field heatmap.
+# Chain rendering. Color lives outside these dicts (top-level
+# chain_color / point_cloud_color args on plot_chain).
 DEFAULT_CHAIN_VERTEX_STYLE: dict = {
     "marker": "o",
     "s": 60.0,
-    "c": "tab:orange",
     "edgecolors": "black",
     "linewidths": 0.8,
     "zorder": 3,
 }
 
 DEFAULT_CHAIN_EDGE_STYLE: dict = {
-    "color": "tab:orange",
     "linewidth": 2.0,
     "alpha": 0.95,
     "zorder": 2,
 }
 
 DEFAULT_CHAIN_TRIANGLE_STYLE: dict = {
-    "facecolor": "tab:orange",
-    "edgecolor": "tab:orange",
     "alpha": 0.35,
     "linewidth": 0.8,
     "zorder": 1,
@@ -125,8 +135,6 @@ DEFAULT_CHAIN_TRIANGLE_STYLE: dict = {
 
 # Phase-2 (3D) -- defined here so callers can preview overrides.
 DEFAULT_CHAIN_TETRAHEDRON_STYLE: dict = {
-    "facecolor": "tab:orange",
-    "edgecolor": "tab:orange",
     "alpha": 0.20,
     "linewidth": 0.6,
     "zorder": 1,
@@ -135,7 +143,6 @@ DEFAULT_CHAIN_TETRAHEDRON_STYLE: dict = {
 DEFAULT_POINT_CLOUD_STYLE: dict = {
     "marker": "o",
     "s": 12.0,
-    "c": "lightgray",
     "alpha": 0.7,
     "edgecolors": "none",
     "zorder": 0,

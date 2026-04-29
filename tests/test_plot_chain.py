@@ -438,9 +438,11 @@ class TestDualizeIndexTranslation:
 
 class TestStylePlumbing:
     def test_chain_style_getter_returns_copy(self):
+        # color is no longer in the dict (promoted to top-level
+        # chain_color). The non-color entries still pass through.
         s = oineus.default_chain_edge_style()
-        s["color"] = "totally-new"
-        assert oineus.DEFAULT_CHAIN_EDGE_STYLE["color"] != "totally-new"
+        s["linewidth"] = 99.0
+        assert oineus.DEFAULT_CHAIN_EDGE_STYLE["linewidth"] != 99.0
 
     def test_custom_edge_style_applied(self):
         points = _square_points()

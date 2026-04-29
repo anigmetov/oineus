@@ -25,6 +25,8 @@ except Exception:
     _HAS_MPL_SCATTER_DENSITY = False
 
 from . import _common
+import warnings
+
 from . import _styles
 from ._common import (
     _array_diagram,
@@ -41,10 +43,17 @@ from ._common import (
     _to_dim_diagrams,
 )
 from ._styles import (
+    DEFAULT_CHAIN_COLOR,
     DEFAULT_DENSITY_STYLE,
     DEFAULT_DENSITY_THRESHOLD,
+    DEFAULT_DIAGRAM_A_COLOR,
+    DEFAULT_DIAGRAM_B_COLOR,
+    DEFAULT_DIAGRAM_GRADIENT_DIAGRAM_COLOR,
+    DEFAULT_DIAGRAM_GRADIENT_GRAD_COLOR,
     DEFAULT_GRADIENT_TOP_K_ARROWS,
+    DEFAULT_MATCHING_EDGE_COLOR,
     DEFAULT_MATCHING_EDGE_QUANTILE,
+    DEFAULT_POINT_CLOUD_COLOR,
     default_chain_edge_style,
     default_chain_tetrahedron_style,
     default_chain_triangle_style,
@@ -62,6 +71,38 @@ from ._styles import (
     default_point_cloud_style,
     default_point_style,
 )
+
+
+def _is_solo_color(color):
+    """True iff `color` is a non-None, single-color spec (not a dict, list,
+    tuple-of-rgba is OK as solo)."""
+    if color is None:
+        return False
+    if isinstance(color, dict):
+        return False
+    # str (named or hex), 1-elt sequence, tuple of (r,g,b)/(r,g,b,a):
+    if isinstance(color, str):
+        return True
+    if isinstance(color, (list, tuple)):
+        # treat list as cycle, tuple of 3/4 floats as a single rgba
+        if isinstance(color, tuple) and len(color) in (3, 4) and all(
+            isinstance(v, (int, float)) for v in color
+        ):
+            return True
+        return False
+    return True
+
+
+def _warn_if_solo_color_multi_dim(color, dims_sorted, where):
+    if _is_solo_color(color) and len(dims_sorted) > 1:
+        warnings.warn(
+            f"{where}: a single color was passed but the diagram has "
+            f"{len(dims_sorted)} dimensions ({list(dims_sorted)}); this "
+            "collapses the per-dim cycle to one color. Pass color={dim: c, ...} "
+            "or color=[c0, c1, ...] to color dimensions individually.",
+            UserWarning,
+            stacklevel=3,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +154,7 @@ def plot_diagram(
     ax=None,
     *,
     color=None,
+    cmap=None,
     log_x: bool = False,
     log_y: bool = False,
     title: typing.Optional[str] = None,
@@ -123,7 +165,6 @@ def plot_diagram(
     use_density: bool = True,
     density_threshold: int = DEFAULT_DENSITY_THRESHOLD,
     near_diagonal_fraction: float = 0.03,
-    density_cmap: str = "viridis",
     density_style: typing.Optional[dict] = None,
     inf_line_margin: float = 0.05,
     point_style: typing.Optional[dict] = None,
@@ -139,10 +180,19 @@ def plot_diagram(
     still drawn as crisp scatter -- so high-persistence (topologically
     meaningful) features are never aggregated.
 
+    Color of the diagram points is taken from the top-level ``color``
+    argument: pass a single color (``"red"``, ``"#012345"``, ``(r, g, b[, a])``)
+    to override every dim, a ``dict`` mapping dim -> color, or a ``list``
+    cycled through dims in sort order. ``None`` (default) leaves the choice
+    to matplotlib's per-call cycle. Passing a single color when the input
+    has more than one dim emits a ``UserWarning``.
+
+    ``cmap`` is forwarded to the density-aggregation path; pass ``None`` to
+    keep the default (``viridis``).
+
     Style-dict kwargs (``point_style``, ``diagonal_style``, ``inf_line_style``,
     ``density_style``) default to copies of the module-level ``DEFAULT_*_STYLE``
-    dicts. Per-dim colouring is overridden via ``color`` (dict[int, color]
-    or list).
+    dicts and no longer carry a ``color`` / ``c`` key.
     """
     if not _HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plot_diagram.")
@@ -154,6 +204,8 @@ def plot_diagram(
     bounds = {} if axis_bounds is None else dict(axis_bounds)
     dgms = _to_dim_diagrams(diagrams, dims=dims, max_dimension=max_dimension)
     dims_sorted = sorted(dgms.keys())
+
+    _warn_if_solo_color_multi_dim(color, dims_sorted, "plot_diagram")
 
     finite_by_dim = {}
     pos_inf_birth_by_dim = {}
@@ -271,7 +323,9 @@ def plot_diagram(
 
     if use_density_plot:
         density_style_resolved = _resolve_style(density_style, default_density_style)
-        density_style_resolved.setdefault("cmap", density_cmap)
+        if cmap is not None:
+            density_style_resolved["cmap"] = cmap
+        # else: leave whatever is in the resolved dict (defaults to viridis).
         _add_density_artist(
             ax,
             near_x + x_shift,
@@ -400,6 +454,9 @@ def plot_diagram_gradient(
     title: typing.Optional[str] = None,
     axis_bounds: typing.Optional[typing.Mapping[str, float]] = None,
     inf_line_margin: float = 0.05,
+    diagram_color=None,
+    grad_color=None,
+    cmap=None,
     quiver_style: typing.Optional[dict] = None,
     point_style: typing.Optional[dict] = None,
     diagonal_style: typing.Optional[dict] = None,
@@ -429,12 +486,17 @@ def plot_diagram_gradient(
             default plots the gradient as-is (steepest *increase*).
         plot_points: If ``True`` (default), the underlying diagram is drawn
             via ``plot_diagram`` before the arrows are overlaid.
+        diagram_color: Color of the diagram markers (forwarded to
+            ``plot_diagram``'s ``color``). Single value, ``dict[int, color]``,
+            or ``list``; a single color with multi-dim input emits a
+            ``UserWarning``.
+        grad_color: Color of the quiver arrows. Single value (single arrow
+            color across all dims). Defaults to ``DEFAULT_DIAGRAM_GRADIENT_GRAD_COLOR``.
+        cmap: Forwarded to ``plot_diagram`` (controls density-mode colormap).
 
     Inf-death points are skipped (arrows for those rows are dropped). The
-    ``quiver_style`` kwarg accepts any ``Axes.quiver`` keyword; the default
-    uses ``angles='xy', scale_units='xy', scale=1.0`` so that ``(vx, vy)``
-    is interpreted in data coordinates -- the natural convention given
-    that diagram coordinates and gradient components share units.
+    ``quiver_style`` kwarg accepts any ``Axes.quiver`` keyword; ``color``
+    no longer lives in the dict (use ``grad_color``).
 
     Above ``density_threshold`` total points the underlying scatter is
     rendered as density (inherited from ``plot_diagram``) and arrows are
@@ -447,6 +509,12 @@ def plot_diagram_gradient(
         raise ImportError("matplotlib is required for plot_diagram_gradient.")
 
     quiver_style = _resolve_style(quiver_style, default_diagram_gradient_style)
+    quiver_style.setdefault(
+        "color",
+        grad_color if grad_color is not None else DEFAULT_DIAGRAM_GRADIENT_GRAD_COLOR,
+    )
+    if grad_color is not None:
+        quiver_style["color"] = grad_color
 
     points_by_dim, grad_by_dim = _coerce_diagram_with_grad(diagram, gradient, dims)
     if not points_by_dim:
@@ -473,6 +541,8 @@ def plot_diagram_gradient(
         ax = plot_diagram(
             finite_dgms,
             ax=ax,
+            color=diagram_color,
+            cmap=cmap,
             log_x=log_x,
             log_y=log_y,
             title=title,
@@ -561,6 +631,11 @@ def plot_matching(
     density_threshold: int = DEFAULT_DENSITY_THRESHOLD,
     near_diagonal_fraction: float = 0.03,
     edge_quantile: float = DEFAULT_MATCHING_EDGE_QUANTILE,
+    color_dgm_a=None,
+    color_dgm_b=None,
+    match_color=None,
+    cmap_a=None,
+    cmap_b=None,
     density_style: typing.Optional[dict] = None,
     dgm_a_point_style: typing.Optional[dict] = None,
     dgm_b_point_style: typing.Optional[dict] = None,
@@ -577,6 +652,13 @@ def plot_matching(
     inf_line_margin: float = 0.05,
 ):
     """Plot a matching between two persistence diagrams.
+
+    Color of the per-side scatter is controlled by ``color_dgm_a`` and
+    ``color_dgm_b`` (single colors; ``None`` uses ``DEFAULT_DIAGRAM_A_COLOR``
+    / ``DEFAULT_DIAGRAM_B_COLOR``). The matching edges use ``match_color``
+    (single color; ``None`` uses ``DEFAULT_MATCHING_EDGE_COLOR``). Per-side
+    density colormaps are ``cmap_a`` and ``cmap_b``; ``None`` keeps the
+    monochromatic-fade-from-color default driven by the side's color.
 
     Dispatches on ``matching`` type: for Wasserstein (``DiagramMatching``)
     all edge categories are drawn by default; for ``BottleneckMatching`` only
@@ -630,7 +712,29 @@ def plot_matching(
         diagonal_projection_a_style, default_diagonal_projection_a_style)
     diagonal_projection_b_style = _resolve_style(
         diagonal_projection_b_style, default_diagonal_projection_b_style)
+    # Diagonal-projection markers inherit the per-side color unless the
+    # caller pinned one in the style dict.
+    if "c" not in diagonal_projection_a_style:
+        diagonal_projection_a_style["c"] = (
+            color_dgm_a if color_dgm_a is not None else DEFAULT_DIAGRAM_A_COLOR
+        )
+    if "c" not in diagonal_projection_b_style:
+        diagonal_projection_b_style["c"] = (
+            color_dgm_b if color_dgm_b is not None else DEFAULT_DIAGRAM_B_COLOR
+        )
     inf_line_style = _resolve_style(inf_line_style, default_inf_line_style)
+
+    # Inject the top-level color arguments. The style dicts no longer
+    # carry color keys, so a `None` user input falls back to the module-
+    # level defaults defined in _styles.py.
+    color_a = color_dgm_a if color_dgm_a is not None else DEFAULT_DIAGRAM_A_COLOR
+    color_b = color_dgm_b if color_dgm_b is not None else DEFAULT_DIAGRAM_B_COLOR
+    dgm_a_point_style.setdefault("c", color_a)
+    dgm_b_point_style.setdefault("c", color_b)
+    ordinary_edge_style.setdefault(
+        "color",
+        match_color if match_color is not None else DEFAULT_MATCHING_EDGE_COLOR,
+    )
 
     bounds = {} if axis_bounds is None else dict(axis_bounds)
 
@@ -714,7 +818,7 @@ def plot_matching(
 
     # Diagram points: split near-diagonal bulk (density when enabled) from
     # outliers (always scatter so high-persistence features stay crisp).
-    def _draw_diagram_points(dgm, point_style, label):
+    def _draw_diagram_points(dgm, point_style, label, *, side_cmap):
         if dgm.shape[0] == 0:
             return
         coords = np.array([
@@ -730,11 +834,18 @@ def plot_matching(
         near_b, near_d, far_b, far_d = _split_near_diagonal(
             finite[:, 0], finite[:, 1], near_thr)
         if near_b.size:
-            _add_density_artist(
-                ax, near_b, near_d,
-                color=point_style.get("c"),
-                style=_resolve_style(density_style, default_density_style),
-            )
+            density_kwargs = {}
+            if side_cmap is not None:
+                # Explicit cmap wins over the monochromatic-fade default.
+                resolved = _resolve_style(density_style, default_density_style)
+                resolved["cmap"] = side_cmap
+                density_kwargs["style"] = resolved
+            else:
+                density_kwargs["color"] = point_style.get("c")
+                density_kwargs["style"] = _resolve_style(
+                    density_style, default_density_style,
+                )
+            _add_density_artist(ax, near_b, near_d, **density_kwargs)
         scatter_label = label if (far_b.size or non_finite.size) else None
         if far_b.size:
             ax.scatter(far_b, far_d, label=scatter_label, **point_style)
@@ -743,8 +854,8 @@ def plot_matching(
             ax.scatter(non_finite[:, 0], non_finite[:, 1], label=scatter_label, **point_style)
 
     if plot_points:
-        _draw_diagram_points(dgm_a, dgm_a_point_style, dgm_a_label)
-        _draw_diagram_points(dgm_b, dgm_b_point_style, dgm_b_label)
+        _draw_diagram_points(dgm_a, dgm_a_point_style, dgm_a_label, side_cmap=cmap_a)
+        _draw_diagram_points(dgm_b, dgm_b_point_style, dgm_b_label, side_cmap=cmap_b)
 
     # Gather all edges to draw, grouped by category.
     ordinary_segments: list = []
@@ -937,6 +1048,8 @@ def plot_chain(
     ax=None,
     source_kind: typing.Optional[str] = None,
     dualize=False,
+    chain_color=None,
+    point_cloud_color=None,
     edge_style: typing.Optional[dict] = None,
     triangle_style: typing.Optional[dict] = None,
     tetrahedron_style: typing.Optional[dict] = None,
@@ -974,6 +1087,16 @@ def plot_chain(
     ``False`` matches homology decompositions and indices that have
     already been translated (e.g. those returned by
     ``TopologyOptimizer.increase_birth``).
+
+    Colors:
+        ``chain_color`` -- single color or ``dict[int, color]`` (keys are
+            cell dimensions: 0=vertex, 1=edge, 2=triangle, 3=tetrahedron);
+            applied to whatever the matching style dict didn't already
+            override. ``None`` (default) uses ``DEFAULT_CHAIN_COLOR``
+            uniformly.
+        ``point_cloud_color`` -- single color for the underlying
+            point-cloud / field background. ``None`` (default) uses
+            ``DEFAULT_POINT_CLOUD_COLOR``.
     """
     if not _HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plot_chain.")
@@ -994,6 +1117,30 @@ def plot_chain(
     triangle_style = _resolve_style(triangle_style, default_chain_triangle_style)
     tetrahedron_style = _resolve_style(tetrahedron_style, default_chain_tetrahedron_style)
     point_style = _resolve_style(point_style, default_point_cloud_style)
+
+    # Inject chain_color into each stratum style. The style dicts no
+    # longer carry a default color, so a None user input falls back to
+    # the module-level constant defined in _styles.py.
+    def _color_for_dim(d):
+        if isinstance(chain_color, dict):
+            return chain_color.get(d)
+        return chain_color  # solo or None
+
+    _vertex_c   = _color_for_dim(0) or DEFAULT_CHAIN_COLOR
+    _edge_c     = _color_for_dim(1) or DEFAULT_CHAIN_COLOR
+    _triangle_c = _color_for_dim(2) or DEFAULT_CHAIN_COLOR
+    _tet_c      = _color_for_dim(3) or DEFAULT_CHAIN_COLOR
+    vertex_style.setdefault("c", _vertex_c)
+    edge_style.setdefault("color", _edge_c)
+    triangle_style.setdefault("facecolor", _triangle_c)
+    triangle_style.setdefault("edgecolor", _triangle_c)
+    tetrahedron_style.setdefault("facecolor", _tet_c)
+    tetrahedron_style.setdefault("edgecolor", _tet_c)
+
+    point_style.setdefault(
+        "c",
+        point_cloud_color if point_cloud_color is not None else DEFAULT_POINT_CLOUD_COLOR,
+    )
 
     if kind == "points":
         points = np.asarray(source, dtype=float)
