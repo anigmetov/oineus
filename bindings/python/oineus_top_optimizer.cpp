@@ -192,6 +192,17 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
             )
             .def_prop_ro("homology_decomposition", &TopologyOptimizer::get_homology_decompostion)
             .def_prop_ro("cohomology_decomposition", &TopologyOptimizer::get_cohomology_decompostion)
+            // Mutable references to the internal decompositions, used by
+            // the Phase-3 partial-U wiring in oineus.diff.persistence_diagram
+            // (so it can call decmp.compute_partial_u_from_v_1 directly on
+            // the live optimizer state). The non-_ref names above return
+            // copies and are kept for API compatibility.
+            .def("homology_decomposition_ref",
+                 [](TopologyOptimizer& opt) -> typename TopologyOptimizer::Decomposition& { return opt.decmp_hom_; },
+                 nb::rv_policy::reference_internal)
+            .def("cohomology_decomposition_ref",
+                 [](TopologyOptimizer& opt) -> typename TopologyOptimizer::Decomposition& { return opt.decmp_coh_; },
+                 nb::rv_policy::reference_internal)
             .def("singleton", &TopologyOptimizer::singleton)
             .def("singletons", &TopologyOptimizer::singletons,
                     nb::call_guard<nb::gil_scoped_release>())
@@ -222,6 +233,19 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     "produced when needed. If the existing reduction state "
                     "covers the request, returns immediately; otherwise "
                     "rebuilds from scratch.")
+            .def("ensure_reduced_for_partial_u_hom",
+                    &TopologyOptimizer::ensure_reduced_for_partial_u_hom,
+                    nb::arg("n_threads"),
+                    nb::call_guard<nb::gil_scoped_release>(),
+                    "Phase-3 homology-side reduction: parallel V-only with "
+                    "restore_elz, no U. The partial-U pass runs separately "
+                    "afterwards via decomposition.compute_partial_u_from_v_1.")
+            .def("ensure_reduced_for_partial_u_coh",
+                    &TopologyOptimizer::ensure_reduced_for_partial_u_coh,
+                    nb::arg("n_threads"),
+                    nb::call_guard<nb::gil_scoped_release>(),
+                    "Phase-3 cohomology-side reduction: parallel V-only with "
+                    "restore_elz, no U.")
             .def("ensure_reduced_coh", &TopologyOptimizer::ensure_reduced_coh,
                     nb::arg("need_u"),
                     nb::call_guard<nb::gil_scoped_release>(),

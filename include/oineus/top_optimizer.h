@@ -237,6 +237,36 @@ public:
         ensure_reduced_side(decmp_coh_, params_coh_, /*dualize*/true, need_u);
     }
 
+    // Phase-3 reduction: parallel V-only + restore_elz, no U. The
+    // partial-U pass runs separately on top of this. Always rebuilds
+    // (the typical Phase-3 backward starts from a fresh decomposition,
+    // so caching state across optimization steps is moot).
+    void ensure_reduced_for_partial_u_hom(int n_threads)
+    {
+        Params p;
+        p.compute_v = true;
+        p.compute_u = false;
+        p.clearing_opt = true;
+        p.restore_elz = true;
+        p.n_threads = n_threads;
+        decmp_hom_ = Decomposition(fil_, /*dualize*/false);
+        decmp_hom_.reduce(p);
+        params_hom_ = p;
+    }
+
+    void ensure_reduced_for_partial_u_coh(int n_threads)
+    {
+        Params p;
+        p.compute_v = true;
+        p.compute_u = false;
+        p.clearing_opt = true;
+        p.restore_elz = true;
+        p.n_threads = n_threads;
+        decmp_coh_ = Decomposition(fil_, /*dualize*/true);
+        decmp_coh_.reduce(p);
+        params_coh_ = p;
+    }
+
     bool cmp(Real a, Real b) const
     {
         if (negate_)

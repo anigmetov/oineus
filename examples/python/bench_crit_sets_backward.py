@@ -80,15 +80,20 @@ def build_filtration(name, n_points, grid_shape, seed, max_dim=2):
     if name == "vr":
         pts = make_pointcloud_2d(n_points, seed)
         return pts, oin_diff.vr_filtration(pts, max_dim=max_dim)
-    if name == "weak_alpha":
+    if name in ("weak_alpha", "alpha"):
+        # Differentiable alpha-complex combinatorics with weak-alpha
+        # values. The actual alpha values from CGAL aren't
+        # differentiable; this is the closest stand-in.
         pts = make_pointcloud_2d(n_points, seed)
         return pts, oin_diff.weak_alpha_filtration(pts)
     if name == "freudenthal":
         data = make_grid_2d(grid_shape, seed)
-        return data, oin_diff.freudenthal_filtration(data, max_dim=max_dim)
+        return data, oin_diff.freudenthal_filtration(
+            data, max_dim=max_dim, negate=False, wrap=False, n_threads=1)
     if name == "cubical":
         data = make_grid_2d(grid_shape, seed)
-        return data, oin_diff.cube_filtration(data, max_dim=max_dim)
+        return data, oin_diff.cube_filtration(
+            data, max_dim=max_dim, negate=False, wrap=False, n_threads=1)
     raise ValueError(f"unknown filtration {name!r}")
 
 
@@ -163,15 +168,16 @@ def build_loss(dgm, picks, directions, perturb=0.05, rng_seed=0):
 
 
 def run_one(filtration, n_points, grid_shape, n_moves, directions,
-            strategy, seed, label):
+            strategy, seed, label, gradient_method="crit-sets", n_threads=1):
     pts, fil = build_filtration(filtration, n_points, grid_shape, seed)
 
     t = time.perf_counter()
     dgms = oin_diff.persistence_diagram(
         fil,
-        gradient_method="crit-sets",
+        gradient_method=gradient_method,
         step_size=1.0,
         conflict_strategy=strategy,
+        n_threads=n_threads,
     )
     t_forward = time.perf_counter() - t
 
@@ -208,7 +214,17 @@ def run_one(filtration, n_points, grid_shape, n_moves, directions,
     t_backward_cold = times[0]
     t_backward_warm = sum(times[n_warmup:]) / max(1, n_repeat)
 
-    hom_status, coh_status = dgms._top_opt.matrix_summary()
+    if hasattr(dgms._top_opt, "matrix_summary"):
+        hom_status, coh_status = dgms._top_opt.matrix_summary()
+    else:
+        # dgm-loss uses a single Decomposition, not a TopologyOptimizer
+        class _S: pass
+        s = _S()
+        s.is_reduced = True
+        s.has_v = False
+        s.has_u = False
+        s.clearing_opt_used = False
+        hom_status = coh_status = s
 
     return {
         "label": label,
@@ -249,7 +265,8 @@ def fmt_status(r):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--filtration", choices=["vr", "weak_alpha", "freudenthal", "cubical"],
+    p.add_argument("--filtration",
+                   choices=["vr", "weak_alpha", "alpha", "freudenthal", "cubical"],
                    default="weak_alpha")
     p.add_argument("--n-points", type=int, nargs="+",
                    default=[64, 256, 1024, 2048],
@@ -263,6 +280,16 @@ def main():
                    choices=["death-up", "death-down", "birth-up", "birth-down", "mixed"],
                    default="mixed")
     p.add_argument("--strategy", choices=["avg", "max", "sum", "fca"], default="avg")
+    p.add_argument("--gradient-method",
+                   choices=["crit-sets", "crit-sets-partial",
+                            "crit-sets-row-partial", "dgm-loss",
+                            "all", "both"],
+                   default="all",
+                   help="'all' runs every variant (dgm-loss + Phase-2 + "
+                        "Phase-3 + Phase-4); 'both' is dgm-loss-free "
+                        "Phase-2 vs Phase-3 comparison; individual values "
+                        "run just that one")
+    p.add_argument("--n-threads", type=int, default=1)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--time-budget", type=float, default=30.0,
                    help="bail out after a single iteration exceeds (s)")
@@ -270,6 +297,9 @@ def main():
 
     if args.filtration in ("freudenthal", "cubical") and not args.grid_shape:
         args.grid_shape = [(8, 8), (16, 16), (32, 32), (64, 64)]
+    if args.filtration in ("vr", "weak_alpha", "alpha") and args.grid_shape:
+        # ignore stray --grid-shape for point-cloud filtrations
+        args.grid_shape = None
 
     print(f"filtration: {args.filtration}")
     print(f"directions: {args.directions}, strategy: {args.strategy}")
@@ -280,26 +310,75 @@ def main():
         print(f"grid shapes to sweep: {args.grid_shape}")
     print(f"per-iter time budget: {args.time_budget}s\n")
 
-    if args.filtration in ("vr", "weak_alpha"):
+    if args.filtration in ("vr", "weak_alpha", "alpha"):
         size_iter = [(n, None) for n in args.n_points]
         size_label = lambda n, g: f"n_points={n}"
     else:
         size_iter = [(None, tuple(g)) for g in args.grid_shape]
         size_label = lambda n, g: f"grid={g}"
 
+    if args.gradient_method == "all":
+        methods = ["dgm-loss", "crit-sets", "crit-sets-partial",
+                   "crit-sets-row-partial"]
+    elif args.gradient_method == "both":
+        methods = ["crit-sets", "crit-sets-partial"]
+    else:
+        methods = [args.gradient_method]
+
+    # Collect rows for the summary table
+    summary_rows = []
+
     for n, g in size_iter:
         for nm in args.n_moves:
-            label = f"{size_label(n, g)} moves={nm}"
-            print(f"=== {label} ===")
-            t0 = time.perf_counter()
-            r = run_one(args.filtration, n, g, nm, args.directions,
-                        args.strategy, args.seed, label)
-            elapsed = time.perf_counter() - t0
-            print(fmt_status(r))
-            print(f"  iteration wall-clock: {elapsed:.2f}s\n")
-            if elapsed > args.time_budget:
-                print(f"  hit time budget {args.time_budget:.0f}s; stopping")
-                return
+            results = {}
+            for method in methods:
+                label = f"{size_label(n, g)} moves={nm} method={method}"
+                print(f"=== {label} ===")
+                t0 = time.perf_counter()
+                r = run_one(args.filtration, n, g, nm, args.directions,
+                            args.strategy, args.seed, label,
+                            gradient_method=method, n_threads=args.n_threads)
+                elapsed = time.perf_counter() - t0
+                print(fmt_status(r))
+                print(f"  iteration wall-clock: {elapsed:.2f}s")
+                results[method] = r
+                if elapsed > args.time_budget:
+                    print(f"  hit time budget {args.time_budget:.0f}s; stopping")
+                    break
+            else:
+                # Both / all comparison line
+                if "crit-sets" in results and "crit-sets-partial" in results \
+                        and "skipped" not in results["crit-sets"] \
+                        and "skipped" not in results["crit-sets-partial"]:
+                    t2 = results["crit-sets"]["t_backward_cold"]
+                    t3 = results["crit-sets-partial"]["t_backward_cold"]
+                    if t3 > 0:
+                        print(f"  >>> COLD backward speedup (phase2/phase3): "
+                              f"{t2/t3:.2f}x  (phase2={t2*1e3:.2f}ms, "
+                              f"phase3={t3*1e3:.2f}ms)")
+                # Stash for summary
+                size_str = size_label(n, g)
+                for method, r in results.items():
+                    if "skipped" in r:
+                        continue
+                    summary_rows.append((
+                        args.filtration, size_str, r["fil_size"], nm,
+                        r["n_moves"], method, r["t_forward"],
+                        r["t_backward_cold"], r["t_backward_warm"]))
+            print()
+
+    # Final summary table: forward + cold backward + total per variant
+    if summary_rows:
+        print("=" * 100)
+        print("SUMMARY TABLE: forward + cold backward (cold = full reduction "
+              "on each step, realistic for optimization loops)")
+        print(f"# filtration  size  fil_size  moves  variant            "
+              f"t_fwd(ms)  t_bwd_cold(ms)  t_total_cold(ms)  t_bwd_warm(ms)")
+        for (fil, sz, fs, mv_req, mv, method, fwd, bcold, bwarm) in summary_rows:
+            total = fwd + bcold
+            print(f"  {fil:<10} {sz:<10}  {fs:>7}  {str(mv):>5}  "
+                  f"{method:<18}  {fwd*1e3:>9.2f}  {bcold*1e3:>14.2f}  "
+                  f"{total*1e3:>16.2f}  {bwarm*1e3:>14.2f}")
 
 
 if __name__ == "__main__":

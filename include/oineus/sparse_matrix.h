@@ -160,6 +160,16 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
         return is_zero(col) ? -1 : *col.rbegin();
     }
 
+    // Symmetric of low: smallest entry in the cached residual.
+    // Used by Phase-4 row-form U inversion (compute_u_row_bounded),
+    // where the residual is consumed top-down (V^T is lower
+    // unit-triangular -> forward substitution -> top of residual
+    // strictly increases each iteration).
+    static Int top(const CachedColumn& col)
+    {
+        return is_zero(col) ? -1 : *col.begin();
+    }
+
     static PColumn load_from_cache(const CachedColumn& col)
     {
         if (col.empty())
@@ -341,6 +351,100 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
         }
 
         return row_format;
+    }
+
+    // Append entries from cols-indexed columns of col_format into out,
+    // a row-format matrix. For each c in cols (sorted, unique) and
+    // each r in col_format[c], push c onto out[r]. Pre-existing
+    // entries in out[r] are preserved; new entries are tacked on at
+    // the end in ascending order of c (since cols is sorted ascending
+    // and per-thread slices are contiguous prefix-summed). Caller
+    // must size out >= max row index that may appear in col_format[c]
+    // for any c in cols. Used by VRUDecomposition::compute_partial_u_from_v[_1]
+    // to merge a partial column-form U into the existing row-form
+    // u_data_t without rebuilding the whole matrix.
+    static void append_col_to_row_format_parallel_sparse(
+            const Matrix& col_format,
+            const std::vector<size_t>& cols,
+            Matrix& out,
+            int n_threads)
+    {
+        if (cols.empty()) {
+            return;
+        }
+        if (out.empty()) {
+            return;
+        }
+
+        const size_t num_rows = out.size();
+        const size_t n_cols = cols.size();
+        const size_t requested_threads = n_threads > 0 ? static_cast<size_t>(n_threads) : 1;
+        const size_t n_workers = std::min(requested_threads, n_cols);
+
+        if (n_workers == 0) {
+            return;
+        }
+
+        std::vector<std::vector<size_t>> per_thread_positions(
+                n_workers, std::vector<size_t>(num_rows, 0));
+
+        auto worker_range = [n_cols, n_workers](size_t tid) {
+            const size_t begin = (tid * n_cols) / n_workers;
+            const size_t end = ((tid + 1) * n_cols) / n_workers;
+            return std::pair<size_t, size_t>(begin, end);
+        };
+
+        std::vector<std::thread> workers;
+        workers.reserve(n_workers);
+
+        for (size_t tid = 0; tid < n_workers; ++tid) {
+            workers.emplace_back([&, tid]() {
+                auto [begin, end] = worker_range(tid);
+                auto& local_counts = per_thread_positions[tid];
+                for (size_t i = begin; i < end; ++i) {
+                    const size_t col_idx = cols[i];
+                    for (int row_idx : col_format[col_idx]) {
+                        ++local_counts[static_cast<size_t>(row_idx)];
+                    }
+                }
+            });
+        }
+
+        for (auto& t : workers) {
+            t.join();
+        }
+
+        for (size_t r = 0; r < num_rows; ++r) {
+            size_t prefix = out[r].size();
+            for (size_t tid = 0; tid < n_workers; ++tid) {
+                const size_t count = per_thread_positions[tid][r];
+                per_thread_positions[tid][r] = prefix;
+                prefix += count;
+            }
+            if (prefix > out[r].size()) {
+                out[r].resize(prefix);
+            }
+        }
+
+        workers.clear();
+
+        for (size_t tid = 0; tid < n_workers; ++tid) {
+            workers.emplace_back([&, tid]() {
+                auto [begin, end] = worker_range(tid);
+                auto& local_pos = per_thread_positions[tid];
+                for (size_t i = begin; i < end; ++i) {
+                    const size_t col_idx = cols[i];
+                    for (int row_idx : col_format[col_idx]) {
+                        const size_t r = static_cast<size_t>(row_idx);
+                        out[r][local_pos[r]++] = static_cast<int>(col_idx);
+                    }
+                }
+            });
+        }
+
+        for (auto& t : workers) {
+            t.join();
+        }
     }
 
 };
