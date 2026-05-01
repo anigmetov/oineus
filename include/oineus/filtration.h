@@ -29,12 +29,11 @@ namespace oineus {
         std::vector<L> critical_value_locations;
     };
 
-    // Tag type for the Filtration "cells already in sorted order" constructor.
-    // Used by the in-order (VRE) Vietoris-Rips construction, which emits
-    // simplices in (dim, value) order by design and so doesn't need
-    // sort_and_set to run a global sort.
-    struct presorted_t {};
-    inline constexpr presorted_t presorted{};
+    // The presorted_t tag (declared in common_defs.h) marks ctors that
+    // accept already-sorted input and skip the implicit ordering step.
+    // The Filtration overload below uses it to bypass the global sort
+    // when cells arrive in (dim, value) order -- e.g. from the in-order
+    // (VRE) Vietoris-Rips construction.
 
     template<class UnderCell_, class Real_>
     class Filtration {

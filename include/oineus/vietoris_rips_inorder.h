@@ -189,8 +189,12 @@ void vre_build(Int n_points,
                std::vector<CellWithValue<Simplex<Int>, Real>>& simplices,
                std::vector<VREdge<Int>>& edges)
 {
+    // VRE always builds vs in ascending order (see generate_cofacets), so
+    // we use the presorted Simplex ctor to skip a redundant std::sort and
+    // a redundant copy. (The non-presorted ctor takes its arg by const
+    // lvalue reference and copies before sorting in place.)
     auto record = [&](typename Simplex<Int>::IdxVector vs, Real diam, VREdge<Int> e) {
-        simplices.emplace_back(Simplex<Int>(std::move(vs)), diam);
+        simplices.emplace_back(Simplex<Int>(presorted, std::move(vs)), diam);
         if (collect_edges) edges.push_back(e);
     };
 
