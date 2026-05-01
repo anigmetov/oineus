@@ -288,6 +288,23 @@ void init_oineus_functions(nb::module_& m)
     m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges_from_pwdists<oin_int, oin_real>,
             nb::arg("pwdists"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1);
 
+    // In-order (VRE) Vietoris-Rips construction.
+    func_name = "get_vr_filtration_inorder";
+    m.def(func_name.c_str(), &get_vr_filtration_inorder<oin_int, oin_real>,
+            nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1);
+
+    func_name = "get_vr_filtration_and_critical_edges_inorder";
+    m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges_inorder<oin_int, oin_real>,
+            nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1);
+
+    func_name = "get_vr_filtration_inorder_from_pwdists";
+    m.def(func_name.c_str(), &get_vr_filtration_inorder_from_pwdists<oin_int, oin_real>,
+            nb::arg("pwdists"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1);
+
+    func_name = "get_vr_filtration_and_critical_edges_inorder_from_pwdists";
+    m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges_inorder_from_pwdists<oin_int, oin_real>,
+            nb::arg("pwdists"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1);
+
     // boundary matrix as vector of columns
     func_name = "get_boundary_matrix";
     m.def(func_name.c_str(), &get_boundary_matrix<oin_int, oin_real>);

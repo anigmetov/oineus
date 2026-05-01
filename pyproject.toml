@@ -79,3 +79,8 @@ manylinux-aarch64-image = "manylinux2014"
 members = [
     "build_310",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: heavier tests that build larger filtrations; opt in with -m slow",
+]

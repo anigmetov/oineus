@@ -419,6 +419,79 @@ get_vr_filtration_and_critical_edges(nb::ndarray<Real, nb::c_contig, nb::device:
     }
 }
 
+// ==============================================================
+// In-order (VRE) Vietoris-Rips construction. Mirrors the BK API.
+// ==============================================================
+
+template<class Int, class Real>
+decltype(auto)
+get_vr_filtration_inorder(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> points, dim_type max_dim, Real max_diameter, int n_threads)
+{
+    if (points.ndim() != 2)
+        throw std::runtime_error("get_vr_filtration_inorder: expected 2D array");
+
+    dim_type d = points.shape(1);
+
+    if (d == 1) {
+        return oin::get_vr_filtration_inorder<Int, Real, 1>(numpy_to_point_vector<Real, 1>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 2) {
+        return oin::get_vr_filtration_inorder<Int, Real, 2>(numpy_to_point_vector<Real, 2>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 3) {
+        return oin::get_vr_filtration_inorder<Int, Real, 3>(numpy_to_point_vector<Real, 3>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 4) {
+        return oin::get_vr_filtration_inorder<Int, Real, 4>(numpy_to_point_vector<Real, 4>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 5) {
+        return oin::get_vr_filtration_inorder<Int, Real, 5>(numpy_to_point_vector<Real, 5>(points), max_dim, max_diameter, n_threads);
+    } else {
+        throw std::runtime_error("get_vr_filtration_inorder: dimension not supported by default, recompilation needed");
+    }
+}
+
+template<class Int, class Real>
+decltype(auto)
+get_vr_filtration_and_critical_edges_inorder(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> points, dim_type max_dim, Real max_diameter, int n_threads)
+{
+    if (points.ndim() != 2)
+        throw std::runtime_error("get_vr_filtration_and_critical_edges_inorder: expected 2D array");
+
+    dim_type d = points.shape(1);
+
+    if (d == 1) {
+        return oin::get_vr_filtration_and_critical_edges_inorder<Int, Real, 1>(numpy_to_point_vector<Real, 1>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 2) {
+        return oin::get_vr_filtration_and_critical_edges_inorder<Int, Real, 2>(numpy_to_point_vector<Real, 2>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 3) {
+        return oin::get_vr_filtration_and_critical_edges_inorder<Int, Real, 3>(numpy_to_point_vector<Real, 3>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 4) {
+        return oin::get_vr_filtration_and_critical_edges_inorder<Int, Real, 4>(numpy_to_point_vector<Real, 4>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 5) {
+        return oin::get_vr_filtration_and_critical_edges_inorder<Int, Real, 5>(numpy_to_point_vector<Real, 5>(points), max_dim, max_diameter, n_threads);
+    } else {
+        throw std::runtime_error("get_vr_filtration_and_critical_edges_inorder: dimension " + std::to_string(d) + " not supported by default, recompilation needed");
+    }
+}
+
+template<class Int, class Real>
+decltype(auto) get_vr_filtration_and_critical_edges_inorder_from_pwdists(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> pw_dists, dim_type max_dim, Real max_diameter, int n_threads)
+{
+    if (pw_dists.ndim() != 2 or pw_dists.shape(0) != pw_dists.shape(1))
+        throw std::runtime_error("Dimension mismatch");
+
+    const Real* pdata {static_cast<const Real*>(pw_dists.data())};
+
+    size_t n_points = pw_dists.shape(1);
+
+    oin::DistMatrix<Real> dist_matrix {pdata, n_points};
+
+    return oin::get_vr_filtration_and_critical_edges_inorder<Int, Real>(dist_matrix, max_dim, max_diameter, n_threads);
+}
+
+template<class Int, class Real>
+decltype(auto) get_vr_filtration_inorder_from_pwdists(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> pw_dists, dim_type max_dim, Real max_diameter, int n_threads)
+{
+    return get_vr_filtration_and_critical_edges_inorder_from_pwdists<Int, Real>(pw_dists, max_dim, max_diameter, n_threads).first;
+}
+
 template<class Int, class Real>
 typename oin::VRUDecomposition<Int>::MatrixData
 get_boundary_matrix(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> data, bool negate, bool wrap, dim_type max_dim, int n_threads)
