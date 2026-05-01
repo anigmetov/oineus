@@ -140,6 +140,34 @@ def test_vr_max_dim_one_only_edges():
         assert c.dim in (0, 1)
 
 
+def test_vr_persistence_diagram_matches_naive():
+    """End-to-end: persistence diagrams from VRE match those from the naive
+    reference. This exercises the presorted Filtration ctor's index
+    bookkeeping (id_to_sorted_id_, uid_to_sorted_id, dim_first_/dim_last_)
+    against the original sort-based ctor used by the naive path."""
+    rng = np.random.default_rng(31)
+    pts = rng.random((25, 2)).astype(np.float64)
+    thr = 0.5
+
+    fil_vre = oin.vr_filtration(pts, max_dim=2, max_diameter=thr)
+    fil_naive = _vr_naive(pts, max_dim=2, max_diameter=thr)
+
+    dcmp_vre = oin.Decomposition(fil_vre, True)
+    dcmp_vre.reduce(oin.ReductionParams())
+    dgm_vre = dcmp_vre.diagram(fil=fil_vre, include_inf_points=False)
+
+    dcmp_naive = oin.Decomposition(fil_naive, True)
+    dcmp_naive.reduce(oin.ReductionParams())
+    dgm_naive = dcmp_naive.diagram(fil=fil_naive, include_inf_points=False)
+
+    for d in (0, 1):
+        pts_vre = sorted(tuple(p) for p in dgm_vre.in_dimension(d))
+        pts_naive = sorted(tuple(p) for p in dgm_naive.in_dimension(d))
+        assert pts_vre == pts_naive, (
+            f"diagram mismatch in dimension {d}: "
+            f"VRE has {len(pts_vre)} points, naive has {len(pts_naive)}")
+
+
 # ----------------------------------------------------------------------------
 # Heavier test: opt-in via -m slow. Bound: n=80 in 2D, max_dim=2 (naive
 # permits this), no cutoff. Worst-case simplex count

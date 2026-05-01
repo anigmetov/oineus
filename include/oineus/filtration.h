@@ -29,6 +29,13 @@ namespace oineus {
         std::vector<L> critical_value_locations;
     };
 
+    // Tag type for the Filtration "cells already in sorted order" constructor.
+    // Used by the in-order (VRE) Vietoris-Rips construction, which emits
+    // simplices in (dim, value) order by design and so doesn't need
+    // sort_and_set to run a global sort.
+    struct presorted_t {};
+    inline constexpr presorted_t presorted{};
+
     template<class UnderCell_, class Real_>
     class Filtration {
     public:
@@ -59,11 +66,47 @@ namespace oineus {
             init(n_threads);
         }
 
+        // Caller promises that `_cells` is already in canonical
+        // (dim, value, emission-index) order. Skips the parallel sort and
+        // assigns identity permutations directly. Only the sequential
+        // uid_to_sorted_id map population (which sort_and_set also has to
+        // run sequentially) remains.
+        Filtration(presorted_t, CellVector&& _cells, bool _negate)
+                :
+                negate_(_negate),
+                cells_(std::move(_cells)),
+                id_to_sorted_id_(cells_.size()),
+                sorted_id_to_id_(cells_.size())
+        {
+            CALI_CXX_MARK_FUNCTION;
+            init_presorted();
+        }
+
         void init(int n_threads)
         {
             CALI_CXX_MARK_FUNCTION;
 
             sort_and_set(n_threads);
+            set_dim_info();
+
+            assert(std::all_of(cells_.begin(), cells_.end(),
+                    [](const Cell& sigma) { return sigma.is_valid_filtration_simplex(); }));
+        }
+
+        void init_presorted()
+        {
+            CALI_CXX_MARK_FUNCTION;
+
+            uid_to_sorted_id.clear();
+            uid_to_sorted_id.reserve(cells_.size());
+            for (size_t i = 0; i < cells_.size(); ++i) {
+                auto& sigma = cells_[i];
+                sigma.set_id(static_cast<Int>(i));
+                sigma.set_sorted_id(static_cast<Int>(i));
+                id_to_sorted_id_[i] = static_cast<Int>(i);
+                sorted_id_to_id_[i] = static_cast<Int>(i);
+                uid_to_sorted_id[sigma.get_uid()] = static_cast<Int>(i);
+            }
             set_dim_info();
 
             assert(std::all_of(cells_.begin(), cells_.end(),
