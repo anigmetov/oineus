@@ -231,10 +231,17 @@ void vre_build(Int n_points,
                 raw_edges.push_back({u, v, cv});
             }
         }
-        // Stable sort so equal-distance edges keep lex order; this fixes
-        // the tiebreaker among ties to (smaller u, then smaller v).
-        std::stable_sort(raw_edges.begin(), raw_edges.end(),
-                [](const EdgeData& a, const EdgeData& b) { return a.cv < b.cv; });
+        // Sort by (cv, u, v): primary key is the compare-value, ties go
+        // to lex (u, v). The explicit (u, v) tiebreaker lets us use
+        // std::sort (in-place introsort) instead of std::stable_sort,
+        // which on libstdc++/libc++ allocates an O(E) auxiliary buffer
+        // for the merge phase. On dense inputs E = n(n-1)/2 can be
+        // hundreds of MB, so this matters even though the average
+        // comparator cost is barely higher (FP ties on cv are rare).
+        std::sort(raw_edges.begin(), raw_edges.end(),
+                [](const EdgeData& a, const EdgeData& b) {
+                    return std::tie(a.cv, a.u, a.v) < std::tie(b.cv, b.u, b.v);
+                });
 
         current.reserve(raw_edges.size());
         for (const auto& ed : raw_edges) {
