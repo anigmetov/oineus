@@ -248,17 +248,37 @@ void vre_build(Int n_points,
     // ---- Layers 2 .. max_dim. `current` is in increasing-value order at
     // every step; cofacets share the parent's value exactly, so each
     // `next` is also in increasing-value order without any sorting.
+    //
+    // The final layer (d == max_dim) is special: we don't need `next`
+    // because the loop is about to exit. Building `next` would force a
+    // vertex-vector copy on every emit (so the parent frame can also
+    // hold its vertices) plus a transient frame buffer that is
+    // immediately discarded. For the very common max_dim == 2 case this
+    // is most of the work in the layer. The final-layer emitter below
+    // moves child.vertices straight into the Simplex record and skips
+    // `next` entirely.
     for (dim_type d = 2; d <= max_dim; ++d) {
-        std::vector<VreFrame<Int, Real>> next;
-        auto emit_frame = [&](VreFrame<Int, Real>&& child) {
-            record(child.vertices, child.diameter, child.cached_edge);
-            next.push_back(std::move(child));
-        };
-        for (const auto& parent : current) {
-            generate_cofacets<Int, Real>(parent, n_points, compare_dist, emit_frame);
+        const bool is_final = (d == max_dim);
+        if (is_final) {
+            auto emit_final = [&](VreFrame<Int, Real>&& child) {
+                record(std::move(child.vertices), child.diameter, child.cached_edge);
+            };
+            for (const auto& parent : current) {
+                generate_cofacets<Int, Real>(parent, n_points, compare_dist, emit_final);
+            }
+            // Loop terminates next iteration; no need to update `current`.
+        } else {
+            std::vector<VreFrame<Int, Real>> next;
+            auto emit_frame = [&](VreFrame<Int, Real>&& child) {
+                record(child.vertices, child.diameter, child.cached_edge);
+                next.push_back(std::move(child));
+            };
+            for (const auto& parent : current) {
+                generate_cofacets<Int, Real>(parent, n_points, compare_dist, emit_frame);
+            }
+            current = std::move(next);
+            if (current.empty()) break;  // no cofacets here, none higher up
         }
-        current = std::move(next);
-        if (current.empty()) break;  // no more cofacets possible at higher d
     }
 }
 
