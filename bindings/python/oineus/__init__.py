@@ -877,9 +877,12 @@ def vr_filtration(data: np.ndarray,
                   max_dim: int = -1,
                   max_diameter: float = -1.0,
                   with_critical_edges: bool = False,
-                  n_threads: int = 1,
-                  algorithm: str = "bron-kerbosch"):
+                  n_threads: int = 1):
     """Build a Vietoris-Rips filtration from points or pairwise distances.
+
+    Construction uses the in-order generation (VRE) algorithm of
+    Vejdemo-Johansson, Matuszewski & Bauer ("In-order generation of
+    Vietoris-Rips Complexes", arXiv:2411.05495).
 
     Parameters
     ----------
@@ -891,17 +894,13 @@ def vr_filtration(data: np.ndarray,
         Largest simplex dimension to enumerate. Default: data dimensionality.
     max_diameter : float
         Truncation threshold; only simplices with diameter <= this value are
-        kept. Default: diameter of the point cloud.
+        kept. Default: enclosing radius of the point cloud.
     with_critical_edges : bool
         Also return an array (one per simplex) of an edge whose length equals
         the simplex's filtration value.
     n_threads : int
         Threads used for the (parallel) sort inside the Filtration ctor.
-        Enumeration is single-threaded.
-    algorithm : str
-        Either ``"bron-kerbosch"`` (default; the existing clique-finding
-        construction) or ``"inorder"`` (the VRE in-order generation algorithm
-        of Vejdemo-Johansson, Matuszewski & Bauer, arXiv:2411.05495).
+        Enumeration itself is single-threaded.
     """
     assert data.ndim == 2
 
@@ -917,31 +916,16 @@ def vr_filtration(data: np.ndarray,
         else:
             max_dim = data.shape[1]
 
-    if algorithm == "bron-kerbosch":
-        if from_pwdists:
-            if with_critical_edges:
-                func = _oineus.get_vr_filtration_and_critical_edges_from_pwdists
-            else:
-                func = _oineus.get_vr_filtration_from_pwdists
+    if from_pwdists:
+        if with_critical_edges:
+            func = _oineus.get_vr_filtration_and_critical_edges_from_pwdists
         else:
-            if with_critical_edges:
-                func = _oineus.get_vr_filtration_and_critical_edges
-            else:
-                func = _oineus.get_vr_filtration
-    elif algorithm == "inorder":
-        if from_pwdists:
-            if with_critical_edges:
-                func = _oineus.get_vr_filtration_and_critical_edges_inorder_from_pwdists
-            else:
-                func = _oineus.get_vr_filtration_inorder_from_pwdists
-        else:
-            if with_critical_edges:
-                func = _oineus.get_vr_filtration_and_critical_edges_inorder
-            else:
-                func = _oineus.get_vr_filtration_inorder
+            func = _oineus.get_vr_filtration_from_pwdists
     else:
-        raise ValueError(f"Unknown algorithm: {algorithm!r}; "
-                         f"must be 'bron-kerbosch' or 'inorder'")
+        if with_critical_edges:
+            func = _oineus.get_vr_filtration_and_critical_edges
+        else:
+            func = _oineus.get_vr_filtration
 
     result = func(data, max_dim=max_dim, max_diameter=max_diameter, n_threads=n_threads)
     if with_critical_edges:

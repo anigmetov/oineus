@@ -2,21 +2,17 @@
 """
 Correctness tests for the in-order (VRE) Vietoris-Rips construction.
 
-Compares the VRE algorithm against the existing Bron-Kerbosch (BK) construction
-on small inputs (sub-second runtime, well under 50 MB memory) plus one slightly
-heavier case marked @pytest.mark.slow.
-
-The point-based BK and VRE paths must produce IDENTICAL filtrations (same set
-of (uid, value) pairs). The pairwise-distance path is checked using explicit
-max_diameter values, because the existing BK distance-matrix path has a
-pre-existing bug (vietoris_rips.h:266, :351 compare raw distance against
-max_diameter * max_diameter -- this is independent of VRE and tracked as a
-follow-up). VRE pwdists is cross-checked against VRE points instead.
+oineus.vr_filtration() now uses VRE unconditionally; here we cross-check it
+against the brute-force ``_oineus._get_vr_filtration_naive`` reference (a
+straight enumeration of all subsets, max_dim <= 3) on small inputs. The
+C++ test in tests_reduction.cpp also compares VRE against the legacy
+Bron-Kerbosch construction.
 """
 
 import pytest
 import numpy as np
 import oineus as oin
+from oineus import _oineus
 
 
 def _cell_set(fil, ndigits: int = 12):
@@ -24,22 +20,30 @@ def _cell_set(fil, ndigits: int = 12):
     return {(c.uid, round(c.value, ndigits)) for c in fil.cells()}
 
 
+def _vr_naive(pts, max_dim, max_diameter):
+    """Reference brute-force VR (max_dim <= 3 enforced by the C++ side)."""
+    return _oineus._get_vr_filtration_naive(
+        pts, max_dim=max_dim, max_diameter=max_diameter, n_threads=1)
+
+
 @pytest.mark.parametrize("n_points,dim,max_dim", [
     (10, 2, 1),
     (10, 2, 2),
     (10, 3, 3),
-    (30, 2, 2),
-    (30, 3, 3),
-    (50, 2, 2),
+    (15, 2, 2),
+    (15, 3, 3),
+    (20, 2, 2),
 ])
-def test_vre_matches_bk_points(n_points, dim, max_dim):
-    """VRE and BK produce identical filtrations on point clouds."""
+def test_vr_matches_naive_points(n_points, dim, max_dim):
+    """vr_filtration matches the brute-force reference on point clouds."""
     rng = np.random.default_rng(42)
     pts = rng.random((n_points, dim)).astype(np.float64)
-    fil_bk = oin.vr_filtration(pts, max_dim=max_dim, algorithm="bron-kerbosch")
-    fil_vre = oin.vr_filtration(pts, max_dim=max_dim, algorithm="inorder")
-    assert fil_bk.size() == fil_vre.size()
-    assert _cell_set(fil_bk) == _cell_set(fil_vre)
+    # Use a permissive but explicit threshold so both paths see the same value.
+    thr = float(np.linalg.norm(pts[:, None] - pts[None, :], axis=-1).max()) + 1e-6
+    fil = oin.vr_filtration(pts, max_dim=max_dim, max_diameter=thr)
+    fil_naive = _vr_naive(pts, max_dim=max_dim, max_diameter=thr)
+    assert fil.size() == fil_naive.size()
+    assert _cell_set(fil) == _cell_set(fil_naive)
 
 
 @pytest.mark.parametrize("n_points,dim,max_dim,thr", [
@@ -47,29 +51,26 @@ def test_vre_matches_bk_points(n_points, dim, max_dim):
     (20, 3, 2, 0.4),
     (10, 2, 3, 0.6),
 ])
-def test_vre_matches_bk_points_thresholded(n_points, dim, max_dim, thr):
-    """VRE and BK match under a non-trivial diameter cutoff."""
+def test_vr_matches_naive_thresholded(n_points, dim, max_dim, thr):
+    """Match under a non-trivial diameter cutoff."""
     rng = np.random.default_rng(123)
     pts = rng.random((n_points, dim)).astype(np.float64)
-    fil_bk = oin.vr_filtration(pts, max_dim=max_dim, max_diameter=thr,
-                               algorithm="bron-kerbosch")
-    fil_vre = oin.vr_filtration(pts, max_dim=max_dim, max_diameter=thr,
-                                algorithm="inorder")
-    assert fil_bk.size() == fil_vre.size()
-    assert _cell_set(fil_bk) == _cell_set(fil_vre)
+    fil = oin.vr_filtration(pts, max_dim=max_dim, max_diameter=thr)
+    fil_naive = _vr_naive(pts, max_dim=max_dim, max_diameter=thr)
+    assert fil.size() == fil_naive.size()
+    assert _cell_set(fil) == _cell_set(fil_naive)
 
 
 @pytest.mark.parametrize("n_points,dim,max_dim", [
     (15, 2, 2),
     (20, 3, 3),
 ])
-def test_vre_critical_edges_have_correct_length(n_points, dim, max_dim):
+def test_vr_critical_edges_have_correct_length(n_points, dim, max_dim):
     """Each returned critical edge has length equal to its simplex's value."""
     rng = np.random.default_rng(7)
     pts = rng.random((n_points, dim)).astype(np.float64)
     fil, edges = oin.vr_filtration(pts, max_dim=max_dim,
-                                   with_critical_edges=True,
-                                   algorithm="inorder")
+                                   with_critical_edges=True)
     cells = list(fil.cells())
     assert len(cells) == len(edges)
     for c, e in zip(cells, edges):
@@ -80,80 +81,77 @@ def test_vre_critical_edges_have_correct_length(n_points, dim, max_dim):
         np.testing.assert_allclose(d, c.value, rtol=1e-9, atol=1e-12)
 
 
-def test_vre_pwdists_matches_points():
-    """VRE on a pairwise distance matrix matches VRE on points (the same data
-    in two forms). We use an explicit threshold to bypass the BK pwdists bug
-    flagged in the plan; the comparison here is VRE-pwd vs VRE-pts, which is
-    the right invariant."""
+def test_vr_pwdists_matches_points():
+    """Pairwise-distance and point-cloud paths produce the same filtration on
+    the same data."""
     rng = np.random.default_rng(11)
     pts = rng.random((20, 3)).astype(np.float64)
     pwd = np.linalg.norm(pts[:, None] - pts[None, :], axis=-1)
 
-    fil_pts = oin.vr_filtration(pts, max_dim=2, max_diameter=0.7,
-                                algorithm="inorder")
+    fil_pts = oin.vr_filtration(pts, max_dim=2, max_diameter=0.7)
     fil_pwd = oin.vr_filtration(pwd, from_pwdists=True, max_dim=2,
-                                max_diameter=0.7, algorithm="inorder")
+                                max_diameter=0.7)
     assert fil_pts.size() == fil_pwd.size()
     assert _cell_set(fil_pts) == _cell_set(fil_pwd)
 
 
-def test_vre_ties_unit_square():
+def test_vr_ties_unit_square():
     """Corner case: corners of a unit square -- many ties at distance 1, plus
-    two diagonals at sqrt(2). VRE and BK must agree exactly."""
+    two diagonals at sqrt(2). Result must contain the full 2-skeleton plus
+    the tetrahedron."""
     pts = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
                    dtype=np.float64)
-    fil_bk = oin.vr_filtration(pts, max_dim=3, algorithm="bron-kerbosch")
-    fil_vre = oin.vr_filtration(pts, max_dim=3, algorithm="inorder")
+    fil = oin.vr_filtration(pts, max_dim=3, max_diameter=10.0)
+    fil_naive = _vr_naive(pts, max_dim=3, max_diameter=10.0)
     # full VR on 4 points: 4 + 6 + 4 + 1 = 15
-    assert fil_bk.size() == 15
-    assert fil_vre.size() == 15
-    assert _cell_set(fil_bk) == _cell_set(fil_vre)
+    assert fil.size() == 15
+    assert fil_naive.size() == 15
+    assert _cell_set(fil) == _cell_set(fil_naive)
 
 
-def test_vre_edge_cases():
+def test_vr_edge_cases():
     """Single point, max_dim = 0, and a too-small max_diameter."""
     # Single point: max_distance() helper assumes >= 2 points, so pass
     # max_diameter explicitly.
     pts = np.array([[0.0, 0.0]], dtype=np.float64)
-    fil = oin.vr_filtration(pts, max_dim=2, max_diameter=1.0,
-                            algorithm="inorder")
+    fil = oin.vr_filtration(pts, max_dim=2, max_diameter=1.0)
     assert fil.size() == 1
 
     # max_dim = 0: only vertices come out, regardless of distances.
     pts = np.random.default_rng(0).random((5, 2)).astype(np.float64)
-    fil = oin.vr_filtration(pts, max_dim=0, algorithm="inorder")
+    fil = oin.vr_filtration(pts, max_dim=0)
     assert fil.size() == 5
 
     # Tiny threshold: no edges qualify, so only vertices.
-    fil = oin.vr_filtration(pts, max_dim=2, max_diameter=1e-12,
-                            algorithm="inorder")
+    fil = oin.vr_filtration(pts, max_dim=2, max_diameter=1e-12)
     assert fil.size() == 5
 
 
-def test_vre_max_dim_one_only_edges():
-    """max_dim=1 should return vertices + edges only -- exercises the layer-1
-    code path without entering Cases I/II/III."""
+def test_vr_max_dim_one_only_edges():
+    """max_dim=1 returns vertices + edges only -- exercises the layer-1
+    code path without invoking the cofacet generation."""
     rng = np.random.default_rng(5)
     pts = rng.random((20, 2)).astype(np.float64)
-    fil_bk = oin.vr_filtration(pts, max_dim=1, algorithm="bron-kerbosch")
-    fil_vre = oin.vr_filtration(pts, max_dim=1, algorithm="inorder")
-    assert fil_bk.size() == fil_vre.size()
-    assert _cell_set(fil_bk) == _cell_set(fil_vre)
-    # all simplices have dim 0 or 1
-    for c in fil_vre.cells():
+    fil = oin.vr_filtration(pts, max_dim=1, max_diameter=10.0)
+    fil_naive = _vr_naive(pts, max_dim=1, max_diameter=10.0)
+    assert fil.size() == fil_naive.size()
+    assert _cell_set(fil) == _cell_set(fil_naive)
+    for c in fil.cells():
         assert c.dim in (0, 1)
 
 
 # ----------------------------------------------------------------------------
-# Heavier test: opt-in via -m slow. Bound: n=80 in 2D, max_dim=2, no cutoff.
-# Worst-case simplex count = C(80,1) + C(80,2) + C(80,3) = 80 + 3160 + 82160
-# = 85400, ~10 MB at ~120 B/simplex. Well below 1 GB.
+# Heavier test: opt-in via -m slow. Bound: n=80 in 2D, max_dim=2 (naive
+# permits this), no cutoff. Worst-case simplex count
+# = C(80,1)+C(80,2)+C(80,3) = 80 + 3160 + 82160 = 85400, ~10 MB at
+# ~120 B/simplex. Both VRE and naive produce the same count; well below
+# 1 GB.
 # ----------------------------------------------------------------------------
 @pytest.mark.slow
-def test_vre_matches_bk_medium():
+def test_vr_matches_naive_medium():
     rng = np.random.default_rng(2024)
     pts = rng.random((80, 2)).astype(np.float64)
-    fil_bk = oin.vr_filtration(pts, max_dim=2, algorithm="bron-kerbosch")
-    fil_vre = oin.vr_filtration(pts, max_dim=2, algorithm="inorder")
-    assert fil_bk.size() == fil_vre.size()
-    assert _cell_set(fil_bk) == _cell_set(fil_vre)
+    fil = oin.vr_filtration(pts, max_dim=2, max_diameter=10.0)
+    fil_naive = _vr_naive(pts, max_dim=2, max_diameter=10.0)
+    assert fil.size() == fil_naive.size()
+    assert _cell_set(fil) == _cell_set(fil_naive)
