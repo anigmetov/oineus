@@ -81,6 +81,28 @@ def test_vr_critical_edges_have_correct_length(n_points, dim, max_dim):
         np.testing.assert_allclose(d, c.value, rtol=1e-9, atol=1e-12)
 
 
+def test_vr_pwdists_preserves_user_distances():
+    """Dist-matrix path: filtration values must equal the user's distances
+    bit-for-bit. Earlier code went through sqrt(d*d), which loses ~1 ULP
+    for normalized inputs and overflows/underflows at the FP extremes."""
+    rng = np.random.default_rng(99)
+    pts = rng.random((12, 3)).astype(np.float64)
+    pwd = np.linalg.norm(pts[:, None] - pts[None, :], axis=-1)
+
+    fil = oin.vr_filtration(pwd, from_pwdists=True, max_dim=2,
+                            max_diameter=10.0)
+    for c in fil.cells():
+        if c.dim == 0:
+            continue
+        verts = list(c.vertices)
+        # The simplex's filtration value must be the maximum pwd[i, j] over
+        # its vertex pairs, *equal to the input value*, not sqrt(d*d).
+        true_max = max(pwd[u, v] for u in verts for v in verts if u < v)
+        assert c.value == true_max, (
+            f"value mismatch on simplex {verts}: "
+            f"stored {c.value!r}, expected {true_max!r}")
+
+
 def test_vr_pwdists_matches_points():
     """Pairwise-distance and point-cloud paths produce the same filtration on
     the same data."""

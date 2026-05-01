@@ -33,48 +33,67 @@ namespace detail {
 
 // Per-simplex working state during VRE layer-walk.
 //
-// We carry the squared diameter (alpha^2) so the inner-loop distance
-// comparison stays in squared-distance units (the closure returns
-// d^2). The cached_edge stores the lex-first full-length edge of the
-// simplex, written (x = s, y = t) with s > t (the paper's
-// convention).
+// VreFrame carries two distance-like values:
+//
+//   compare_value: a monotonic-in-distance quantity that the cofacet
+//                  generation uses for its `<= alpha` and `< alpha`
+//                  cutoff checks. The points-cloud path uses *squared*
+//                  Euclidean distance here (cheap to compute, avoids
+//                  per-pair sqrt). The dist-matrix path uses the *raw*
+//                  user-supplied distance, so the cutoff comparison
+//                  is exact and never overflows on inputs near
+//                  std::numeric_limits<Real>::max().
+//
+//   diameter:      the value to store as the simplex's filtration
+//                  value. For points it's sqrt(compare_value); for the
+//                  dist-matrix path it equals the user's distance
+//                  bit-for-bit.
+//
+// The two are propagated unchanged from parent to cofacet (cofacets
+// inherit the parent's diameter exactly per VRE; see the Caching
+// Longest Edges proposition).
+//
+// cached_edge stores the lex-first full-length edge (x = s, y = t,
+// s > t) per the paper's descending convention.
 template<class Int, class Real>
 struct VreFrame {
     typename Simplex<Int>::IdxVector vertices;  // ascending
-    Real diameter_sq;                           // alpha^2
+    Real compare_value;                         // see comment above
+    Real diameter;                              // the filtration value
     VREdge<Int> cached_edge;                    // (s, t), s > t
 };
 
 // Generate every valid d-cofacet of `parent` via Cases I, II, III of VRE.
-// `sq_dist(a, b)` must return d(a, b)^2.
-// `emit(VreFrame<Int, Real>&&)` is called for each generated cofacet.
+// `compare_dist(a, b)` returns the same monotonic-in-true-distance
+// quantity stored in `parent.compare_value`. `emit(VreFrame&&)` is
+// called for each generated cofacet.
 //
 // The three cases correspond to where the new vertex v slots into the
 // ascending vertices_ vector. After insertion vertices_ remains sorted
 // ascending, so we can pass it directly to the Simplex<Int> ctor without
 // re-sorting (the ctor will re-sort anyway, harmlessly).
-template<class Int, class Real, class SqDistFn, class EmitFn>
+template<class Int, class Real, class CompareDistFn, class EmitFn>
 void generate_cofacets(const VreFrame<Int, Real>& parent,
                        Int n_points,
-                       const SqDistFn& sq_dist,
+                       const CompareDistFn& compare_dist,
                        EmitFn&& emit)
 {
     const auto& V = parent.vertices;
-    const Real alpha_sq = parent.diameter_sq;
+    const Real alpha = parent.compare_value;
+    const Real diameter = parent.diameter;
     const Int d = static_cast<Int>(V.size());  // parent has d vertices, dim = d-1
     const Int v_top = V.back();                // paper's v_{d-1}
 
     // -------- Case I: append v > v_top with d(v, V[j]) <= alpha for all j.
-    // In squared units: sq_dist(v, V[j]) <= alpha_sq.
     for (Int v = v_top + 1; v < n_points; ++v) {
         bool ok = true;
         for (Int j = 0; j < d; ++j) {
-            if (sq_dist(v, V[j]) > alpha_sq) { ok = false; break; }
+            if (compare_dist(v, V[j]) > alpha) { ok = false; break; }
         }
         if (!ok) continue;
         typename Simplex<Int>::IdxVector vs = V;
         vs.push_back(v);
-        emit(VreFrame<Int, Real>{std::move(vs), alpha_sq, parent.cached_edge});
+        emit(VreFrame<Int, Real>{std::move(vs), alpha, diameter, parent.cached_edge});
     }
 
     // -------- Case II: insert v with V[d-2] < v < v_top.
@@ -86,10 +105,10 @@ void generate_cofacets(const VreFrame<Int, Real>& parent,
     if (d >= 2 && parent.cached_edge.x == v_top) {
         const Int v_lo = V[d - 2];
         for (Int v = v_lo + 1; v < v_top; ++v) {
-            if (sq_dist(v, v_top) > alpha_sq) continue;  // <= alpha
+            if (compare_dist(v, v_top) > alpha) continue;  // <= alpha
             bool ok = true;
             for (Int j = 0; j < d - 1; ++j) {
-                if (sq_dist(v, V[j]) >= alpha_sq) { ok = false; break; }  // < alpha
+                if (compare_dist(v, V[j]) >= alpha) { ok = false; break; }  // < alpha
             }
             if (!ok) continue;
             typename Simplex<Int>::IdxVector vs;
@@ -97,7 +116,7 @@ void generate_cofacets(const VreFrame<Int, Real>& parent,
             vs.insert(vs.end(), V.begin(), V.end() - 1);  // V[0..d-2)
             vs.push_back(v);
             vs.push_back(v_top);
-            emit(VreFrame<Int, Real>{std::move(vs), alpha_sq, parent.cached_edge});
+            emit(VreFrame<Int, Real>{std::move(vs), alpha, diameter, parent.cached_edge});
         }
     }
 
@@ -114,7 +133,7 @@ void generate_cofacets(const VreFrame<Int, Real>& parent,
         for (Int v = v_lo_excl + 1; v < v_hi; ++v) {
             bool ok = true;
             for (Int j = 0; j < d; ++j) {
-                if (sq_dist(v, V[j]) >= alpha_sq) { ok = false; break; }  // < alpha
+                if (compare_dist(v, V[j]) >= alpha) { ok = false; break; }  // < alpha
             }
             if (!ok) continue;
             typename Simplex<Int>::IdxVector vs;
@@ -125,14 +144,30 @@ void generate_cofacets(const VreFrame<Int, Real>& parent,
                 vs.insert(vs.end(), V.begin(), V.end() - 2);
             vs.push_back(v);
             vs.insert(vs.end(), V.end() - 2, V.end());
-            emit(VreFrame<Int, Real>{std::move(vs), alpha_sq, parent.cached_edge});
+            emit(VreFrame<Int, Real>{std::move(vs), alpha, diameter, parent.cached_edge});
         }
     }
 }
 
 // Templated VRE driver. Builds the full filtration up to `max_dim` and
-// (optionally) the parallel critical-edge array. The caller supplies a
-// `sq_dist(Int, Int) -> Real` closure.
+// (optionally) the parallel critical-edge array.
+//
+// `compare_dist(a, b) -> Real` is the cutoff/comparison value (any
+// quantity monotonic in true distance). `compare_to_diameter(c) -> Real`
+// converts a compare-value to the raw filtration value to store on the
+// cell. `max_compare` is the cutoff threshold expressed in compare units.
+// The two natural choices are:
+//
+//   - points path: compare_dist = squared Euclidean distance,
+//                  compare_to_diameter = sqrt,
+//                  max_compare = max_diameter * max_diameter.
+//
+//   - dist-matrix path: compare_dist = the user's raw distance (passed
+//                  through unchanged), compare_to_diameter = identity,
+//                  max_compare = max_diameter. This preserves the
+//                  user's distance bit-for-bit and avoids the
+//                  d-times-d overflow risk on inputs near
+//                  std::numeric_limits<Real>::max().
 //
 // On output, `simplices` is in (dim, value) sorted order: vertices in
 // vertex-id order, edges in increasing-distance order, and each higher
@@ -144,19 +179,16 @@ void generate_cofacets(const VreFrame<Int, Real>& parent,
 // full-length edge of cells_[i] (or a (v, v) self-loop for vertex i).
 // Because cells go in already in sorted order, `edges` does not need
 // post-sort permutation either.
-template<class Int, class Real, class SqDistFn>
+template<class Int, class Real, class CompareDistFn, class CompareToDiamFn>
 void vre_build(Int n_points,
                dim_type max_dim,
-               Real max_diameter,
-               const SqDistFn& sq_dist,
+               Real max_compare,
+               const CompareDistFn& compare_dist,
+               const CompareToDiamFn& compare_to_diameter,
                bool collect_edges,
                std::vector<CellWithValue<Simplex<Int>, Real>>& simplices,
                std::vector<VREdge<Int>>& edges)
 {
-    const Real max_diam_sq = (max_diameter >= std::numeric_limits<Real>::max() / 2)
-        ? std::numeric_limits<Real>::max()
-        : max_diameter * max_diameter;
-
     auto record = [&](typename Simplex<Int>::IdxVector vs, Real diam, VREdge<Int> e) {
         simplices.emplace_back(Simplex<Int>(std::move(vs)), diam);
         if (collect_edges) edges.push_back(e);
@@ -170,37 +202,41 @@ void vre_build(Int n_points,
     if (max_dim < 1)
         return;
 
-    // ---- Layer 1: build edge candidates in lex (u, v) order, then sort
-    // once by squared distance. This is the *only* sort the algorithm
-    // needs: every higher layer inherits its parent's diameter exactly,
-    // so processing the sorted layer-1 frames in order yields layer 2
-    // (and all subsequent layers) already in increasing-value order.
+    // ---- Layer 1: collect surviving edges in lex order, then sort once
+    // by compare-value. This is the *only* sort the algorithm needs:
+    // every higher layer inherits its parent's diameter exactly, so
+    // processing the sorted layer-1 frames in order yields layer 2 (and
+    // all subsequent layers) already in increasing-value order.
+    //
+    // No reserve(n*(n-1)/2): for sparse inputs (small max_diameter,
+    // large n) that would force O(n^2) allocation up front, even when
+    // only a handful of edges survive. std::vector's geometric growth
+    // is fine.
     std::vector<VreFrame<Int, Real>> current;
     {
         struct EdgeData {
             Int u;
             Int v;
-            Real dsq;
+            Real cv;
         };
         std::vector<EdgeData> raw_edges;
-        raw_edges.reserve(static_cast<size_t>(n_points) * (n_points - 1) / 2);
         for (Int u = 0; u < n_points; ++u) {
             for (Int v = u + 1; v < n_points; ++v) {
-                const Real dsq = sq_dist(u, v);
-                if (dsq > max_diam_sq) continue;
-                raw_edges.push_back({u, v, dsq});
+                const Real cv = compare_dist(u, v);
+                if (cv > max_compare) continue;
+                raw_edges.push_back({u, v, cv});
             }
         }
-        // Stable sort so equal-length edges keep lex order; this fixes
+        // Stable sort so equal-distance edges keep lex order; this fixes
         // the tiebreaker among ties to (smaller u, then smaller v).
         std::stable_sort(raw_edges.begin(), raw_edges.end(),
-                [](const EdgeData& a, const EdgeData& b) { return a.dsq < b.dsq; });
+                [](const EdgeData& a, const EdgeData& b) { return a.cv < b.cv; });
 
         current.reserve(raw_edges.size());
         for (const auto& ed : raw_edges) {
-            const Real diam = std::sqrt(ed.dsq);
+            const Real diam = compare_to_diameter(ed.cv);
             const VREdge<Int> e{ed.v, ed.u};   // s = v > u = t (paper notation)
-            current.push_back({{ed.u, ed.v}, ed.dsq, e});
+            current.push_back({{ed.u, ed.v}, ed.cv, diam, e});
             record({ed.u, ed.v}, diam, e);
         }
     }
@@ -211,12 +247,11 @@ void vre_build(Int n_points,
     for (dim_type d = 2; d <= max_dim; ++d) {
         std::vector<VreFrame<Int, Real>> next;
         auto emit_frame = [&](VreFrame<Int, Real>&& child) {
-            const Real diam = std::sqrt(child.diameter_sq);
-            record(child.vertices, diam, child.cached_edge);
+            record(child.vertices, child.diameter, child.cached_edge);
             next.push_back(std::move(child));
         };
         for (const auto& parent : current) {
-            generate_cofacets<Int, Real>(parent, n_points, sq_dist, emit_frame);
+            generate_cofacets<Int, Real>(parent, n_points, compare_dist, emit_frame);
         }
         current = std::move(next);
         if (current.empty()) break;  // no more cofacets possible at higher d
@@ -236,6 +271,14 @@ void vre_build(Int n_points,
 // API symmetry with the rest of oineus but is not used: VRE is
 // single-threaded and the presorted ctor has no parallel phase.
 
+// Helpers used by the four entry points: the points-cloud path uses
+// squared Euclidean distance as its compare unit (and sqrt to recover
+// the diameter); the dist-matrix path passes raw distances through
+// unchanged (compare unit == diameter, identity conversion). The
+// dist-matrix path therefore preserves the user-supplied distance
+// bit-for-bit and avoids any d*d overflow on inputs near the FP
+// dynamic range.
+
 // Points + filtration only (no critical edges).
 template<class Int, class Real, std::size_t D>
 auto get_vr_filtration_inorder(const std::vector<Point<Real, D>>& points,
@@ -245,13 +288,18 @@ auto get_vr_filtration_inorder(const std::vector<Point<Real, D>>& points,
     -> Filtration<Simplex<Int>, Real>
 {
     using Cell = CellWithValue<Simplex<Int>, Real>;  // used by vector type below
-    auto sq_dist_fn = [&](Int a, Int b) -> Real {
+    auto compare_dist = [&](Int a, Int b) -> Real {
         return sq_dist<Real, D>(points[a], points[b]);
     };
+    auto compare_to_diameter = [](Real cv) -> Real { return std::sqrt(cv); };
+    const Real max_compare = (max_diameter >= std::numeric_limits<Real>::max() / 2)
+        ? std::numeric_limits<Real>::max()
+        : max_diameter * max_diameter;
+
     std::vector<Cell> simplices;
     std::vector<VREdge<Int>> edges;  // unused
     detail::vre_build<Int, Real>(static_cast<Int>(points.size()), max_dim,
-                                 max_diameter, sq_dist_fn,
+                                 max_compare, compare_dist, compare_to_diameter,
                                  /*collect_edges=*/false, simplices, edges);
     return Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
 }
@@ -265,14 +313,15 @@ auto get_vr_filtration_inorder(const DistMatrix<Real>& dm,
     -> Filtration<Simplex<Int>, Real>
 {
     using Cell = CellWithValue<Simplex<Int>, Real>;  // used by vector type below
-    auto sq_dist_fn = [&](Int a, Int b) -> Real {
-        const Real d = dm.get_distance(a, b);
-        return d * d;
+    auto compare_dist = [&](Int a, Int b) -> Real {
+        return dm.get_distance(a, b);
     };
+    auto compare_to_diameter = [](Real cv) -> Real { return cv; };
+
     std::vector<Cell> simplices;
     std::vector<VREdge<Int>> edges;  // unused
     detail::vre_build<Int, Real>(static_cast<Int>(dm.n_points), max_dim,
-                                 max_diameter, sq_dist_fn,
+                                 max_diameter, compare_dist, compare_to_diameter,
                                  /*collect_edges=*/false, simplices, edges);
     return Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
 }
@@ -289,13 +338,18 @@ auto get_vr_filtration_and_critical_edges_inorder(
     -> std::pair<Filtration<Simplex<Int>, Real>, std::vector<VREdge<Int>>>
 {
     using Cell = CellWithValue<Simplex<Int>, Real>;  // used by vector type below
-    auto sq_dist_fn = [&](Int a, Int b) -> Real {
+    auto compare_dist = [&](Int a, Int b) -> Real {
         return sq_dist<Real, D>(points[a], points[b]);
     };
+    auto compare_to_diameter = [](Real cv) -> Real { return std::sqrt(cv); };
+    const Real max_compare = (max_diameter >= std::numeric_limits<Real>::max() / 2)
+        ? std::numeric_limits<Real>::max()
+        : max_diameter * max_diameter;
+
     std::vector<Cell> simplices;
     std::vector<VREdge<Int>> edges;
     detail::vre_build<Int, Real>(static_cast<Int>(points.size()), max_dim,
-                                 max_diameter, sq_dist_fn,
+                                 max_compare, compare_dist, compare_to_diameter,
                                  /*collect_edges=*/true, simplices, edges);
 
     auto fil = Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
@@ -312,14 +366,15 @@ auto get_vr_filtration_and_critical_edges_inorder(
     -> std::pair<Filtration<Simplex<Int>, Real>, std::vector<VREdge<Int>>>
 {
     using Cell = CellWithValue<Simplex<Int>, Real>;  // used by vector type below
-    auto sq_dist_fn = [&](Int a, Int b) -> Real {
-        const Real d = dm.get_distance(a, b);
-        return d * d;
+    auto compare_dist = [&](Int a, Int b) -> Real {
+        return dm.get_distance(a, b);
     };
+    auto compare_to_diameter = [](Real cv) -> Real { return cv; };
+
     std::vector<Cell> simplices;
     std::vector<VREdge<Int>> edges;
     detail::vre_build<Int, Real>(static_cast<Int>(dm.n_points), max_dim,
-                                 max_diameter, sq_dist_fn,
+                                 max_diameter, compare_dist, compare_to_diameter,
                                  /*collect_edges=*/true, simplices, edges);
 
     auto fil = Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
