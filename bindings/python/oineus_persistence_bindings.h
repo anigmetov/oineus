@@ -307,6 +307,11 @@ decltype(auto) numpy_to_point_vector(nb::ndarray<Real, nb::c_contig, nb::device:
 //     return Fil(std::move(fil_simplices), negate, n_threads);
 // }
 
+// Vietoris-Rips bindings: implemented via the in-order (VRE) algorithm of
+// Vejdemo-Johansson, Matuszewski & Bauer (arXiv:2411.05495). The legacy
+// Bron-Kerbosch implementation remains in the C++ headers for use as a
+// reference and for benchmarking, but is not exposed to Python.
+
 template<class Int, class Real>
 decltype(auto)
 get_vr_filtration(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> points, dim_type max_dim, Real max_diameter, int n_threads)
@@ -317,15 +322,15 @@ get_vr_filtration(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> point
     dim_type d = points.shape(1);
 
     if (d == 1) {
-        return oin::get_vr_filtration<Int, Real, 1>(numpy_to_point_vector<Real, 1>(points), max_dim, max_diameter, n_threads);
+        return oin::get_vr_filtration_inorder<Int, Real, 1>(numpy_to_point_vector<Real, 1>(points), max_dim, max_diameter, n_threads);
     } else if (d == 2) {
-        return oin::get_vr_filtration<Int, Real, 2>(numpy_to_point_vector<Real, 2>(points), max_dim, max_diameter, n_threads);
+        return oin::get_vr_filtration_inorder<Int, Real, 2>(numpy_to_point_vector<Real, 2>(points), max_dim, max_diameter, n_threads);
     } else if (d == 3) {
-        return oin::get_vr_filtration<Int, Real, 3>(numpy_to_point_vector<Real, 3>(points), max_dim, max_diameter, n_threads);
+        return oin::get_vr_filtration_inorder<Int, Real, 3>(numpy_to_point_vector<Real, 3>(points), max_dim, max_diameter, n_threads);
     } else if (d == 4) {
-        return oin::get_vr_filtration<Int, Real, 4>(numpy_to_point_vector<Real, 4>(points), max_dim, max_diameter, n_threads);
+        return oin::get_vr_filtration_inorder<Int, Real, 4>(numpy_to_point_vector<Real, 4>(points), max_dim, max_diameter, n_threads);
     } else if (d == 5) {
-        return oin::get_vr_filtration<Int, Real, 5>(numpy_to_point_vector<Real, 5>(points), max_dim, max_diameter, n_threads);
+        return oin::get_vr_filtration_inorder<Int, Real, 5>(numpy_to_point_vector<Real, 5>(points), max_dim, max_diameter, n_threads);
     } else {
         throw std::runtime_error("get_vr_filtration: dimension not supported by default, recompilation needed");
     }
@@ -343,7 +348,7 @@ decltype(auto) get_vr_filtration_and_critical_edges_from_pwdists(nb::ndarray<Rea
 
     oin::DistMatrix<Real> dist_matrix {pdata, n_points};
 
-    return oin::get_vr_filtration_and_critical_edges<Int, Real>(dist_matrix, max_dim, max_diameter, n_threads);
+    return oin::get_vr_filtration_and_critical_edges_inorder<Int, Real>(dist_matrix, max_dim, max_diameter, n_threads);
 }
 
 template<class Int, class Real>
@@ -405,17 +410,45 @@ get_vr_filtration_and_critical_edges(nb::ndarray<Real, nb::c_contig, nb::device:
     dim_type d = points.shape(1);
 
     if (d == 1) {
-        return oin::get_vr_filtration_and_critical_edges<Int, Real, 1>(numpy_to_point_vector<Real, 1>(points), max_dim, max_diameter, n_threads);
+        return oin::get_vr_filtration_and_critical_edges_inorder<Int, Real, 1>(numpy_to_point_vector<Real, 1>(points), max_dim, max_diameter, n_threads);
     } else if (d == 2) {
-        return oin::get_vr_filtration_and_critical_edges<Int, Real, 2>(numpy_to_point_vector<Real, 2>(points), max_dim, max_diameter, n_threads);
+        return oin::get_vr_filtration_and_critical_edges_inorder<Int, Real, 2>(numpy_to_point_vector<Real, 2>(points), max_dim, max_diameter, n_threads);
     } else if (d == 3) {
-        return oin::get_vr_filtration_and_critical_edges<Int, Real, 3>(numpy_to_point_vector<Real, 3>(points), max_dim, max_diameter, n_threads);
+        return oin::get_vr_filtration_and_critical_edges_inorder<Int, Real, 3>(numpy_to_point_vector<Real, 3>(points), max_dim, max_diameter, n_threads);
     } else if (d == 4) {
-        return oin::get_vr_filtration_and_critical_edges<Int, Real, 4>(numpy_to_point_vector<Real, 4>(points), max_dim, max_diameter, n_threads);
+        return oin::get_vr_filtration_and_critical_edges_inorder<Int, Real, 4>(numpy_to_point_vector<Real, 4>(points), max_dim, max_diameter, n_threads);
     } else if (d == 5) {
-        return oin::get_vr_filtration_and_critical_edges<Int, Real, 5>(numpy_to_point_vector<Real, 5>(points), max_dim, max_diameter, n_threads);
+        return oin::get_vr_filtration_and_critical_edges_inorder<Int, Real, 5>(numpy_to_point_vector<Real, 5>(points), max_dim, max_diameter, n_threads);
     } else {
         throw std::runtime_error("get_vr_filtration_and_critical_edges: dimension " + std::to_string(d) + " not supported by default, recompilation needed");
+    }
+}
+
+// Internal/test-only: brute-force VR construction (uses C++ naive fallback).
+// Limited to max_dim <= 3 by the C++ implementation. Exposed so the test
+// suite can cross-check VRE against a wholly different code path; not part
+// of the user API.
+template<class Int, class Real>
+decltype(auto)
+_get_vr_filtration_naive(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> points, dim_type max_dim, Real max_diameter, int n_threads)
+{
+    if (points.ndim() != 2)
+        throw std::runtime_error("_get_vr_filtration_naive: expected 2D array");
+
+    dim_type d = points.shape(1);
+
+    if (d == 1) {
+        return oin::get_vr_filtration_naive<Int, Real, 1>(numpy_to_point_vector<Real, 1>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 2) {
+        return oin::get_vr_filtration_naive<Int, Real, 2>(numpy_to_point_vector<Real, 2>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 3) {
+        return oin::get_vr_filtration_naive<Int, Real, 3>(numpy_to_point_vector<Real, 3>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 4) {
+        return oin::get_vr_filtration_naive<Int, Real, 4>(numpy_to_point_vector<Real, 4>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 5) {
+        return oin::get_vr_filtration_naive<Int, Real, 5>(numpy_to_point_vector<Real, 5>(points), max_dim, max_diameter, n_threads);
+    } else {
+        throw std::runtime_error("_get_vr_filtration_naive: dimension not supported by default, recompilation needed");
     }
 }
 

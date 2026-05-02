@@ -918,6 +918,30 @@ def vr_filtration(data: np.ndarray,
                   max_diameter: float = -1.0,
                   with_critical_edges: bool = False,
                   n_threads: int = 1):
+    """Build a Vietoris-Rips filtration from points or pairwise distances.
+
+    Construction uses the in-order generation (VRE) algorithm of
+    Vejdemo-Johansson, Matuszewski & Bauer ("In-order generation of
+    Vietoris-Rips Complexes", arXiv:2411.05495).
+
+    Parameters
+    ----------
+    data : np.ndarray
+        (n, d) array of points, or (n, n) pairwise distance matrix.
+    from_pwdists : bool
+        Treat ``data`` as a pairwise distance matrix.
+    max_dim : int
+        Largest simplex dimension to enumerate. Default: data dimensionality.
+    max_diameter : float
+        Truncation threshold; only simplices with diameter <= this value are
+        kept. Default: enclosing radius of the point cloud.
+    with_critical_edges : bool
+        Also return an array (one per simplex) of an edge whose length equals
+        the simplex's filtration value.
+    n_threads : int
+        Threads used for the (parallel) sort inside the Filtration ctor.
+        Enumeration itself is single-threaded.
+    """
     assert data.ndim == 2
 
     if from_pwdists:
