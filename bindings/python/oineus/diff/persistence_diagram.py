@@ -25,169 +25,36 @@ def _resolve_strategy(strategy):
         )
 
 
-# U-computation strategies for the crit-sets backward. All non-legacy
-# strategies start from a parallel V-only reduction with restore_elz
-# (via TopologyOptimizer.ensure_reduced_for_partial_u_*) and then
-# compute U via different methods:
+# U-computation strategies for the crit-sets backward.
 #
+#   auto           -- production default. Currently resolves to
+#                     row_partial with a partial-vs-full threshold
+#                     dispatch (see ROW_PARTIAL_FULL_FALLBACK_THRESHOLD).
+#                     Use this in production code.
+#   row_partial    -- Row-form partial U: solve (row r of U) V = e_r^T
+#                     directly for each row the walker reads (one
+#                     parallel transpose of V to get V^T, then
+#                     embarrassingly parallel row solves with value-
+#                     bound truncation). Falls back to compute_full_u_rows
+#                     when n_pairs / dim_size > the threshold above.
 #   legacy_in_band -- in-band U built during reduction (clearing off,
-#                     compute_u=true). Uses ensure_reduced_*(need_u=True).
-#                     Available as a control / cross-check strategy.
-#   col_R          -- Algorithm 3, R U = D, full dim. Calls
-#                     decmp.compute_u_from_v(dim, n_threads).
-#   col_V          -- Algorithm 4, V U = I, full dim, columns + transpose.
-#                     Calls decmp.compute_u_from_v_1(dim, n_threads).
-#   col_partial    -- Column-form partial U. Calls
-#                     decmp.compute_partial_u_from_v_1(...). Loses to
-#                     row_partial in nearly every benchmarked case;
-#                     kept for cross-checks only.
-#   row_full       -- Row-form full U. Calls
-#                     decmp.compute_full_u_rows(fil, dim, n_threads).
-#   row_partial    -- Row-form partial U. Calls
-#                     decmp.compute_partial_u_rows(fil, rows, bounds,
-#                                                  dim, cmp, n_threads).
-#                     Auto-falls-back to compute_full_u_rows when
-#                     n_pairs / dim_size > ROW_PARTIAL_FULL_FALLBACK_THRESHOLD.
-#   auto           -- production default. Currently row_partial with the
-#                     threshold dispatch. See bench_u_strategies.md for
-#                     why this is the recommended default.
+#                     compute_u=true; serial reduction). Available as
+#                     a control / cross-check strategy. The original
+#                     in-band ELZ algorithm.
 
-_VALID_U_STRATEGIES = (
-    "auto", "legacy_in_band", "col_R", "col_V", "col_partial",
-    "row_full", "row_partial",
-)
+_VALID_U_STRATEGIES = ("auto", "legacy_in_band", "row_partial")
 
 
 def _resolve_u_strategy(u_strategy, gradient_method):
     """Pick the effective u_strategy. Explicit parameter wins over
-    the deprecated gradient_method aliases. Default is 'auto', which
-    currently resolves to row_partial with a partial-vs-full
-    threshold dispatch (see ROW_PARTIAL_FULL_FALLBACK_THRESHOLD)."""
+    gradient_method. Default is 'auto'."""
     if u_strategy is None:
-        # Map deprecated gradient_method aliases to u_strategy.
-        if gradient_method == "crit-sets-partial":
-            return "col_partial"
-        if gradient_method == "crit-sets-row-partial":
-            return "row_partial"
-        # 'crit-sets', 'crit-sets-strategy', or any other crit-sets
-        # variant uses the production default.
         return "auto"
     if u_strategy not in _VALID_U_STRATEGIES:
         raise ValueError(
             f"unknown u_strategy {u_strategy!r}; expected one of "
             f"{_VALID_U_STRATEGIES}")
     return u_strategy
-
-
-# Column-form partial-U helpers: derive (cols, bounds) for
-# compute_partial_u_from_v_1 from the per-direction pair subsets that
-# need U.
-#
-# Hom side (increase_death):
-#   Walker reads u_data_t[d_idx_matrix] (= row d_idx of U_hom, since
-#   hom is non-dualize so matrix_idx == filtration_idx). For each
-#   (d_p, target_death) with target_death > current_death (non-negate)
-#   or target_death < current_death (negate), the walker visits tau_matrix
-#   in [d_p_matrix, last-tau-in-dim-with-value-le-target_death].
-#   cmp = "below" for non-negate (pivots have decreasing value, stop
-#   when piv < value(d_p)); deepest bound = min(value(d_p)) per col.
-#
-# Coh side (decrease_birth):
-#   Walker reads u_data_t[b_idx_matrix] where b_idx_matrix =
-#   fil_size - b_p_filtration - 1. Cols range on coh: walk forward
-#   in matrix order (= backward in filtration order) from b_p_matrix
-#   until filtration value drops below target_birth. cmp = "above"
-#   for non-negate (pivot filtration values increase along iteration);
-#   deepest bound = max(value(b_p)) per col.
-
-def _derive_cols_bounds_increase_death(fil, decmp_hom, d_idx_t, d_cur_t,
-                                       d_tgt_t, d_move_t, negate):
-    """Hom side: cols/bounds for the increase_death subset of moves.
-
-    Returns (cols, bounds) ready for compute_partial_u_from_v_1.
-    Skips pairs in the *opposite* direction (decrease_death uses V, no U).
-
-    Bounds use C++ filtration values (fil.simplex_value_by_sorted_id),
-    not the differentiable torch values, so that cmp_op compares
-    against the same numeric scale that the partial driver's value_at
-    callback returns. The torch fil.values can differ from the C++
-    underlying values by ~1e-7 (max-distance recomputation drift),
-    enough to make the first iteration of compute_u_column_1_bounded
-    spuriously truncate when bound == value(d_p)."""
-    if negate:
-        # filtration-increasing on hom = death value decreasing in non-negate
-        # sense; the partial-U path supports non-negate only for now.
-        return [], []
-    cols_to_bound = {}
-    n_pairs = d_idx_t.shape[0]
-    d_idx_np = d_idx_t.detach().cpu().numpy()
-    d_cur_np = d_cur_t.detach().cpu().numpy()
-    d_tgt_np = d_tgt_t.detach().cpu().numpy()
-    d_move_np = d_move_t.detach().cpu().numpy()
-    for i in range(n_pairs):
-        if not d_move_np[i]:
-            continue
-        # Use torch values only for direction/target comparisons;
-        # the partial-U bound needs the C++ filtration value.
-        if d_tgt_np[i] <= d_cur_np[i]:
-            continue
-        d_p = int(d_idx_np[i])
-        dv = fil.simplex_value_by_sorted_id(d_p)  # C++ value
-        dt = float(d_tgt_np[i])
-        dim_idx = _find_dim(decmp_hom, d_p)
-        if dim_idx is None:
-            continue
-        dim_last = decmp_hom.dim_last[dim_idx]
-        for c in range(d_p, dim_last + 1):
-            v_c = fil.simplex_value_by_sorted_id(c)
-            if v_c > dt:
-                break
-            cur = cols_to_bound.get(c)
-            if cur is None or cur > dv:
-                cols_to_bound[c] = dv
-    cols = sorted(cols_to_bound.keys())
-    bounds = [cols_to_bound[c] for c in cols]
-    return cols, bounds
-
-
-def _derive_cols_bounds_decrease_birth(fil, decmp_coh, b_idx_t, b_cur_t,
-                                       b_tgt_t, b_move_t, negate):
-    """Coh side: cols/bounds for the decrease_birth subset of moves.
-    Same float-drift caveat as the hom helper: bounds come from C++
-    filtration values, not torch fil.values."""
-    if negate:
-        return [], []
-    fil_size = fil.size()
-    cols_to_bound = {}
-    n_pairs = b_idx_t.shape[0]
-    b_idx_np = b_idx_t.detach().cpu().numpy()
-    b_cur_np = b_cur_t.detach().cpu().numpy()
-    b_tgt_np = b_tgt_t.detach().cpu().numpy()
-    b_move_np = b_move_t.detach().cpu().numpy()
-    for i in range(n_pairs):
-        if not b_move_np[i]:
-            continue
-        if b_tgt_np[i] >= b_cur_np[i]:
-            continue
-        b_p_fil = int(b_idx_np[i])
-        bv = fil.simplex_value_by_sorted_id(b_p_fil)  # C++ value
-        bt = float(b_tgt_np[i])
-        b_p_matrix = fil_size - b_p_fil - 1
-        dim_idx = _find_dim(decmp_coh, b_p_matrix)
-        if dim_idx is None:
-            continue
-        dim_last = decmp_coh.dim_last[dim_idx]
-        for c in range(b_p_matrix, dim_last + 1):
-            c_fil = fil_size - c - 1
-            v_c = fil.simplex_value_by_sorted_id(c_fil)
-            if v_c < bt:
-                break
-            cur = cols_to_bound.get(c)
-            if cur is None or cur < bv:
-                cols_to_bound[c] = bv
-    cols = sorted(cols_to_bound.keys())
-    bounds = [cols_to_bound[c] for c in cols]
-    return cols, bounds
 
 
 def _dispatch_u_for_side(top_opt, under_fil, side, *, need_u, any_move,
@@ -225,34 +92,31 @@ def _dispatch_u_for_side(top_opt, under_fil, side, *, need_u, any_move,
             top_opt.ensure_reduced_coh(need_u=True)
         return
 
-    # All non-legacy strategies: parallel V-only reduction with restore_elz,
-    # then a separate U-computation step.
+    if u_strategy not in ("auto", "row_partial"):
+        raise RuntimeError(f"unhandled u_strategy {u_strategy!r}")
+
+    # auto / row_partial: parallel V-only reduction with restore_elz,
+    # followed by a row-form partial U-pass that auto-falls-back to
+    # the full row-form pass when many rows are needed.
     if side == "hom":
         top_opt.ensure_reduced_for_partial_u_hom(n_threads)
         decmp = top_opt.homology_decomposition_ref()
-        cmp_partial_col = "above" if negate else "below"
         cmp_partial_row = "below" if negate else "above"
-    else:
-        top_opt.ensure_reduced_for_partial_u_coh(n_threads)
-        decmp = top_opt.cohomology_decomposition_ref()
-        cmp_partial_col = "below" if negate else "above"
-        cmp_partial_row = "above" if negate else "below"
-
-    # Determine which dim's U we need on this side. For a partial path
-    # this comes from the row classifier; for a full path we infer from
-    # the first U-needing pair on this side.
-    if side == "hom":
         rows, bounds, dim_u = _classify_increase_death_rows(
             under_fil, decmp, move_idx_t, cur_t, tgt_t, move_mask_t,
             negate=negate)
     else:
+        top_opt.ensure_reduced_for_partial_u_coh(n_threads)
+        decmp = top_opt.cohomology_decomposition_ref()
+        cmp_partial_row = "above" if negate else "below"
         rows, bounds, dim_u = _classify_decrease_birth_rows(
             under_fil, decmp, move_idx_t, cur_t, tgt_t, move_mask_t,
             negate=negate)
+
     if dim_u is None:
-        # No U-needing pairs on this side after classification (e.g.
-        # negate filtration where partial helpers bail). Fall back to
-        # a full pass at the dim of the first move.
+        # No classifiable rows (e.g. negate filtration where the
+        # row helpers bail). Fall back to a full row-form pass at
+        # the dim of the first move.
         idx_np = move_idx_t.detach().cpu().numpy()
         mv_np = move_mask_t.detach().cpu().numpy()
         first_idx = None
@@ -267,43 +131,19 @@ def _dispatch_u_for_side(top_opt, under_fil, side, *, need_u, any_move,
         dim_u = _find_dim(decmp, first_idx)
         if dim_u is None:
             return
-
-    if u_strategy == "col_R":
-        decmp.compute_u_from_v(dim_u, n_threads)
-    elif u_strategy == "col_V":
-        decmp.compute_u_from_v_1(dim_u, n_threads)
-    elif u_strategy == "row_full":
         decmp.compute_full_u_rows(under_fil, dim_u, n_threads=n_threads)
-    elif u_strategy in ("row_partial", "auto"):
-        if not rows:
-            decmp.compute_full_u_rows(under_fil, dim_u, n_threads=n_threads)
-            return
-        dim_size = decmp.dim_last[dim_u] - decmp.dim_first[dim_u] + 1
-        if len(rows) / dim_size > ROW_PARTIAL_FULL_FALLBACK_THRESHOLD:
-            decmp.compute_full_u_rows(under_fil, dim_u, n_threads=n_threads)
-        else:
-            decmp.compute_partial_u_rows(
-                under_fil, rows, bounds, dim_u,
-                cmp=cmp_partial_row, n_threads=n_threads)
-    elif u_strategy == "col_partial":
-        # Column-form partial U. Kept for cross-checks; row_partial wins
-        # in nearly every benchmarked case.
-        if side == "hom":
-            cols, bounds_c = _derive_cols_bounds_increase_death(
-                under_fil, decmp, move_idx_t, cur_t, tgt_t, move_mask_t,
-                negate=negate)
-        else:
-            cols, bounds_c = _derive_cols_bounds_decrease_birth(
-                under_fil, decmp, move_idx_t, cur_t, tgt_t, move_mask_t,
-                negate=negate)
-        if cols:
-            decmp.compute_partial_u_from_v_1(
-                under_fil, cols, bounds_c,
-                cmp=cmp_partial_col, n_threads=n_threads)
-        else:
-            decmp.compute_full_u_rows(under_fil, dim_u, n_threads=n_threads)
+        return
+
+    if not rows:
+        decmp.compute_full_u_rows(under_fil, dim_u, n_threads=n_threads)
+        return
+    dim_size = decmp.dim_last[dim_u] - decmp.dim_first[dim_u] + 1
+    if len(rows) / dim_size > ROW_PARTIAL_FULL_FALLBACK_THRESHOLD:
+        decmp.compute_full_u_rows(under_fil, dim_u, n_threads=n_threads)
     else:
-        raise RuntimeError(f"unhandled u_strategy {u_strategy!r}")
+        decmp.compute_partial_u_rows(
+            under_fil, rows, bounds, dim_u,
+            cmp=cmp_partial_row, n_threads=n_threads)
 
 
 def _find_dim(decmp, matrix_idx):
@@ -470,8 +310,7 @@ class PersistenceDiagramHelper(torch.autograd.Function):
             grad_vals[index_dgm.flatten()] = grad_output.flatten()
             return grad_vals, None, None, None, None, None, None, None, None, None
 
-        if ctx.gradient_method not in ("crit-sets", "crit-sets-partial",
-                                       "crit-sets-row-partial"):
+        if ctx.gradient_method != "crit-sets":
             # Be permissive: any gradient_method that isn't dgm-loss
             # falls through to the crit-sets backward, with the chosen
             # u_strategy controlling which U-computation is used.
@@ -608,13 +447,7 @@ class PersistenceDiagrams:
         self._step_size = step_size
         self._conflict_strategy = conflict_strategy
 
-        crit_sets_methods = ("crit-sets", "crit-sets-partial",
-                             "crit-sets-row-partial", "crit-sets-strategy")
-        if gradient_method in crit_sets_methods:
-            # All crit-sets variants use the same defer-reduction setup;
-            # they differ only in what backward does, controlled by
-            # u_strategy (the gradient_method aliases map to specific
-            # u_strategy values via _resolve_u_strategy).
+        if gradient_method == "crit-sets":
             top_opt = _oineus.TopologyOptimizer(fil.under_fil, defer_reduction=True)
             nondiff_dgms = top_opt.compute_diagram(include_inf_points=include_inf_points)
             self._top_opt = top_opt
@@ -641,8 +474,7 @@ class PersistenceDiagrams:
         else:
             raise ValueError(
                 f"unknown gradient_method {gradient_method!r}; expected "
-                "'dgm-loss', 'crit-sets', 'crit-sets-partial', "
-                "'crit-sets-row-partial', or 'crit-sets-strategy'"
+                "'dgm-loss' or 'crit-sets'"
             )
 
         self._diagrams = {
@@ -715,37 +547,26 @@ def persistence_diagram(
         include_inf_points: if True, include infinite points (deaths
             set to float('inf')); only finite pairs receive crit-sets
             gradient.
-        gradient_method: "dgm-loss", "crit-sets", or "crit-sets-strategy"
-            (the latter requires u_strategy to be explicit). The
-            deprecated aliases "crit-sets-partial" and
-            "crit-sets-row-partial" still work and map to specific
-            u_strategy values.
+        gradient_method: "dgm-loss" or "crit-sets".
         step_size: scales grad_output to a target diagram (target =
             current - step_size * grad_output) for the "crit-sets"
             pass. Ignored for "dgm-loss".
         conflict_strategy: "avg", "max", "sum", or "fca", or any
             _oineus.ConflictStrategy. Used only for "crit-sets".
         n_threads: passed to the underlying decomposition for "dgm-loss"
-            and to the parallel V-only reduction in the new u_strategy
-            paths.
+            and to the parallel V-only reduction for "crit-sets".
         u_strategy: which U-computation to use in the crit-sets
             backward. One of:
-              - None (default): "auto" unless overridden by a
-                deprecated gradient_method alias
-                ("crit-sets-partial" -> col_partial,
-                "crit-sets-row-partial" -> row_partial).
-              - "auto": production default; currently row_partial with
-                a partial-vs-full threshold (ROW_PARTIAL_FULL_FALLBACK_THRESHOLD).
+              - None (default): "auto".
+              - "auto": production default. Currently resolves to
+                row_partial with a partial-vs-full threshold dispatch
+                (see ROW_PARTIAL_FULL_FALLBACK_THRESHOLD).
+              - "row_partial": row-form partial U inversion. The
+                algorithm behind 'auto'; pin this to bypass the
+                threshold dispatch logic.
               - "legacy_in_band": in-band U built during reduction
-                (clearing off, compute_u=true). Available as a
-                control / cross-check strategy.
-              - "col_R": Algorithm 3 (R U = D), full dim.
-              - "col_V": Algorithm 4 (V U = I), full dim.
-              - "col_partial": column-form partial U.
-              - "row_full": row-form, all rows of dim.
-              - "row_partial": row-form, only the rows the walker
-                will read.
-            See bench_u_strategies.py for performance comparison.
+                (clearing off, compute_u=true; serial reduction).
+                Available as a cross-check / control strategy.
 
     Returns:
         PersistenceDiagrams: dict-like, dim -> Tensor (N, 2). Gradients

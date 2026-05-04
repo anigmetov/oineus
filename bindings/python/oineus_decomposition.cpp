@@ -310,76 +310,7 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def("restore_elz", &Decomposition::restore_elz, nb::arg("dim")=oin::k_invalid_index, nb::arg("v_only")=false, nb::arg("verbose")=false, nb::arg("n_threads")=1)
             .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false)
             .def("compute_u_from_v_1", &Decomposition::compute_u_from_v_1, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false)
-            // Partial column-form U drivers. cmp picks the truncation
-            // direction: "below" (stop when piv_value < value_bound)
-            // matches increase_death on the homology side with non-negate
-            // filtration; "above" (stop when piv_value > value_bound)
-            // matches decrease_birth on the cohomology side, where
-            // matrix-order pivots decrease and filtration values
-            // increase along the iteration.
-            .def("compute_partial_u_from_v_1",
-                 [](Decomposition& self, const SimplexFiltration& fil,
-                    const std::vector<size_t>& cols,
-                    const std::vector<oin_real>& bounds,
-                    const std::string& cmp,
-                    int n_threads, bool verbose) {
-                     const bool dualize = self.dualize();
-                     auto value_at = [&fil, dualize](oin_int matrix_idx) -> oin_real {
-                         return fil.get_cell_value(fil.index_in_filtration(static_cast<size_t>(matrix_idx), dualize));
-                     };
-                     if (cmp == "below") {
-                         auto cmp_op = [](oin_real piv_value, oin_real value_bound) {
-                             return piv_value < value_bound;
-                         };
-                         self.compute_partial_u_from_v_1(cols, bounds, value_at, cmp_op,
-                                                         static_cast<size_t>(n_threads), verbose);
-                     } else if (cmp == "above") {
-                         auto cmp_op = [](oin_real piv_value, oin_real value_bound) {
-                             return piv_value > value_bound;
-                         };
-                         self.compute_partial_u_from_v_1(cols, bounds, value_at, cmp_op,
-                                                         static_cast<size_t>(n_threads), verbose);
-                     } else {
-                         throw std::runtime_error("compute_partial_u_from_v_1: cmp must be 'below' or 'above'");
-                     }
-                 },
-                 nb::arg("filtration"), nb::arg("cols"), nb::arg("bounds"),
-                 nb::arg("cmp")="below",
-                 nb::arg("n_threads")=1, nb::arg("verbose")=false,
-                 nb::call_guard<nb::gil_scoped_release>())
-            .def("compute_partial_u_from_v",
-                 [](Decomposition& self, const SimplexFiltration& fil,
-                    const std::vector<size_t>& cols,
-                    const std::vector<oin_real>& bounds,
-                    const std::string& cmp,
-                    int n_threads, bool verbose) {
-                     const bool dualize = self.dualize();
-                     auto value_at = [&fil, dualize](oin_int matrix_idx) -> oin_real {
-                         return fil.get_cell_value(fil.index_in_filtration(static_cast<size_t>(matrix_idx), dualize));
-                     };
-                     if (cmp == "below") {
-                         auto cmp_op = [](oin_real piv_value, oin_real value_bound) {
-                             return piv_value < value_bound;
-                         };
-                         self.compute_partial_u_from_v(cols, bounds, value_at, cmp_op,
-                                                       static_cast<size_t>(n_threads), verbose);
-                     } else if (cmp == "above") {
-                         auto cmp_op = [](oin_real piv_value, oin_real value_bound) {
-                             return piv_value > value_bound;
-                         };
-                         self.compute_partial_u_from_v(cols, bounds, value_at, cmp_op,
-                                                       static_cast<size_t>(n_threads), verbose);
-                     } else {
-                         throw std::runtime_error("compute_partial_u_from_v: cmp must be 'below' or 'above'");
-                     }
-                 },
-                 nb::arg("filtration"), nb::arg("cols"), nb::arg("bounds"),
-                 nb::arg("cmp")="below",
-                 nb::arg("n_threads")=1, nb::arg("verbose")=false,
-                 nb::call_guard<nb::gil_scoped_release>())
-            // Row-form U drivers. Same (filtration, ...) shape as
-            // the column-form cols binding. cmp direction picks the
-            // truncation:
+            // Row-form U drivers. cmp direction picks the truncation:
             //   "above" -> hom-side increase_death on non-negate
             //              (matrix order = filtration order; values
             //              ascend along the row solve, stop when piv
