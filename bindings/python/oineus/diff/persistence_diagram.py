@@ -30,10 +30,9 @@ def _resolve_strategy(strategy):
 # (via TopologyOptimizer.ensure_reduced_for_partial_u_*) and then
 # compute U via different methods:
 #
-#   legacy_in_band -- in-band U during reduction (clearing off,
+#   legacy_in_band -- in-band U built during reduction (clearing off,
 #                     compute_u=true). Uses ensure_reduced_*(need_u=True).
-#                     Default mapping for gradient_method='crit-sets'
-#                     (backward compatibility with the original API).
+#                     Available as a control / cross-check strategy.
 #   col_R          -- Algorithm 3, R U = D, full dim. Calls
 #                     decmp.compute_u_from_v(dim, n_threads).
 #   col_V          -- Algorithm 4, V U = I, full dim, columns + transpose.
@@ -60,16 +59,18 @@ _VALID_U_STRATEGIES = (
 
 
 def _resolve_u_strategy(u_strategy, gradient_method):
-    """Pick the effective u_strategy. Explicit parameter wins over the
-    deprecated gradient_method aliases."""
+    """Pick the effective u_strategy. Explicit parameter wins over
+    the deprecated gradient_method aliases. Default is 'auto', which
+    currently resolves to row_partial with a partial-vs-full
+    threshold dispatch (see ROW_PARTIAL_FULL_FALLBACK_THRESHOLD)."""
     if u_strategy is None:
-        # Map old gradient_method names to u_strategy.
-        if gradient_method == "crit-sets":
-            return "legacy_in_band"
+        # Map deprecated gradient_method aliases to u_strategy.
         if gradient_method == "crit-sets-partial":
             return "col_partial"
         if gradient_method == "crit-sets-row-partial":
             return "row_partial"
+        # 'crit-sets', 'crit-sets-strategy', or any other crit-sets
+        # variant uses the production default.
         return "auto"
     if u_strategy not in _VALID_U_STRATEGIES:
         raise ValueError(
@@ -528,7 +529,7 @@ class PersistenceDiagramHelper(torch.autograd.Function):
 
         top_opt = ctx.top_opt
         n_threads = max(1, int(getattr(ctx, "n_threads", 1) or 1))
-        u_strategy = getattr(ctx, "u_strategy", "legacy_in_band")
+        u_strategy = getattr(ctx, "u_strategy", "auto")
 
         under_fil = ctx.fil.under_fil if hasattr(ctx.fil, "under_fil") else ctx.fil
         _dispatch_u_for_side(
@@ -729,14 +730,15 @@ def persistence_diagram(
             paths.
         u_strategy: which U-computation to use in the crit-sets
             backward. One of:
-              - None (default): infer from gradient_method (preserves
-                existing behavior; "crit-sets" -> legacy_in_band,
-                "crit-sets-partial" -> col_partial,
-                "crit-sets-row-partial" -> row_partial; otherwise auto).
+              - None (default): "auto" unless overridden by a
+                deprecated gradient_method alias
+                ("crit-sets-partial" -> col_partial,
+                "crit-sets-row-partial" -> row_partial).
               - "auto": production default; currently row_partial with
                 a partial-vs-full threshold (ROW_PARTIAL_FULL_FALLBACK_THRESHOLD).
               - "legacy_in_band": in-band U built during reduction
-                (clearing off, compute_u=true).
+                (clearing off, compute_u=true). Available as a
+                control / cross-check strategy.
               - "col_R": Algorithm 3 (R U = D), full dim.
               - "col_V": Algorithm 4 (V U = I), full dim.
               - "col_partial": column-form partial U.
