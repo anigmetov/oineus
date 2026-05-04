@@ -225,7 +225,11 @@ def _matrix_summary(top_opt):
 def test_phase2_death_only_loop_skips_cohomology():
     pts = _seeded_circle()
     fil = oin_diff.vr_filtration(pts, max_dim=2)
-    dgms = oin_diff.persistence_diagram(fil, gradient_method="crit-sets")
+    # Pin u_strategy='legacy_in_band' so the assertions about
+    # clearing_opt_used and has_u are meaningful (the new default
+    # 'auto' = row_partial uses a different reduction shape).
+    dgms = oin_diff.persistence_diagram(fil, gradient_method="crit-sets",
+                                        u_strategy="legacy_in_band")
     dgm1 = dgms.in_dimension(1)
     if dgm1.shape[0] == 0:
         pytest.skip("no H1 points")
@@ -247,7 +251,8 @@ def test_phase2_death_only_loop_skips_cohomology():
 def test_phase2_birth_only_loop_skips_homology_u():
     pts = _seeded_circle()
     fil = oin_diff.vr_filtration(pts, max_dim=2)
-    dgms = oin_diff.persistence_diagram(fil, gradient_method="crit-sets")
+    dgms = oin_diff.persistence_diagram(fil, gradient_method="crit-sets",
+                                        u_strategy="legacy_in_band")
     dgm1 = dgms.in_dimension(1)
     if dgm1.shape[0] == 0:
         pytest.skip("no H1 points")
@@ -275,7 +280,8 @@ def test_phase2_birth_only_loop_skips_homology_u():
 def test_phase2_increase_death_re_reduces_hom_without_clearing():
     pts = _seeded_circle()
     fil = oin_diff.vr_filtration(pts, max_dim=2)
-    dgms = oin_diff.persistence_diagram(fil, gradient_method="crit-sets")
+    dgms = oin_diff.persistence_diagram(fil, gradient_method="crit-sets",
+                                        u_strategy="legacy_in_band")
     dgm1 = dgms.in_dimension(1)
     if dgm1.shape[0] == 0:
         pytest.skip("no H1 points")

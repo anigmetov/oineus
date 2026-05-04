@@ -192,6 +192,18 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
             )
             .def_prop_ro("homology_decomposition", &TopologyOptimizer::get_homology_decompostion)
             .def_prop_ro("cohomology_decomposition", &TopologyOptimizer::get_cohomology_decompostion)
+            // Mutable references to the internal decompositions, used by
+            // the partial-U wiring in oineus.diff.persistence_diagram (so
+            // it can call decmp.compute_partial_u_from_v_1 or
+            // decmp.compute_partial_u_rows directly on the live optimizer
+            // state). The non-_ref names above return copies and are kept
+            // for API compatibility.
+            .def("homology_decomposition_ref",
+                 [](TopologyOptimizer& opt) -> typename TopologyOptimizer::Decomposition& { return opt.decmp_hom_; },
+                 nb::rv_policy::reference_internal)
+            .def("cohomology_decomposition_ref",
+                 [](TopologyOptimizer& opt) -> typename TopologyOptimizer::Decomposition& { return opt.decmp_coh_; },
+                 nb::rv_policy::reference_internal)
             .def("singleton", &TopologyOptimizer::singleton)
             .def("singletons", &TopologyOptimizer::singletons,
                     nb::call_guard<nb::gil_scoped_release>())
@@ -209,11 +221,13 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
             .def("crit_sets_apply", &TopologyOptimizer::crit_sets_apply,
                     nb::arg("indices"), nb::arg("values"), nb::arg("strategy"),
                     nb::call_guard<nb::gil_scoped_release>(),
-                    "Phase-2 fused entry point: per-pair critical-set walk + "
-                    "conflict resolution in one C++ call. Caller must run "
-                    "ensure_reduced_hom / ensure_reduced_coh first with "
-                    "matching need_u flags. Returns IndicesValues; use "
-                    ".indices_array() / .values_array() for zero-copy numpy.")
+                    "Fused per-pair critical-set walk + conflict "
+                    "resolution in one C++ call. Caller must run "
+                    "ensure_reduced_hom / ensure_reduced_coh (or "
+                    "ensure_reduced_for_partial_u_* + a partial-U pass) "
+                    "first with matching need_u flags. Returns "
+                    "IndicesValues; use .indices_array() / .values_array() "
+                    "for zero-copy numpy.")
             .def("ensure_reduced_hom", &TopologyOptimizer::ensure_reduced_hom,
                     nb::arg("need_u"),
                     nb::call_guard<nb::gil_scoped_release>(),
@@ -222,6 +236,21 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     "produced when needed. If the existing reduction state "
                     "covers the request, returns immediately; otherwise "
                     "rebuilds from scratch.")
+            .def("ensure_reduced_for_partial_u_hom",
+                    &TopologyOptimizer::ensure_reduced_for_partial_u_hom,
+                    nb::arg("n_threads"),
+                    nb::call_guard<nb::gil_scoped_release>(),
+                    "Homology-side reduction for partial-U workflows: "
+                    "parallel V-only with restore_elz, no U. The partial-U "
+                    "pass runs separately afterwards via "
+                    "decomposition.compute_partial_u_from_v_1 (column form) "
+                    "or decomposition.compute_partial_u_rows (row form).")
+            .def("ensure_reduced_for_partial_u_coh",
+                    &TopologyOptimizer::ensure_reduced_for_partial_u_coh,
+                    nb::arg("n_threads"),
+                    nb::call_guard<nb::gil_scoped_release>(),
+                    "Cohomology-side reduction for partial-U workflows: "
+                    "parallel V-only with restore_elz, no U.")
             .def("ensure_reduced_coh", &TopologyOptimizer::ensure_reduced_coh,
                     nb::arg("need_u"),
                     nb::call_guard<nb::gil_scoped_release>(),

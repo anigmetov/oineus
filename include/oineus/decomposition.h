@@ -588,6 +588,51 @@ namespace oineus {
         IntSparseColumn compute_u_column_1(size_t col_idx) const;
         void compute_u_from_v_1(dim_type dim, size_t n_threads=1, bool verbose=false);
 
+        // Row-form U primitives. Solves (row r of U) V = e_r^T in
+        // residual style against V^T (lower unit-triangular, forward
+        // substitution). Each row solve is independent and writes its
+        // row directly into u_data_t -- no col->row stage is needed.
+        // Caller must build vt_data once via
+        // MatrixTraits::col_to_row_format_parallel restricted to the
+        // dim of interest, and pass it in.
+        //
+        // cmp_op direction depends on dualize x walker direction:
+        //   hom (dualize=false), increase_death walker:
+        //     cmp_op(piv_value, bound) = (piv_value > bound)  ["above"]
+        //   coh (dualize=true), decrease_birth walker:
+        //     cmp_op(piv_value, bound) = (piv_value < bound)  ["below"]
+        // Negate flips both directions; not yet supported.
+        template<typename Real, typename ValueAt, typename CmpOp>
+        IntSparseColumn compute_u_row_bounded(size_t row_idx,
+                                              const MatrixData& vt_data,
+                                              Real value_bound,
+                                              ValueAt&& value_at,
+                                              CmpOp&& cmp_op) const;
+
+        // Parallel partial-rows driver. Builds vt_data internally for
+        // `dim`, then runs n_threads row solves on the rows list.
+        // u_data_t is sized to v_data.size() if not already; only the
+        // rows[i] slots are written. cmp_op is shared across rows
+        // (same direction; see table above).
+        template<typename Real, typename ValueAt, typename CmpOp>
+        void compute_partial_u_rows(const std::vector<size_t>& rows,
+                                    const std::vector<Real>& bounds,
+                                    dim_type dim,
+                                    ValueAt&& value_at,
+                                    CmpOp&& cmp_op,
+                                    size_t n_threads = 1,
+                                    bool verbose = false);
+
+        // Full-rows pass: same machinery but with rows = entire dim
+        // and cmp_op = never_stop. Equivalent to compute_u_from_v_1
+        // for the dim, but produces u_data_t directly without a
+        // col->row conversion.
+        template<typename Real, typename ValueAt>
+        void compute_full_u_rows(dim_type dim,
+                                 ValueAt&& value_at,
+                                 size_t n_threads = 1,
+                                 bool verbose = false);
+
         size_t range_start_(dim_type dim) const;
         size_t range_end_(dim_type dim) const;
     };
@@ -2003,6 +2048,140 @@ namespace oineus {
         auto col_to_row_elapsed = timer.elapsed_reset();
 
         if (verbose) IC(col_inv_elapsed, col_to_row_elapsed);
+    }
+
+    template<typename Int_>
+    template<typename Real, typename ValueAt, typename CmpOp>
+    typename VRUDecomposition<Int_>::IntSparseColumn
+    VRUDecomposition<Int_>::compute_u_row_bounded(size_t row_idx,
+                                                  const MatrixData& vt_data,
+                                                  Real value_bound,
+                                                  ValueAt&& value_at,
+                                                  CmpOp&& cmp_op) const
+    {
+        // Row-form analogue of compute_u_column_1_bounded. Solves
+        // (row r of U) * V = e_r^T via residual-style forward
+        // substitution against V^T (lower unit-triangular). Pivots
+        // strictly increase in matrix index because vt_data[p]'s
+        // smallest entry is p (V[p][p] = 1) and XOR cancels it; the
+        // remaining entries are all > p.
+        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
+
+        if (not is_reduced)
+            throw std::runtime_error("Cannot compute U row from non-reduced decomposition");
+        if (not has_matrix_v())
+            throw std::runtime_error("Cannot compute U row from non-reduced decomposition");
+
+        IntSparseColumn result;
+        auto residual = MatrixTraits::cached_identity_column(row_idx);
+
+        while (not MatrixTraits::is_zero(residual)) {
+            auto piv_col_idx = MatrixTraits::top(residual);
+            if (cmp_op(value_at(piv_col_idx), value_bound)) {
+                break;
+            }
+            result.push_back(piv_col_idx);
+            MatrixTraits::add_to_cached(vt_data[piv_col_idx], residual);
+        }
+
+        if (result.empty()) {
+            // Diagonal-element invariant: U[r][r] = 1 always; the
+            // walker's assert(not result.empty()) requires u_data_t[r]
+            // to contain r. A degenerate bound that ruled out the
+            // diagonal still falls back here.
+            result.push_back(row_idx);
+        }
+        // result is sorted ascending by construction (pivots strictly
+        // increase), so no explicit sort needed.
+
+        return result;
+    }
+
+    template<typename Int_>
+    template<typename Real, typename ValueAt, typename CmpOp>
+    void VRUDecomposition<Int_>::compute_partial_u_rows(
+            const std::vector<size_t>& rows,
+            const std::vector<Real>& bounds,
+            dim_type dim,
+            ValueAt&& value_at,
+            CmpOp&& cmp_op,
+            size_t n_threads,
+            bool verbose)
+    {
+        if (rows.size() != bounds.size())
+            throw std::runtime_error("compute_partial_u_rows: rows and bounds must have the same size");
+
+        if (u_data_t.size() != v_data.size()) {
+            u_data_t = MatrixData(v_data.size());
+        }
+
+        if (rows.empty())
+            return;
+
+        if (n_threads == 0) n_threads = 1;
+        n_threads = std::min(n_threads, rows.size());
+
+        Timer timer;
+        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
+
+        // Stage A: build vt_data restricted to dim d (parallel transpose).
+        // V is block-diagonal in dim, so transposing only the dim's
+        // matrix-column range gives us exactly the rows of V^T that
+        // any row solve in dim d will read.
+        auto vt_data = MatrixTraits::col_to_row_format_parallel(
+                v_data, static_cast<int>(n_threads),
+                range_start_(dim), range_end_(dim),
+                static_cast<typename MatrixTraits::Int>(v_data.size()));
+
+        auto vt_elapsed = timer.elapsed_reset();
+
+        // Stage B: parallel row solves. Each row writes to its own
+        // u_data_t[r] slot; no shared writes.
+        std::atomic<size_t> next_free(0);
+        std::vector<std::thread> workers;
+        workers.reserve(n_threads);
+
+        for (size_t tid = 0; tid < n_threads; ++tid) {
+            workers.emplace_back([this, &rows, &bounds, &vt_data,
+                                  &next_free, &value_at, &cmp_op]() {
+                while (true) {
+                    const size_t i = next_free.fetch_add(1, std::memory_order_relaxed);
+                    if (i >= rows.size()) break;
+                    u_data_t[rows[i]] = compute_u_row_bounded(
+                            rows[i], vt_data, bounds[i], value_at, cmp_op);
+                }
+            });
+        }
+
+        for (auto& w : workers) w.join();
+
+        auto solve_elapsed = timer.elapsed_reset();
+
+        if (verbose) IC(vt_elapsed, solve_elapsed);
+    }
+
+    template<typename Int_>
+    template<typename Real, typename ValueAt>
+    void VRUDecomposition<Int_>::compute_full_u_rows(dim_type dim,
+                                                     ValueAt&& value_at,
+                                                     size_t n_threads,
+                                                     bool verbose)
+    {
+        const size_t cstart = range_start_(dim);
+        const size_t cend = range_end_(dim);
+        if (cend <= cstart) {
+            if (u_data_t.size() != v_data.size())
+                u_data_t = MatrixData(v_data.size());
+            return;
+        }
+        std::vector<size_t> rows;
+        rows.reserve(cend - cstart);
+        for (size_t r = cstart; r < cend; ++r) rows.push_back(r);
+        std::vector<Real> bounds(rows.size(),
+                                 std::numeric_limits<Real>::max());
+        auto never_stop = [](Real, Real) { return false; };
+        compute_partial_u_rows(rows, bounds, dim, value_at, never_stop,
+                               n_threads, verbose);
     }
 
     template<typename Int>

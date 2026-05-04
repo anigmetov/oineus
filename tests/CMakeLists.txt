@@ -1,4 +1,4 @@
-add_executable(tests tests_reduction.cpp tests_sparse_matrix.cpp)
+add_executable(tests tests_reduction.cpp tests_sparse_matrix.cpp tests_compute_u_column_bounded.cpp)
 
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include
                                          ${CMAKE_CURRENT_SOURCE_DIR}/../extern)

@@ -310,6 +310,60 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def("restore_elz", &Decomposition::restore_elz, nb::arg("dim")=oin::k_invalid_index, nb::arg("v_only")=false, nb::arg("verbose")=false, nb::arg("n_threads")=1)
             .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false)
             .def("compute_u_from_v_1", &Decomposition::compute_u_from_v_1, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false)
+            // Row-form U drivers. cmp direction picks the truncation:
+            //   "above" -> hom-side increase_death on non-negate
+            //              (matrix order = filtration order; values
+            //              ascend along the row solve, stop when piv
+            //              passes target_death)
+            //   "below" -> coh-side decrease_birth on non-negate
+            //              (matrix order = reverse filtration; values
+            //              descend, stop when piv falls below
+            //              target_birth)
+            // Negate flips both; not yet supported.
+            .def("compute_partial_u_rows",
+                 [](Decomposition& self, const SimplexFiltration& fil,
+                    const std::vector<size_t>& rows,
+                    const std::vector<oin_real>& bounds,
+                    int dim,
+                    const std::string& cmp,
+                    int n_threads, bool verbose) {
+                     const bool dualize = self.dualize();
+                     auto value_at = [&fil, dualize](oin_int matrix_idx) -> oin_real {
+                         return fil.get_cell_value(fil.index_in_filtration(static_cast<size_t>(matrix_idx), dualize));
+                     };
+                     if (cmp == "below") {
+                         auto cmp_op = [](oin_real piv_value, oin_real value_bound) {
+                             return piv_value < value_bound;
+                         };
+                         self.compute_partial_u_rows(rows, bounds, dim, value_at, cmp_op,
+                                                     static_cast<size_t>(n_threads), verbose);
+                     } else if (cmp == "above") {
+                         auto cmp_op = [](oin_real piv_value, oin_real value_bound) {
+                             return piv_value > value_bound;
+                         };
+                         self.compute_partial_u_rows(rows, bounds, dim, value_at, cmp_op,
+                                                     static_cast<size_t>(n_threads), verbose);
+                     } else {
+                         throw std::runtime_error("compute_partial_u_rows: cmp must be 'below' or 'above'");
+                     }
+                 },
+                 nb::arg("filtration"), nb::arg("rows"), nb::arg("bounds"),
+                 nb::arg("dim"), nb::arg("cmp")="above",
+                 nb::arg("n_threads")=1, nb::arg("verbose")=false,
+                 nb::call_guard<nb::gil_scoped_release>())
+            .def("compute_full_u_rows",
+                 [](Decomposition& self, const SimplexFiltration& fil,
+                    int dim, int n_threads, bool verbose) {
+                     const bool dualize = self.dualize();
+                     auto value_at = [&fil, dualize](oin_int matrix_idx) -> oin_real {
+                         return fil.get_cell_value(fil.index_in_filtration(static_cast<size_t>(matrix_idx), dualize));
+                     };
+                     self.compute_full_u_rows<oin_real>(dim, value_at,
+                                                        static_cast<size_t>(n_threads), verbose);
+                 },
+                 nb::arg("filtration"), nb::arg("dim"),
+                 nb::arg("n_threads")=1, nb::arg("verbose")=false,
+                 nb::call_guard<nb::gil_scoped_release>())
             .def("densify_v_for_selinv", [](Decomposition& self, const std::set<oin_int>& rows_to_invert, int n_threads) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
                      int num_rows = self.r_data.size();
                      return densify_v_for_selinv(self, rows_to_invert, num_rows, n_threads);

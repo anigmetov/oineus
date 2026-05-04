@@ -982,9 +982,9 @@ def _resolve_source_kind(filtration, override):
                 f"source_kind must be 'points' or 'field', got {override!r}."
             )
         return override
-    # Prefer the FiltrationKind tag set by the constructor (Phase 2);
-    # fall back to type-based detection for hand-built filtrations
-    # whose kind was left at User.
+    # Prefer the FiltrationKind tag set by the constructor; fall back
+    # to type-based detection for hand-built filtrations whose kind
+    # was left at User.
     kind = getattr(filtration, "kind", None)
     if kind is not None:
         try:
