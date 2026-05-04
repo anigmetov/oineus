@@ -14,6 +14,8 @@ except ImportError:
 
 if TORCH_AVAILABLE:
     from .cech_delaunay import triangle_meb, tetrahedron_meb, cech_delaunay_filtration
+    from .alpha import alpha_filtration
+    from .alpha_utils import edge_circumradius_sq, triangle_circumradius_sq, tetrahedron_circumradius_sq
     from .weak_alpha import weak_alpha_filtration
     from .persistence_diagram import PersistenceDiagrams, persistence_diagram
     from .sliced_wasserstein import sliced_wasserstein_distance, sliced_wasserstein_distance_diag_corrected
