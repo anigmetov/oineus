@@ -332,7 +332,9 @@ auto get_vr_filtration_inorder(const std::vector<Point<Real, D>>& points,
     detail::vre_build<Int, Real>(static_cast<Int>(points.size()), max_dim,
                                  max_compare, compare_dist, compare_to_diameter,
                                  /*collect_edges=*/false, simplices, edges);
-    return Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
+    auto fil = Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
+    fil.set_kind(FiltrationKind::Vr);
+    return fil;
 }
 
 // Distance matrix + filtration only (no critical edges).
@@ -354,7 +356,9 @@ auto get_vr_filtration_inorder(const DistMatrix<Real>& dm,
     detail::vre_build<Int, Real>(static_cast<Int>(dm.n_points), max_dim,
                                  max_diameter, compare_dist, compare_to_diameter,
                                  /*collect_edges=*/false, simplices, edges);
-    return Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
+    auto fil = Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
+    fil.set_kind(FiltrationKind::Vr);
+    return fil;
 }
 
 // Points + critical edges. `edges` is parallel to the simplices vector
@@ -384,6 +388,7 @@ auto get_vr_filtration_and_critical_edges_inorder(
                                  /*collect_edges=*/true, simplices, edges);
 
     auto fil = Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
+    fil.set_kind(FiltrationKind::Vr);
     return std::make_pair(std::move(fil), std::move(edges));
 }
 
@@ -409,6 +414,7 @@ auto get_vr_filtration_and_critical_edges_inorder(
                                  /*collect_edges=*/true, simplices, edges);
 
     auto fil = Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
+    fil.set_kind(FiltrationKind::Vr);
     return std::make_pair(std::move(fil), std::move(edges));
 }
 
