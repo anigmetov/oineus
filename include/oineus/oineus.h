@@ -13,6 +13,7 @@
 #include "grid_domain.h"
 #include "grid.h"
 #include "vietoris_rips.h"
+#include "vietoris_rips_inorder.h"
 #include "decomposition.h"
 #include "vectorizer.h"
 #include "loss.h"

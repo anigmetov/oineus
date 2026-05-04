@@ -12,6 +12,12 @@ from
 "Topological Optimization with Big Steps."
 arXiv preprint arXiv:2203.16748 (2022)."*](https://arxiv.org/abs/2203.16748)
 
+Vietoris-Rips filtrations are constructed using the in-order generation
+algorithm of
+[*M. Vejdemo-Johansson, J. Matuszewski, U. Bauer,
+"In-order generation of Vietoris-Rips Complexes."
+arXiv preprint arXiv:2411.05495 (2024).*](https://arxiv.org/abs/2411.05495)
+
 Currently it supports computation of lower-star persistence
 of scalar functions on regular grids, Vietoris-Rips filtrations or of user-defined
 filtrations (where each simplex needs to be created manually).

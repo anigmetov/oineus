@@ -11,6 +11,8 @@
 #include <string>
 #include <sstream>
 
+#include "common_defs.h"
+
 #if !defined(__SIZEOF_INT128__)
 #  error "oineus::Simplex::Uid uses unsigned __int128; this requires gcc/clang. " \
          "On MSVC or other compilers without __int128, supply a portable 128-bit " \
@@ -121,6 +123,26 @@ struct Simplex {
             id_ = vertices_[0];
         else
             std::sort(vertices_.begin(), vertices_.end());
+
+        set_uid();
+    }
+
+    // Caller promises _vertices is already in ascending order, so we skip
+    // the std::sort step. Used by the in-order (VRE) Vietoris-Rips
+    // construction, which builds vertex lists pre-sorted by construction
+    // (see generate_cofacets in vietoris_rips_inorder.h). Takes by rvalue
+    // reference because the typical caller has already moved its working
+    // IdxVector into the call.
+    Simplex(presorted_t, IdxVector&& _vertices)
+            :vertices_(std::move(_vertices))
+    {
+        if (vertices_.empty())
+            throw std::runtime_error("Empty simplex not allowed");
+
+        assert(std::is_sorted(vertices_.begin(), vertices_.end()));
+
+        if (vertices_.size() == 1)
+            id_ = vertices_[0];
 
         set_uid();
     }

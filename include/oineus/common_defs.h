@@ -16,6 +16,12 @@ namespace oineus {
     using dim_type = size_t;
     using id_type = int;
 
+    // Tag type used by ctors that accept already-sorted / already-ordered
+    // input and want to skip the redundant ordering step. Used by both
+    // Simplex (skip vertex sort) and Filtration (skip the global sort).
+    struct presorted_t {};
+    inline constexpr presorted_t presorted{};
+
     constexpr size_t plus_inf = std::numeric_limits<size_t>::max();
 
     constexpr size_t k_invalid_index = std::numeric_limits<size_t>::max();
