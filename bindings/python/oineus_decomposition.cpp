@@ -310,7 +310,7 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def("restore_elz", &Decomposition::restore_elz, nb::arg("dim")=oin::k_invalid_index, nb::arg("v_only")=false, nb::arg("verbose")=false, nb::arg("n_threads")=1)
             .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false)
             .def("compute_u_from_v_1", &Decomposition::compute_u_from_v_1, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false)
-            // Phase-3 partial-U drivers. cmp picks the truncation
+            // Partial column-form U drivers. cmp picks the truncation
             // direction: "below" (stop when piv_value < value_bound)
             // matches increase_death on the homology side with non-negate
             // filtration; "above" (stop when piv_value > value_bound)
@@ -377,8 +377,8 @@ void init_oineus_common_decomposition(nb::module_& m)
                  nb::arg("cmp")="below",
                  nb::arg("n_threads")=1, nb::arg("verbose")=false,
                  nb::call_guard<nb::gil_scoped_release>())
-            // Phase-4 row-form drivers. Same (filtration, ...) shape as
-            // the Phase-3 cols binding. cmp direction picks the
+            // Row-form U drivers. Same (filtration, ...) shape as
+            // the column-form cols binding. cmp direction picks the
             // truncation:
             //   "above" -> hom-side increase_death on non-negate
             //              (matrix order = filtration order; values

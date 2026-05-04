@@ -161,10 +161,10 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
     }
 
     // Symmetric of low: smallest entry in the cached residual.
-    // Used by Phase-4 row-form U inversion (compute_u_row_bounded),
-    // where the residual is consumed top-down (V^T is lower
-    // unit-triangular -> forward substitution -> top of residual
-    // strictly increases each iteration).
+    // Used by row-form U inversion (compute_u_row_bounded), where the
+    // residual is consumed top-down (V^T is lower unit-triangular ->
+    // forward substitution -> top of residual strictly increases each
+    // iteration).
     static Int top(const CachedColumn& col)
     {
         return is_zero(col) ? -1 : *col.begin();

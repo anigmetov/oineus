@@ -30,26 +30,28 @@ def _resolve_strategy(strategy):
 # (via TopologyOptimizer.ensure_reduced_for_partial_u_*) and then
 # compute U via different methods:
 #
-#   legacy_in_band -- in-band U during reduction (Phase 2).
-#                     Uses ensure_reduced_*(need_u=True): clearing off,
-#                     compute_u=true. Default for backward compat with
-#                     gradient_method='crit-sets'.
+#   legacy_in_band -- in-band U during reduction (clearing off,
+#                     compute_u=true). Uses ensure_reduced_*(need_u=True).
+#                     Default mapping for gradient_method='crit-sets'
+#                     (backward compatibility with the original API).
 #   col_R          -- Algorithm 3, R U = D, full dim. Calls
 #                     decmp.compute_u_from_v(dim, n_threads).
 #   col_V          -- Algorithm 4, V U = I, full dim, columns + transpose.
 #                     Calls decmp.compute_u_from_v_1(dim, n_threads).
-#   col_partial    -- Phase-3 column-form partial. Calls
-#                     decmp.compute_partial_u_from_v_1(...). Kept for
-#                     double-checks; consistently loses to row_partial.
-#   row_full       -- Phase-4 row-form full. Calls
+#   col_partial    -- Column-form partial U. Calls
+#                     decmp.compute_partial_u_from_v_1(...). Loses to
+#                     row_partial in nearly every benchmarked case;
+#                     kept for cross-checks only.
+#   row_full       -- Row-form full U. Calls
 #                     decmp.compute_full_u_rows(fil, dim, n_threads).
-#   row_partial    -- Phase-4 row-form partial. Calls
+#   row_partial    -- Row-form partial U. Calls
 #                     decmp.compute_partial_u_rows(fil, rows, bounds,
 #                                                  dim, cmp, n_threads).
 #                     Auto-falls-back to compute_full_u_rows when
-#                     n_pairs / dim_size > PHASE4_PARTIAL_THRESHOLD.
+#                     n_pairs / dim_size > ROW_PARTIAL_FULL_FALLBACK_THRESHOLD.
 #   auto           -- production default. Currently row_partial with the
-#                     threshold dispatch. To be tuned by bench_u_strategies.
+#                     threshold dispatch. See bench_u_strategies.md for
+#                     why this is the recommended default.
 
 _VALID_U_STRATEGIES = (
     "auto", "legacy_in_band", "col_R", "col_V", "col_partial",
@@ -76,8 +78,9 @@ def _resolve_u_strategy(u_strategy, gradient_method):
     return u_strategy
 
 
-# Phase-3 helpers: derive (cols, bounds) for compute_partial_u_from_v_1
-# from the per-direction pair subsets that need U.
+# Column-form partial-U helpers: derive (cols, bounds) for
+# compute_partial_u_from_v_1 from the per-direction pair subsets that
+# need U.
 #
 # Hom side (increase_death):
 #   Walker reads u_data_t[d_idx_matrix] (= row d_idx of U_hom, since
@@ -214,7 +217,7 @@ def _dispatch_u_for_side(top_opt, under_fil, side, *, need_u, any_move,
         return
 
     if u_strategy == "legacy_in_band":
-        # Phase-2 in-band U: clearing off, U built during reduction.
+        # In-band U: clearing off, U built during reduction.
         if side == "hom":
             top_opt.ensure_reduced_hom(need_u=True)
         else:
@@ -275,14 +278,15 @@ def _dispatch_u_for_side(top_opt, under_fil, side, *, need_u, any_move,
             decmp.compute_full_u_rows(under_fil, dim_u, n_threads=n_threads)
             return
         dim_size = decmp.dim_last[dim_u] - decmp.dim_first[dim_u] + 1
-        if len(rows) / dim_size > PHASE4_PARTIAL_THRESHOLD:
+        if len(rows) / dim_size > ROW_PARTIAL_FULL_FALLBACK_THRESHOLD:
             decmp.compute_full_u_rows(under_fil, dim_u, n_threads=n_threads)
         else:
             decmp.compute_partial_u_rows(
                 under_fil, rows, bounds, dim_u,
                 cmp=cmp_partial_row, n_threads=n_threads)
     elif u_strategy == "col_partial":
-        # Phase-3 column-form partial. Kept for double-checks.
+        # Column-form partial U. Kept for cross-checks; row_partial wins
+        # in nearly every benchmarked case.
         if side == "hom":
             cols, bounds_c = _derive_cols_bounds_increase_death(
                 under_fil, decmp, move_idx_t, cur_t, tgt_t, move_mask_t,
@@ -312,26 +316,27 @@ def _find_dim(decmp, matrix_idx):
     return None
 
 
-# Phase-4 helpers: derive (rows, bounds, dim) for compute_partial_u_rows.
-# Each pair contributes exactly one row index (the death-creator on hom,
-# the birth-creator's matrix index on coh) and one bound (target value).
-# Bounds are passed through as-is from torch -- the Phase-3 float-drift
-# trap is gentler here (truncation off-by-one is tolerable) but we still
-# bias toward C++ values for safety: see derivation below.
-PHASE4_PARTIAL_THRESHOLD = 0.75
+# Row-form partial-U helpers: derive (rows, bounds, dim) for
+# compute_partial_u_rows. Each pair contributes exactly one row index
+# (the death-creator on hom, the birth-creator's matrix index on coh)
+# and one bound (the target value). Bounds may be passed through from
+# torch directly: a tiny float drift between fil.values and the C++
+# filtration values only over- or under-shoots the row solve by one
+# iteration, which is harmless because the diagonal entry is always
+# emitted by the row primitive's first iteration.
+ROW_PARTIAL_FULL_FALLBACK_THRESHOLD = 0.75
 
 
 def _classify_increase_death_rows(fil, decmp_hom, d_idx_t, d_cur_t,
                                   d_tgt_t, d_move_t, negate):
     """For each death-up move (target > current on non-negate), emit
-    (row_idx = d_p_filtration, bound = max(value(d_p), target_death)).
-    The bound is in C++ filtration units; torch d_tgt may drift by ~1e-7
-    from the C++ value of any cell, so we sandwich the bound between
-    value(d_p) (always >= it suffices) and the torch target. For Phase-4
-    increase_death walker (cmp=above), bound is passed as-is; the
-    walker stops at piv_value > bound, which can be any value strictly
-    greater than value(d_p) because the diagonal r is always emitted
-    by the row primitive's first iteration."""
+    (row_idx = d_p_filtration, bound = target_death). The row solve's
+    cmp_op is "above" (stop when piv_value > bound), so the iteration
+    walks columns from d_p upward and stops once it crosses
+    target_death. A small float drift between the torch target and
+    the C++ filtration values at the boundary only over- or
+    under-shoots the row solve by one iteration; the diagonal r is
+    always emitted by the primitive's first iteration."""
     if negate:
         return [], [], None
     rows, bounds = [], []
@@ -430,7 +435,7 @@ class PersistenceDiagramHelper(torch.autograd.Function):
         ctx.fil = fil
         ctx.conflict_strategy = conflict_strategy
         ctx.negate = bool(fil.negate)
-        ctx.n_threads = getattr(fil, "_phase3_n_threads", 1)
+        ctx.n_threads = getattr(fil, "_crit_sets_n_threads", 1)
 
         n_total = len(index_dgm)
 
@@ -614,9 +619,9 @@ class PersistenceDiagrams:
             self._top_opt = top_opt
             if n_threads is not None:
                 # Stash on the under_fil so backward (with no direct constructor
-                # access) can read it via ctx.fil._phase3_n_threads.
+                # access) can read it via ctx.fil._crit_sets_n_threads.
                 try:
-                    fil.under_fil._phase3_n_threads = int(n_threads)
+                    fil.under_fil._crit_sets_n_threads = int(n_threads)
                 except Exception:
                     pass
             self._u_strategy = u_strategy
@@ -729,13 +734,14 @@ def persistence_diagram(
                 "crit-sets-partial" -> col_partial,
                 "crit-sets-row-partial" -> row_partial; otherwise auto).
               - "auto": production default; currently row_partial with
-                a partial-vs-full threshold (PHASE4_PARTIAL_THRESHOLD).
-              - "legacy_in_band": Phase-2 in-band U during reduction.
+                a partial-vs-full threshold (ROW_PARTIAL_FULL_FALLBACK_THRESHOLD).
+              - "legacy_in_band": in-band U built during reduction
+                (clearing off, compute_u=true).
               - "col_R": Algorithm 3 (R U = D), full dim.
               - "col_V": Algorithm 4 (V U = I), full dim.
-              - "col_partial": Phase-3 column-form partial.
-              - "row_full": Phase-4 row-form, all rows of dim.
-              - "row_partial": Phase-4 row-form, only rows the walker
+              - "col_partial": column-form partial U.
+              - "row_full": row-form, all rows of dim.
+              - "row_partial": row-form, only the rows the walker
                 will read.
             See bench_u_strategies.py for performance comparison.
 

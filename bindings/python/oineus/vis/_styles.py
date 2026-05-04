@@ -133,7 +133,7 @@ DEFAULT_CHAIN_TRIANGLE_STYLE: dict = {
     "zorder": 1,
 }
 
-# Phase-2 (3D) -- defined here so callers can preview overrides.
+# 3D chain style -- defined here so callers can preview overrides.
 DEFAULT_CHAIN_TETRAHEDRON_STYLE: dict = {
     "alpha": 0.20,
     "linewidth": 0.6,

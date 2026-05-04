@@ -165,10 +165,11 @@ public:
         params_coh_.clearing_opt = false;
     }
 
-    // Phase-2 entry point: defer reductions, let the caller use
-    // ensure_reduced_hom / ensure_reduced_coh per backward to pick the
-    // cheapest reduction that still produces V (and U if needed).
-    // Tag-dispatch overload to keep intent explicit at call sites.
+    // Defer-reduction constructor: do not reduce eagerly. The caller
+    // must call ensure_reduced_hom / ensure_reduced_coh per backward
+    // to pick the cheapest reduction that still produces V (and U if
+    // needed). Tag-dispatch overload to keep intent explicit at call
+    // sites.
     struct DeferReduction {};
 
     TopologyOptimizer(const Fil& fil, DeferReduction)
@@ -220,13 +221,12 @@ public:
     SideStatus hom_status() const { return side_status(decmp_hom_, params_hom_); }
     SideStatus coh_status() const { return side_status(decmp_coh_, params_coh_); }
 
-    // Per-side reduction policy for the Phase-2 crit-sets path.
+    // Per-side reduction policy for the in-band-U crit-sets path.
     // Always produces V; produces U when need_u is true. Clearing is on
     // when no U is needed; off when U is needed (in-band U requires a
     // non-cleared R). If the side is already reduced and the existing
     // state covers what is asked for, returns immediately. Otherwise
-    // rebuilds from scratch -- this is the "fallback re-reduce" the
-    // Phase-2 plan accepts in exchange for simpler logic.
+    // rebuilds from scratch.
     void ensure_reduced_hom(bool need_u)
     {
         ensure_reduced_side(decmp_hom_, params_hom_, /*dualize*/false, need_u);
@@ -237,10 +237,12 @@ public:
         ensure_reduced_side(decmp_coh_, params_coh_, /*dualize*/true, need_u);
     }
 
-    // Phase-3 reduction: parallel V-only + restore_elz, no U. The
-    // partial-U pass runs separately on top of this. Always rebuilds
-    // (the typical Phase-3 backward starts from a fresh decomposition,
-    // so caching state across optimization steps is moot).
+    // Parallel V-only reduction with restore_elz, no U. A separate
+    // partial-U pass (compute_partial_u_from_v_1 or
+    // compute_partial_u_rows on the returned decomposition) runs on
+    // top of this. Always rebuilds; this entry point is intended for
+    // backward passes that start from a fresh decomposition and do
+    // not benefit from caching state across optimization steps.
     void ensure_reduced_for_partial_u_hom(int n_threads)
     {
         Params p;
@@ -611,12 +613,13 @@ public:
         return combine_loss(singletons(indices, values), strategy);
     }
 
-    // Phase-2 fused entry point: per-pair critical-set walk + conflict
-    // resolution, in one C++ call with no intermediate Python lists.
-    // Caller responsibility:
+    // Fused per-pair critical-set walk + conflict resolution, in one
+    // C++ call with no intermediate Python lists. Caller responsibility:
     //   - call ensure_reduced_hom(need_u_hom) and ensure_reduced_coh(need_u_coh)
     //     beforehand with flags that match the move directions in
-    //     (indices, values). This is what the oineus.diff backward does.
+    //     (indices, values), or use ensure_reduced_for_partial_u_*
+    //     followed by a partial-U pass when only a subset of rows of
+    //     U is needed. This is what the oineus.diff backward does.
     // For FCA the (indices, values) input doubles as the per-critical-
     // simplex target map: each input pair declares one critical simplex
     // whose target is its accompanying value.

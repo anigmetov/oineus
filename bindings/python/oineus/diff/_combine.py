@@ -29,7 +29,7 @@ On annulus weak-alpha pipelines, n_points in [64, 4096], CPU fp64:
   - Net: while the only handle into the per-pair data is the
     CriticalSets list, the C++ combine_loss wins end-to-end. The
     PyTorch path becomes the winner once the per-pair data is already
-    in flat-tensor form (a Phase-2 binding change can deliver that).
+    in flat-tensor form (a future binding change could deliver that).
 
 Therefore PersistenceDiagramHelper.backward currently calls C++
 combine_loss; this module is exposed primarily for the benchmark and

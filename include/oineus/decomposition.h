@@ -588,18 +588,19 @@ namespace oineus {
         IntSparseColumn compute_u_column_1(size_t col_idx) const;
         void compute_u_from_v_1(dim_type dim, size_t n_threads=1, bool verbose=false);
 
-        // Phase-3 bounded solvers. ValueAt is a callable
+        // Bounded column-form U solvers. ValueAt is a callable
         //     Real value_at(Int idx)
         // mapping a column index in this decomposition's matrix space
         // to a filtration value. CmpOp is a callable
         //     bool cmp_op(Real piv_value, Real value_bound)
         // that returns true to stop emitting the current pivot into
         // the result. Algorithm 3 (compute_u_column) treats the bound
-        // as a post-filter only; Algorithm 4 (compute_u_column_1)
-        // truncates the residual loop the first time cmp_op fires --
-        // see the plan for the asymmetry. Real is the filtration's
-        // real type; templates avoid pulling Filtration into
-        // decomposition.h.
+        // as a post-filter only because the visited pivots are not
+        // monotonic in iteration order; Algorithm 4 (compute_u_column_1)
+        // truncates the residual loop the first time cmp_op fires
+        // because pivots strictly decrease, making the bound a sound
+        // truncation. Real is the filtration's real type; templates
+        // avoid pulling Filtration into decomposition.h.
         template<typename Real, typename ValueAt, typename CmpOp>
         IntSparseColumn compute_u_column_bounded(size_t col_idx,
                                                  Real value_bound,
@@ -612,15 +613,15 @@ namespace oineus {
                                                    ValueAt&& value_at,
                                                    CmpOp&& cmp_op) const;
 
-        // Phase-3 parallel partial-U drivers. Inverts an explicit
+        // Parallel partial column-form U drivers. Inverts an explicit
         // subset of U-columns (`cols`) using the bounded Algorithm 3
         // (compute_partial_u_from_v) or Algorithm 4
         // (compute_partial_u_from_v_1) primitive, then appends the
         // resulting entries directly into u_data_t. Untouched rows
-        // are left as they were on entry; in the typical Phase-3
-        // flow u_data_t starts empty (default for a freshly
-        // constructed Decomposition) so only rows reachable from
-        // cols become populated. Caller responsibilities:
+        // are left as they were on entry; the typical caller passes
+        // a freshly constructed Decomposition (u_data_t empty) so
+        // only rows reachable from cols become populated. Caller
+        // responsibilities:
         //   - cols sorted ascending and unique;
         //   - bounds parallel to cols (one value bound per column);
         //   - cmp_op semantics matching the walker that will read
@@ -648,11 +649,11 @@ namespace oineus {
                                         size_t n_threads = 1,
                                         bool verbose = false);
 
-        // Phase-4 row-form U primitives. Solves (row r of U) V = e_r^T
-        // in residual style against V^T (lower unit-triangular,
-        // forward substitution). Each row solve is independent and
-        // writes its row directly into u_data_t -- no col->row stage
-        // is needed. Caller must build vt_data once via
+        // Row-form U primitives. Solves (row r of U) V = e_r^T in
+        // residual style against V^T (lower unit-triangular, forward
+        // substitution). Each row solve is independent and writes its
+        // row directly into u_data_t -- no col->row stage is needed.
+        // Caller must build vt_data once via
         // MatrixTraits::col_to_row_format_parallel restricted to the
         // dim of interest, and pass it in.
         //
@@ -2236,9 +2237,9 @@ namespace oineus {
         auto col_inv_elapsed = timer.elapsed_reset();
 
         // Stage B: append cols-indexed entries from u_data into the
-        // existing u_data_t. u_data_t starts empty in the typical
-        // Phase-3 flow, so this is effectively a fresh fill of the
-        // rows reachable from cols.
+        // existing u_data_t. The typical caller passes a freshly
+        // constructed Decomposition (u_data_t empty), so this is
+        // effectively a fresh fill of the rows reachable from cols.
         MatrixTraits::append_col_to_row_format_parallel_sparse(
                 u_data, cols, u_data_t, static_cast<int>(n_threads));
 
