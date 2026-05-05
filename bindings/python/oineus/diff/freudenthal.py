@@ -6,9 +6,10 @@ from .diff_filtration import DiffFiltration
 from ._tensor_utils import tensor_to_real_numpy, gather_values
 
 
-def freudenthal_filtration(data, negate, wrap, max_dim, n_threads):
+def freudenthal_filtration(data, negate=False, wrap=False, max_dim=3, n_threads=1):
     tensor = epy.astensor(data)
     np_data = tensor_to_real_numpy(tensor)
+    max_dim = min(max_dim, np_data.ndim)
     fil, cv = _oineus.get_freudenthal_filtration_and_crit_vertices(
         np_data, negate, wrap, max_dim, n_threads
     )

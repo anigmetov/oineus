@@ -11,6 +11,25 @@ _OPT_CLASS_BY_FIL_TYPE = {
 }
 
 
+def _opt_class_for_filtration(fil):
+    """Pick the C++ TopologyOptimizer instantiation for this cell type."""
+    if isinstance(fil, DiffFiltration):
+        fil = fil.under_fil
+    cls = _OPT_CLASS_BY_FIL_TYPE.get(type(fil))
+    if cls is None:
+        raise RuntimeError(
+            f"unknown filtration type {type(fil).__name__}; expected one of "
+            f"{[t.__name__ for t in _OPT_CLASS_BY_FIL_TYPE]}"
+        )
+    return cls, fil
+
+
+def make_under_topology_optimizer(fil, *, defer_reduction: bool = False):
+    """Construct the C++ TopologyOptimizer for any filtration cell type."""
+    cls, under_fil = _opt_class_for_filtration(fil)
+    return cls(under_fil, defer_reduction=defer_reduction)
+
+
 class TopologyOptimizer:
     """
     A wrapper around C++ topology optimizer.
@@ -18,15 +37,8 @@ class TopologyOptimizer:
     correct instantiation from the type of the underlying filtration.
     """
     def __init__(self, fil):
-        if isinstance(fil, DiffFiltration):
-            fil = fil.under_fil
-
-        cls = _OPT_CLASS_BY_FIL_TYPE.get(type(fil))
-        if cls is None:
-            raise RuntimeError(
-                f"unknown filtration type {type(fil).__name__} in oineus.diff.TopologyOptimizer constructor"
-            )
-        self.under_opt = cls(fil)
+        cls, under_fil = _opt_class_for_filtration(fil)
+        self.under_opt = cls(under_fil)
 
     def compute_diagram(self, include_inf_points: bool):
         return self.under_opt.compute_diagram(include_inf_points)
@@ -37,11 +49,12 @@ class TopologyOptimizer:
     def get_nth_persistence(self, dim: int, n: int):
         return self.under_opt.get_nth_persistence(dim=dim, n=n)
 
-    def match(self, template_dgm, dim: int, wasserstein_q: float = 1.0, return_wasserstein_distance: bool = False):
+    def match(self, template_dgm, dim: int, wasserstein_q: float = 1.0, wasserstein_delta: float = 0.01, return_wasserstein_distance: bool = False):
         return self.under_opt.match(
             template_dgm=template_dgm,
             dim=dim,
             wasserstein_q=wasserstein_q,
+            wasserstein_delta=wasserstein_delta,
             return_wasserstein_distance=return_wasserstein_distance,
         )
 

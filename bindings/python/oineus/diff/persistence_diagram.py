@@ -3,6 +3,7 @@ import torch
 import numpy as np
 
 from .diff_filtration import DiffFiltration
+from .top_optimizer import make_under_topology_optimizer
 
 
 _STRATEGY_MAP = {
@@ -293,6 +294,9 @@ class PersistenceDiagramHelper(torch.autograd.Function):
             inf_deaths = torch.full_like(inf_births, float('inf'), dtype=fil_values.dtype, device=fil_values.device)
             inf_dgm = torch.stack([inf_births, inf_deaths], dim=1)
             diagram = torch.cat([finite_dgm, inf_dgm], dim=0)
+            ctx.n_fin = int(fin_mask.sum().item())
+            ctx.fin_idx_dgm = fin_idx_dgm
+            ctx.inf_births_inds = inf_births_inds
         else:
             diagram = fil_values[index_dgm]
 
@@ -307,7 +311,20 @@ class PersistenceDiagramHelper(torch.autograd.Function):
 
         if ctx.gradient_method == "dgm-loss":
             grad_vals = torch.zeros(fil_len, dtype=grad_output.dtype, device=grad_output.device)
-            grad_vals[index_dgm.flatten()] = grad_output.flatten()
+            if ctx.include_inf_points:
+                # Split forward layout: finite pairs first, then inf-death pairs.
+                # Inf-death rows have an out-of-range index in the death column;
+                # only birth indices are real. Death is the constant +inf, so
+                # its gradient is dropped.
+                n_fin = ctx.n_fin
+                fin_idx_dgm = ctx.fin_idx_dgm
+                inf_births_inds = ctx.inf_births_inds
+                if fin_idx_dgm.shape[0] > 0:
+                    grad_vals[fin_idx_dgm.flatten()] = grad_output[:n_fin].flatten()
+                if inf_births_inds.shape[0] > 0:
+                    grad_vals[inf_births_inds] = grad_output[n_fin:, 0]
+            else:
+                grad_vals[index_dgm.flatten()] = grad_output.flatten()
             return grad_vals, None, None, None, None, None, None, None, None, None
 
         if ctx.gradient_method != "crit-sets":
@@ -448,7 +465,7 @@ class PersistenceDiagrams:
         self._conflict_strategy = conflict_strategy
 
         if gradient_method == "crit-sets":
-            top_opt = _oineus.TopologyOptimizer(fil.under_fil, defer_reduction=True)
+            top_opt = make_under_topology_optimizer(fil.under_fil, defer_reduction=True)
             nondiff_dgms = top_opt.compute_diagram(include_inf_points=include_inf_points)
             self._top_opt = top_opt
             if n_threads is not None:

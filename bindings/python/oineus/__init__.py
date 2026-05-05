@@ -9,13 +9,14 @@ import scipy.sparse
 
 from . import _oineus
 
-from ._oineus import ConflictStrategy, DenoiseStrategy, VREdge
+from ._oineus import ConflictStrategy, DenoiseStrategy, VREdge, FiltrationKind
 from ._oineus import DiagramPlaneDomain, FrechetMeanInit
 from ._oineus import CombinatorialProdSimplex, CombinatorialSimplex,Simplex, ProdSimplex
 from ._oineus import Filtration, ProdFiltration
 from ._oineus import Decomposition, IndexDiagramPoint, DiagramPoint, Diagrams
 from ._oineus import ReductionParams, KICRParams, KerImCokReduced, KerImCokReducedProd
 from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizer, TopologyOptimizerProd
+from ._oineus import TopologyOptimizerCube_1D, TopologyOptimizerCube_2D, TopologyOptimizerCube_3D
 from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise_target, get_induced_matching
 from ._oineus import get_nth_persistence, get_permutation_dtv
 from ._oineus import bottleneck_distance as _bottleneck_distance_cpp
@@ -95,9 +96,63 @@ except:
 
 
 __all__ = [
+    # filtration constructors
+    "vr_filtration",
+    "freudenthal_filtration",
+    "cube_filtration",
+    "min_filtration",
+    "mapping_cylinder",
+    "multiply_filtration",
+    # diagram computation
     "compute_diagrams_ls",
     "compute_diagrams_vr",
     "compute_diagrams_alpha",
+    "compute_kernel_image_cokernel_reduction",
+    "compute_ker_cok_reduction_cyl",
+    "compute_relative_diagrams",
+    "get_induced_matching",
+    "get_nth_persistence",
+    # core types
+    "Filtration",
+    "ProdFiltration",
+    "CubeFiltration_1D",
+    "CubeFiltration_2D",
+    "CubeFiltration_3D",
+    "Simplex",
+    "ProdSimplex",
+    "CombinatorialSimplex",
+    "CombinatorialProdSimplex",
+    "Cube_1D",
+    "Cube_2D",
+    "Cube_3D",
+    "CombinatorialCube_1D",
+    "CombinatorialCube_2D",
+    "CombinatorialCube_3D",
+    "Grid_1D",
+    "Grid_2D",
+    "Grid_3D",
+    "FiltrationKind",
+    "Decomposition",
+    "ReductionParams",
+    "KICRParams",
+    "KerImCokReduced",
+    "KerImCokReducedProd",
+    "TopologyOptimizer",
+    "TopologyOptimizerProd",
+    "TopologyOptimizerCube_1D",
+    "TopologyOptimizerCube_2D",
+    "TopologyOptimizerCube_3D",
+    "DiagramPoint",
+    "IndexDiagramPoint",
+    "Diagrams",
+    "IndicesValues",
+    "IndicesValuesProd",
+    "ConflictStrategy",
+    "DenoiseStrategy",
+    "VREdge",
+    "DiagramPlaneDomain",
+    "FrechetMeanInit",
+    # helpers
     "get_boundary_matrix",
     "is_reduced",
     "plot_diagram",
@@ -850,8 +905,10 @@ def frechet_mean(diagrams,
     diagrams = [as_real_numpy(_check_numpy_diagram_shape(d)) for d in diagrams]
     if weights is not None:
         weights = np.asarray(weights)
-        assert weights.ndim == 1, "weights must be a 1D array"
-        assert weights.shape[0] == len(diagrams), "weights must have same length as diagrams"
+        if weights.ndim != 1:
+            raise ValueError("weights must be a 1D array")
+        if weights.shape[0] != len(diagrams):
+            raise ValueError("weights must have same length as diagrams")
     custom_initial_barycenter = (
         None if custom_initial_barycenter is None
         else as_real_numpy(_check_numpy_diagram_shape(custom_initial_barycenter))
@@ -891,7 +948,8 @@ def max_distance(data: np.ndarray, from_pwdists: bool=False):
     if from_pwdists:
         return 1.00001 * np.min(np.max(data, axis=1))
     else:
-        assert data.ndim == 2 and data.shape[0] >= 2
+        if data.ndim != 2 or data.shape[0] < 2:
+            raise ValueError("max_distance: data must be a 2D array with at least 2 rows")
         diff = data[:, np.newaxis, :] - data[np.newaxis, :, :]
         squared_distances = np.sum(diff**2, axis=2)
         return 1.00001 * np.sqrt(np.min(np.max(squared_distances, axis=1)))
@@ -942,10 +1000,11 @@ def vr_filtration(data: np.ndarray,
         Threads used for the (parallel) sort inside the Filtration ctor.
         Enumeration itself is single-threaded.
     """
-    assert data.ndim == 2
+    if data.ndim != 2:
+        raise ValueError("data must be a 2D array")
 
-    if from_pwdists:
-        assert data.shape[0] == data.shape[1]
+    if from_pwdists and data.shape[0] != data.shape[1]:
+        raise ValueError("from_pwdists=True requires a square pairwise-distance matrix")
 
     if max_diameter < 0:
         max_diameter = max_distance(data, from_pwdists)
@@ -1044,14 +1103,16 @@ def _alpha_shapes_filtration(points: np.ndarray,
     from diode; downstream callers may overwrite them (e.g. with squared MEB
     radii in the differentiable case).
     """
+    if points.ndim != 2:
+        raise ValueError("points must be a 2D array of shape (n_points, dim)")
+    if points.shape[1] not in (2, 3):
+        raise ValueError("Alpha-shapes only support 2D and 3D point clouds")
     if not _HAS_DIODE:
         raise ImportError(
             "Alpha-shape construction requires the `diode` package "
             "(https://github.com/mrzv/diode). Install it via "
             "`pip install diode` or build from source."
         )
-    assert points.ndim == 2
-    assert points.shape[1] in [2, 3], "Alpha-shapes only support 2D and 3D point clouds"
 
     # Diode wants lists, we accept NumPy array for convenience
     if isinstance(bbox_min, np.ndarray):
@@ -1070,9 +1131,12 @@ def _alpha_shapes_filtration(points: np.ndarray,
 
     if weights is not None:
         weights = np.asarray(weights)
-        assert weights.ndim == 1, "weights must be a 1D array"
-        assert weights.shape[0] == points.shape[0], "weights must have same length as points"
-        assert points.shape[1] == 3, "Weighted alpha-shapes require 3D points"
+        if weights.ndim != 1:
+            raise ValueError("weights must be a 1D array")
+        if weights.shape[0] != points.shape[0]:
+            raise ValueError("weights must have same length as points")
+        if points.shape[1] != 3:
+            raise ValueError("Weighted alpha-shapes require 3D points")
 
         weighted_points = np.column_stack((points, weights))
 
@@ -1152,8 +1216,9 @@ def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d: int, q: float, mi
     func = getattr(_oineus, f"get_ls_wasserstein_matching_target_values")
 
     if type(dgm) is np.ndarray:
+        if len(dgm.shape) != 2 or dgm.shape[1] != 2:
+            raise ValueError("dgm must be a 2D array of shape (n_points, 2)")
         dgm_1 = []
-        assert len(dgm.shape) == 2 and dgm.shape[1] == 2
         for p in dgm:
             dgm_1.append(DiagramPoint(p[0], p[1]))
         dgm = dgm_1
@@ -1203,7 +1268,7 @@ def compute_kernel_image_cokernel_reduction(K, L, params=None, reduction_params=
 
 
 def compute_ker_cok_reduction_cyl(fil_2, fil_3):
-    fil_min = _oineus.min_filtration(fil_2, fil_3)
+    fil_min = min_filtration(fil_2, fil_3)
 
     id_domain = fil_3.size() + fil_min.size() + 1
     id_codomain = id_domain + 1
@@ -1213,13 +1278,13 @@ def compute_ker_cok_reduction_cyl(fil_2, fil_3):
     # id_codomain: id of vertex at the bottom of the cylinder
     # i.e, we multiply fil_min with id_codomain
 
-    v0 = _oineus.Simplex(id_domain, [id_domain])
-    v1 = _oineus.Simplex(id_codomain, [id_codomain])
+    v0 = _oineus.Simplex(id_domain, [id_domain], 0.0)
+    v1 = _oineus.Simplex(id_codomain, [id_codomain], 0.0)
 
-    fil_cyl = _oineus.mapping_cylinder(fil_3, fil_min, v0, v1)
+    fil_cyl = mapping_cylinder(fil_3, fil_min, v0, v1)
 
     # to get a subcomplex, we multiply each fil_3 with id_domain
-    fil_3_prod = _oineus.multiply_filtration(fil_3, v0)
+    fil_3_prod = multiply_filtration(fil_3, v0)
 
     params = _oineus.KICRParams()
     params.kernel = params.cokernel = True
