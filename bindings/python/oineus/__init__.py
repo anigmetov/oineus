@@ -1043,20 +1043,46 @@ def is_reduced(a):
             lowest_ones.append(np.max(np.where(a[:, col_idx] % 2 == 1)))
     return len(lowest_ones) == len(set(lowest_ones))
 
-def mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain, with_indices=False):
+def mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain,
+                     v_domain_value=None, v_codomain_value=None, with_indices=False):
+    """Build the mapping cylinder of the inclusion fil_domain -> fil_codomain.
+
+    The auxiliary vertex values default to filtration-order -inf
+    (``fil_domain.neg_infinity()`` / ``fil_codomain.neg_infinity()``), which
+    keeps the cylinder's persistent homology equivalent to the inclusion's.
+    Pass explicit values only if you intentionally want the auxiliary vertices
+    to enter at a finite point in the filtration.
+    """
+    # Accept either valued (oin.Simplex / SimplexValue) or bare (CombinatorialSimplex)
+    # auxiliary vertices. Strip the value -- we use the explicit *_value args
+    # below, so any value baked into the simplex would only confuse readers.
     if isinstance(v_codomain, _oineus.Simplex) or isinstance(v_codomain, _oineus.ProdSimplex):
         v_codomain = v_codomain.combinatorial_cell
     if isinstance(v_domain, _oineus.Simplex) or isinstance(v_domain, _oineus.ProdSimplex):
         v_domain = v_domain.combinatorial_cell
+    if v_domain_value is None:
+        v_domain_value = fil_domain.neg_infinity()
+    if v_codomain_value is None:
+        v_codomain_value = fil_codomain.neg_infinity()
     if with_indices:
-        return _oineus._mapping_cylinder_with_indices(fil_domain, fil_codomain, v_domain, v_codomain)
+        return _oineus._mapping_cylinder_with_indices(fil_domain, fil_codomain, v_domain, v_codomain,
+                                                      v_domain_value, v_codomain_value)
     else:
-        return _oineus._mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain)
+        return _oineus._mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain,
+                                         v_domain_value, v_codomain_value)
 
-def multiply_filtration(fil, sigma):
+def multiply_filtration(fil, sigma, sigma_value=None):
+    """Multiply every cell in fil by the auxiliary simplex sigma.
+
+    Each product cell receives value ``fil.fil_max(cell.value, sigma_value)``.
+    sigma_value defaults to ``fil.neg_infinity()`` so each product cell
+    inherits its primary factor's value unchanged.
+    """
     if isinstance(sigma, _oineus.Simplex):
         sigma = sigma.combinatorial_cell
-    return _oineus._multiply_filtration(fil, sigma)
+    if sigma_value is None:
+        sigma_value = fil.neg_infinity()
+    return _oineus._multiply_filtration(fil, sigma, sigma_value)
 
 def min_filtration(fil_1, fil_2, with_indices=False):
     if with_indices:
@@ -1278,8 +1304,12 @@ def compute_ker_cok_reduction_cyl(fil_2, fil_3):
     # id_codomain: id of vertex at the bottom of the cylinder
     # i.e, we multiply fil_min with id_codomain
 
-    v0 = _oineus.Simplex(id_domain, [id_domain], 0.0)
-    v1 = _oineus.Simplex(id_codomain, [id_codomain], 0.0)
+    # The wrapper functions below default the auxiliary vertex values to
+    # fil.neg_infinity(), so the value carried on these Simplex objects is
+    # discarded. We still need a Simplex/CombinatorialSimplex to specify
+    # the vertex labels.
+    v0 = _oineus.CombinatorialSimplex(id_domain, [id_domain])
+    v1 = _oineus.CombinatorialSimplex(id_codomain, [id_codomain])
 
     fil_cyl = mapping_cylinder(fil_3, fil_min, v0, v1)
 

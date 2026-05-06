@@ -402,10 +402,30 @@ namespace oineus {
 
         bool cmp(Real a, Real b) const { return negate() ? (a > b) : (a < b); }
 
+        // Filtration-order minimum: the value that enters earlier in the
+        // filtration. Lower-star (negate=false): std::min. Upper-star
+        // (negate=true): std::max.
+        Real fil_min(Real a, Real b) const { return cmp(a, b) ? a : b; }
+
+        // Filtration-order maximum: the value that enters later in the
+        // filtration. Lower-star: std::max. Upper-star: std::min.
+        Real fil_max(Real a, Real b) const { return cmp(a, b) ? b : a; }
+
         Real infinity() const
         {
             static_assert(std::numeric_limits<Real>::has_infinity, "Real does not have inf");
             return negate() ? -std::numeric_limits<Real>::infinity() : std::numeric_limits<Real>::infinity();
+        }
+
+        // Filtration-order minus infinity: a value strictly earlier than
+        // every representable filtration value. Lower-star: -inf. Upper-star:
+        // +inf. Use as the value of an auxiliary cell whose presence must
+        // not perturb the filtration order of any real cell (e.g. the
+        // vertices added when building a mapping cylinder).
+        Real neg_infinity() const
+        {
+            static_assert(std::numeric_limits<Real>::has_infinity, "Real does not have inf");
+            return negate() ? std::numeric_limits<Real>::infinity() : -std::numeric_limits<Real>::infinity();
         }
 
         // without cohomology, index in D == index in filtration. For cohomology, indexation is reversed

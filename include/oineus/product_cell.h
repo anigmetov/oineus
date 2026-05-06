@@ -121,43 +121,74 @@ std::vector<size_t> get_inclusion_mapping(const Filtration<Cell, Real>& fil_doma
     return result;
 }
 
+// Append product cells (cell, sigma) to `result`. Each product cell
+// receives value fil_max(cell.value, sigma_value) under the supplied
+// `negate` flag. Pass sigma_value = filtration-order -inf (i.e.
+// Filtration::neg_infinity()) to have the product inherit cell.value
+// unchanged -- useful for mapping cylinders where the auxiliary vertex
+// must not perturb the filtration order.
 template<class CWV>
-void append_products(const std::vector<CWV>& cells, const Simplex<typename CWV::Int>& sigma,
+void append_products(const std::vector<CWV>& cells,
+        const Simplex<typename CWV::Int>& sigma,
+        typename CWV::Real sigma_value,
+        bool negate,
         std::vector<CellWithValue<ProductCell<typename CWV::Cell, Simplex<typename CWV::Int>>, typename CWV::Real>>& result)
 {
     CALI_CXX_MARK_FUNCTION;
     using ProdCell = ProductCell<typename CWV::Cell, Simplex<typename CWV::Int>>;
+    using Real = typename CWV::Real;
+
+    auto fil_max = [negate](Real a, Real b) { return negate ? std::min(a, b) : std::max(a, b); };
 
     for(const auto& cell: cells) {
-        result.emplace_back(ProdCell(cell.get_cell(), sigma), cell.get_value());
+        result.emplace_back(ProdCell(cell.get_cell(), sigma), fil_max(cell.get_value(), sigma_value));
     }
 }
 
 template<class Cell, class Real>
 Filtration<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>
-multiply_filtration(const Filtration<Cell, Real>& fil, const Simplex<typename Cell::Int>& sigma)
+multiply_filtration(const Filtration<Cell, Real>& fil,
+        const Simplex<typename Cell::Int>& sigma,
+        Real sigma_value)
 {
     CALI_CXX_MARK_FUNCTION;
     using ProdCWV = CellWithValue<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>;
 
     std::vector<ProdCWV> result_simplices;
     result_simplices.reserve(fil.size());
-    append_products(fil.cells(), sigma, result_simplices);
+    append_products(fil.cells(), sigma, sigma_value, fil.negate(), result_simplices);
 
     return { result_simplices, fil.negate() };
 }
 
+// Convenience overload: sigma value defaults to filtration-order -inf,
+// so each product cell inherits the value of its primary factor.
 template<class Cell, class Real>
 Filtration<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>
-build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtration<Cell, Real>& fil_codomain, const Simplex<typename Cell::Int>& v_domain, const Simplex<typename Cell::Int>& v_codomain)
+multiply_filtration(const Filtration<Cell, Real>& fil, const Simplex<typename Cell::Int>& sigma)
+{
+    return multiply_filtration(fil, sigma, fil.neg_infinity());
+}
+
+template<class Cell, class Real>
+Filtration<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>
+build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain,
+        const Filtration<Cell, Real>& fil_codomain,
+        const Simplex<typename Cell::Int>& v_domain,
+        const Simplex<typename Cell::Int>& v_codomain,
+        Real v_domain_value,
+        Real v_codomain_value)
 /**
- *
  * @tparam Cell class of cells in filtrations
  * @tparam Real double or float
  * @param fil_domain filtration of space L
  * @param fil_codomain filtration of space K, L \subset K
  * @param v_domain vertex by which cells of fil_domain are multiplied to get the top of the mapping cylinder
- * @param v_codomain vertex by which cells of fil_domain are multiplied to get the top of the mapping cylinder
+ * @param v_codomain vertex by which cells of fil_codomain are multiplied to get the bottom of the mapping cylinder
+ * @param v_domain_value filtration value to assign to v_domain. Pass fil_domain.neg_infinity() (the default
+ *        in the convenience overload) to keep the cylinder's persistent homology equivalent to the inclusion's.
+ * @param v_codomain_value filtration value to assign to v_codomain. Pass fil_codomain.neg_infinity() for the
+ *        same reason.
  * @return Filtration of a mapping cylinder of the inclusion L \to K. Type of cells in the returned filtration is Cell \times Simplex.
  */
 {
@@ -181,31 +212,56 @@ build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain, const Filtratio
     auto f = get_inclusion_mapping<Cell, Real>(fil_domain, fil_codomain);
 
     Simplex<Int> edge {std::max(v_domain.get_id(), v_codomain.get_id()) + 1, {v_domain.vertices_[0], v_codomain.vertices_[0]}};
+    // Edge spans both auxiliary vertices, so it must enter the filtration no
+    // earlier than either endpoint.
+    Real edge_value = fil_domain.fil_max(v_domain_value, v_codomain_value);
 
     std::vector<ResultCell> cyl_simplices;
     cyl_simplices.reserve(2 * fil_domain.size() + fil_codomain.size());
 
+    bool negate = fil_domain.negate();
     // get top simplices
-    append_products(fil_domain.cells(), v_domain, cyl_simplices);
+    append_products(fil_domain.cells(), v_domain, v_domain_value, negate, cyl_simplices);
     // get bottom simplices
-    append_products(fil_codomain.cells(), v_codomain, cyl_simplices);
+    append_products(fil_codomain.cells(), v_codomain, v_codomain_value, negate, cyl_simplices);
     // get cylinder interior simplices
-    append_products(fil_domain.cells(), edge, cyl_simplices);
+    append_products(fil_domain.cells(), edge, edge_value, negate, cyl_simplices);
 
     return Filtration<ProdCell, Real>(cyl_simplices, fil_domain.negate());
 }
 
+// Convenience overload: vertex values default to filtration-order -inf,
+// matching the historical behavior where the auxiliary vertices' values
+// were ignored.
+template<class Cell, class Real>
+Filtration<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>
+build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain,
+        const Filtration<Cell, Real>& fil_codomain,
+        const Simplex<typename Cell::Int>& v_domain,
+        const Simplex<typename Cell::Int>& v_codomain)
+{
+    return build_mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain,
+            fil_domain.neg_infinity(), fil_codomain.neg_infinity());
+}
+
 template<class Cell, class Real>
 std::pair<Filtration<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>, std::vector<typename Cell::Int>>
-build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain, const Filtration<Cell, Real>& fil_codomain, const Simplex<typename Cell::Int>& v_domain, const Simplex<typename Cell::Int>& v_codomain)
+build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain,
+        const Filtration<Cell, Real>& fil_codomain,
+        const Simplex<typename Cell::Int>& v_domain,
+        const Simplex<typename Cell::Int>& v_codomain,
+        Real v_domain_value,
+        Real v_codomain_value)
 /**
- *
  * @tparam Cell class of cells in filtrations
  * @tparam Real double or float
  * @param fil_domain filtration of space L
  * @param fil_codomain filtration of space K, L \subset K
  * @param v_domain vertex by which cells of fil_domain are multiplied to get the top of the mapping cylinder
- * @param v_codomain vertex by which cells of fil_domain are multiplied to get the top of the mapping cylinder
+ * @param v_codomain vertex by which cells of fil_codomain are multiplied to get the bottom of the mapping cylinder
+ * @param v_domain_value filtration value of v_domain (use fil_domain.neg_infinity() to keep results equivalent
+ *        to the inclusion's persistent homology).
+ * @param v_codomain_value filtration value of v_codomain (likewise).
  * @return A pair, first component: filtration of a mapping cylinder of the inclusion L \to K, second component: indices of critical values.
  * Second component: indices of critical values. Type of cells in the returned filtration is Cell \times Simplex. Indices are with respect to concatenated arrays
  * of critical values of fil_domain and fil_codomain (in this order).
@@ -216,7 +272,10 @@ build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain, co
     using ProdCell = ProductCell<Cell, Simplex<Int>>;
     using ResultCell = CellWithValue<ProdCell, Real>;
 
-    auto fil = build_mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain);
+    auto fil = build_mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain,
+            v_domain_value, v_codomain_value);
+
+    Real edge_value = fil_domain.fil_max(v_domain_value, v_codomain_value);
 
     std::vector<Int> crit_val_indices;
     crit_val_indices.reserve(fil.size());
@@ -224,31 +283,43 @@ build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain, co
         Int cell_id = cell.get_id();
         if (cell_id < static_cast<Int>(fil_domain.size())) {
             // domain simplex x v_domain, critical value comes from domain
-            assert(cell.get_factor_2().vertices_ == std::vector({v_domain.get_id()}));
-            assert(cell.get_value() == fil_domain.get_cell_value(cell_id));
+            assert(cell.get_factor_2().vertices_ == std::vector<Int>({v_domain.get_id()}));
+            assert(cell.get_value() == fil_domain.fil_max(fil_domain.get_cell_value(cell_id), v_domain_value));
 
             crit_val_indices.push_back(cell_id);
         } else if (cell_id < static_cast<Int>(fil_domain.size() + fil_codomain.size())) {
             // codomain simplex x v_codomain, critical value comes from codomain
             // in the concatenated tensor, it's still cell_id
-            assert(cell.get_factor_2().vertices_ == std::vector({v_codomain.get_id()}));
-            assert(cell.get_value() == fil_codomain.get_cell_value(cell_id-fil_domain.size()));
+            assert(cell.get_factor_2().vertices_ == std::vector<Int>({v_codomain.get_id()}));
+            assert(cell.get_value() == fil_codomain.fil_max(fil_codomain.get_cell_value(cell_id-fil_domain.size()), v_codomain_value));
 
             crit_val_indices.push_back(cell_id);
         } else {
             // domain simplex x [v_domain, v_codomain] critical value comes from domain
-            assert(cell.get_factor_2().vertices_ == std::vector({v_domain.get_id(), v_codomain.get_id()}) or cell.get_factor_2().vertices_ == std::vector({v_codomain.get_id(), v_domain.get_id()}) );
+            assert(cell.get_factor_2().vertices_ == std::vector<Int>({v_domain.get_id(), v_codomain.get_id()}) or cell.get_factor_2().vertices_ == std::vector<Int>({v_codomain.get_id(), v_domain.get_id()}) );
             assert(cell_id >= static_cast<Int>(fil_domain.size() + fil_codomain.size()));
 
             Int domain_id = cell_id - fil_domain.size() - fil_codomain.size();
 
-            assert(cell.get_value() == fil_domain.get_cell_value(domain_id));
+            assert(cell.get_value() == fil_domain.fil_max(fil_domain.get_cell_value(domain_id), edge_value));
 
             crit_val_indices.push_back(domain_id);
         }
     }
 
     return { fil, crit_val_indices };
+}
+
+// Convenience overload: vertex values default to filtration-order -inf.
+template<class Cell, class Real>
+std::pair<Filtration<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>, std::vector<typename Cell::Int>>
+build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain,
+        const Filtration<Cell, Real>& fil_codomain,
+        const Simplex<typename Cell::Int>& v_domain,
+        const Simplex<typename Cell::Int>& v_codomain)
+{
+    return build_mapping_cylinder_with_indices(fil_domain, fil_codomain, v_domain, v_codomain,
+            fil_domain.neg_infinity(), fil_codomain.neg_infinity());
 }
 
 } // end of namespace oineus

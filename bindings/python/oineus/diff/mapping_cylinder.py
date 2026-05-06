@@ -6,7 +6,8 @@ from .diff_filtration import DiffFiltration
 
 
 def mapping_cylinder_filtration(fil_domain: DiffFiltration, fil_codomain: DiffFiltration,
-                                v_domain, v_codomain) -> DiffFiltration:
+                                v_domain, v_codomain,
+                                v_domain_value=None, v_codomain_value=None) -> DiffFiltration:
     assert type(fil_domain) is DiffFiltration
     assert type(fil_codomain) is DiffFiltration
 
@@ -19,8 +20,13 @@ def mapping_cylinder_filtration(fil_domain: DiffFiltration, fil_codomain: DiffFi
     under_fil_dom = fil_domain.under_fil
     under_fil_cod = fil_codomain.under_fil
 
+    if v_domain_value is None:
+        v_domain_value = under_fil_dom.neg_infinity()
+    if v_codomain_value is None:
+        v_codomain_value = under_fil_cod.neg_infinity()
+
     under_cyl_fil, cyl_val_inds = _oineus._mapping_cylinder_with_indices(
-        under_fil_dom, under_fil_cod, v_domain, v_codomain
+        under_fil_dom, under_fil_cod, v_domain, v_codomain, v_domain_value, v_codomain_value
     )
 
     cyl_val_inds = epy.astensor(np.array(cyl_val_inds, dtype=np.int64))

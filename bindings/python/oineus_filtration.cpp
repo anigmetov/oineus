@@ -115,6 +115,10 @@ void init_oineus_filtration(nb::module_& m)
             .def("__iter__", [](Filtration& fil) { return nb::make_iterator(nb::type<Filtration>(), "simplex_iterator", fil.begin(), fil.end()); }, nb::keep_alive<0, 1>())
             .def("__getitem__", [](Filtration& fil, int i) { if (i < 0) i = fil.size() + i; return fil.get_cell(i);})
             .def_prop_ro("negate", &Filtration::negate)
+            .def("infinity", &Filtration::infinity, "filtration-order +inf: a value strictly later than every cell")
+            .def("neg_infinity", &Filtration::neg_infinity, "filtration-order -inf: a value strictly earlier than every cell")
+            .def("fil_min", &Filtration::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min: the value that enters earlier")
+            .def("fil_max", &Filtration::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max: the value that enters later")
             .def("max_dim", &Filtration::max_dim, "maximal dimension of a cell in filtration")
             .def("cells", &Filtration::cells_copy, "copy of all cells in filtration order")
             .def("simplices", &Filtration::cells_copy, "copy of all simplices (cells) in filtration order")
@@ -198,6 +202,10 @@ void init_oineus_filtration(nb::module_& m)
             1>())
             .def("__getitem__", [](ProdFiltration& fil, size_t i) { return fil.get_cell(i);})
             .def_prop_ro("negate", &ProdFiltration::negate)
+            .def("infinity", &ProdFiltration::infinity, "filtration-order +inf: a value strictly later than every cell")
+            .def("neg_infinity", &ProdFiltration::neg_infinity, "filtration-order -inf: a value strictly earlier than every cell")
+            .def("fil_min", &ProdFiltration::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min: the value that enters earlier")
+            .def("fil_max", &ProdFiltration::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max: the value that enters later")
             .def("max_dim", &ProdFiltration::max_dim, "maximal dimension of a cell in filtration")
             .def("cells", &ProdFiltration::cells_copy, "copy of all cells in filtration order")
             .def("size", &ProdFiltration::size, "number of cells in filtration")
@@ -272,6 +280,10 @@ void init_oineus_filtration(nb::module_& m)
                     return fil.get_cell(i); \
                 }) \
             .def_prop_ro("negate", &CubeFiltration_##DIM##D::negate) \
+            .def("infinity", &CubeFiltration_##DIM##D::infinity, "filtration-order +inf") \
+            .def("neg_infinity", &CubeFiltration_##DIM##D::neg_infinity, "filtration-order -inf") \
+            .def("fil_min", &CubeFiltration_##DIM##D::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min") \
+            .def("fil_max", &CubeFiltration_##DIM##D::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max") \
             .def("max_dim", &CubeFiltration_##DIM##D::max_dim, "maximal dimension of a cell in filtration") \
             .def("cells", &CubeFiltration_##DIM##D::cells_copy, "copy of all cells in filtration order") \
             .def("cubes", &CubeFiltration_##DIM##D::cells_copy, "copy of all cells in filtration order") \
@@ -331,9 +343,40 @@ void init_oineus_filtration(nb::module_& m)
 
     #undef BIND_CUBE_FILTRATION
 
-    m.def("_mapping_cylinder", &oin::build_mapping_cylinder<Simplex, oin_real>, nb::arg("fil_domain"), nb::arg("fil_codomain"), nb::arg("v_domain"), nb::arg("v_codomain"), "return mapping cylinder filtration of inclusion fil_domain -> fil_codomain, fil_domain is multiplied by v_domain and fil_codomain is multiplied by v_codomain");
-    m.def("_mapping_cylinder_with_indices", &oin::build_mapping_cylinder_with_indices<Simplex, oin_real>, nb::arg("fil_domain"), nb::arg("fil_codomain"), nb::arg("v_domain"), nb::arg("v_codomain"), "return mapping cylinder filtration of inclusion fil_domain -> fil_codomain, fil_domain is multiplied by v_domain and fil_codomain is multiplied by v_codomain");
-    m.def("_multiply_filtration", &oin::multiply_filtration<Simplex, oin_real>, nb::arg("fil"), nb::arg("sigma"), "return a filtration with each simplex in fil multiplied by simplex sigma");
+    m.def("_mapping_cylinder",
+          [](const Filtration& fil_domain, const Filtration& fil_codomain,
+             const Simplex& v_domain, const Simplex& v_codomain,
+             oin_real v_domain_value, oin_real v_codomain_value) {
+              return oin::build_mapping_cylinder<Simplex, oin_real>(
+                  fil_domain, fil_codomain, v_domain, v_codomain,
+                  v_domain_value, v_codomain_value);
+          },
+          nb::arg("fil_domain"), nb::arg("fil_codomain"),
+          nb::arg("v_domain"), nb::arg("v_codomain"),
+          nb::arg("v_domain_value"), nb::arg("v_codomain_value"),
+          "return mapping cylinder filtration of inclusion fil_domain -> fil_codomain. "
+          "v_domain_value/v_codomain_value are the filtration values assigned to the "
+          "auxiliary vertices; pass fil.neg_infinity() to leave the cylinder's persistent "
+          "homology equivalent to the inclusion's.");
+    m.def("_mapping_cylinder_with_indices",
+          [](const Filtration& fil_domain, const Filtration& fil_codomain,
+             const Simplex& v_domain, const Simplex& v_codomain,
+             oin_real v_domain_value, oin_real v_codomain_value) {
+              return oin::build_mapping_cylinder_with_indices<Simplex, oin_real>(
+                  fil_domain, fil_codomain, v_domain, v_codomain,
+                  v_domain_value, v_codomain_value);
+          },
+          nb::arg("fil_domain"), nb::arg("fil_codomain"),
+          nb::arg("v_domain"), nb::arg("v_codomain"),
+          nb::arg("v_domain_value"), nb::arg("v_codomain_value"),
+          "return (mapping cylinder filtration, indices of critical values). See _mapping_cylinder.");
+    m.def("_multiply_filtration",
+          [](const Filtration& fil, const Simplex& sigma, oin_real sigma_value) {
+              return oin::multiply_filtration<Simplex, oin_real>(fil, sigma, sigma_value);
+          },
+          nb::arg("fil"), nb::arg("sigma"), nb::arg("sigma_value"),
+          "return a filtration with each simplex in fil multiplied by simplex sigma. "
+          "Each product cell receives value fil_max(cell.value, sigma_value).");
 
     m.def("_min_filtration", &oin::min_filtration<Simplex, oin_real>, nb::arg("fil_1"), nb::arg("fil_2"), "return a filtration where each simplex has minimal value from fil_1, fil_2");
     m.def("_min_filtration", &oin::min_filtration<ProdSimplex, oin_real>, nb::arg("fil_1"), nb::arg("fil_2"), "return a filtration where each cell has minimal value from fil_1, fil_2");

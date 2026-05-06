@@ -230,3 +230,115 @@ def test_max_distance_rejects_too_few_rows():
 def test_compute_diagrams_vr_rejects_non_2d():
     with pytest.raises(ValueError):
         oin.compute_diagrams_vr(np.zeros(5, dtype=REAL_DTYPE))
+
+
+# ---------------------------------------------------------------------------
+# Negate-aware Filtration helpers (fil_min, fil_max, neg_infinity)
+# and their downstream effect on multiply_filtration / mapping_cylinder
+# ---------------------------------------------------------------------------
+
+def test_filtration_fil_min_max_neg_infinity_lower_star():
+    pts = np.array([[0., 0.], [1., 0.], [0., 1.]], dtype=REAL_DTYPE)
+    fil = oin.vr_filtration(pts, max_dim=1)
+    assert fil.negate is False
+    assert fil.fil_min(1.0, 2.0) == 1.0
+    assert fil.fil_max(1.0, 2.0) == 2.0
+    assert fil.neg_infinity() == float("-inf")
+    assert fil.infinity() == float("inf")
+
+
+def test_filtration_fil_min_max_neg_infinity_negate_true():
+    # Hand-built negate=True filtration (the simplex values here are
+    # arbitrary -- not necessarily a proper upper-star assignment; we
+    # only need the flag to be set so we can exercise the helpers).
+    cells = [
+        oin.Simplex(0, [0], 5.0),
+        oin.Simplex(1, [1], 3.0),
+        oin.Simplex(2, [0, 1], 2.0),
+    ]
+    fil = oin.Filtration(cells, negate=True)
+    assert fil.negate is True
+    # negate=True: the value that "enters earlier" is the larger one.
+    assert fil.fil_min(1.0, 2.0) == 2.0
+    assert fil.fil_max(1.0, 2.0) == 1.0
+    assert fil.neg_infinity() == float("inf")
+    assert fil.infinity() == float("-inf")
+
+
+@pytest.mark.parametrize("negate", [False, True])
+def test_multiply_filtration_default_value_preserves_cell_values(negate):
+    """With sigma_value=neg_infinity (the default), product cells inherit
+    their primary factor's value verbatim -- regardless of sign."""
+    cells = [
+        oin.Simplex(0, [0], 0.5),
+        oin.Simplex(1, [1], 1.5),
+        oin.Simplex(2, [0, 1], 2.5),
+    ]
+    fil = oin.Filtration(cells, negate=negate)
+    sigma = oin._oineus.CombinatorialSimplex(99, [99])
+    prod = oin.multiply_filtration(fil, sigma)
+
+    # Each product cell has the same value as its primary factor.
+    src_values = sorted(fil.simplex_value_by_sorted_id(i) for i in range(fil.size()))
+    dst_values = sorted(prod.cell_value_by_sorted_id(i) for i in range(prod.size()))
+    assert src_values == pytest.approx(dst_values)
+
+
+def test_multiply_filtration_explicit_sigma_value_lower_star():
+    """For lower-star, an explicit sigma_value > all cell values clamps the
+    product values up to sigma_value (filtration-order max = std::max)."""
+    cells = [
+        oin.Simplex(0, [0], 0.5),
+        oin.Simplex(1, [1], 1.5),
+        oin.Simplex(2, [0, 1], 2.5),
+    ]
+    fil = oin.Filtration(cells, negate=False)
+    sigma = oin._oineus.CombinatorialSimplex(99, [99])
+    prod = oin.multiply_filtration(fil, sigma, sigma_value=10.0)
+
+    for i in range(prod.size()):
+        assert prod.cell_value_by_sorted_id(i) == pytest.approx(10.0)
+
+
+def test_multiply_filtration_explicit_sigma_value_negate_true():
+    """For negate=True, sigma_value=10.0 is filtration-earlier than every
+    cell, so fil_max(cell.value, sigma_value) = cell.value -- product
+    inherits cell.value unchanged. Use sigma_value=0.0 instead, which is
+    filtration-later than every cell, to force the value to 0.0."""
+    cells = [
+        oin.Simplex(0, [0], 5.0),
+        oin.Simplex(1, [1], 3.0),
+        oin.Simplex(2, [0, 1], 2.0),
+    ]
+    fil = oin.Filtration(cells, negate=True)
+    sigma = oin._oineus.CombinatorialSimplex(99, [99])
+
+    # With sigma_value=0.0 (filtration-later than every cell), the product
+    # values get clamped to 0.0.
+    prod_low = oin.multiply_filtration(fil, sigma, sigma_value=0.0)
+    for i in range(prod_low.size()):
+        assert prod_low.cell_value_by_sorted_id(i) == pytest.approx(0.0)
+
+    # With sigma_value=10.0 (filtration-earlier), product inherits cell.value.
+    prod_high = oin.multiply_filtration(fil, sigma, sigma_value=10.0)
+    src_values = sorted(fil.simplex_value_by_sorted_id(i) for i in range(fil.size()))
+    dst_values = sorted(prod_high.cell_value_by_sorted_id(i) for i in range(prod_high.size()))
+    assert src_values == pytest.approx(dst_values)
+
+
+def test_compute_ker_cok_reduction_cyl_with_negative_values():
+    """Regression: previously the auxiliary vertex value of 0.0 would
+    perturb cells whose value was negative. With the neg_infinity default,
+    the result is value-stable."""
+    fil_2 = oin.list_to_filtration([
+        (0, [0], -2.0),
+        (1, [1], -1.5),
+        (2, [0, 1], -1.0),
+    ])
+    fil_3 = oin.list_to_filtration([
+        (0, [0], -1.5),
+        (1, [1], -1.0),
+        (2, [0, 1], -0.5),
+    ])
+    kicr = oin.compute_ker_cok_reduction_cyl(fil_2, fil_3)
+    assert kicr is not None
