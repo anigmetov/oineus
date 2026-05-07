@@ -8,15 +8,54 @@ global overrides (once per script / notebook), mutate the module-level
 
 The dict contents are matplotlib-flavoured (kwargs like ``marker``, ``cmap``,
 ``angles``). A plotly backend will keep its own analogues elsewhere.
+
+Defaults track the Okabe-Ito (Wong 2011) colorblind-safe palette. The
+recommended single-diagram look (preset P11b in the eval gallery) is a
+saturated blue with a darker-shade edge halo: marker fill darker than
+plain matplotlib defaults, edge a darkened version of the same hue so
+clusters of overlapping points don't develop the white-halo artefact
+that an "edgecolors='white'" default produces on a white background.
 """
 from __future__ import annotations
+
+from matplotlib.colors import to_rgb
+
+
+# ---------------------------------------------------------------------------
+# Okabe-Ito palette (Wong, Nature Methods 2011)
+# ---------------------------------------------------------------------------
+
+OKABE_ITO_BLUE: str = "#0072B2"
+OKABE_ITO_VERMILLION: str = "#D55E00"
+OKABE_ITO_GREEN: str = "#009E73"
+OKABE_ITO_ORANGE: str = "#E69F00"
+OKABE_ITO_SKY: str = "#56B4E9"
+OKABE_ITO_PURPLE: str = "#CC79A7"
+OKABE_ITO_YELLOW: str = "#F0E442"
+OKABE_ITO_BLACK: str = "#000000"
+
+
+def _darken(color, amount: float = 0.55) -> tuple:
+    """Multiply RGB channels by ``amount`` to get a darker shade.
+
+    Used to build edge colours that match the marker fill but read as
+    a halo darker than the fill, so dense clusters fill in solidly and
+    isolated outliers still get a visible boundary.
+    """
+    r, g, b = to_rgb(color)
+    return (r * amount, g * amount, b * amount)
+
+
+_DARK_BLUE = _darken(OKABE_ITO_BLUE)
+_DARK_VERMILLION = _darken(OKABE_ITO_VERMILLION)
 
 
 DEFAULT_POINT_STYLE: dict = {
     "marker": "o",
-    "s": 25.0,
-    "alpha": 0.9,
-    "edgecolors": "none",
+    "s": 8.0,
+    "alpha": 0.85,
+    "edgecolors": _DARK_BLUE,
+    "linewidths": 0.45,
 }
 
 # Color lives outside the style dicts: callers pass it explicitly via
@@ -24,15 +63,17 @@ DEFAULT_POINT_STYLE: dict = {
 # plot_diagram / plot_matching. The defaults below remain matplotlib
 # kwargs (marker, size, alpha, edge styling) only.
 DEFAULT_DIAGRAM_A_POINT_STYLE: dict = dict(DEFAULT_POINT_STYLE)
-DEFAULT_DIAGRAM_B_POINT_STYLE: dict = dict(DEFAULT_POINT_STYLE)
+DEFAULT_DIAGRAM_B_POINT_STYLE: dict = dict(
+    DEFAULT_POINT_STYLE, edgecolors=_DARK_VERMILLION,
+)
 
 # Default colors when the user does not pass color / color_dgm_a / color_dgm_b.
-DEFAULT_DIAGRAM_A_COLOR: str = "tab:red"
-DEFAULT_DIAGRAM_B_COLOR: str = "tab:blue"
-DEFAULT_DIAGRAM_GRADIENT_DIAGRAM_COLOR: str = "tab:blue"
-DEFAULT_DIAGRAM_GRADIENT_GRAD_COLOR: str = "tab:green"
+DEFAULT_DIAGRAM_A_COLOR: str = OKABE_ITO_BLUE
+DEFAULT_DIAGRAM_B_COLOR: str = OKABE_ITO_VERMILLION
+DEFAULT_DIAGRAM_GRADIENT_DIAGRAM_COLOR: str = OKABE_ITO_BLUE
+DEFAULT_DIAGRAM_GRADIENT_GRAD_COLOR: str = OKABE_ITO_GREEN
 DEFAULT_MATCHING_EDGE_COLOR: str = "gray"
-DEFAULT_CHAIN_COLOR: str = "tab:orange"
+DEFAULT_CHAIN_COLOR: str = OKABE_ITO_ORANGE
 DEFAULT_POINT_CLOUD_COLOR: str = "lightgray"
 
 DEFAULT_MATCHING_EDGE_STYLE: dict = {
@@ -49,10 +90,10 @@ DEFAULT_LONGEST_EDGE_STYLE: dict = {
 }
 
 DEFAULT_DIAGONAL_STYLE: dict = {
-    "linestyle": "--",
-    "color": "gray",
-    "alpha": 0.7,
-    "linewidth": 1.0,
+    "linestyle": "-",
+    "color": "0.55",
+    "alpha": 0.85,
+    "linewidth": 0.7,
 }
 
 # Color is filled in by plot_matching from color_dgm_a / color_dgm_b.
@@ -69,14 +110,36 @@ DEFAULT_DIAGONAL_PROJECTION_B_STYLE: dict = {
 }
 
 DEFAULT_INF_LINE_STYLE: dict = {
-    "color": "black",
-    "linestyle": "--",
-    "linewidth": 1.0,
+    "color": "0.30",
+    "linestyle": "-",
+    "linewidth": 0.7,
+}
+
+# Subtle dotted grid drawn under the data. Enabled by default in
+# plot_diagram so users get coordinate cues without having to set
+# rcParams. Pass ``grid_style=False`` to disable, or override the dict.
+DEFAULT_GRID_STYLE: dict = {
+    "linestyle": ":",
+    "linewidth": 0.5,
+    "color": "0.85",
+    "alpha": 1.0,
+    "zorder": 0,
+}
+
+# Style for the markers that sit at the inf-line (death = +-inf). Distinct
+# from DEFAULT_POINT_STYLE so the marker shape can carry the "off the chart"
+# meaning -- upward triangle for +inf, conventional in TDA papers.
+DEFAULT_INF_POINT_STYLE: dict = {
+    "marker": "^",
+    "s": 36.0,
+    "alpha": 0.95,
+    "edgecolors": _DARK_BLUE,
+    "linewidths": 0.5,
 }
 
 DEFAULT_DIAGRAM_GRADIENT_STYLE: dict = {
-    "alpha": 0.85,
-    "width": 0.004,
+    "alpha": 0.95,
+    "width": 0.0045,
     "headwidth": 3.5,
     "headlength": 5.0,
     "angles": "xy",
@@ -183,6 +246,14 @@ def default_diagonal_projection_b_style() -> dict:
 
 def default_inf_line_style() -> dict:
     return dict(DEFAULT_INF_LINE_STYLE)
+
+
+def default_inf_point_style() -> dict:
+    return dict(DEFAULT_INF_POINT_STYLE)
+
+
+def default_grid_style() -> dict:
+    return dict(DEFAULT_GRID_STYLE)
 
 
 def default_diagram_gradient_style() -> dict:

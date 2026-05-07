@@ -53,7 +53,8 @@ class TestPlotDiagram:
 
 
 class TestPlotDiagramDensity:
-    """Density rendering kicks in above DEFAULT_DENSITY_THRESHOLD."""
+    """Density mode is opt-in via ``scatter_only=False``; the big-diagram bulk
+    is then rendered as a density artist above DEFAULT_DENSITY_THRESHOLD."""
 
     @pytest.fixture
     def big_diagram(self):
@@ -66,20 +67,28 @@ class TestPlotDiagramDensity:
         deaths[outlier_idx] = births[outlier_idx] + 1.0  # high-persistence
         return np.column_stack([births, deaths])
 
-    def test_density_artist_added_above_threshold(self, big_diagram):
+    def test_density_artist_added_in_density_mode(self, big_diagram):
         pytest.importorskip("mpl_scatter_density")
         fig, ax = _fresh_ax()
-        oineus.plot_diagram(big_diagram, ax=ax)
+        oineus.plot_diagram(big_diagram, ax=ax, scatter_only=False)
         assert _has_density_artist(ax), "expected a ScatterDensityArtist for big diagram"
         plt.close(fig)
 
+    def test_no_density_in_default_scatter_only_mode(self, big_diagram):
+        # New default: scatter_only=True, so no density artist regardless of size.
+        fig, ax = _fresh_ax()
+        oineus.plot_diagram(big_diagram, ax=ax)
+        if oineus.vis_utils._HAS_MPL_SCATTER_DENSITY:
+            assert not _has_density_artist(ax)
+        plt.close(fig)
+
     def test_no_density_below_threshold(self):
-        # Stay well under the threshold.
+        # Even with scatter_only=False, below the count threshold density
+        # doesn't trigger.
         n = max(10, oineus.DEFAULT_DENSITY_THRESHOLD // 100)
         dgm = np.column_stack([np.linspace(0, 1, n), np.linspace(0, 1, n) + 0.5])
         fig, ax = _fresh_ax()
-        oineus.plot_diagram(dgm, ax=ax)
-        # Below threshold there should be only ordinary scatter.
+        oineus.plot_diagram(dgm, ax=ax, scatter_only=False)
         if oineus.vis_utils._HAS_MPL_SCATTER_DENSITY:
             assert not _has_density_artist(ax)
         plt.close(fig)
@@ -87,7 +96,7 @@ class TestPlotDiagramDensity:
     def test_outliers_still_scatter_in_density_mode(self, big_diagram):
         pytest.importorskip("mpl_scatter_density")
         fig, ax = _fresh_ax()
-        oineus.plot_diagram(big_diagram, ax=ax)
+        oineus.plot_diagram(big_diagram, ax=ax, scatter_only=False)
         # Outliers go to a regular scatter even when bulk is density.
         assert any(c.__class__.__name__ == "PathCollection" for c in ax.collections)
         plt.close(fig)
@@ -97,7 +106,16 @@ class TestPlotDiagramDensity:
         # pass any plain matplotlib axes.
         pytest.importorskip("mpl_scatter_density")
         fig, ax = plt.subplots()  # vanilla axes, no projection
-        oineus.plot_diagram(big_diagram, ax=ax)
+        oineus.plot_diagram(big_diagram, ax=ax, scatter_only=False)
+        assert _has_density_artist(ax)
+        plt.close(fig)
+
+    def test_use_density_kwarg_deprecated(self, big_diagram):
+        pytest.importorskip("mpl_scatter_density")
+        fig, ax = _fresh_ax()
+        with pytest.warns(DeprecationWarning):
+            oineus.plot_diagram(big_diagram, ax=ax, use_density=True)
+        # use_density=True was the old "yes density" => scatter_only=False.
         assert _has_density_artist(ax)
         plt.close(fig)
 
@@ -210,7 +228,8 @@ class TestPlotMatchingDensity:
         dgm_a, dgm_b = self._big_pair()
         m = oineus.wasserstein_matching(dgm_a, dgm_b, q=2.0)
         fig, ax = _fresh_ax()
-        oineus.plot_matching(dgm_a, dgm_b, m, ax=ax)
+        oineus.plot_matching(dgm_a, dgm_b, m, ax=ax, scatter_only=False,
+                             top_k_pairs=int(1e9))
         assert _has_density_artist(ax)
         plt.close(fig)
 
@@ -220,7 +239,8 @@ class TestPlotMatchingDensity:
         m = oineus.wasserstein_matching(dgm_a, dgm_b, q=2.0)
 
         fig, ax_quantile = _fresh_ax()
-        oineus.plot_matching(dgm_a, dgm_b, m, ax=ax_quantile, edge_quantile=0.99)
+        oineus.plot_matching(dgm_a, dgm_b, m, ax=ax_quantile, scatter_only=False,
+                             edge_quantile=0.99, top_k_pairs=int(1e9))
         n_quantile = sum(
             len(c.get_segments())
             for c in ax_quantile.collections
@@ -229,7 +249,8 @@ class TestPlotMatchingDensity:
         plt.close(ax_quantile.figure)
 
         fig, ax_no_filter = _fresh_ax()
-        oineus.plot_matching(dgm_a, dgm_b, m, ax=ax_no_filter, use_density=False)
+        oineus.plot_matching(dgm_a, dgm_b, m, ax=ax_no_filter,
+                             scatter_only=True, top_k_pairs=int(1e9))
         n_no_filter = sum(
             len(c.get_segments())
             for c in ax_no_filter.collections
@@ -240,13 +261,48 @@ class TestPlotMatchingDensity:
         # Quantile mode keeps only the longest few percent.
         assert 0 < n_quantile < n_no_filter
 
-    def test_use_density_false_disables_density(self):
+    def test_scatter_only_disables_density(self):
         dgm_a, dgm_b = self._big_pair()
         m = oineus.wasserstein_matching(dgm_a, dgm_b, q=2.0)
         fig, ax = _fresh_ax()
-        oineus.plot_matching(dgm_a, dgm_b, m, ax=ax, use_density=False)
+        # Suppress the auto-cap warning -- exercised separately below.
+        oineus.plot_matching(
+            dgm_a, dgm_b, m, ax=ax, scatter_only=True, top_k_pairs=int(1e9),
+        )
         if oineus.vis_utils._HAS_MPL_SCATTER_DENSITY:
             assert not _has_density_artist(ax)
+        plt.close(fig)
+
+    def test_top_k_pairs_default_caps_overlay(self):
+        # With scatter_only default and no explicit top_k_pairs, large
+        # matchings hit the auto-cap and emit a UserWarning.
+        dgm_a, dgm_b = self._big_pair()
+        m = oineus.wasserstein_matching(dgm_a, dgm_b, q=2.0)
+        fig, ax = _fresh_ax()
+        with pytest.warns(UserWarning, match="capping ordinary edges"):
+            oineus.plot_matching(dgm_a, dgm_b, m, ax=ax)
+        n_edges = sum(
+            len(c.get_segments())
+            for c in ax.collections
+            if isinstance(c, LineCollection)
+        )
+        assert n_edges == 200
+        plt.close(fig)
+
+    def test_min_persistence_filter(self):
+        # Tiny matching: outlier pair with persistence ~1, noise pairs ~0.01.
+        dgm_a = np.array([[0.0, 1.0], [0.5, 0.51], [0.3, 0.32]])
+        dgm_b = np.array([[0.05, 0.95], [0.55, 0.56], [0.35, 0.36]])
+        m = oineus.wasserstein_matching(dgm_a, dgm_b, q=2.0)
+        fig, ax = _fresh_ax()
+        oineus.plot_matching(dgm_a, dgm_b, m, ax=ax, min_persistence=0.5)
+        n_edges = sum(
+            len(c.get_segments())
+            for c in ax.collections
+            if isinstance(c, LineCollection)
+        )
+        # Only the high-persistence pair survives -- 1 edge.
+        assert n_edges == 1
         plt.close(fig)
 
 

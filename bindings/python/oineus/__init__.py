@@ -43,8 +43,10 @@ from .vis import (
     default_diagonal_projection_a_style,
     default_diagonal_projection_b_style,
     default_inf_line_style,
+    default_inf_point_style,
     default_diagram_gradient_style,
     default_density_style,
+    default_grid_style,
     default_chain_vertex_style,
     default_chain_edge_style,
     default_chain_triangle_style,
@@ -59,9 +61,11 @@ from .vis import (
     DEFAULT_DIAGONAL_PROJECTION_A_STYLE,
     DEFAULT_DIAGONAL_PROJECTION_B_STYLE,
     DEFAULT_INF_LINE_STYLE,
+    DEFAULT_INF_POINT_STYLE,
     DEFAULT_DIAGRAM_GRADIENT_STYLE,
     DEFAULT_DENSITY_STYLE,
     DEFAULT_DENSITY_THRESHOLD,
+    DEFAULT_GRID_STYLE,
     DEFAULT_MATCHING_EDGE_QUANTILE,
     DEFAULT_GRADIENT_TOP_K_ARROWS,
     DEFAULT_CHAIN_VERTEX_STYLE,
@@ -69,6 +73,8 @@ from .vis import (
     DEFAULT_CHAIN_TRIANGLE_STYLE,
     DEFAULT_CHAIN_TETRAHEDRON_STYLE,
     DEFAULT_POINT_CLOUD_STYLE,
+    OKABE_ITO_BLUE,
+    OKABE_ITO_VERMILLION,
 )
 # Keep vis_utils as a backward-compat alias.
 from . import vis_utils  # noqa: F401

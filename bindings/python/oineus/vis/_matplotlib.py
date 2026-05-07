@@ -65,12 +65,35 @@ from ._styles import (
     default_diagram_a_point_style,
     default_diagram_b_point_style,
     default_diagram_gradient_style,
+    default_grid_style,
     default_inf_line_style,
+    default_inf_point_style,
     default_longest_edge_style,
     default_matching_edge_style,
     default_point_cloud_style,
     default_point_style,
 )
+
+
+def _resolve_scatter_only(scatter_only, use_density):
+    """Backward-compat shim for the old ``use_density`` kwarg.
+
+    Returns the resolved ``scatter_only`` flag and emits a DeprecationWarning
+    if ``use_density`` is explicitly passed (i.e. not the sentinel).
+    """
+    if use_density is _UNSET:
+        return scatter_only
+    warnings.warn(
+        "the `use_density` kwarg is deprecated; pass `scatter_only=...` "
+        "instead. `use_density=False` -> `scatter_only=True`, "
+        "`use_density=True` -> `scatter_only=False`.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return not bool(use_density)
+
+
+_UNSET = object()
 
 
 def _is_solo_color(color):
@@ -162,22 +185,30 @@ def plot_diagram(
     axis_bounds: typing.Optional[typing.Mapping[str, float]] = None,
     dims: typing.Optional[typing.Iterable[int]] = None,
     max_dimension: typing.Optional[int] = None,
-    use_density: bool = True,
+    scatter_only: bool = True,
     density_threshold: int = DEFAULT_DENSITY_THRESHOLD,
     near_diagonal_fraction: float = 0.03,
     density_style: typing.Optional[dict] = None,
     inf_line_margin: float = 0.05,
     point_style: typing.Optional[dict] = None,
+    inf_point_style: typing.Optional[dict] = None,
     diagonal_style: typing.Optional[dict] = None,
     inf_line_style: typing.Optional[dict] = None,
+    grid_style: typing.Union[dict, bool, None] = None,
     dim_label_fmt: str = "H{dim}",
+    use_density=_UNSET,
 ):
     """Plot one or more persistence diagrams.
 
-    Above ``density_threshold`` finite points the bulk near the diagonal is
-    rendered as a 2D density (via mpl_scatter_density) while points further
-    than ``near_diagonal_fraction`` of the axis range from the diagonal are
-    still drawn as crisp scatter -- so high-persistence (topologically
+    Default rendering is **pure scatter**: every finite point gets its own
+    marker, so the visual density of overlapping markers faithfully tracks
+    the actual point density. Pass ``scatter_only=False`` to opt into the
+    hybrid density-bulk + outlier-scatter mode (suitable for very large
+    diagrams where the near-diagonal noise band saturates the scatter).
+    In that hybrid mode the bulk near the diagonal is rendered as a 2D
+    density (via mpl_scatter_density) while points further than
+    ``near_diagonal_fraction`` of the axis range from the diagonal are
+    still drawn as crisp scatter, so high-persistence (topologically
     meaningful) features are never aggregated.
 
     Color of the diagram points is taken from the top-level ``color``
@@ -187,19 +218,39 @@ def plot_diagram(
     to matplotlib's per-call cycle. Passing a single color when the input
     has more than one dim emits a ``UserWarning``.
 
-    ``cmap`` is forwarded to the density-aggregation path; pass ``None`` to
-    keep the default (``viridis``).
+    When ``color`` is set and density mode is active, the density artist
+    uses a single-hue fade-to-transparent ramp keyed off ``color`` rather
+    than the cmap-based default; this is what makes 2-diagram overlays of
+    the form ``plot_diagram(dgm_a, color="C0"); plot_diagram(dgm_b, color="C1")``
+    on the same axes read as two distinct distributions.
 
-    Style-dict kwargs (``point_style``, ``diagonal_style``, ``inf_line_style``,
-    ``density_style``) default to copies of the module-level ``DEFAULT_*_STYLE``
-    dicts and no longer carry a ``color`` / ``c`` key.
+    ``cmap`` is forwarded to the density-aggregation path when ``color`` is
+    None; pass ``None`` to keep the default (``viridis``).
+
+    Style-dict kwargs (``point_style``, ``inf_point_style``, ``diagonal_style``,
+    ``inf_line_style``, ``density_style``) default to copies of the
+    module-level ``DEFAULT_*_STYLE`` dicts and no longer carry a ``color`` /
+    ``c`` key. ``inf_point_style`` controls the markers placed on the
+    horizontal inf-line (death = +-inf); the default uses an upward triangle
+    so essentials read distinctly from finite points.
+
+    The ``use_density`` kwarg is deprecated; pass ``scatter_only`` instead.
+    ``use_density=False`` corresponds to ``scatter_only=True`` and vice
+    versa.
     """
     if not _HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plot_diagram.")
 
+    scatter_only = _resolve_scatter_only(scatter_only, use_density)
+
     point_style = _resolve_style(point_style, default_point_style)
+    inf_point_style = _resolve_style(inf_point_style, default_inf_point_style)
     diagonal_style = _resolve_style(diagonal_style, default_diagonal_style)
     inf_line_style = _resolve_style(inf_line_style, default_inf_line_style)
+    if grid_style is False:
+        resolved_grid_style = None
+    else:
+        resolved_grid_style = _resolve_style(grid_style, default_grid_style)
 
     bounds = {} if axis_bounds is None else dict(axis_bounds)
     dgms = _to_dim_diagrams(diagrams, dims=dims, max_dimension=max_dimension)
@@ -305,12 +356,19 @@ def plot_diagram(
     near_x = np.concatenate(near_x_parts) if near_x_parts else np.empty((0,), dtype=float)
     near_y = np.concatenate(near_y_parts) if near_y_parts else np.empty((0,), dtype=float)
 
-    use_density_plot = use_density and all_finite_births.size >= density_threshold and near_x.size > 0
+    use_density_plot = (
+        not scatter_only
+        and all_finite_births.size >= density_threshold
+        and near_x.size > 0
+    )
     if use_density_plot:
         _require_scatter_density()
 
     if ax is None:
         _, ax = plt.subplots()
+
+    if resolved_grid_style is not None:
+        ax.grid(True, **resolved_grid_style)
 
     y_values_for_shift = all_finite_deaths
     if any_pos_inf:
@@ -325,11 +383,16 @@ def plot_diagram(
         density_style_resolved = _resolve_style(density_style, default_density_style)
         if cmap is not None:
             density_style_resolved["cmap"] = cmap
-        # else: leave whatever is in the resolved dict (defaults to viridis).
+        # When the caller passes a solo color (single hue per density layer),
+        # use the color-keyed fade-to-transparent rendering so two
+        # plot_diagram calls with distinct colors stack readably on the same
+        # axes. cmap-keyed rendering only kicks in when no color is given.
+        density_color = color if _is_solo_color(color) else None
         _add_density_artist(
             ax,
             near_x + x_shift,
             near_y + y_shift,
+            color=density_color,
             style=density_style_resolved,
         )
 
@@ -337,13 +400,30 @@ def plot_diagram(
     base_scatter_kwargs = dict(point_style)
     base_color = base_scatter_kwargs.pop("c", None)
 
+    base_inf_kwargs = dict(inf_point_style)
+    base_inf_color = base_inf_kwargs.pop("c", None)
+
     for dim_idx, dim in enumerate(dims_sorted):
         dim_color = _resolve_color(color, dim, dim_idx)
         effective_c = dim_color if dim_color is not None else base_color
+        effective_inf_c = dim_color if dim_color is not None else base_inf_color
+
+        # If neither finite-point nor inf-point styles pin a color, share
+        # the matplotlib cycle index across all of this dim's scatter calls
+        # so the +inf, -inf, and finite markers match instead of stepping
+        # through three consecutive cycle entries.
+        if effective_c is None and effective_inf_c is None:
+            shared = f"C{dim_idx % 10}"
+            effective_c = shared
+            effective_inf_c = shared
 
         scatter_kwargs = dict(base_scatter_kwargs)
         if effective_c is not None:
             scatter_kwargs["c"] = effective_c
+
+        inf_scatter_kwargs = dict(base_inf_kwargs)
+        if effective_inf_c is not None:
+            inf_scatter_kwargs["c"] = effective_inf_c
 
         label = dim_label_fmt.format(dim=dim)
         births, deaths = finite_by_dim[dim]
@@ -365,17 +445,22 @@ def plot_diagram(
                 pos_inf_births + x_shift,
                 np.full_like(pos_inf_births, inf_y_pos + y_shift),
                 label=label_for_inf,
-                **scatter_kwargs,
+                **inf_scatter_kwargs,
             )
             label_for_inf = None
 
+        neg_inf_kwargs = dict(inf_scatter_kwargs)
+        # Down-pointing triangle for -inf if the default upward-triangle is
+        # in use; a user-supplied marker is left untouched.
+        if neg_inf_kwargs.get("marker") == "^":
+            neg_inf_kwargs["marker"] = "v"
         neg_inf_births = neg_inf_birth_by_dim[dim]
         if neg_inf_births.size:
             ax.scatter(
                 neg_inf_births + x_shift,
                 np.full_like(neg_inf_births, inf_y_neg + y_shift),
                 label=label_for_inf,
-                **scatter_kwargs,
+                **neg_inf_kwargs,
             )
 
     if any_pos_inf:
@@ -446,9 +531,11 @@ def plot_diagram_gradient(
     dims: typing.Optional[typing.Iterable[int]] = None,
     descent: bool = False,
     plot_points: bool = True,
-    use_density: bool = True,
+    scatter_only: bool = True,
     density_threshold: int = DEFAULT_DENSITY_THRESHOLD,
+    min_persistence: typing.Optional[float] = None,
     top_k_arrows: typing.Optional[int] = None,
+    arrow_overlay_threshold: int = 1000,
     log_x: bool = False,
     log_y: bool = False,
     title: typing.Optional[str] = None,
@@ -459,10 +546,12 @@ def plot_diagram_gradient(
     cmap=None,
     quiver_style: typing.Optional[dict] = None,
     point_style: typing.Optional[dict] = None,
+    inf_point_style: typing.Optional[dict] = None,
     diagonal_style: typing.Optional[dict] = None,
     inf_line_style: typing.Optional[dict] = None,
     density_style: typing.Optional[dict] = None,
     dim_label_fmt: str = "H{dim}",
+    use_density=_UNSET,
 ):
     """Plot a gradient vector field on top of a persistence diagram.
 
@@ -498,15 +587,31 @@ def plot_diagram_gradient(
     ``quiver_style`` kwarg accepts any ``Axes.quiver`` keyword; ``color``
     no longer lives in the dict (use ``grad_color``).
 
-    Above ``density_threshold`` total points the underlying scatter is
-    rendered as density (inherited from ``plot_diagram``) and arrows are
-    restricted to the top ``top_k_arrows`` points by gradient magnitude.
-    When ``top_k_arrows`` is ``None`` it defaults to
-    ``DEFAULT_GRADIENT_TOP_K_ARROWS`` whenever the threshold is exceeded;
-    set it explicitly to apply the cap below the threshold too.
+    Arrow overlay filtering. With ``scatter_only=True`` (the default) every
+    finite point gets a scatter marker, so without a cap an arrow lands on
+    every one of them and the picture turns into a hairball at >~1000
+    points. Two filters keep the overlay readable:
+
+    - ``min_persistence``: drop arrows on points with persistence
+      ``death - birth < min_persistence``. Closest analog of "draw arrows
+      only on the high-persistence outliers". Default ``None`` (no
+      threshold).
+    - ``top_k_arrows``: keep only the top-K by ``|grad|``. When unset and
+      the diagram has at least ``arrow_overlay_threshold`` finite points
+      (default 1000), defaults to ``DEFAULT_GRADIENT_TOP_K_ARROWS`` (200)
+      so the overlay isn't a hairball out of the box. Pass an explicit
+      value (or ``np.inf``) to override.
+
+    Filters compose: ``min_persistence`` runs first, ``top_k_arrows``
+    second.
+
+    The ``use_density`` kwarg is deprecated; pass ``scatter_only`` instead
+    (semantics inverted).
     """
     if not _HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plot_diagram_gradient.")
+
+    scatter_only = _resolve_scatter_only(scatter_only, use_density)
 
     quiver_style = _resolve_style(quiver_style, default_diagram_gradient_style)
     quiver_style.setdefault(
@@ -534,7 +639,6 @@ def plot_diagram_gradient(
         finite_by_dim[dim] = (pts[finite_mask], sign * g[finite_mask])
 
     total_finite = sum(pts.shape[0] for pts, _ in finite_by_dim.values())
-    density_active = use_density and total_finite >= density_threshold
 
     if plot_points:
         finite_dgms = {dim: pts for dim, (pts, _) in finite_by_dim.items()}
@@ -549,21 +653,43 @@ def plot_diagram_gradient(
             axis_bounds=axis_bounds,
             inf_line_margin=inf_line_margin,
             point_style=point_style,
+            inf_point_style=inf_point_style,
             diagonal_style=diagonal_style,
             inf_line_style=inf_line_style,
             density_style=density_style,
-            use_density=use_density,
+            scatter_only=scatter_only,
             density_threshold=density_threshold,
             dim_label_fmt=dim_label_fmt,
         )
     elif ax is None:
         _, ax = plt.subplots()
 
-    effective_top_k = top_k_arrows
-    if effective_top_k is None and density_active:
-        effective_top_k = DEFAULT_GRADIENT_TOP_K_ARROWS
+    # Filter 1: persistence threshold (drops noise).
+    if min_persistence is not None and min_persistence > 0.0:
+        new_finite = {}
+        for dim, (pts, g) in finite_by_dim.items():
+            if pts.shape[0] == 0:
+                new_finite[dim] = (pts, g)
+                continue
+            mask = (pts[:, 1] - pts[:, 0]) >= min_persistence
+            new_finite[dim] = (pts[mask], g[mask])
+        finite_by_dim = new_finite
+        total_finite = sum(pts.shape[0] for pts, _ in finite_by_dim.values())
 
-    if effective_top_k is not None:
+    # Filter 2: cap by gradient magnitude. Default kicks in once the
+    # remaining count is large enough for the overlay to read as a hairball.
+    effective_top_k = top_k_arrows
+    if effective_top_k is None and total_finite >= arrow_overlay_threshold:
+        effective_top_k = DEFAULT_GRADIENT_TOP_K_ARROWS
+        warnings.warn(
+            f"plot_diagram_gradient: capping arrows to top-{effective_top_k} "
+            f"by |grad| (out of {total_finite} finite pairs). Pass "
+            "top_k_arrows=N or min_persistence=p to override.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    if effective_top_k is not None and np.isfinite(effective_top_k):
         dim_arrs, local_arrs, mag_arrs = [], [], []
         for dim, (pts, g) in finite_by_dim.items():
             n = pts.shape[0]
@@ -577,7 +703,7 @@ def plot_diagram_gradient(
             local_concat = np.concatenate(local_arrs)
             mag_concat = np.concatenate(mag_arrs)
             if mag_concat.size > effective_top_k:
-                keep = np.argpartition(mag_concat, -effective_top_k)[-effective_top_k:]
+                keep = np.argpartition(mag_concat, -int(effective_top_k))[-int(effective_top_k):]
                 keep_dim = dim_concat[keep]
                 keep_local = local_concat[keep]
                 new_finite = {}
@@ -627,10 +753,14 @@ def plot_matching(
     plot_points: bool = True,
     plot_diagonal_projections: bool = False,
     plot_diagonal: bool = True,
-    use_density: bool = True,
+    scatter_only: bool = True,
     density_threshold: int = DEFAULT_DENSITY_THRESHOLD,
     near_diagonal_fraction: float = 0.03,
     edge_quantile: float = DEFAULT_MATCHING_EDGE_QUANTILE,
+    min_persistence: typing.Optional[float] = None,
+    top_k_pairs: typing.Optional[int] = None,
+    pair_filter: str = "either",
+    pair_overlay_threshold: int = 1000,
     color_dgm_a=None,
     color_dgm_b=None,
     match_color=None,
@@ -650,6 +780,7 @@ def plot_matching(
     title: typing.Optional[str] = None,
     axis_bounds: typing.Optional[typing.Mapping[str, float]] = None,
     inf_line_margin: float = 0.05,
+    use_density=_UNSET,
 ):
     """Plot a matching between two persistence diagrams.
 
@@ -667,16 +798,33 @@ def plot_matching(
 
     ``dgm_a`` and ``dgm_b`` must be 2D numpy arrays (one homology dimension).
 
-    Above ``density_threshold`` total points the diagram is rendered as a
-    density background (near-diagonal points only) plus crisp scatter for
-    high-persistence outliers. Ordinary matching edges are filtered to those
-    with length above the ``edge_quantile``-th quantile, since most edges in
-    a large matching are short noise-to-noise pairs that obscure the
-    informative tail. The ``highlight_longest`` overlay (always drawn for
-    bottleneck matchings) is unaffected.
+    Edge filtering. Three knobs, applied in order:
+
+    - ``min_persistence``: drop edges where neither (or both, if
+      ``pair_filter='both'``) endpoint has persistence
+      ``death - birth >= min_persistence``. Default ``None`` (no filter).
+    - ``top_k_pairs``: keep only the K edges with the largest endpoint
+      persistence. When unset and the total ordinary-edge count is at
+      least ``pair_overlay_threshold`` (default 1000), defaults to 200
+      and emits a ``UserWarning`` listing the cap.
+    - ``edge_quantile``: legacy length-based filter, only active when
+      ``scatter_only=False`` (i.e. density mode). Kept for back-compat;
+      ``min_persistence`` / ``top_k_pairs`` are the recommended controls.
+
+    With ``scatter_only=False`` (opt-in density mode) the diagram is
+    rendered as a density background (near-diagonal points only) plus
+    crisp scatter for high-persistence outliers; the ``edge_quantile``
+    filter then runs in addition.
+
+    The ``use_density`` kwarg is deprecated; pass ``scatter_only`` instead
+    (semantics inverted).
     """
     if not _HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plot_matching.")
+
+    scatter_only = _resolve_scatter_only(scatter_only, use_density)
+    if pair_filter not in ("either", "both"):
+        raise ValueError("pair_filter must be 'either' or 'both'.")
 
     # Avoid circular import
     from ..matching import (
@@ -781,7 +929,7 @@ def plot_matching(
     # Decide whether to switch to density mode for the bulk near the diagonal.
     n_finite_total = a_fin_b.size + b_fin_b.size
     use_density_plot = (
-        use_density
+        not scatter_only
         and plot_points
         and n_finite_total >= density_threshold
     )
@@ -892,8 +1040,53 @@ def plot_matching(
                 pb = _point_coords_for_edge(dgm_b, int(ib), inf_x_pos, inf_x_neg, inf_y_pos, inf_y_neg)
                 ordinary_segments.append((pa, pb))
 
+    # Persistence-aware filters (run before the legacy edge-length filter).
+    if ordinary_segments and (min_persistence is not None or top_k_pairs is not None
+                              or len(ordinary_segments) >= pair_overlay_threshold):
+        seg_arr = np.array(ordinary_segments, dtype=float)
+        # Persistence per endpoint = abs(death - birth). Inf-clamped points
+        # appear at finite inf_*_pos coords, so the value here is only an
+        # approximation for essentials -- but they have y near the inf-line
+        # and x at the birth, so abs is still large and they pass any
+        # reasonable threshold.
+        pers_a = np.abs(seg_arr[:, 0, 1] - seg_arr[:, 0, 0])
+        pers_b = np.abs(seg_arr[:, 1, 1] - seg_arr[:, 1, 0])
+        if pair_filter == "either":
+            pers_pair = np.maximum(pers_a, pers_b)
+            pers_for_filter = pers_pair
+        else:  # "both"
+            pers_pair = np.maximum(pers_a, pers_b)  # ranking proxy
+            pers_for_filter = np.minimum(pers_a, pers_b)
+
+        keep_mask = np.ones(len(ordinary_segments), dtype=bool)
+        if min_persistence is not None and min_persistence > 0.0:
+            keep_mask &= pers_for_filter >= min_persistence
+
+        kept_count = int(keep_mask.sum())
+        effective_top_k = top_k_pairs
+        if effective_top_k is None and kept_count >= pair_overlay_threshold:
+            effective_top_k = 200
+            warnings.warn(
+                f"plot_matching: capping ordinary edges to top-{effective_top_k} "
+                f"by endpoint persistence (out of {kept_count}). Pass "
+                "top_k_pairs=N or min_persistence=p to override.",
+                UserWarning,
+                stacklevel=2,
+            )
+        if effective_top_k is not None and np.isfinite(effective_top_k) \
+                and kept_count > effective_top_k:
+            ranks = np.where(keep_mask, pers_pair, -np.inf)
+            keep_idx = np.argpartition(ranks, -int(effective_top_k))[-int(effective_top_k):]
+            new_mask = np.zeros_like(keep_mask)
+            new_mask[keep_idx] = True
+            keep_mask = new_mask
+
+        ordinary_segments = [
+            s for s, k in zip(ordinary_segments, keep_mask) if k
+        ]
+
     if ordinary_segments and use_density_plot and 0.0 < edge_quantile < 1.0:
-        # In density mode keep only the longest few percent of ordinary edges.
+        # Legacy length-based filter (only when density mode active).
         # Most matchings of large diagrams are dominated by short noise-to-noise
         # pairs near the diagonal that pile up into a featureless gray hairball.
         seg_arr = np.array(ordinary_segments, dtype=float)
