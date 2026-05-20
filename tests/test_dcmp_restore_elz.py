@@ -32,7 +32,7 @@ def test_restore_elz_serial_matches_serial_no_clearing(dualize):
     params_parallel.n_threads = 4
     params_parallel.clearing_opt = True
     params_parallel.compute_v = True
-    params_parallel.restore_elz = False
+    params_parallel.dims_to_restore_elz = []
 
     dcmp_parallel, _, _ = _reduce_and_capture(filtration, dualize, params_parallel, decomp_threads=4)
     dcmp_parallel.restore_elz(v_only=False, n_threads=1)
@@ -41,7 +41,7 @@ def test_restore_elz_serial_matches_serial_no_clearing(dualize):
     params_serial.n_threads = 1
     params_serial.clearing_opt = False
     params_serial.compute_v = True
-    params_serial.restore_elz = False
+    params_serial.dims_to_restore_elz = []
 
     _, r_serial, v_serial = _reduce_and_capture(filtration, dualize, params_serial, decomp_threads=1)
 
@@ -57,7 +57,7 @@ def test_restore_elz_parallel_matches_serial_restore_and_serial_no_clearing(dual
     params_parallel_restore.n_threads = 4
     params_parallel_restore.clearing_opt = True
     params_parallel_restore.compute_v = True
-    params_parallel_restore.restore_elz = True
+    params_parallel_restore.dims_to_restore_elz = [0, 1, 2]
 
     _, r_parallel_restore, v_parallel_restore = _reduce_and_capture(
             filtration, dualize, params_parallel_restore, decomp_threads=4)
@@ -66,7 +66,7 @@ def test_restore_elz_parallel_matches_serial_restore_and_serial_no_clearing(dual
     params_parallel_then_serial_restore.n_threads = 4
     params_parallel_then_serial_restore.clearing_opt = True
     params_parallel_then_serial_restore.compute_v = True
-    params_parallel_then_serial_restore.restore_elz = False
+    params_parallel_then_serial_restore.dims_to_restore_elz = []
 
     dcmp_serial_restore, _, _ = _reduce_and_capture(
             filtration, dualize, params_parallel_then_serial_restore, decomp_threads=4)
@@ -78,7 +78,7 @@ def test_restore_elz_parallel_matches_serial_restore_and_serial_no_clearing(dual
     params_serial.n_threads = 1
     params_serial.clearing_opt = False
     params_serial.compute_v = True
-    params_serial.restore_elz = False
+    params_serial.dims_to_restore_elz = []
 
     _, r_serial, v_serial = _reduce_and_capture(filtration, dualize, params_serial, decomp_threads=1)
 
@@ -93,7 +93,7 @@ def test_restore_elz_requires_compute_v():
     params = oin.ReductionParams()
     params.n_threads = 2
     params.compute_v = False
-    params.restore_elz = True
+    params.dims_to_restore_elz = [0, 1, 2]
 
     with pytest.raises(RuntimeError, match="without V matrix"):
         dcmp.reduce(params)
@@ -106,7 +106,7 @@ def test_parallel_reduction_elapsed_fields():
     params_no_restore.n_threads = 4
     params_no_restore.clearing_opt = True
     params_no_restore.compute_v = True
-    params_no_restore.restore_elz = False
+    params_no_restore.dims_to_restore_elz = []
 
     dcmp = oin.Decomposition(filtration, dualize=False, n_threads=4)
     dcmp.reduce(params_no_restore)
@@ -120,7 +120,7 @@ def test_parallel_reduction_elapsed_fields():
     params_with_restore.n_threads = 4
     params_with_restore.clearing_opt = True
     params_with_restore.compute_v = True
-    params_with_restore.restore_elz = True
+    params_with_restore.dims_to_restore_elz = [0, 1, 2]
 
     dcmp2 = oin.Decomposition(filtration, dualize=False, n_threads=4)
     dcmp2.reduce(params_with_restore)
@@ -134,7 +134,7 @@ def test_parallel_reduction_elapsed_fields():
     params_r_only.n_threads = 4
     params_r_only.clearing_opt = True
     params_r_only.compute_v = False
-    params_r_only.restore_elz = False
+    params_r_only.dims_to_restore_elz = []
 
     dcmp3 = oin.Decomposition(filtration, dualize=False, n_threads=4)
     dcmp3.reduce(params_r_only)
@@ -153,7 +153,7 @@ def test_serial_without_clearing_ignores_restore_elz():
     params.n_threads = 1
     params.clearing_opt = False
     params.compute_v = False
-    params.restore_elz = True
+    params.dims_to_restore_elz = [0, 1, 2]
 
     dcmp.reduce(params)
     assert params.elapsed_restore_elz == 0.0

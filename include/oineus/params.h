@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include "log_wrapper.h"
+#include "common_defs.h"
 
 namespace oineus {
     struct Params {
@@ -19,7 +20,7 @@ namespace oineus {
         bool print_time{false};
         bool compute_v{false};
         bool compute_u{false};
-        bool restore_elz{false};
+        DimVec dims_to_restore_elz;
         bool do_sanity_check{false};
         double elapsed{0.0};
         double elapsed_restore_elz{0.0};
@@ -40,7 +41,7 @@ namespace oineus {
         out << ", print_time = " << p.print_time;
         out << ", compute_v = " << p.compute_v;
         out << ", compute_u = " << p.compute_u;
-        out << ", restore_elz = " << p.restore_elz;
+        // out << ", dims_to_restore_elz = " << p.dims_to_restore_elz;
         out << ", do_sanity_check = " << p.do_sanity_check;
         out << ", elapsed = " << p.elapsed;
         out << ", elapsed_restore_elz = " << p.elapsed_restore_elz;
@@ -62,7 +63,7 @@ namespace oineus {
             && a.print_time == b.print_time
             && a.compute_v == b.compute_v
             && a.compute_u == b.compute_u
-            && a.restore_elz == b.restore_elz
+            && a.dims_to_restore_elz == b.dims_to_restore_elz
             && a.do_sanity_check == b.do_sanity_check
             && a.elapsed == b.elapsed
             && a.elapsed_restore_elz == b.elapsed_restore_elz

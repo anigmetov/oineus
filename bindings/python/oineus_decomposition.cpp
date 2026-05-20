@@ -273,6 +273,9 @@ void init_oineus_common_decomposition(nb::module_& m)
                                                decltype(Decomposition::_pivots),
                                                decltype(Decomposition::dim_first),
                                                decltype(Decomposition::dim_last),
+                                               decltype(Decomposition::_dim_first),
+                                               decltype(Decomposition::_dim_last),
+                                               decltype(Decomposition::is_elz_in_dim_),
                                                decltype(Decomposition::n_rows)>;
     using Simplex = oin::Simplex<oin_int>;
     using SimplexFiltration = oin::Filtration<Simplex, oin_real>;
@@ -294,6 +297,9 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def_rw("v_data", &Decomposition::v_data)
             .def_rw("u_data_t", &Decomposition::u_data_t)
             .def_ro("d_data", &Decomposition::d_data)
+            .def_ro("is_reduced", &Decomposition::is_reduced)
+            .def("has_matrix_v", &Decomposition::has_matrix_v)
+            .def("has_matrix_u", &Decomposition::has_matrix_u)
             .def("r_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { return z2_col_matrix_to_csc(self.r_data, self.r_data.size()); })
             .def("v_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { return z2_col_matrix_to_csc(self.v_data, self.v_data.size()); })
             .def("d_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { return z2_col_matrix_to_csc(self.d_data, self.v_data.size()); })
@@ -406,7 +412,8 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def(nb::self != nb::self)
             .def("__getstate__", [](const Decomposition& self) -> DecompositionStateTuple {
                 return std::make_tuple(self.d_data, self.r_data, self.v_data, self.u_data_t, self.is_reduced,
-                        self.dualize_, self._pivots, self.dim_first, self.dim_last, self.n_rows);
+                        self.dualize_, self._pivots, self.dim_first, self.dim_last,
+                        self._dim_first, self._dim_last, self.is_elz_in_dim_, self.n_rows);
             })
             .def("__setstate__", [](Decomposition& self, const DecompositionStateTuple& t) {
                 new (&self) Decomposition();
@@ -419,7 +426,10 @@ void init_oineus_common_decomposition(nb::module_& m)
                 self._pivots = std::get<6>(t);
                 self.dim_first = std::get<7>(t);
                 self.dim_last = std::get<8>(t);
-                self.n_rows = std::get<9>(t);
+                self._dim_first = std::get<9>(t);
+                self._dim_last = std::get<10>(t);
+                self.is_elz_in_dim_ = std::get<11>(t);
+                self.n_rows = std::get<12>(t);
             })
                     ;
 

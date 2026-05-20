@@ -9,6 +9,7 @@
 #include <numeric>
 #include <pthread.h>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -416,12 +417,23 @@ namespace oineus {
         MatrixData u_data_t;
         bool is_reduced {false};
         bool dualize_ {false};
+        // True iff R, V are known to be in ELZ form. Maintained by the
+        // reduction drivers and by restore_elz; consulted by
+        // compute_partial_u_rows which requires V to be ELZ. A full
+        // re-check via is_elz() walks the whole matrix and is too
+        // expensive for the gradient-loop hot path.
+        std::map<dim_type, bool> is_elz_in_dim_;
 
         // in parallel versions we use atomic pivots, in serial - normal
         std::vector<Int> _pivots;
 
         std::vector<Int> dim_first;
         std::vector<Int> dim_last;
+
+        // for cohomology: reverse dims,
+        // corresponds to dimension of coboundary matrix
+        std::vector<Int> _dim_first;
+        std::vector<Int> _dim_last;
 
         size_t n_rows {0};
 
@@ -441,14 +453,16 @@ namespace oineus {
                 dualize_(_dualize),
                 dim_first(fil.dims_first()),
                 dim_last(fil.dims_last()),
+                _dim_first(fil.dims_first()),
+                _dim_last(fil.dims_last()),
                 n_rows(d_data.size())
         {
             if (dualize_) {
-                std::reverse(dim_first.begin(), dim_first.end());
-                std::reverse(dim_last.begin(), dim_last.end());
+                std::reverse(_dim_first.begin(), _dim_first.end());
+                std::reverse(_dim_last.begin(), _dim_last.end());
                 std::vector<Int> new_dim_first, new_dim_last;
                 for(size_t i = 0; i < dim_first.size(); ++i) {
-                    size_t cnt = dim_last[i] - dim_first[i];
+                    size_t cnt = _dim_last[i] - _dim_first[i];
                     if (i == 0) {
                         new_dim_first.push_back(0);
                         new_dim_last.push_back(cnt);
@@ -457,8 +471,12 @@ namespace oineus {
                         new_dim_last.push_back(new_dim_first.back() + cnt);
                     }
                 }
-                dim_first = new_dim_first;
-                dim_last = new_dim_last;
+                _dim_first = new_dim_first;
+                _dim_last = new_dim_last;
+            }
+
+            for(dim_type _dim = 0; _dim < dim_first.size(); ++_dim) {
+                is_elz_in_dim_[_dim] = false;
             }
         }
 
@@ -470,8 +488,14 @@ namespace oineus {
                 // TODO: think about dimensions here
                 dim_first(std::vector<Int>({0})),
                 dim_last(std::vector<Int>({static_cast<Int>(d.size() - 1)})),
+                _dim_first(std::vector<Int>({0})),
+                _dim_last(std::vector<Int>({static_cast<Int>(d.size() - 1)})),
                 n_rows(n_rows == std::numeric_limits<decltype(n_rows)>::max() ? d_data.size() : n_rows)
         {
+            for(dim_type _dim = 0; _dim < dim_first.size(); ++_dim) {
+                is_elz_in_dim_[_dim] = false;
+            }
+
             if (!skip_check) {
                 for(auto&& col : d) {
                     for(auto&& e: col) {
@@ -498,6 +522,8 @@ namespace oineus {
                 && _pivots == other._pivots
                 && dim_first == other.dim_first
                 && dim_last == other.dim_last
+                && _dim_first == other._dim_first
+                && _dim_last == other._dim_last
                 && n_rows == other.n_rows;
         }
 
@@ -506,12 +532,14 @@ namespace oineus {
             return !(*this == other);
         }
 
+        void set_is_elz_flag(dim_type _dim, bool new_value);
+
         void reduce(Params& params);
 
         void reduce_serial(Params& params);
 
         void reduce_parallel_r_only(Params& params);
-        void reduce_parallel_rv(Params& params, bool restore_elz);
+        void reduce_parallel_rv(Params& params);
 
         bool is_negative(size_t simplex) const
         {
@@ -532,10 +560,16 @@ namespace oineus {
         bool is_elz(int n_threads=8) const;
         size_t n_elz_violators(int n_threads) const;
         size_t n_elz_violators_in_dim(dim_type dim, int n_threads) const;
-        std::vector<int8_t> mark_elz_violators_in_dim(dim_type dim, int n_threads) const;
+        // std::vector<int8_t> mark_elz_violators_in_dim(dim_type dim, int n_threads) const;
 
         void restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads);
 
+        size_t n_dims() const { return dim_first.size(); }
+
+        // convert geometric dim into index in _dim_first/last vectors (same
+        // for homology, reversed for cohomology)
+        // internally use _dim to index, accept dim as parameter
+        size_t _dim_from_dim(dim_type dim) const { return dualize() ? n_dims() - dim - 1 : dim; }
 
         template<typename Cell, typename Real>
         Diagrams<Real> diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const;
@@ -633,8 +667,8 @@ namespace oineus {
                                  size_t n_threads = 1,
                                  bool verbose = false);
 
-        size_t range_start_(dim_type dim) const;
-        size_t range_end_(dim_type dim) const;
+        size_t range_start_(dim_type _dim) const;
+        size_t range_end_(dim_type _dim) const;
     };
 
     template<class Int>
@@ -837,60 +871,12 @@ namespace oineus {
     size_t VRUDecomposition<Int>::n_elz_violators(int n_threads) const
     {
         size_t result = 0;
-        for(dim_type d = 0; d < dim_first.size(); ++ d) {
+        for(dim_type d = 0; d < _dim_first.size(); ++ d) {
             result += n_elz_violators_in_dim(d, n_threads);
         }
         return result;
     }
 
-    template<class Int>
-    std::vector<int8_t> VRUDecomposition<Int>::mark_elz_violators_in_dim(dim_type dim, int n_threads) const
-    {
-        if (not has_matrix_v()) {
-            throw std::runtime_error("VRUDecomposition: cannot check ELZ without V matrix");
-        }
-
-        size_t start_idx = dim_first.at(dim);
-        size_t end_idx = dim_last.at(dim) + 1;
-
-        size_t n_cols_to_check = end_idx - start_idx;
-
-        std::vector<int8_t> is_elz_violator(n_cols_to_check, 0);
-
-        // Don't use multithreading if too few columns
-        if (n_threads == 1 or n_cols_to_check < static_cast<size_t>(8 * n_threads)) {
-            // Serial version
-            for (size_t col_idx = start_idx; col_idx < end_idx; ++col_idx) {
-                if (!is_column_elz(col_idx)) {
-                    is_elz_violator[col_idx - start_idx] = 1;
-                }
-            }
-            return is_elz_violator;
-        }
-
-        tf::Executor executor(n_threads);
-        tf::Taskflow taskflow;
-
-        // Calculate chunk size for each thread
-        size_t chunk_size = (n_cols_to_check + n_threads - 1) / n_threads;
-
-        for (int tid = 0; tid < n_threads; ++tid) {
-            taskflow.emplace([this, tid, start_idx, end_idx, chunk_size, &is_elz_violator]() {
-                size_t thread_start = start_idx + tid * chunk_size;
-                size_t thread_end = std::min(thread_start + chunk_size, end_idx);
-
-                for (size_t col_idx = thread_start; col_idx < thread_end; ++col_idx) {
-                    if (!is_column_elz(col_idx)) {
-                        is_elz_violator[col_idx - start_idx] = 1;
-                    }
-                }
-            });
-        }
-
-        executor.run(taskflow).wait();
-
-        return is_elz_violator;
-    }
 
     template<class Int>
     size_t VRUDecomposition<Int>::n_elz_violators_in_dim(dim_type dim, int n_threads) const
@@ -899,8 +885,8 @@ namespace oineus {
             throw std::runtime_error("VRUDecomposition: cannot check ELZ without V matrix");
         }
 
-        size_t start_idx = dim_first.at(dim);
-        size_t end_idx = dim_last.at(dim) + 1;
+        size_t start_idx = _dim_first.at(dim);
+        size_t end_idx = _dim_last.at(dim) + 1;
 
         size_t n_cols_to_check = end_idx - start_idx;
 
@@ -954,41 +940,48 @@ namespace oineus {
     // return the beginning of interesting range
     // if dim > top dimensions, use all dimensions except 0 for homology
     template<class Int>
-    size_t VRUDecomposition<Int>::range_start_(dim_type dim) const
+    size_t VRUDecomposition<Int>::range_start_(dim_type _dim) const
     {
-        if (dim < dim_first.size() and dim >= 0)
-            return dim_first[dim];
-        else
-            if (dualize())
-                return 0;
-            else
-                return dim_first[1];
+        if (_dim < n_dims() and _dim >= 0)
+            return _dim_first[_dim];
+        // in cohomology, coboundary of vertices is interesting
+        if (dualize() or n_dims() == 0)
+            return 0;
+        // in homology, boundary of vertices is empty, we should start from dim 1
+        return _dim_first[1];
     }
 
     // return the end of interesting range
     // if dim > top dimensions, use all dimensions except top_dim for cohomology
     template<class Int>
-    size_t VRUDecomposition<Int>::range_end_(dim_type dim) const
+    size_t VRUDecomposition<Int>::range_end_(dim_type _dim) const
     {
-        if (dim < dim_first.size() and dim >= 0) {
-            return dim_last[dim] + 1;
-        } else {
-            // all dims
-            if (dualize()) {
-                // for cohomology: 0..dim-1
-                if (dim_last.size() > 2) {
-                    return dim_last[dim_last.size() - 2] + 1;
-                } else {
-                    return dim_last[1];
-                }
+        if (_dim < n_dims() and _dim >= 0)
+            return _dim_last[_dim] + 1;
+        // all dims
+        if (dualize()) {
+            // for cohomology: 0..dim-1
+            if (n_dims() > 2) {
+                return _dim_last[n_dims() - 2] + 1;
+            } else {
+                return _dim_last.back() + 1;
             }
-            else {
-                // for homology: 1...dim
-                return dim_last.back() + 1;
+        }
+        // for homology: 1...dim
+        return _dim_last.back() + 1;
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::set_is_elz_flag(dim_type _dim, bool new_value)
+    {
+        if (_dim != k_all_dims) {
+            is_elz_in_dim_[_dim] = new_value;
+        } else {
+            for(dim_type d = 0; d < _dim_first.size(); ++d) {
+                is_elz_in_dim_[d] = new_value;
             }
         }
     }
-
 
     template<class Int>
     void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads)
@@ -998,8 +991,9 @@ namespace oineus {
         }
 
         size_t n_violators = 0;
-        const size_t range_start_idx = range_start_(dim);
-        const size_t range_end_idx = range_end_(dim);
+        const auto _dim = _dim_from_dim(dim);
+        const size_t range_start_idx = range_start_(_dim);
+        const size_t range_end_idx = range_end_(_dim);
 
         if (verbose) { IC(dim, range_start_idx, range_end_idx); }
 
@@ -1015,74 +1009,10 @@ namespace oineus {
     #endif
         }
 
+        set_is_elz_flag(_dim, true);
+
         if (verbose) { IC(n_violators, size(), timer.elapsed()); }
     }
-
-    // template<class Int>
-    // void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads)
-    // {
-    //     using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
-    //
-    //     const bool all_dims = dim >= dim_first.size();
-    //
-    //     const size_t range_start_idx = all_dims ? 0 : dim_first.at(dim);
-        // const size_t range_end_idx = all_dims ? dim_last.back() + 1 : dim_last.at(dim) + 1 ;
-    //
-    //     if (not has_matrix_v()) {
-    //         throw std::runtime_error("VRUDecomposition: cannot restore ELZ without V matrix");
-    //     }
-    //
-    //     size_t n_violators = 0;
-    //
-    //     auto is_violator = mark_elz_violators_in_dim(dim, n_threads);
-    //
-    //     for (size_t current_col = range_start_idx; current_col < range_end_idx; ++current_col) {
-    //         if (is_violator[current_col - range_start_idx]) {
-    //             continue;
-    //         }
-    //         // Keep processing column j until no more violations are found
-    //
-    //         long int end_idx = 0;
-    //
-    //         while(true) {
-    //             long int v_idx = static_cast<long int>(v_data[current_col].size()) - 1 - end_idx;
-    //             if (v_idx < 0)
-    //                 break;
-    //             //size_t added_col = v_data[current_col][v_idx];
-    //             size_t added_col = v_data.at(current_col).at(v_idx);
-    //
-    //             bool is_current_col_death = not MatrixTraits::is_zero(r_data.at(current_col));
-    //             bool is_added_col_zero = MatrixTraits::is_zero(r_data.at(added_col));
-    //
-    //             // Check for ELZ violations:
-    //             // 1. We added a zero column that comes before j
-    //             bool added_zero_column = (added_col < current_col && is_added_col_zero);
-    //
-    //             // 2. Column j is a death and we added a column whose lowest one
-    //             //    is smaller (this addition wouldn't kill anything in ELZ)
-    //             bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
-    //                                             (MatrixTraits::low(&r_data.at(current_col)) > MatrixTraits::low(&r_data.at(added_col))));
-    //
-    //             if (added_zero_column || added_non_killing_column) {
-    //                 // Undo the addition by adding again (Z/2 arithmetic)
-    //                 MatrixTraits::add_to_column(v_data.at(current_col), v_data.at(added_col));
-    //                 if (not v_only) {
-    //                     MatrixTraits::add_to_column(r_data.at(current_col), r_data.at(added_col));
-    //                     if (has_matrix_u())
-    //                         MatrixTraits::add_to_column(u_data_t.at(added_col), u_data_t.at(current_col));
-    //                 }
-    //             }
-    //             end_idx++;
-    //         }
-    //
-    // //#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-    // //        if (current_col % 100 == 0) {
-    // //            OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-    // //        }
-    // //#endif
-    //     }
-    //     if (verbose) IC(std::accumulate(is_violator.begin(), is_violator.end(), 0), size());
-    // }
 
     template<class Int>
     void VRUDecomposition<Int>::reduce(Params& params)
@@ -1104,13 +1034,13 @@ namespace oineus {
 
         // Serial + no clearing already produces ELZ, so restore_elz is ignored there.
         const bool serial_without_clearing = (params.n_threads == 1 && !params.clearing_opt);
-        if (params.restore_elz and not params.compute_v and not serial_without_clearing)
+        if (not params.dims_to_restore_elz.empty() and not params.compute_v and not serial_without_clearing)
             throw std::runtime_error("Cannot restore ELZ during reduction without V matrix");
 
         if (params.n_threads == 1)
             reduce_serial(params);
         else if (params.compute_v)
-            reduce_parallel_rv(params, params.restore_elz);
+            reduce_parallel_rv(params);
         else
             reduce_parallel_r_only(params);
     }
@@ -1121,7 +1051,7 @@ namespace oineus {
         CALI_CXX_MARK_FUNCTION;
 
         // If clearing is off, serial reduction is already ELZ and restore_elz is ignored.
-        if (params.restore_elz and params.clearing_opt and not params.compute_v) {
+        if (not params.dims_to_restore_elz.empty() and params.clearing_opt and not params.compute_v) {
             throw std::runtime_error("Cannot restore ELZ during serial reduction without V matrix");
         }
 
@@ -1141,16 +1071,19 @@ namespace oineus {
             u_data_t = MatrixTraits::eye(d_data.size());
 
         // D matrix empty, nothing to do
-        if (d_data.empty())
+        if (d_data.empty()) {
+            is_reduced = true;
             return;
+        }
 
         _pivots = std::vector<Int>(n_rows, -1);
 
         // homology: go from top dimension to 0, to make clearing possible
-        // cohomology:
+        // cohomology: the opposite
+        // NB: _dim_first, _dim_last were reversed in ctor for cohomology!
         IntSparseColumn new_col;
-        for(int dim = dim_first.size() - 1; dim >= 0; --dim) {
-            for(Int i = dim_first[dim]; i <= dim_last[dim]; ++i) {
+        for(int dim = _dim_first.size() - 1; dim >= 0; --dim) {
+            for(Int i = _dim_first[dim]; i <= _dim_last[dim]; ++i) {
                 if (params.clearing_opt and not is_zero(r_data[i])) {
                     // simplex i is pivot -> i is positive -> its column is 0
                     if (_pivots[i] >= 0) {
@@ -1211,9 +1144,18 @@ namespace oineus {
         params.elapsed = timer_reduction.elapsed();
         params.elapsed_restore_elz = 0.0;
 
-        if (params.restore_elz and params.clearing_opt) {
+        // Serial reduction with clearing off produces ELZ by construction.
+        if (not params.clearing_opt) {
+            set_is_elz_flag(k_all_dims, true);
+        }
+
+        if (params.dims_to_restore_elz.size() > 0 and params.clearing_opt) {
             Timer timer_restore;
-            restore_elz(k_invalid_index, false, params.verbose, 1);
+            for(auto dim : params.dims_to_restore_elz) {
+                if (dim >= dim_first.size())
+                    continue;
+                restore_elz(dim, false, params.verbose, 1);
+            }
             params.elapsed_restore_elz = timer_restore.elapsed();
         }
 
@@ -1250,7 +1192,7 @@ namespace oineus {
         counter = 0;
 
         std::atomic<int> next_free_chunk = 0;
-        std::vector<std::atomic<int>> next_free_chunks(dim_first.size());
+        std::vector<std::atomic<int>> next_free_chunks(_dim_first.size());
         for(auto& nfc : next_free_chunks) {
             nfc.store(0, std::memory_order_relaxed);
         }
@@ -1297,7 +1239,7 @@ namespace oineus {
             ts.emplace_back(parallel_reduction<MatrixTraits, Int, MemoryReclaimC>,
                     std::ref(ar_matrix), std::ref(pivots), std::ref(next_free_chunk),
                     params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]),
-                    std::ref(next_free_chunks), std::ref(dim_first), std::ref(dim_last));
+                    std::ref(next_free_chunks), std::ref(_dim_first), std::ref(_dim_last));
 
 #ifdef __linux__
             cpu_set_t cpuset;
@@ -1363,7 +1305,7 @@ namespace oineus {
     }
 
     template<class Int>
-    void VRUDecomposition<Int>::reduce_parallel_rv(Params& params, bool restore_elz)
+    void VRUDecomposition<Int>::reduce_parallel_rv(Params& params)
     {
         CALI_CXX_MARK_FUNCTION;
         using namespace std::placeholders;
@@ -1389,7 +1331,7 @@ namespace oineus {
         counter = 0;
 
         std::atomic<int> next_free_chunk = 0;
-        std::vector<std::atomic<int>> next_free_chunks(dim_first.size());
+        std::vector<std::atomic<int>> next_free_chunks(_dim_first.size());
         for(auto& nfc : next_free_chunks) {
             nfc.store(0, std::memory_order_seq_cst);
         }
@@ -1433,7 +1375,8 @@ namespace oineus {
             ts.emplace_back(parallel_reduction<MatrixTraits, Int, MemoryReclaimC>,
                     std::ref(r_v_matrix), std::ref(pivots), std::ref(next_free_chunk),
                     params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]),
-                    std::ref(next_free_chunks), std::ref(dim_first), std::ref(dim_last));
+                    std::ref(next_free_chunks), std::ref(_dim_first),
+                    std::ref(_dim_last));
 
 #ifdef __linux__
             cpu_set_t cpuset;
@@ -1465,14 +1408,27 @@ namespace oineus {
         write_add_stats_file(stats);
 #endif
         const size_t n_workers = std::max<size_t>(1, std::min(static_cast<size_t>(n_threads), n_cols));
-        // Deterministic static partitioning to avoid a hot global fetch_add in tight loops.
-        auto run_parallel_cols = [n_cols, n_workers](const auto& fn) {
-            std::vector<std::thread> workers;
-            workers.reserve(n_workers);
 
-            for (size_t tid = 0; tid < n_workers; ++tid) {
-                const size_t begin = (tid * n_cols) / n_workers;
-                const size_t end = ((tid + 1) * n_cols) / n_workers;
+        // Deterministic static partitioning to avoid a hot global fetch_add in tight loops.
+
+        auto run_parallel_cols = [this, n_workers](dim_type dim, const auto& fn) {
+            if (dualize()) {
+                dim = _dim_first.size() - dim - 1;
+            }
+            const size_t start_idx = static_cast<size_t>(_dim_first[dim]);
+            const size_t end_idx   = static_cast<size_t>(_dim_last[dim]) + 1;
+            const size_t n_cols_in_dim = end_idx - start_idx;
+            if (n_cols_in_dim == 0)
+                return;
+
+            const size_t n_workers_eff = std::min(n_workers, n_cols_in_dim);
+
+            std::vector<std::thread> workers;
+            workers.reserve(n_workers_eff);
+
+            for (size_t tid = 0; tid < n_workers_eff; ++tid) {
+                const size_t begin = start_idx + (tid * n_cols_in_dim) / n_workers_eff;
+                const size_t end   = start_idx + ((tid + 1) * n_cols_in_dim) / n_workers_eff;
                 workers.emplace_back([begin, end, &fn]() {
                     for (size_t col_idx = begin; col_idx < end; ++col_idx) {
                         fn(col_idx);
@@ -1485,68 +1441,95 @@ namespace oineus {
             }
         };
 
-        if (restore_elz) {
+        // auto run_parallel_cols = [n_cols, n_workers](const auto& fn) {
+        //     std::vector<std::thread> workers;
+        //     workers.reserve(n_workers);
+        //
+        //     for (size_t tid = 0; tid < n_workers; ++tid) {
+        //         const size_t begin = (tid * n_cols) / n_workers;
+        //         const size_t end = ((tid + 1) * n_cols) / n_workers;
+        //         workers.emplace_back([begin, end, &fn]() {
+        //             for (size_t col_idx = begin; col_idx < end; ++col_idx) {
+        //                 fn(col_idx);
+        //             }
+        //         });
+        //     }
+        //
+        //     for (auto& t : workers) {
+        //         t.join();
+        //     }
+        // };
+
+
+        if (params.dims_to_restore_elz.size() > 0) {
             Timer timer_restore;
-            // First observed Bauer-fill failure is recorded here by CAS.
-            std::atomic<Int> missing_bauer_col{-1};
 
-            run_parallel_cols([&](size_t col_idx) {
-                auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
-                if (p != nullptr)
-                    return;
-
-                // Bauer trick for cleared columns: V[col] <- R[pivot(col)].
-                const Int pivot_col = pivots[col_idx].load(std::memory_order_relaxed);
-                if (pivot_col < 0) {
-                    Int expected = -1;
-                    missing_bauer_col.compare_exchange_strong(expected, static_cast<Int>(col_idx),
-                            std::memory_order_relaxed, std::memory_order_relaxed);
-                    return;
+            // Step 1: Bauer-trick fill for ALL cleared columns across
+            // every dim. The downstream copy-back walks every dim and
+            // expects every column pointer to be non-null, so we must
+            // fill cleared columns everywhere, not just in the dims
+            // we will restore_elz on.
+            {
+                std::atomic<Int> missing_bauer_col{-1};
+                for (dim_type d = 0;
+                     d < static_cast<dim_type>(_dim_first.size()); ++d) {
+                    run_parallel_cols(dualize() ? _dim_first.size() - d - 1 : d,
+                                      [&](size_t col_idx) {
+                        auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+                        if (p != nullptr) return;
+                        const Int pivot_col = pivots[col_idx].load(std::memory_order_relaxed);
+                        if (pivot_col < 0) {
+                            Int expected = -1;
+                            missing_bauer_col.compare_exchange_strong(expected, static_cast<Int>(col_idx),
+                                    std::memory_order_relaxed, std::memory_order_relaxed);
+                            return;
+                        }
+                        auto pivot_ptr = r_v_matrix[pivot_col].load(std::memory_order_relaxed);
+                        if (pivot_ptr == nullptr) {
+                            Int expected = -1;
+                            missing_bauer_col.compare_exchange_strong(expected, static_cast<Int>(col_idx),
+                                    std::memory_order_relaxed, std::memory_order_relaxed);
+                            return;
+                        }
+                        IntSparseColumn filled_v_col(pivot_ptr->r_column);
+                        auto* new_col = new RVColumn(IntSparseColumn(), std::move(filled_v_col));
+                        r_v_matrix[col_idx].store(new_col, std::memory_order_relaxed);
+                    });
                 }
-
-                auto pivot_ptr = r_v_matrix[pivot_col].load(std::memory_order_relaxed);
-                if (pivot_ptr == nullptr) {
-                    Int expected = -1;
-                    missing_bauer_col.compare_exchange_strong(expected, static_cast<Int>(col_idx),
-                            std::memory_order_relaxed, std::memory_order_relaxed);
-                    return;
+                if (missing_bauer_col.load(std::memory_order_relaxed) >= 0) {
+                    throw std::runtime_error("Bauer trick failed while filling V in reduce_parallel_rv");
                 }
-
-                IntSparseColumn filled_v_col(pivot_ptr->r_column);
-                auto* new_col = new RVColumn(IntSparseColumn(), std::move(filled_v_col));
-                r_v_matrix[col_idx].store(new_col, std::memory_order_relaxed);
-            });
-
-            if (missing_bauer_col.load(std::memory_order_relaxed) >= 0) {
-                throw std::runtime_error("Bauer trick failed while filling V in reduce_parallel_rv");
             }
 
-            // Snapshot original pointers so we can reclaim both old/new versions correctly
-            // after parallel restore possibly swaps some column pointers.
+            // Step 2: snapshot pointers (for double-free-safe reclaim
+            // after restore_elz may swap pointers below).
             std::vector<RVColumn*> r_v_matrix_copy(n_cols, nullptr);
-            run_parallel_cols([&](size_t col_idx) {
+            for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
                 r_v_matrix_copy[col_idx] = r_v_matrix[col_idx].load(std::memory_order_relaxed);
-            });
+            }
 
-            // Each thread restores its assigned columns; columns read from r_v_matrix are immutable
-            // snapshots published by pointer replacement.
-            run_parallel_cols([&](size_t col_idx) {
-                restore_elz_column_parallel<Int>(r_v_matrix, col_idx);
-            });
-
+            // Step 3: ELZ restore over the requested dims (others stay
+            // unrestored but still have valid Bauer-filled V columns).
+            for(dim_type dim: params.dims_to_restore_elz) {
+                run_parallel_cols(dim, [&](size_t col_idx) {
+                    restore_elz_column_parallel<Int>(r_v_matrix, col_idx);
+                });
+                // is_elz_in_dim_ uses the internal _dim key (matrix layout).
+                const dim_type _dim = static_cast<dim_type>(_dim_from_dim(dim));
+                set_is_elz_flag(_dim, true);
+            }
             params.elapsed_restore_elz = timer_restore.elapsed();
 
+            // Step 4: copy back from r_v_matrix to r_data / v_data.
             Timer timer_copy_back;
-
-            for(int dim_idx = dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
-                for(Int col_idx = dim_first[dim_idx]; col_idx <= dim_last[dim_idx]; ++col_idx) {
+            for(int dim_idx = _dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
+                for(Int col_idx = _dim_first[dim_idx]; col_idx <= _dim_last[dim_idx]; ++col_idx) {
                     auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
                     if (p == nullptr) {
                         throw std::runtime_error("NULL column after restore_elz in reduce_parallel_rv");
                     }
                     r_data[col_idx] = std::move(p->r_column);
                     v_data[col_idx] = std::move(p->v_column);
-
                     if (r_data[col_idx].size() > 0) {
                         if (pivots[r_data[col_idx].back()] != col_idx) {
                             IC(col_idx);
@@ -1562,11 +1545,9 @@ namespace oineus {
                     }
                 }
             }
-
             for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
                 auto p_current = r_v_matrix[col_idx].load(std::memory_order_relaxed);
                 auto p_original = r_v_matrix_copy[col_idx];
-                // If unchanged, delete once; if updated, delete both pointer generations.
                 if (p_current == p_original) {
                     delete p_current;
                 } else {
@@ -1575,11 +1556,12 @@ namespace oineus {
                 }
             }
             params.elapsed_copy_back = timer_copy_back.elapsed();
+
         } else {
             params.elapsed_restore_elz = 0.0;
             Timer timer_copy_back;
-            for(int dim_idx = dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
-                for(Int col_idx = dim_first[dim_idx]; col_idx <= dim_last[dim_idx]; ++col_idx) {
+            for(int dim_idx = _dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
+                for(Int col_idx = _dim_first[dim_idx]; col_idx <= _dim_last[dim_idx]; ++col_idx) {
                     auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
                     if (p) {
                         r_data[col_idx] = std::move(p->r_column);
@@ -1625,67 +1607,6 @@ namespace oineus {
 
         is_reduced = true;
     }
-
-
-//     template<class Int>
-//     template<class Cell, class Real>
-//     std::pair<Diagrams<Int>, Diagrams<Int>> VRUDecomposition<Int>::index_diagrams_separate_inf(const Filtration<Cell, Real>& fil, bool include_inf_points) const
-//     {
-//         if (not is_reduced)
-//             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
-//
-//         Diagrams<Int> result_finite(fil.max_dim());
-//         Diagrams<Int> result_infinite(fil.max_dim());
-//
-//         std::unordered_set<Int> rows_with_lowest_one;
-//
-//         if (include_inf_points)
-//             for(size_t i = 0; i < r_data.size(); ++i) {
-//                 if (!is_zero(&r_data[i]))
-//                     rows_with_lowest_one.insert(low(&r_data[i]));
-//
-// #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-//                 if (i % 100 == 0) {
-//                     OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-//                 }
-// #endif
-//
-//             }
-//
-//         for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
-//             auto col = &r_data[col_idx];
-//
-//             auto simplex_idx = fil.index_in_filtration(col_idx, dualize());
-// 			auto simplex_idx_us = fil.get_id_by_sorted_id(simplex_idx);
-//             if (is_zero(col)) {
-//                 if (not include_inf_points or rows_with_lowest_one.count(col_idx) != 0)
-//                     // we don't want infinite points or col_idx is a negative simplex
-//                     continue;
-//
-//                 // point at infinity
-//                 dim_type dim = fil.dim_by_sorted_id(simplex_idx);
-//                 Real birth = fil.value_by_sorted_id(simplex_idx);
-//                 Real death = fil.infinity();
-//
-//                 result.add_point(dim, birth, death, simplex_idx, plus_inf, simplex_idx_us, plus_inf);
-//             } else {
-//                 // finite point
-//                 Int birth_idx = fil.index_in_filtration(low(col), dualize()), death_idx = simplex_idx;
-// 		Int birth_idx_us = fil.get_id_by_sorted_id(birth_idx), death_idx_us = fil.get_id_by_sorted_id(death_idx);
-//                 dim_type dim = fil.dim_by_sorted_id(birth_idx);
-//
-//                 if (dualize()) {
-//                     result.add_point(dim - 1, death, birth, death_idx, birth_idx, death_idx_us, birth_idx_us);
-//                 } else {
-//                     result.add_point(dim, birth, death, birth_idx, death_idx, birth_idx_us, death_idx_us);
-//                 }
-//             }
-//         }
-//
-//         return result;
-//     }
-
-
 
     template<class Int>
     template<class Cell, class Real>
@@ -1955,22 +1876,16 @@ namespace oineus {
         // compute columns of U in parallel
         MatrixData u_data = MatrixData(v_data.size());
 
-        const bool all_dims = dim >= dim_first.size();
-        const size_t d_idx = dualize() ? dim_first.size() - dim - 1 : dim;
+        const size_t _dim = _dim_from_dim(dim);
 
-        const size_t col_start = range_start_(dim);
-        const size_t col_end = range_end_(dim);
+        const size_t col_start = range_start_(_dim);
+        const size_t col_end = range_end_(_dim);
 
         // for(size_t col_idx = col_start; col_idx < col_end; ++col_idx) {
         //     u_data[col_idx] = compute_u_column(col_idx);
         // }
 
         if (verbose) IC(col_start, col_end);
-
-        // tf::Executor executor(n_threads);
-        // tf::Taskflow taskflow_u;
-        // taskflow_u.for_each_index(col_start, col_end, (size_t)1, [this, &u_data](size_t col_idx) { u_data[col_idx] = compute_u_column_1(col_idx); });
-        // executor.run(taskflow_u).get();
 
         std::atomic<size_t> next_free_column(col_start);
         std::vector<std::thread> workers;
@@ -2008,20 +1923,9 @@ namespace oineus {
         // compute columns of U in parallel
         MatrixData u_data = MatrixData(v_data.size());
 
-        const bool all_dims = dim >= dim_first.size();
-        const size_t d_idx = dualize() ? dim_first.size() - dim - 1 : dim;
-
-        const size_t col_start = range_start_(dim);
-        const size_t col_end = range_end_(dim);
-
-        // for(size_t col_idx = col_start; col_idx < col_end; ++col_idx) {
-        //     u_data[col_idx] = compute_u_column(col_idx);
-        // }
-
-        // tf::Executor executor(n_threads);
-        // tf::Taskflow taskflow_u;
-        // taskflow_u.for_each_index(col_start, col_end, (size_t)1, [this, &u_data](size_t col_idx) { u_data[col_idx] = compute_u_column(col_idx); });
-        // executor.run(taskflow_u).get();
+        const auto _dim = _dim_from_dim(dim);
+        const size_t col_start = range_start_(_dim);
+        const size_t col_end = range_end_(_dim);
 
         std::atomic<size_t> next_free_column(col_start);
         std::vector<std::thread> workers;
@@ -2080,6 +1984,27 @@ namespace oineus {
             if (cmp_op(value_at(piv_col_idx), value_bound)) {
                 break;
             }
+            // Defensive fence: if vt_data[piv] is empty, residual will
+            // not advance and we would loop forever (with result growing
+            // without bound -> memory exhaustion / OS kill). This means
+            // V[piv][piv] = 1 is not satisfied -- typically because
+            // clearing zeroed the diagonal for this column on the
+            // forward side and restore_elz did not put it back. Bail out
+            // with a clear error rather than hang.
+            if (static_cast<size_t>(piv_col_idx) >= vt_data.size()
+                or vt_data[piv_col_idx].empty()) {
+                std::ostringstream dbg;
+                if (static_cast<size_t>(piv_col_idx) < v_data.size()) {
+                    dbg << " v_data[" << piv_col_idx << "].size()="
+                        << v_data[piv_col_idx].size() << " contents:";
+                    for (auto x : v_data[piv_col_idx]) dbg << " " << x;
+                }
+                throw std::runtime_error(
+                    "compute_u_row_bounded: vt_data["
+                    + std::to_string(piv_col_idx) + "] is empty; "
+                    "V does not have unit diagonal at this column."
+                    + dbg.str());
+            }
             result.push_back(piv_col_idx);
             MatrixTraits::add_to_cached(vt_data[piv_col_idx], residual);
         }
@@ -2118,6 +2043,19 @@ namespace oineus {
         if (rows.empty())
             return;
 
+        const auto _dim = _dim_from_dim(dim);
+
+        // The row solver assumes V is in ELZ form. Silent drift here
+        // yields wrong gradients; consult the cached flag. A full
+        // is_elz() walk would be O(matrix) per call, far too
+        // expensive for the gradient loop. The flag is set by
+        // restore_elz() and by serial reduction without clearing.
+        if (not is_elz_in_dim_.at(_dim))
+            throw std::runtime_error(
+                "compute_partial_u_rows: V is not known to be in ELZ "
+                "form. Call restore_elz() or reduce serially without "
+                "clearing before this entry point.");
+
         if (n_threads == 0) n_threads = 1;
         n_threads = std::min(n_threads, rows.size());
 
@@ -2130,7 +2068,7 @@ namespace oineus {
         // any row solve in dim d will read.
         auto vt_data = MatrixTraits::col_to_row_format_parallel(
                 v_data, static_cast<int>(n_threads),
-                range_start_(dim), range_end_(dim),
+                range_start_(_dim), range_end_(_dim),
                 static_cast<typename MatrixTraits::Int>(v_data.size()));
 
         auto vt_elapsed = timer.elapsed_reset();
@@ -2167,8 +2105,9 @@ namespace oineus {
                                                      size_t n_threads,
                                                      bool verbose)
     {
-        const size_t cstart = range_start_(dim);
-        const size_t cend = range_end_(dim);
+        const auto _dim = _dim_from_dim(dim);
+        const size_t cstart = range_start_(_dim);
+        const size_t cend = range_end_(_dim);
         if (cend <= cstart) {
             if (u_data_t.size() != v_data.size())
                 u_data_t = MatrixData(v_data.size());

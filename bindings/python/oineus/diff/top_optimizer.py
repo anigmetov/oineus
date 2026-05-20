@@ -1,3 +1,5 @@
+from typing import List, Optional
+
 from .. import _oineus
 from .diff_filtration import DiffFiltration
 
@@ -24,21 +26,50 @@ def _opt_class_for_filtration(fil):
     return cls, fil
 
 
-def make_under_topology_optimizer(fil, *, defer_reduction: bool = False):
+def make_under_topology_optimizer(fil, *, with_crit_sets, dims_to_restore_elz=None,
+                                  n_threads=1, u_strategy=None):
     """Construct the C++ TopologyOptimizer for any filtration cell type."""
     cls, under_fil = _opt_class_for_filtration(fil)
-    return cls(under_fil, defer_reduction=defer_reduction)
+    dims = list(dims_to_restore_elz) if dims_to_restore_elz else []
+    if u_strategy is None:
+        u_strategy = _oineus.UStrategy.Auto
+    return cls(under_fil, with_crit_sets=with_crit_sets,
+               dims_to_restore_elz=dims, n_threads=n_threads,
+               u_strategy=u_strategy)
 
 
 class TopologyOptimizer:
+    """Thin Python wrapper that picks the right C++ TopologyOptimizer
+    instantiation for the filtration's cell type and forwards calls
+    to it. The under_fil (the C++ filtration) is exposed via
+    `self.under_fil` for callers that need it directly.
+
+    The optimizer is built for one autograd backward; the reduction
+    recipe is fixed at construction time:
+
+      with_crit_sets=False  -> R only (parallel + clearing).
+      with_crit_sets=True   -> R + V + restore_ELZ in the given dims.
+                                U is recovered on demand via
+                                ensure_has_u_hom / ensure_has_u_coh,
+                                unless u_strategy=LegacyInBand, in
+                                which case U is built in-band
+                                (serial, clearing off).
     """
-    A wrapper around C++ topology optimizer.
-    The C++ class is templated by the Cell type; this wrapper picks the
-    correct instantiation from the type of the underlying filtration.
-    """
-    def __init__(self, fil):
+
+    def __init__(self, fil, *, with_crit_sets: bool = True,
+                 dims_to_restore_elz: Optional[List[int]] = None,
+                 n_threads: int = 1,
+                 u_strategy=None):
         cls, under_fil = _opt_class_for_filtration(fil)
-        self.under_opt = cls(under_fil)
+        dims = list(dims_to_restore_elz) if dims_to_restore_elz else []
+        if u_strategy is None:
+            u_strategy = _oineus.UStrategy.Auto
+        self.under_opt = cls(under_fil, with_crit_sets=with_crit_sets,
+                             dims_to_restore_elz=dims, n_threads=n_threads,
+                             u_strategy=u_strategy)
+        self.under_fil = under_fil
+
+    # diagram + simplification
 
     def compute_diagram(self, include_inf_points: bool):
         return self.under_opt.compute_diagram(include_inf_points)
@@ -49,7 +80,9 @@ class TopologyOptimizer:
     def get_nth_persistence(self, dim: int, n: int):
         return self.under_opt.get_nth_persistence(dim=dim, n=n)
 
-    def match(self, template_dgm, dim: int, wasserstein_q: float = 1.0, wasserstein_delta: float = 0.01, return_wasserstein_distance: bool = False):
+    def match(self, template_dgm, dim: int, wasserstein_q: float = 1.0,
+              wasserstein_delta: float = 0.01,
+              return_wasserstein_distance: bool = False):
         return self.under_opt.match(
             template_dgm=template_dgm,
             dim=dim,
@@ -57,6 +90,8 @@ class TopologyOptimizer:
             wasserstein_delta=wasserstein_delta,
             return_wasserstein_distance=return_wasserstein_distance,
         )
+
+    # decomposition handles
 
     @property
     def homology_decomposition(self):
@@ -66,17 +101,45 @@ class TopologyOptimizer:
     def cohomology_decomposition(self):
         return self.under_opt.cohomology_decomposition
 
+    def homology_decomposition_ref(self):
+        return self.under_opt.homology_decomposition_ref()
+
+    def cohomology_decomposition_ref(self):
+        return self.under_opt.cohomology_decomposition_ref()
+
+    # reduction control
+
+    def ensure_hom_reduced(self):
+        return self.under_opt.ensure_hom_reduced()
+
+    def ensure_coh_reduced(self):
+        return self.under_opt.ensure_coh_reduced()
+
+    def ensure_has_u_hom(self, dim: int, rows_fil, bounds):
+        return self.under_opt.ensure_has_u_hom(dim, rows_fil, bounds)
+
+    def ensure_has_u_coh(self, dim: int, rows_fil, bounds):
+        return self.under_opt.ensure_has_u_coh(dim, rows_fil, bounds)
+
+    def reduce_all(self):
+        return self.under_opt.reduce_all()
+
+    def update(self, new_values, n_threads: int = 1):
+        return self.under_opt.update(new_values, n_threads)
+
+    # crit-sets primitives
+
+    def crit_sets_apply(self, indices, values, strategy):
+        return self.under_opt.crit_sets_apply(indices, values, strategy)
+
     def singleton(self, index: int, value: float):
         return self.under_opt.singleton(index, value)
 
     def singletons(self, indices, values):
         return self.under_opt.singletons(indices, values)
 
-    def reduce_all(self):
-        return self.under_opt.reduce_all()
-
-    def update(self):
-        return self.under_opt.update()
+    def combine_loss(self, critical_sets, strategy):
+        return self.under_opt.combine_loss(critical_sets, strategy)
 
     def increase_death(self, negative_simplex_idx: int):
         return self.under_opt.increase_death(negative_simplex_idx)
@@ -89,6 +152,3 @@ class TopologyOptimizer:
 
     def decrease_birth(self, positive_simplex_idx: int):
         return self.under_opt.decrease_birth(positive_simplex_idx)
-
-    def combine_loss(self, critical_sets, strategy):
-        return self.under_opt.combine_loss(critical_sets, strategy)

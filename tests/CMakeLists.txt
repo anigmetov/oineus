@@ -69,7 +69,11 @@ else()
             dgm-dist
             diff-critical-sets
             diff-cube-fil
+            diff-forward-reduces-one-side
             diff-grad
+            diff-inf-points-raises
+            diff-partial-u-elz-assert
+            diff-update-is-lazy
             diff-wass
             fr-dgm-random
             fr-dgm-vertebra

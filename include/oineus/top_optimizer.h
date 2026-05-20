@@ -11,6 +11,29 @@
 
 namespace oineus {
 
+// Pick the U-computation strategy used by the crit-sets backward in
+// oineus.diff. Exposed to Python via nanobind.
+//   Auto          -- production default; resolves to RowPartial today.
+//   RowPartial    -- parallel V-only with restore_elz (cheap), then a
+//                    row-form partial U pass via Decomposition::
+//                    compute_partial_u_rows over only the rows the
+//                    walker reads. Falls back to compute_full_u_rows
+//                    when the requested row count exceeds a fraction
+//                    of the dim's matrix-column range.
+//   LegacyInBand  -- clearing off, U built in-band during reduction
+//                    (serial). Available as a control / cross-check.
+enum class UStrategy { Auto, RowPartial, LegacyInBand };
+
+inline std::ostream& operator<<(std::ostream& out, UStrategy s)
+{
+    switch (s) {
+        case UStrategy::Auto:         out << "UStrategy::Auto"; break;
+        case UStrategy::RowPartial:   out << "UStrategy::RowPartial"; break;
+        case UStrategy::LegacyInBand: out << "UStrategy::LegacyInBand"; break;
+    }
+    return out;
+}
+
 struct ComputeFlags {
     bool compute_cohomology {false};
     bool compute_homology_u {false};
@@ -130,144 +153,282 @@ public:
         }
     };
 
-//    TopologyOptimizer(const BoundaryMatrix& boundary_matrix, const Values& values, bool negate = false)
-//            :
-//            decmp_hom_(boundary_matrix),
-//            negate_(negate)
-//    {
-//    }
+    // TopologyOptimizer(const Fil& fil)
+    //         :
+    //         negate_(fil.negate()),
+    //         fil_(fil),
+    //         decmp_hom_(fil, false),
+    //         decmp_coh_(fil, true)
+    // {
+    //     params_hom_.compute_v = true;
+    //     params_coh_.compute_v = true;
+    //     params_hom_.compute_u = true;
+    //     params_coh_.compute_u = true;
+    //     params_hom_.clearing_opt = false;
+    //     params_coh_.clearing_opt = false;
+    // }
+    //
+    // TopologyOptimizer(const Fil& fil, const ComputeFlags& hints)
+    //         :
+    //         decmp_hom_(fil, false),
+    //         decmp_coh_(fil, true),
+    //         fil_(fil),
+    //         negate_(fil.negate())
+    // {
+    //     params_hom_.compute_u = hints.compute_homology_u;
+    //     params_coh_.compute_u = hints.compute_cohomology_u;
+    //     params_hom_.clearing_opt = false;
+    //     params_coh_.clearing_opt = false;
+    // }
 
-    TopologyOptimizer(const Fil& fil)
+    // Recipe is decided here at construction time and stays fixed
+    // for the lifetime of the optimizer (one autograd backward).
+    //
+    //   !with_crit_sets:                  R only, parallel + clearing.
+    //   with_crit_sets, !LegacyInBand:    R + V, parallel + clearing,
+    //                                     restore_elz in dims_to_restore_elz.
+    //   with_crit_sets, LegacyInBand:     R + V + U, serial + clearing off.
+    TopologyOptimizer(const Fil& fil,
+                      bool with_crit_sets = true,
+                      DimVec dims_to_restore_elz = DimVec(),
+                      int n_threads = 1,
+                      UStrategy u_strategy = UStrategy::Auto)
             :
             negate_(fil.negate()),
             fil_(fil),
-            decmp_hom_(fil, false),
-            decmp_coh_(fil, true)
-    {
-        params_hom_.compute_v = true;
-        params_coh_.compute_v = true;
-        params_hom_.compute_u = true;
-        params_coh_.compute_u = true;
-        params_hom_.clearing_opt = false;
-        params_coh_.clearing_opt = false;
-    }
-
-    TopologyOptimizer(const Fil& fil, const ComputeFlags& hints)
-            :
             decmp_hom_(fil, false),
             decmp_coh_(fil, true),
-            fil_(fil),
-            negate_(fil.negate())
+            with_crit_sets_(with_crit_sets),
+            n_threads_(n_threads),
+            dims_to_restore_elz_(std::move(dims_to_restore_elz)),
+            u_strategy_(u_strategy)
     {
-        params_hom_.compute_u = hints.compute_homology_u;
-        params_coh_.compute_u = hints.compute_cohomology_u;
-        params_hom_.clearing_opt = false;
-        params_coh_.clearing_opt = false;
-    }
+        const bool legacy_in_band =
+            with_crit_sets_ and u_strategy_ == UStrategy::LegacyInBand;
 
-    // Defer-reduction constructor: do not reduce eagerly. The caller
-    // must call ensure_reduced_hom / ensure_reduced_coh per backward
-    // to pick the cheapest reduction that still produces V (and U if
-    // needed). Tag-dispatch overload to keep intent explicit at call
-    // sites.
-    struct DeferReduction {};
-
-    TopologyOptimizer(const Fil& fil, DeferReduction)
-            :
-            negate_(fil.negate()),
-            fil_(fil),
-            decmp_hom_(fil, false),
-            decmp_coh_(fil, true)
-    {
-        // V is correct under clearing per the fast_critical_sets paper, so
-        // when the caller does not need U on a side we keep clearing on.
-        params_hom_.compute_v = true;
-        params_hom_.compute_u = false;
-        params_hom_.clearing_opt = true;
-        params_coh_.compute_v = true;
-        params_coh_.compute_u = false;
-        params_coh_.clearing_opt = true;
-    }
-
-    // Tracks how each side was last reduced (or that it has not been).
-    // matrix_summary() returns this for diagnostics + benchmarks; the
-    // ensure_reduced_* helpers also use it to skip work.
-    struct SideStatus {
-        bool is_reduced {false};
-        bool has_v {false};
-        bool has_u {false};
-        bool clearing_opt_used {false};
-
-        friend std::ostream& operator<<(std::ostream& out, const SideStatus& s)
-        {
-            out << "SideStatus(is_reduced=" << (s.is_reduced ? "true" : "false")
-                << ", has_v=" << (s.has_v ? "true" : "false")
-                << ", has_u=" << (s.has_u ? "true" : "false")
-                << ", clearing_opt_used=" << (s.clearing_opt_used ? "true" : "false") << ")";
-            return out;
+        // If the caller didn't pin which dims to restore ELZ in, default
+        // to "all dims" for crit-sets. Otherwise downstream partial-U
+        // calls would throw because is_elz_in_dim_ has nothing flipped on.
+        if (with_crit_sets_ and not legacy_in_band and dims_to_restore_elz_.empty()) {
+            for (dim_type d = 0;
+                 d < static_cast<dim_type>(decmp_hom_.n_dims()); ++d) {
+                dims_to_restore_elz_.push_back(d);
+            }
         }
-    };
 
-    SideStatus side_status(const Decomposition& dcmp, const Params& params) const
-    {
-        SideStatus s;
-        s.is_reduced = dcmp.is_reduced;
-        s.has_v = dcmp.is_reduced and params.compute_v;
-        s.has_u = dcmp.has_matrix_u();
-        s.clearing_opt_used = params.clearing_opt;
-        return s;
+        // Mirror constructor inputs into both params; reduction
+        // drivers read from Params.
+        params_hom_.n_threads = legacy_in_band ? 1 : n_threads_;
+        params_coh_.n_threads = legacy_in_band ? 1 : n_threads_;
+        // ELZ restoration only happens when V is being built, so the
+        // dgm-loss branch below clears this back to empty.
+        params_hom_.dims_to_restore_elz = dims_to_restore_elz_;
+        params_coh_.dims_to_restore_elz = dims_to_restore_elz_;
+
+        if (not with_crit_sets_) {
+            // dgm-loss: only the pairing in R is needed.
+            params_hom_.compute_v = false;
+            params_coh_.compute_v = false;
+            params_hom_.compute_u = false;
+            params_coh_.compute_u = false;
+            params_hom_.clearing_opt = true;
+            params_coh_.clearing_opt = true;
+            params_hom_.dims_to_restore_elz.clear();
+            params_coh_.dims_to_restore_elz.clear();
+        } else if (legacy_in_band) {
+            // In-band U: clearing off, serial. The forward already
+            // builds U during reduction; ensure_has_u_* will be a no-op.
+            params_hom_.compute_v = true;
+            params_coh_.compute_v = true;
+            params_hom_.compute_u = true;
+            params_coh_.compute_u = true;
+            params_hom_.clearing_opt = false;
+            params_coh_.clearing_opt = false;
+        } else {
+            // crit-sets default: V is built; U is computed on demand
+            // via ensure_has_u_* from a known-ELZ V.
+            params_hom_.compute_v = true;
+            params_coh_.compute_v = true;
+            params_hom_.compute_u = false;
+            params_coh_.compute_u = false;
+            params_hom_.clearing_opt = true;
+            params_coh_.clearing_opt = true;
+        }
     }
 
-    SideStatus hom_status() const { return side_status(decmp_hom_, params_hom_); }
-    SideStatus coh_status() const { return side_status(decmp_coh_, params_coh_); }
+    // // Tracks how each side was last reduced (or that it has not been).
+    // // matrix_summary() returns this for diagnostics + benchmarks; the
+    // // ensure_reduced_* helpers also use it to skip work.
+    // struct SideStatus {
+    //     bool is_reduced {false};
+    //     bool has_v {false};
+    //     bool has_u {false};
+    //     bool clearing_opt_used {false};
+    //
+    //     friend std::ostream& operator<<(std::ostream& out, const SideStatus& s)
+    //     {
+    //         out << "SideStatus(is_reduced=" << (s.is_reduced ? "true" : "false")
+    //             << ", has_v=" << (s.has_v ? "true" : "false")
+    //             << ", has_u=" << (s.has_u ? "true" : "false")
+    //             << ", clearing_opt_used=" << (s.clearing_opt_used ? "true" : "false") << ")";
+    //         return out;
+    //     }
+    // };
+    //
+    // SideStatus side_status(const Decomposition& dcmp, const Params& params) const
+    // {
+    //     SideStatus s;
+    //     s.is_reduced = dcmp.is_reduced;
+    //     s.has_v = dcmp.is_reduced and params.compute_v;
+    //     s.has_u = dcmp.has_matrix_u();
+    //     s.clearing_opt_used = params.clearing_opt;
+    //     return s;
+    // }
+    //
+    // SideStatus hom_status() const { return side_status(decmp_hom_, params_hom_); }
+    // SideStatus coh_status() const { return side_status(decmp_coh_, params_coh_); }
 
-    // Per-side reduction policy for the in-band-U crit-sets path.
-    // Always produces V; produces U when need_u is true. Clearing is on
-    // when no U is needed; off when U is needed (in-band U requires a
-    // non-cleared R). If the side is already reduced and the existing
-    // state covers what is asked for, returns immediately. Otherwise
-    // rebuilds from scratch.
-    void ensure_reduced_hom(bool need_u)
+    // ---------------------------------------------------------------
+    // New per-backward API. The optimizer lives for one autograd call;
+    // params_hom_/_coh_ were set at construction; idempotency is just
+    // is_reduced.
+
+    void ensure_hom_reduced()
     {
-        ensure_reduced_side(decmp_hom_, params_hom_, /*dualize*/false, need_u);
+        if (decmp_hom_.is_reduced) return;
+        decmp_hom_.reduce(params_hom_);
     }
 
-    void ensure_reduced_coh(bool need_u)
+    void ensure_coh_reduced()
     {
-        ensure_reduced_side(decmp_coh_, params_coh_, /*dualize*/true, need_u);
+        if (decmp_coh_.is_reduced) return;
+        decmp_coh_.reduce(params_coh_);
     }
 
-    // Parallel V-only reduction with restore_elz, no U. A separate
-    // partial-U pass (compute_partial_u_from_v_1 or
-    // compute_partial_u_rows on the returned decomposition) runs on
-    // top of this. Always rebuilds; this entry point is intended for
-    // backward passes that start from a fresh decomposition and do
-    // not benefit from caching state across optimization steps.
-    void ensure_reduced_for_partial_u_hom(int n_threads)
+private:
+    // Find the geometric dim block that owns the given filtration
+    // index by walking dim_first / dim_last (filtration layout).
+    // Returns -1 if not found.
+    static dim_type _find_geom_dim(const Decomposition& dcmp, size_t fil_idx)
     {
-        Params p;
-        p.compute_v = true;
-        p.compute_u = false;
-        p.clearing_opt = true;
-        p.restore_elz = true;
-        p.n_threads = n_threads;
-        decmp_hom_ = Decomposition(fil_, /*dualize*/false);
-        decmp_hom_.reduce(p);
-        params_hom_ = p;
+        for (size_t d = 0; d < dcmp.dim_first.size(); ++d) {
+            if (static_cast<size_t>(dcmp.dim_first[d]) <= fil_idx and
+                fil_idx <= static_cast<size_t>(dcmp.dim_last[d]))
+                return static_cast<dim_type>(d);
+        }
+        return -1;
     }
 
-    void ensure_reduced_for_partial_u_coh(int n_threads)
+public:
+    // Make U-row data available on the hom side over the rows the
+    // crit-set walker will read for death moves. rows_fil are
+    // filtration indices (== matrix indices on hom). The internal
+    // dim block is inferred from the first row index, since on the
+    // hom side a death simplex of an H_k pair is (k+1)-dim, not k.
+    // For LegacyInBand U was already built in-band by the forward;
+    // this is a no-op.
+    void ensure_has_u_hom(dim_type /*dim*/, Indices rows_fil, Values bounds)
     {
-        Params p;
-        p.compute_v = true;
-        p.compute_u = false;
-        p.clearing_opt = true;
-        p.restore_elz = true;
-        p.n_threads = n_threads;
-        decmp_coh_ = Decomposition(fil_, /*dualize*/true);
-        decmp_coh_.reduce(p);
-        params_coh_ = p;
+        ensure_hom_reduced();
+        if (u_strategy_ == UStrategy::LegacyInBand) return;
+        if (rows_fil.empty()) return;
+        if (rows_fil.size() != bounds.size())
+            throw std::runtime_error("ensure_has_u_hom: rows/bounds size mismatch");
+
+        // The geometric dim of the death simplex on the hom side is
+        // (diagram_dim + 1). Infer it from the first row's
+        // filtration index (== matrix index on hom).
+        const auto geom_dim = _find_geom_dim(decmp_hom_, static_cast<size_t>(rows_fil[0]));
+        if (geom_dim < 0)
+            throw std::runtime_error("ensure_has_u_hom: row index out of range");
+
+        auto value_at = [this](size_t midx) -> Real {
+            return fil_.get_cell_value(
+                fil_.index_in_filtration(midx, /*dualize=*/false));
+        };
+
+        // For partial-vs-full sizing we want the count of cells in
+        // this dim block on the matrix layout.
+        const auto _dim = decmp_hom_._dim_from_dim(geom_dim);
+        const size_t dim_size = decmp_hom_._dim_last[_dim]
+                              - decmp_hom_._dim_first[_dim] + 1;
+        if (4 * rows_fil.size() > 3 * dim_size) {
+            decmp_hom_.template compute_full_u_rows<Real>(geom_dim, value_at,
+                                           static_cast<size_t>(n_threads_));
+            return;
+        }
+
+        // Auto/RowPartial: V^T U^T = I. Hom-side U is read for
+        // increase_death; on non-negate the walker truncates from
+        // above. negate flips the direction.
+        std::vector<size_t> rows_sz(rows_fil.begin(), rows_fil.end());
+        if (negate_) {
+            decmp_hom_.compute_partial_u_rows(rows_sz, bounds, geom_dim,
+                value_at,
+                [](Real a, Real b) { return a < b; },
+                static_cast<size_t>(n_threads_));
+        } else {
+            decmp_hom_.compute_partial_u_rows(rows_sz, bounds, geom_dim,
+                value_at,
+                [](Real a, Real b) { return a > b; },
+                static_cast<size_t>(n_threads_));
+        }
     }
+
+    // Coh-side U for birth moves. rows_fil are filtration indices;
+    // we convert to matrix indices (fil_size - 1 - i) before calling
+    // the row solver. The internal dim block is inferred from the
+    // first matrix-layout row index.
+    void ensure_has_u_coh(dim_type /*dim*/, Indices rows_fil, Values bounds)
+    {
+        ensure_coh_reduced();
+        if (u_strategy_ == UStrategy::LegacyInBand) return;
+        if (rows_fil.empty()) return;
+        if (rows_fil.size() != bounds.size())
+            throw std::runtime_error("ensure_has_u_coh: rows/bounds size mismatch");
+
+        const size_t n = fil_.size();
+        std::vector<size_t> rows_mat;
+        rows_mat.reserve(rows_fil.size());
+        for (auto r : rows_fil) rows_mat.push_back(n - 1 - static_cast<size_t>(r));
+
+        // The geometric dim of the birth simplex on the coh side is
+        // the diagram dim itself. Infer from the first row's
+        // filtration index (rows_fil[0]).
+        const auto geom_dim = _find_geom_dim(decmp_coh_, static_cast<size_t>(rows_fil[0]));
+        if (geom_dim < 0)
+            throw std::runtime_error("ensure_has_u_coh: row index out of range");
+
+        auto value_at = [this](size_t midx) -> Real {
+            return fil_.get_cell_value(
+                fil_.index_in_filtration(midx, /*dualize=*/true));
+        };
+
+        const auto _dim = decmp_coh_._dim_from_dim(geom_dim);
+        const size_t dim_size = decmp_coh_._dim_last[_dim]
+                              - decmp_coh_._dim_first[_dim] + 1;
+        if (4 * rows_mat.size() > 3 * dim_size) {
+            decmp_coh_.template compute_full_u_rows<Real>(geom_dim, value_at,
+                                           static_cast<size_t>(n_threads_));
+            return;
+        }
+
+        // Coh-side U is read for decrease_birth; matrix order is
+        // reverse filtration order, so the walker truncates from
+        // below on non-negate; negate flips.
+        if (negate_) {
+            decmp_coh_.compute_partial_u_rows(rows_mat, bounds, geom_dim,
+                value_at,
+                [](Real a, Real b) { return a > b; },
+                static_cast<size_t>(n_threads_));
+        } else {
+            decmp_coh_.compute_partial_u_rows(rows_mat, bounds, geom_dim,
+                value_at,
+                [](Real a, Real b) { return a < b; },
+                static_cast<size_t>(n_threads_));
+        }
+    }
+    // ---------------------------------------------------------------
 
     bool cmp(Real a, Real b) const
     {
@@ -393,12 +554,17 @@ public:
         return result;
     }
 
+    // Invalidate both decompositions and reassign the filtration.
+    // The next ensure_reduced_* call rebuilds whichever side it needs
+    // with the appropriate recipe; no eager reduction here.
     void update(const Values& new_values, int n_threads = 1)
     {
+        (void) n_threads;
         fil_.set_values(new_values);
-
-        decmp_hom_ = Decomposition(fil_, false, n_threads);
-        decmp_coh_ = Decomposition(fil_, true, n_threads);
+        decmp_hom_ = Decomposition(fil_, /*dualize*/false);
+        decmp_coh_ = Decomposition(fil_, /*dualize*/true);
+        params_hom_ = Params();
+        params_coh_ = Params();
     }
 
     decltype(auto) convert_critical_sets(const CriticalSets& critical_sets) const
@@ -627,8 +793,18 @@ public:
                                   ConflictStrategy strategy)
     {
         CALI_CXX_MARK_FUNCTION;
+        if (not with_crit_sets_)
+            throw std::runtime_error(
+                "crit_sets_apply called on a dgm-loss optimizer "
+                "(with_crit_sets_=false); construct the optimizer with "
+                "with_crit_sets=true to use the crit-sets backward.");
         if (indices.size() != values.size())
             throw std::runtime_error("crit_sets_apply: indices and values must have the same size");
+
+        // Per-pair dispatch reads decmp_hom_.is_negative(idx), so hom
+        // must be at least R-reduced. ensure_hom_reduced is a no-op
+        // if the forward already reduced this side.
+        ensure_hom_reduced();
 
         // First pass: per-pair walk, accumulate into a flat (id -> values)
         // multimap. Critical simplices (the input ones, for FCA) are
@@ -890,33 +1066,31 @@ public:
     Params params_hom_;
     Params params_coh_;
 
+    // True iff we are set up to drive crit-sets backward (V on the
+    // forward side, U recoverable via ensure_has_u_*). False = the
+    // optimizer only supports diagram-loss; crit_sets_apply throws.
+    bool with_crit_sets_ { true };
+
+    // Thread count used by the reduction drivers. Stored here for the
+    // ensure_has_u_* methods, which also feed it into
+    // compute_partial_u_rows / compute_full_u_rows.
+    int n_threads_ { 1 };
+
+    // Geometric dims (filtration-layout) in which we restore ELZ
+    // during the forward reduction, so that partial-U is admissible.
+    // For dgm-loss this is unused (restore_elz block in reduce_serial
+    // is gated on compute_v).
+    DimVec dims_to_restore_elz_;
+
+    // Which equation to solve for U on demand (V^T U^T = I row-form,
+    // R U = D column-form, or LegacyInBand which builds U during
+    // reduction). The constructor picks the forward recipe accordingly.
+    UStrategy u_strategy_ { UStrategy::Auto };
+
     // methods
     bool cmp(Real a, Real b)
     {
         return negate_ ? a > b : a < b;
-    }
-
-    // Helper for ensure_reduced_hom / ensure_reduced_coh.
-    void ensure_reduced_side(Decomposition& dcmp, Params& params,
-                             bool dualize, bool need_u)
-    {
-        const bool needed_clearing = !need_u;
-        const bool already_ok = dcmp.is_reduced
-                                and params.compute_v
-                                and (not need_u or dcmp.has_matrix_u())
-                                and (not need_u or not params.clearing_opt);
-        if (already_ok)
-            return;
-
-        // Rebuild from scratch: when the prior reduction used clearing
-        // and the new request needs U, the cleared R is irrecoverable;
-        // when the prior reduction was incomplete (V missing, U missing
-        // when needed), restarting is the simplest correct option.
-        params.compute_v = true;
-        params.compute_u = need_u;
-        params.clearing_opt = needed_clearing;
-        dcmp = Decomposition(fil_, dualize);
-        dcmp.reduce_serial(params);
     }
 
     Indices change_birth(size_t positive_simplex_idx, Real target_birth)

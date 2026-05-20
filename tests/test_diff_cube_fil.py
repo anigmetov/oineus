@@ -110,10 +110,11 @@ def test_topology_optimizer_dispatch(ndim):
     shape = tuple(3 + i for i in range(ndim))
     data = torch.tensor(_random_grid(np.random.default_rng(4), shape), requires_grad=True)
     df = od.cube_filtration(data, max_dim=ndim)
-    opt = od.TopologyOptimizer(df)
+    opt = od.TopologyOptimizer(df, with_crit_sets=True)
     expected_cls_name = f"TopologyOptimizerCube_{ndim}D"
     assert type(opt.under_opt).__name__ == expected_cls_name
 
+    opt.ensure_hom_reduced()
     dgms = opt.compute_diagram(include_inf_points=True)
     assert dgms.in_dimension(0).shape[1] == 2
 
@@ -123,7 +124,8 @@ def test_topology_optimizer_simplify_runs():
     """simplify(epsilon) should run end-to-end on a cubical filtration."""
     data = torch.tensor(_random_grid(np.random.default_rng(5), (5, 5)), requires_grad=True)
     df = od.cube_filtration(data, max_dim=2)
-    opt = od.TopologyOptimizer(df)
+    opt = od.TopologyOptimizer(df, with_crit_sets=True)
+    opt.ensure_hom_reduced()
     iv = opt.simplify(epsilon=0.1, strategy=oin.DenoiseStrategy.BirthBirth, dim=0)
     # IndicesValues is a (indices, values) pair; lengths must agree.
     assert len(list(iv[0])) == len(list(iv[1]))

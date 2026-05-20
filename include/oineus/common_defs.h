@@ -14,6 +14,7 @@
 namespace oineus {
 
     using dim_type = size_t;
+    using DimVec = std::vector<dim_type>;
     using id_type = int;
 
     // Tag type used by ctors that accept already-sorted / already-ordered
@@ -25,6 +26,7 @@ namespace oineus {
     constexpr size_t plus_inf = std::numeric_limits<size_t>::max();
 
     constexpr size_t k_invalid_index = std::numeric_limits<size_t>::max();
+    constexpr dim_type k_all_dims = std::numeric_limits<dim_type>::max();
 
 template<typename Real>
     struct RPoint {

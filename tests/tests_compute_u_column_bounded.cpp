@@ -47,7 +47,9 @@ reduce_with_params(const Fil& fil, bool clearing, bool compute_u,
     params.compute_v = true;
     params.compute_u = compute_u;
     params.clearing_opt = clearing;
-    params.restore_elz = restore_elz;
+    if (restore_elz)
+        for (oineus::dim_type d = 0; d < static_cast<oineus::dim_type>(decmp.n_dims()); ++d)
+            params.dims_to_restore_elz.push_back(d);
     params.n_threads = n_threads;
     decmp.reduce(params);
     return decmp;
@@ -64,7 +66,9 @@ reduce_with_params_dualize(const Fil& fil, bool dualize, bool clearing,
     params.compute_v = true;
     params.compute_u = compute_u;
     params.clearing_opt = clearing;
-    params.restore_elz = restore_elz;
+    if (restore_elz)
+        for (oineus::dim_type d = 0; d < static_cast<oineus::dim_type>(decmp.n_dims()); ++d)
+            params.dims_to_restore_elz.push_back(d);
     params.n_threads = n_threads;
     decmp.reduce(params);
     return decmp;

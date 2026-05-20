@@ -89,7 +89,11 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                                                    decltype(TopologyOptimizer::decmp_hom_),
                                                    decltype(TopologyOptimizer::decmp_coh_),
                                                    decltype(TopologyOptimizer::params_hom_),
-                                                   decltype(TopologyOptimizer::params_coh_)>;
+                                                   decltype(TopologyOptimizer::params_coh_),
+                                                   decltype(TopologyOptimizer::with_crit_sets_),
+                                                   decltype(TopologyOptimizer::n_threads_),
+                                                   decltype(TopologyOptimizer::dims_to_restore_elz_),
+                                                   decltype(TopologyOptimizer::u_strategy_)>;
 
     nb::class_<IndicesValues>(m, ind_vals_name.c_str())
             .def("__getitem__", [](const IndicesValues& iv, int i) -> std::variant<Indices, Values> {
@@ -138,33 +142,21 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                 iv.values = std::get<1>(t);
             });
 
-    using SideStatus = typename TopologyOptimizer::SideStatus;
-    nb::class_<SideStatus>(m, (opt_name + "SideStatus").c_str(),
-            "Reduction state of one side (homology or cohomology) of a "
-            "TopologyOptimizer; produced by matrix_summary().")
-            .def_ro("is_reduced", &SideStatus::is_reduced)
-            .def_ro("has_v", &SideStatus::has_v)
-            .def_ro("has_u", &SideStatus::has_u)
-            .def_ro("clearing_opt_used", &SideStatus::clearing_opt_used)
-            .def("__repr__", [](const SideStatus& s) {
-                std::stringstream ss; ss << s; return ss.str();
-            });
-
     // optimization
-    using DeferReduction = typename TopologyOptimizer::DeferReduction;
     nb::class_<TopologyOptimizer>(m, opt_name.c_str())
-            .def(nb::init<const Filtration&>())
-            .def("__init__", [](TopologyOptimizer* p, const Filtration& fil, bool defer_reduction) {
-                if (defer_reduction)
-                    new (p) TopologyOptimizer(fil, DeferReduction{});
-                else
-                    new (p) TopologyOptimizer(fil);
-            },
-            nb::arg("fil"), nb::arg("defer_reduction"),
-            "Construct without eagerly setting compute_v/compute_u flags. "
-            "Use ensure_reduced_hom / ensure_reduced_coh per backward to "
-            "produce only the matrices needed by the requested moves; "
-            "clearing stays on for sides that do not need U.")
+            .def(nb::init<const Filtration&, bool, oin::DimVec, int, oin::UStrategy>(),
+                 nb::arg("fil"),
+                 nb::arg("with_crit_sets") = true,
+                 nb::arg("dims_to_restore_elz") = oin::DimVec{},
+                 nb::arg("n_threads") = 1,
+                 nb::arg("u_strategy") = oin::UStrategy::Auto,
+                 "Construct a TopologyOptimizer for one autograd backward. "
+                 "with_crit_sets=false sets up the cheapest reduction (R only, "
+                 "no V, no U) for diagram-loss; with_crit_sets=true sets up V "
+                 "(plus restore_ELZ in dims_to_restore_elz) so that "
+                 "ensure_has_u_* can recover U on demand. u_strategy picks "
+                 "which equation to solve for U; LegacyInBand forces a "
+                 "serial in-band U during the reduction.")
             .def("compute_diagram", [](TopologyOptimizer& opt, bool include_inf_points) { return PyOineusDiagrams<oin_real>(opt.compute_diagram(include_inf_points)); },
                     nb::arg("include_inf_points"),
                     "compute diagrams in all dimensions")
@@ -222,56 +214,51 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     nb::arg("indices"), nb::arg("values"), nb::arg("strategy"),
                     nb::call_guard<nb::gil_scoped_release>(),
                     "Fused per-pair critical-set walk + conflict "
-                    "resolution in one C++ call. Caller must run "
-                    "ensure_reduced_hom / ensure_reduced_coh (or "
-                    "ensure_reduced_for_partial_u_* + a partial-U pass) "
-                    "first with matching need_u flags. Returns "
-                    "IndicesValues; use .indices_array() / .values_array() "
-                    "for zero-copy numpy.")
-            .def("ensure_reduced_hom", &TopologyOptimizer::ensure_reduced_hom,
-                    nb::arg("need_u"),
+                    "resolution in one C++ call. Internally calls "
+                    "ensure_hom_reduced (for the per-pair is_negative "
+                    "dispatch) and ensure_has_u_* on the relevant side "
+                    "when U is needed. Returns IndicesValues; use "
+                    ".indices_array() / .values_array() for zero-copy "
+                    "numpy.")
+            .def("ensure_hom_reduced", &TopologyOptimizer::ensure_hom_reduced,
                     nb::call_guard<nb::gil_scoped_release>(),
-                    "Reduce the homology side once, picking compute_v=true and "
-                    "compute_u=need_u with clearing_opt set so that U is only "
-                    "produced when needed. If the existing reduction state "
-                    "covers the request, returns immediately; otherwise "
-                    "rebuilds from scratch.")
-            .def("ensure_reduced_for_partial_u_hom",
-                    &TopologyOptimizer::ensure_reduced_for_partial_u_hom,
-                    nb::arg("n_threads"),
+                    "Reduce the homology side with the recipe baked in at "
+                    "construction time. Idempotent: no-op if already reduced.")
+            .def("ensure_coh_reduced", &TopologyOptimizer::ensure_coh_reduced,
                     nb::call_guard<nb::gil_scoped_release>(),
-                    "Homology-side reduction for partial-U workflows: "
-                    "parallel V-only with restore_elz, no U. The partial-U "
-                    "pass runs separately afterwards via "
-                    "decomposition.compute_partial_u_from_v_1 (column form) "
-                    "or decomposition.compute_partial_u_rows (row form).")
-            .def("ensure_reduced_for_partial_u_coh",
-                    &TopologyOptimizer::ensure_reduced_for_partial_u_coh,
-                    nb::arg("n_threads"),
+                    "Reduce the cohomology side with the recipe baked in at "
+                    "construction time. Idempotent.")
+            .def("ensure_has_u_hom",
+                    &TopologyOptimizer::ensure_has_u_hom,
+                    nb::arg("dim"),
+                    nb::arg("rows_fil"),
+                    nb::arg("bounds"),
                     nb::call_guard<nb::gil_scoped_release>(),
-                    "Cohomology-side reduction for partial-U workflows: "
-                    "parallel V-only with restore_elz, no U.")
-            .def("ensure_reduced_coh", &TopologyOptimizer::ensure_reduced_coh,
-                    nb::arg("need_u"),
+                    "Ensure U-row data is available on the hom side over the "
+                    "given filtration row indices (each in geometric `dim`) "
+                    "with the matching value bounds. No-op for LegacyInBand "
+                    "(U is already built in-band during reduction).")
+            .def("ensure_has_u_coh",
+                    &TopologyOptimizer::ensure_has_u_coh,
+                    nb::arg("dim"),
+                    nb::arg("rows_fil"),
+                    nb::arg("bounds"),
                     nb::call_guard<nb::gil_scoped_release>(),
-                    "Same policy as ensure_reduced_hom but for the cohomology "
-                    "side.")
-            .def("matrix_summary",
-                    [](TopologyOptimizer& opt) {
-                        return std::make_pair(opt.hom_status(), opt.coh_status());
-                    },
-                    "Return a (hom_status, coh_status) pair describing the "
-                    "current reduction state of each side. Used by tests and "
-                    "benchmarks to confirm that lazy reduction skipped what "
-                    "it was supposed to skip.")
+                    "Cohomology-side counterpart of ensure_has_u_hom. The "
+                    "row indices are passed as filtration indices; conversion "
+                    "to matrix layout (fil_size - 1 - i) is done internally.")
             .def("update", &TopologyOptimizer::update)
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def("__getstate__", [](const TopologyOptimizer& opt) -> TopologyOptimizerStateTuple {
-                return std::make_tuple(opt.negate_, opt.fil_, opt.decmp_hom_, opt.decmp_coh_, opt.params_hom_, opt.params_coh_);
+                return std::make_tuple(opt.negate_, opt.fil_, opt.decmp_hom_, opt.decmp_coh_,
+                                       opt.params_hom_, opt.params_coh_,
+                                       opt.with_crit_sets_, opt.n_threads_,
+                                       opt.dims_to_restore_elz_, opt.u_strategy_);
             })
             .def("__setstate__", [](TopologyOptimizer& opt, const TopologyOptimizerStateTuple& t) {
-                new (&opt) TopologyOptimizer(std::get<1>(t));
+                new (&opt) TopologyOptimizer(std::get<1>(t), std::get<6>(t),
+                                             std::get<8>(t), std::get<7>(t), std::get<9>(t));
                 opt.negate_ = std::get<0>(t);
                 opt.fil_ = std::get<1>(t);
                 opt.decmp_hom_ = std::get<2>(t);
@@ -289,6 +276,14 @@ void init_oineus_top_optimizer(nb::module_& m)
     using Cube_1D = oin::Cube<oin_int, 1>;
     using Cube_2D = oin::Cube<oin_int, 2>;
     using Cube_3D = oin::Cube<oin_int, 3>;
+
+    nb::enum_<oin::UStrategy>(m, "UStrategy",
+            "U-computation strategy used by the crit-sets backward in "
+            "oineus.diff. Auto resolves to RowPartial; LegacyInBand "
+            "is the in-band serial reduction kept as a control.")
+            .value("Auto",         oin::UStrategy::Auto)
+            .value("RowPartial",   oin::UStrategy::RowPartial)
+            .value("LegacyInBand", oin::UStrategy::LegacyInBand);
 
     init_oineus_top_optimizer_class<Simp>(m, "TopologyOptimizer", "IndicesValues");
     init_oineus_top_optimizer_class<SimpProd>(m, "TopologyOptimizerProd", "IndicesValuesProd");

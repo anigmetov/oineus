@@ -618,11 +618,11 @@ namespace oineus {
             return {};
 
         assert(params.domain != DiagramPlaneDomain::AboveDiagonal
-                || std::all_of(diagrams.begin(), diagrams.end(), [](const Diagram& diagram) {
+                || std::all_of(diagrams.begin(), diagrams.end(), [](const auto& diagram) {
                     return std::all_of(diagram.begin(), diagram.end(), [](const auto& point) { return point.birth <= point.death; });
                 }));
         assert(params.domain != DiagramPlaneDomain::BelowDiagonal
-                || std::all_of(diagrams.begin(), diagrams.end(), [](const Diagram& diagram) {
+                || std::all_of(diagrams.begin(), diagrams.end(), [](const auto& diagram) {
                     return std::all_of(diagram.begin(), diagram.end(), [](const auto& point) { return point.birth >= point.death; });
                 }));
 
@@ -683,11 +683,11 @@ namespace oineus {
         using Point = typename Diagrams<Real>::Point;
 
         assert(params.domain != DiagramPlaneDomain::AboveDiagonal
-                || std::all_of(diagrams.begin(), diagrams.end(), [](const Diagram& diagram) {
+                || std::all_of(diagrams.begin(), diagrams.end(), [](const auto& diagram) {
                     return std::all_of(diagram.begin(), diagram.end(), [](const auto& point) { return point.birth <= point.death; });
                 }));
         assert(params.domain != DiagramPlaneDomain::BelowDiagonal
-                || std::all_of(diagrams.begin(), diagrams.end(), [](const Diagram& diagram) {
+                || std::all_of(diagrams.begin(), diagrams.end(), [](const auto& diagram) {
                     return std::all_of(diagram.begin(), diagram.end(), [](const auto& point) { return point.birth >= point.death; });
                 }));
 
@@ -790,11 +790,11 @@ namespace oineus {
             throw std::runtime_error("frechet_mean: wasserstein_delta must be positive");
 
         assert(params.domain != DiagramPlaneDomain::AboveDiagonal
-                || std::all_of(diagrams.begin(), diagrams.end(), [](const Diagram& diagram) {
+                || std::all_of(diagrams.begin(), diagrams.end(), [](const auto& diagram) {
                     return std::all_of(diagram.begin(), diagram.end(), [](const auto& point) { return point.birth < point.death; });
                 }));
         assert(params.domain != DiagramPlaneDomain::BelowDiagonal
-                || std::all_of(diagrams.begin(), diagrams.end(), [](const Diagram& diagram) {
+                || std::all_of(diagrams.begin(), diagrams.end(), [](const auto& diagram) {
                     return std::all_of(diagram.begin(), diagram.end(), [](const auto& point) { return point.birth > point.death; });
                 }));
 
