@@ -611,6 +611,13 @@ def plot_diagram_gradient(
     if not _HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plot_diagram_gradient.")
 
+    # Legacy use_density=False meant "scatter mode, draw an arrow on every
+    # finite point" -- no overlay cap. The new scatter_only=True is the
+    # cap's primary trigger, so the shim has to also disable the cap when
+    # the caller explicitly opted into the old behaviour. Honour caller-set
+    # top_k_arrows / min_persistence.
+    if use_density is False and top_k_arrows is None and min_persistence is None:
+        top_k_arrows = np.inf
     scatter_only = _resolve_scatter_only(scatter_only, use_density)
 
     quiver_style = _resolve_style(quiver_style, default_diagram_gradient_style)
