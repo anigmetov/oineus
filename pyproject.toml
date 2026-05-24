@@ -2,6 +2,16 @@
 requires = ["scikit-build-core>=0.10", "pybind11>=2.6"]
 build-backend = "scikit_build_core.build"
 
+# ============================================================
+# Wheel build / distribution metadata
+# ------------------------------------------------------------
+# Everything between this header and the "Local dev environment"
+# block below is what gets baked into the published wheel and is
+# read by CI / cibuildwheel / scikit-build-core. Keep the runtime
+# `dependencies` list minimal -- anything used only by tests or
+# local development belongs in [dependency-groups] dev below.
+# ============================================================
+
 [project]
 name = "oineus"
 dynamic = ["version"]
@@ -36,11 +46,12 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/anigmetov/oineus"
 
-# Configure scikit-build-core
-
 [tool.scikit-build]
 cmake.source-dir = "."
 
+# Wheel cmake build: no examples, no tests, no optional logging or
+# stats. Local cmake builds (build/) use their own cache and turn
+# tests/examples back on; this stanza only affects scikit-build-core.
 cmake.args = [
     "-Doin_build_examples=OFF",
     "-Doin_build_tests=OFF",
@@ -56,13 +67,12 @@ provider = "scikit_build_core.metadata.regex"
 input = "bindings/python/oineus/__init__.py"
 regex = '__version__ = "(?P<value>[^"]+)"'
 
-# Don't specify wheel.packages - let scikit-build-core handle it via install()
-# The install() commands in CMake will place everything correctly
-
 [tool.cibuildwheel]
 build = "cp310-* cp311-* cp312-* cp313-*"
 skip = "*-win32 *-manylinux_i686 *-musllinux_*"
 
+# Minimal "did the wheel import?" check. The full test suite runs
+# from the cmake build via ctest -- see [dependency-groups] dev.
 test-requires = ["pytest", "numpy", "scipy"]
 test-command = "python -c 'import oineus; print(oineus.__version__)'"
 
@@ -75,12 +85,45 @@ before-all = "yum install -y boost-devel"
 manylinux-x86_64-image = "manylinux2014"
 manylinux-aarch64-image = "manylinux2014"
 
-[tool.uv.workspace]
-members = [
-    "build_310",
-]
+# ============================================================
+# Local dev environment
+# ------------------------------------------------------------
+# Everything below is for working on oineus locally, not for the
+# wheel. Standard setup:
+#
+#     uv sync --group dev --no-install-project
+#     cmake -S . -B build -DPython_EXECUTABLE="$(uv run --no-sync which python)"
+#     cmake --build build -j4
+#     cd build && ctest --output-on-failure -j4
+#
+# `--no-install-project` is load-bearing: do NOT install oineus
+# into the venv. The scikit-build-core editable install registers
+# a meta-path finder at sys.meta_path[0] that hijacks `import
+# oineus`, overriding the cmake-built copy in build/tests/oineus/.
+# That defeats fast iteration. See CLAUDE.md for the full story.
+# ============================================================
 
 [tool.pytest.ini_options]
 markers = [
     "slow: heavier tests that build larger filtrations; opt in with -m slow",
+]
+
+[dependency-groups]
+dev = [
+    # Test runner.
+    "pytest",
+    # Ground-truth oracles cross-checked against oineus output.
+    "dionysus>=2.1.8",       # persistence diagrams (random + vertebra)
+    "gudhi>=3.11.0",         # cubical homology
+    # Visualization layer. oineus.vis imports matplotlib unconditionally,
+    # so even non-plotting tests need it once oineus is imported.
+    "matplotlib",
+    # Differentiable-diagram tests (PyTorch autograd). Heavy install
+    # (~1 GB on macOS arm64). All py-diff-* tests need it.
+    "torch",
+    # CGAL alpha-shape filtration tests (py-plot-gradient,
+    # diff/cech_delaunay).
+    "diode",
+    # Pretty-printer used in a few example scripts.
+    "icecream>=2.2.0",
 ]
