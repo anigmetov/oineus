@@ -32,6 +32,7 @@ def topological_loss(pts: torch.Tensor, dim: int=1, n: int=2):
     pts_as_numpy = pts.clone().detach().numpy().astype(REAL_DTYPE)
     fil, edges = oin.vr_filtration(pts_as_numpy, with_critical_edges=True, n_threads=4)
     top_opt = oin.TopologyOptimizer(fil)
+    top_opt.reduce_all()
 
     # dgm = top_opt.compute_diagram(include_inf_points=False)
     # print(dgm.in_dimension(dim))

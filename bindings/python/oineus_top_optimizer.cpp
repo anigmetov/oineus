@@ -93,7 +93,9 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                                                    decltype(TopologyOptimizer::with_crit_sets_),
                                                    decltype(TopologyOptimizer::n_threads_),
                                                    decltype(TopologyOptimizer::dims_to_restore_elz_),
-                                                   decltype(TopologyOptimizer::u_strategy_)>;
+                                                   decltype(TopologyOptimizer::u_strategy_),
+                                                   decltype(TopologyOptimizer::decmp_hom_built_),
+                                                   decltype(TopologyOptimizer::decmp_coh_built_)>;
 
     nb::class_<IndicesValues>(m, ind_vals_name.c_str())
             .def("__getitem__", [](const IndicesValues& iv, int i) -> std::variant<Indices, Values> {
@@ -191,11 +193,26 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
             // state). The non-_ref names above return copies and are kept
             // for API compatibility.
             .def("homology_decomposition_ref",
-                 [](TopologyOptimizer& opt) -> typename TopologyOptimizer::Decomposition& { return opt.decmp_hom_; },
+                 [](TopologyOptimizer& opt) -> typename TopologyOptimizer::Decomposition& {
+                     if (not opt.decmp_hom_built_)
+                         throw std::runtime_error("homology_decomposition_ref unavailable; call ensure_hom_built() or ensure_hom_reduced() first");
+                     return opt.decmp_hom_;
+                 },
                  nb::rv_policy::reference_internal)
             .def("cohomology_decomposition_ref",
-                 [](TopologyOptimizer& opt) -> typename TopologyOptimizer::Decomposition& { return opt.decmp_coh_; },
+                 [](TopologyOptimizer& opt) -> typename TopologyOptimizer::Decomposition& {
+                     if (not opt.decmp_coh_built_)
+                         throw std::runtime_error("cohomology_decomposition_ref unavailable; call ensure_coh_built() or ensure_coh_reduced() first");
+                     return opt.decmp_coh_;
+                 },
                  nb::rv_policy::reference_internal)
+            .def_prop_ro("is_hom_built", &TopologyOptimizer::is_hom_built,
+                    "True iff the homology Decomposition has been materialized "
+                    "from the cached boundary matrix. Set by the first "
+                    "ensure_hom_built / ensure_hom_reduced call.")
+            .def_prop_ro("is_coh_built", &TopologyOptimizer::is_coh_built,
+                    "True iff the cohomology Decomposition has been "
+                    "materialized. Counterpart of is_hom_built.")
             .def("singleton", &TopologyOptimizer::singleton)
             .def("singletons", &TopologyOptimizer::singletons,
                     nb::call_guard<nb::gil_scoped_release>())
@@ -220,14 +237,25 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     "when U is needed. Returns IndicesValues; use "
                     ".indices_array() / .values_array() for zero-copy "
                     "numpy.")
+            .def("ensure_hom_built", &TopologyOptimizer::ensure_hom_built,
+                    nb::call_guard<nb::gil_scoped_release>(),
+                    "Materialize the homology Decomposition from the cached "
+                    "boundary matrix (no reduction). Idempotent. Use this when "
+                    "you need access to the decomposition object but not yet "
+                    "to a reduced state. Most callers want ensure_hom_reduced.")
+            .def("ensure_coh_built", &TopologyOptimizer::ensure_coh_built,
+                    nb::call_guard<nb::gil_scoped_release>(),
+                    "Cohomology counterpart of ensure_hom_built.")
             .def("ensure_hom_reduced", &TopologyOptimizer::ensure_hom_reduced,
                     nb::call_guard<nb::gil_scoped_release>(),
                     "Reduce the homology side with the recipe baked in at "
-                    "construction time. Idempotent: no-op if already reduced.")
+                    "construction time. Builds the decomposition first if "
+                    "needed. Idempotent: no-op if already reduced.")
             .def("ensure_coh_reduced", &TopologyOptimizer::ensure_coh_reduced,
                     nb::call_guard<nb::gil_scoped_release>(),
                     "Reduce the cohomology side with the recipe baked in at "
-                    "construction time. Idempotent.")
+                    "construction time. Builds the decomposition first if "
+                    "needed. Idempotent.")
             .def("ensure_has_u_hom",
                     &TopologyOptimizer::ensure_has_u_hom,
                     nb::arg("dim"),
@@ -254,9 +282,15 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                 return std::make_tuple(opt.negate_, opt.fil_, opt.decmp_hom_, opt.decmp_coh_,
                                        opt.params_hom_, opt.params_coh_,
                                        opt.with_crit_sets_, opt.n_threads_,
-                                       opt.dims_to_restore_elz_, opt.u_strategy_);
+                                       opt.dims_to_restore_elz_, opt.u_strategy_,
+                                       opt.decmp_hom_built_, opt.decmp_coh_built_);
             })
             .def("__setstate__", [](TopologyOptimizer& opt, const TopologyOptimizerStateTuple& t) {
+                // Reconstruct in place via the public ctor (rebuilds
+                // boundary_data_ from the pickled filtration); then
+                // overwrite the per-side fields with the pickled state,
+                // including the built_ flags so that subsequent
+                // ensure_*_built calls do not clobber the restored decmp.
                 new (&opt) TopologyOptimizer(std::get<1>(t), std::get<6>(t),
                                              std::get<8>(t), std::get<7>(t), std::get<9>(t));
                 opt.negate_ = std::get<0>(t);
@@ -265,6 +299,8 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                 opt.decmp_coh_ = std::get<3>(t);
                 opt.params_hom_ = std::get<4>(t);
                 opt.params_coh_ = std::get<5>(t);
+                opt.decmp_hom_built_ = std::get<10>(t);
+                opt.decmp_coh_built_ = std::get<11>(t);
             });
 
 }

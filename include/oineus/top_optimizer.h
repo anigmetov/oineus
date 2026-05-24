@@ -196,8 +196,10 @@ public:
             :
             negate_(fil.negate()),
             fil_(fil),
-            decmp_hom_(fil, false),
-            decmp_coh_(fil, true),
+            boundary_data_(fil_.boundary_matrix(n_threads)),
+            // decmp_hom_, decmp_coh_ default-constructed (empty); they
+            // are materialized from boundary_data_ on the first
+            // ensure_*_built / ensure_*_reduced call.
             with_crit_sets_(with_crit_sets),
             n_threads_(n_threads),
             dims_to_restore_elz_(std::move(dims_to_restore_elz)),
@@ -211,7 +213,7 @@ public:
         // calls would throw because is_elz_in_dim_ has nothing flipped on.
         if (with_crit_sets_ and not legacy_in_band and dims_to_restore_elz_.empty()) {
             for (dim_type d = 0;
-                 d < static_cast<dim_type>(decmp_hom_.n_dims()); ++d) {
+                 d <= fil_.max_dim(); ++d) {
                 dims_to_restore_elz_.push_back(d);
             }
         }
@@ -293,14 +295,39 @@ public:
     // params_hom_/_coh_ were set at construction; idempotency is just
     // is_reduced.
 
+    // Materialize decmp_hom_ from the cached boundary matrix. Idempotent.
+    // Safe to call from any context, including before the first reduction.
+    void ensure_hom_built()
+    {
+        if (decmp_hom_built_) return;
+        decmp_hom_ = Decomposition(boundary_data_,
+                                   fil_.dims_first(), fil_.dims_last(),
+                                   /*dualize=*/false, n_threads_);
+        decmp_hom_built_ = true;
+    }
+
+    void ensure_coh_built()
+    {
+        if (decmp_coh_built_) return;
+        decmp_coh_ = Decomposition(boundary_data_,
+                                   fil_.dims_first(), fil_.dims_last(),
+                                   /*dualize=*/true, n_threads_);
+        decmp_coh_built_ = true;
+    }
+
+    bool is_hom_built() const { return decmp_hom_built_; }
+    bool is_coh_built() const { return decmp_coh_built_; }
+
     void ensure_hom_reduced()
     {
+        ensure_hom_built();
         if (decmp_hom_.is_reduced) return;
         decmp_hom_.reduce(params_hom_);
     }
 
     void ensure_coh_reduced()
     {
+        ensure_coh_built();
         if (decmp_coh_.is_reduced) return;
         decmp_coh_.reduce(params_coh_);
     }
@@ -486,6 +513,9 @@ public:
 
     ComputeFlags get_flags(const Indices& indices, const Values& values)
     {
+        if (not decmp_hom_.is_reduced)
+            throw std::runtime_error("get_flags(indices, values) requires hom reduced; call ensure_hom_reduced() first");
+
         bool increase_birth = false;
         bool increase_death = false;
         bool decrease_birth = false;
@@ -524,9 +554,8 @@ public:
 
     CriticalSet singleton(size_t index, Real value)
     {
-        if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u())) {
-            decmp_hom_.reduce_serial(params_hom_);
-        }
+        if (not decmp_hom_.is_reduced)
+            throw std::runtime_error("singleton requires hom reduced; call ensure_hom_reduced() first");
 
         if (decmp_hom_.is_negative(index)) {
             return {value, change_death(index, value)};
@@ -555,14 +584,23 @@ public:
     }
 
     // Invalidate both decompositions and reassign the filtration.
-    // The next ensure_reduced_* call rebuilds whichever side it needs
-    // with the appropriate recipe; no eager reduction here.
+    // The next ensure_*_built / ensure_*_reduced call rebuilds whichever
+    // side it needs; no eager reduction here.
+    //
+    // TODO(revisit): update() is suspected to be broken (sketchy state
+    // invariants around boundary_data_ + params_* reset). The lazy-world
+    // wiring below preserves the pre-laziness observable behavior for
+    // test_diff_update_is_lazy.py; a proper audit is planned separately.
+    // Do not extend until that audit lands.
     void update(const Values& new_values, int n_threads = 1)
     {
         (void) n_threads;
         fil_.set_values(new_values);
-        decmp_hom_ = Decomposition(fil_, /*dualize*/false);
-        decmp_coh_ = Decomposition(fil_, /*dualize*/true);
+        boundary_data_ = fil_.boundary_matrix(n_threads_);
+        decmp_hom_ = Decomposition();
+        decmp_coh_ = Decomposition();
+        decmp_hom_built_ = false;
+        decmp_coh_built_ = false;
         params_hom_ = Params();
         params_coh_ = Params();
     }
@@ -610,7 +648,7 @@ public:
     IndicesValues simplify(Real epsilon, DenoiseStrategy strategy, dim_type dim)
     {
         if (not decmp_hom_.is_reduced)
-            decmp_hom_.reduce_serial(params_hom_);
+            throw std::runtime_error("simplify requires hom reduced; call ensure_hom_reduced() first");
 
         IndicesValues result;
 
@@ -638,8 +676,8 @@ public:
 
     Real get_nth_persistence(dim_type d, int n)
     {
-        if (!decmp_hom_.is_reduced)
-            decmp_hom_.reduce(this->params_hom_);
+        if (not decmp_hom_.is_reduced)
+            throw std::runtime_error("get_nth_persistence requires hom reduced; call ensure_hom_reduced() first");
 
         return oineus::get_nth_persistence(fil_, decmp_hom_, d, n);
     }
@@ -667,7 +705,7 @@ public:
         hera_params.delta = delta;
 
         if (not decmp_hom_.is_reduced)
-            decmp_hom_.reduce(params_hom_);
+            throw std::runtime_error("match_and_distance requires hom reduced; call ensure_hom_reduced() first");
 
         Diagram current_dgm = decmp_hom_.diagram(fil_, false).get_diagram_in_dimension(d);
 
@@ -833,6 +871,8 @@ public:
                 else
                     crit = decrease_death(idx, target);
             } else {
+                if (not decmp_coh_.is_reduced)
+                    throw std::runtime_error("crit_sets_apply with birth-side moves requires coh reduced; call ensure_coh_reduced() first");
                 if (cmp(current, target))
                     crit = increase_birth(idx, target);
                 else
@@ -895,14 +935,19 @@ public:
 
     Dgms compute_diagram(bool include_inf_points)
     {
-        if (!decmp_hom_.is_reduced)
-            decmp_hom_.reduce(params_hom_);
+        if (not decmp_hom_.is_reduced)
+            throw std::runtime_error("compute_diagram requires hom reduced; call ensure_hom_reduced() first");
 
         return decmp_hom_.diagram(fil_, include_inf_points);
     }
 
     void reduce_all()
     {
+        // reduce_all is a primary work method (not a safety guard); it
+        // owns its state machine and materializes both decompositions
+        // before reducing them.
+        ensure_hom_built();
+        ensure_coh_built();
         params_hom_.clearing_opt = false;
         params_hom_.compute_u = params_hom_.compute_v = true;
         if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u())) {
@@ -916,8 +961,11 @@ public:
         }
     }
 
+    // Precondition: decmp_coh_ is reduced. Throws otherwise.
     Indices increase_birth(size_t positive_simplex_idx, Real target_birth) const
     {
+        if (not decmp_coh_.is_reduced)
+            throw std::runtime_error("increase_birth requires coh reduced; call ensure_coh_reduced() first");
         assert(fil_.cmp(fil_.get_cell_value(positive_simplex_idx), target_birth));
 
         Indices result;
@@ -942,8 +990,11 @@ public:
         return increase_birth(positive_simplex_idx, fil_.infinity());
     }
 
+    // Precondition: decmp_coh_ is reduced. Throws otherwise.
     Indices decrease_birth(size_t positive_simplex_idx, Real target_birth) const
     {
+        if (not decmp_coh_.is_reduced)
+            throw std::runtime_error("decrease_birth requires coh reduced; call ensure_coh_reduced() first");
         assert(fil_.cmp(target_birth, fil_.get_cell_value(positive_simplex_idx)));
 
         Indices result;
@@ -968,8 +1019,11 @@ public:
         return decrease_birth(positive_simplex_idx, -fil_.infinity());
     }
 
+    // Precondition: decmp_hom_ is reduced. Throws otherwise.
     Indices increase_death(size_t negative_simplex_idx, Real target_death) const
     {
+        if (not decmp_hom_.is_reduced)
+            throw std::runtime_error("increase_death requires hom reduced; call ensure_hom_reduced() first");
         Indices result;
 
         const auto& u_rows = decmp_hom_.u_data_t;
@@ -1000,9 +1054,12 @@ public:
         return increase_death(negative_simplex_idx, fil_.infinity());
     }
 
+    // Precondition: decmp_hom_ is reduced. Throws otherwise.
     Indices decrease_death(size_t negative_simplex_idx, Real target_death) const
     {
         CALI_CXX_MARK_FUNCTION;
+        if (not decmp_hom_.is_reduced)
+            throw std::runtime_error("decrease_death requires hom reduced; call ensure_hom_reduced() first");
         Indices result;
 
         auto& r_cols = decmp_hom_.r_data;
@@ -1036,15 +1093,29 @@ public:
         return decrease_death(negative_simplex_idx, -fil_.infinity());
     }
 
-    Decomposition get_homology_decompostion() const { return decmp_hom_; }
-    Decomposition get_cohomology_decompostion() const { return decmp_coh_; }
+    Decomposition get_homology_decompostion() const
+    {
+        if (not decmp_hom_built_)
+            throw std::runtime_error("homology_decomposition unavailable; call ensure_hom_built() or ensure_hom_reduced() first");
+        return decmp_hom_;
+    }
+
+    Decomposition get_cohomology_decompostion() const
+    {
+        if (not decmp_coh_built_)
+            throw std::runtime_error("cohomology_decomposition unavailable; call ensure_coh_built() or ensure_coh_reduced() first");
+        return decmp_coh_;
+    }
 
     bool operator==(const TopologyOptimizer& other) const
     {
         return negate_ == other.negate_
             && fil_ == other.fil_
+            && boundary_data_ == other.boundary_data_
             && decmp_hom_ == other.decmp_hom_
             && decmp_coh_ == other.decmp_coh_
+            && decmp_hom_built_ == other.decmp_hom_built_
+            && decmp_coh_built_ == other.decmp_coh_built_
             && params_hom_ == other.params_hom_
             && params_coh_ == other.params_coh_;
     }
@@ -1060,8 +1131,21 @@ public:
 
     Fil fil_;
 
+    // Cached boundary matrix; built eagerly in the ctor from fil_. Both
+    // decmp_hom_ and decmp_coh_ are constructed from this on demand; coh
+    // antitransposes internally. Shared substrate -> one boundary build
+    // per optimizer regardless of which sides end up reduced.
+    BoundaryMatrix boundary_data_;
+
     Decomposition decmp_hom_;
     Decomposition decmp_coh_;
+
+    // True once the corresponding Decomposition has been materialized
+    // from boundary_data_. Construction is deferred to the first
+    // ensure_*_built / ensure_*_reduced call; safety-guard methods throw
+    // when these are false instead of triggering construction.
+    bool decmp_hom_built_ {false};
+    bool decmp_coh_built_ {false};
 
     Params params_hom_;
     Params params_coh_;
@@ -1098,9 +1182,8 @@ public:
         CALI_CXX_MARK_FUNCTION;
         Real current_birth = get_cell_value(positive_simplex_idx);
 
-        if (!decmp_coh_.is_reduced or (params_coh_.compute_u and not decmp_coh_.has_matrix_u())) {
-            decmp_coh_.reduce(params_coh_);
-        }
+        if (not decmp_coh_.is_reduced)
+            throw std::runtime_error("change_birth requires coh reduced; call ensure_coh_reduced() first");
 
         if (cmp(target_birth, current_birth))
             return decrease_birth(positive_simplex_idx, target_birth);

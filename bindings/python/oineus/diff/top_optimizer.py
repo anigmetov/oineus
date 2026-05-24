@@ -109,6 +109,20 @@ class TopologyOptimizer:
 
     # reduction control
 
+    def ensure_hom_built(self):
+        return self.under_opt.ensure_hom_built()
+
+    def ensure_coh_built(self):
+        return self.under_opt.ensure_coh_built()
+
+    @property
+    def is_hom_built(self):
+        return self.under_opt.is_hom_built
+
+    @property
+    def is_coh_built(self):
+        return self.under_opt.is_coh_built
+
     def ensure_hom_reduced(self):
         return self.under_opt.ensure_hom_reduced()
 

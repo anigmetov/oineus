@@ -45,6 +45,7 @@ fil, max_value_vertices = oin.freudenthal_filtration(
 )
 
 top_opt = oin.TopologyOptimizer(fil)
+top_opt.reduce_all()
 
 dim = 1
 

@@ -31,6 +31,7 @@ initial_loss = None
 for step in range(10):
     fil = oin.diff.cube_filtration(data, max_dim=2, n_threads=1)
     top_opt = oin.diff.TopologyOptimizer(fil)
+    top_opt.reduce_all()
 
     eps = top_opt.get_nth_persistence(dim, n)
     indices, values = top_opt.simplify(eps, oin.DenoiseStrategy.BirthBirth, dim)

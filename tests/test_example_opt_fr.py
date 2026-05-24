@@ -24,6 +24,7 @@ f = evaluate_func(X, Y, Z)
 fil, max_value_vertices = oin.freudenthal_filtration(f, with_critical_vertices=True)
 
 top_opt = oin.TopologyOptimizer(fil)
+top_opt.reduce_all()
 
 dim = 1
 n = 4

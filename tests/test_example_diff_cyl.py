@@ -42,6 +42,7 @@ v_cod = oin.Simplex([v_cod_id])
 fil = oin.diff.mapping_cylinder_filtration(fil_dom, fil_cod, v_dom, v_cod)
 
 top_opt = oin.diff.TopologyOptimizer(fil)
+top_opt.reduce_all()
 
 dim = 1
 n = 2

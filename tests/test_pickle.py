@@ -122,6 +122,33 @@ def test_topology_optimizer_pickle():
     _assert_roundtrip(prod_indvals)
 
 
+def test_topology_optimizer_pickle_lazy_states():
+    """Pickle round-trip across the lazy-construction states the
+    refactor introduces: (a) never-touched, (b) only one side reduced."""
+    fil = _make_simplex_filtration()
+
+    # (a) Neither side built. boundary_data_ has been computed eagerly
+    # but no decomposition has been materialized.
+    opt_a = oin.TopologyOptimizer(fil)
+    assert not opt_a.is_hom_built
+    assert not opt_a.is_coh_built
+    _assert_roundtrip(opt_a)
+
+    # (b) Only the hom side has been reduced.
+    opt_b = oin.TopologyOptimizer(fil)
+    opt_b.ensure_hom_reduced()
+    assert opt_b.is_hom_built
+    assert not opt_b.is_coh_built
+    _assert_roundtrip(opt_b)
+
+    # (c) Only the coh side has been reduced.
+    opt_c = oin.TopologyOptimizer(fil)
+    opt_c.ensure_coh_reduced()
+    assert not opt_c.is_hom_built
+    assert opt_c.is_coh_built
+    _assert_roundtrip(opt_c)
+
+
 def test_kicr_pickle():
     fil = _make_simplex_filtration()
     params = oin.KICRParams(kernel=True, image=True, cokernel=True, codomain=True, n_threads=1)

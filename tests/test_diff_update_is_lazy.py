@@ -1,10 +1,12 @@
 """TopologyOptimizer.update(new_values) is lazy: it invalidates both
 decompositions instead of eagerly reconstructing them.
 
-After update, the next ensure_hom_reduced/ensure_coh_reduced must
-rebuild correctly. We inspect the decomposition's `is_reduced` and
-`has_matrix_v` / `has_matrix_u` directly (matrix_summary was
-removed in the phase-3 refactor)."""
+After update, the next ensure_hom_reduced / ensure_coh_reduced must
+rebuild correctly. The chosen side is inspected via its decomposition's
+`is_reduced` / `has_matrix_v` / `has_matrix_u`; the unbuilt side is
+inspected via the optimizer's is_hom_built / is_coh_built predicates
+(fetching its decmp ref would throw since lazy construction has not
+happened)."""
 
 import numpy as np
 import torch
@@ -30,12 +32,12 @@ def test_update_invalidates_both_sides():
     )
     top_opt.ensure_hom_reduced()
     assert top_opt.homology_decomposition_ref().is_reduced
-    assert not top_opt.cohomology_decomposition_ref().is_reduced
+    assert not top_opt.is_coh_built
 
     top_opt.update(_values_from_fil(fil), n_threads=1)
 
-    assert not top_opt.homology_decomposition_ref().is_reduced
-    assert not top_opt.cohomology_decomposition_ref().is_reduced
+    assert not top_opt.is_hom_built
+    assert not top_opt.is_coh_built
 
 
 def test_update_followed_by_ensure_reduced_works():

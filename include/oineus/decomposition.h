@@ -480,6 +480,52 @@ namespace oineus {
             }
         }
 
+        // Construct from a pre-built boundary matrix plus explicit dim
+        // arrays from the source filtration. When dualize=true, the
+        // antitranspose of bdry is used (this is what the existing
+        // filtration ctor does internally when called with _dualize=true).
+        // TopologyOptimizer uses this ctor to share one boundary matrix
+        // across both hom and coh decompositions; building this ctor lets
+        // us skip the redundant filtration walk that the templated ctor
+        // would otherwise perform.
+        VRUDecomposition(const MatrixData& bdry,
+                         std::vector<Int> dim_first_,
+                         std::vector<Int> dim_last_,
+                         bool dualize,
+                         int n_threads = 1)
+                :
+                d_data(dualize ? antitranspose(bdry, bdry.size()) : bdry),
+                r_data(d_data),
+                dualize_(dualize),
+                dim_first(std::move(dim_first_)),
+                dim_last(std::move(dim_last_)),
+                _dim_first(dim_first),
+                _dim_last(dim_last),
+                n_rows(d_data.size())
+        {
+            if (dualize_) {
+                std::reverse(_dim_first.begin(), _dim_first.end());
+                std::reverse(_dim_last.begin(), _dim_last.end());
+                std::vector<Int> new_dim_first, new_dim_last;
+                for(size_t i = 0; i < dim_first.size(); ++i) {
+                    size_t cnt = _dim_last[i] - _dim_first[i];
+                    if (i == 0) {
+                        new_dim_first.push_back(0);
+                        new_dim_last.push_back(cnt);
+                    } else {
+                        new_dim_first.push_back(new_dim_last.back() + 1);
+                        new_dim_last.push_back(new_dim_first.back() + cnt);
+                    }
+                }
+                _dim_first = std::move(new_dim_first);
+                _dim_last = std::move(new_dim_last);
+            }
+            for(dim_type _dim = 0; _dim < static_cast<dim_type>(dim_first.size()); ++_dim) {
+                is_elz_in_dim_[_dim] = false;
+            }
+            (void) n_threads;
+        }
+
         VRUDecomposition(const MatrixData& d, size_t n_rows = std::numeric_limits<decltype(n_rows)>::max(), bool dualize=false, bool skip_check=false)
                 :
                 d_data(d),
