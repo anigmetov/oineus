@@ -1207,4 +1207,16 @@ public:
 
 };
 
+template<class Cell, class Real>
+inline std::ostream& operator<<(std::ostream& out, const TopologyOptimizer<Cell, Real>& opt)
+{
+    out << "TopologyOptimizer(size=" << opt.fil_.size()
+        << ", with_crit_sets=" << (opt.with_crit_sets_ ? "true" : "false")
+        << ", is_hom_built=" << (opt.is_hom_built() ? "true" : "false")
+        << ", is_coh_built=" << (opt.is_coh_built() ? "true" : "false")
+        << ", n_threads=" << opt.n_threads_
+        << ")";
+    return out;
+}
+
 } // namespace

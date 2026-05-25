@@ -65,7 +65,7 @@ def test_filtration_api():
     _ = fil[-1]
 
     _ = fil.negate
-    _ = fil.max_dim()
+    _ = fil.max_dim
     _ = fil.cells()
     _ = fil.simplices()
     _ = fil.size()
@@ -119,7 +119,7 @@ def test_prod_filtration_api():
     _ = fil[0]
 
     _ = fil.negate
-    _ = fil.max_dim()
+    _ = fil.max_dim
     _ = fil.cells()
     _ = fil.size()
     _ = fil.dim_first
@@ -157,7 +157,7 @@ def test_cube_filtration_1d_api():
     _ = fil[-1]
 
     _ = fil.negate
-    _ = fil.max_dim()
+    _ = fil.max_dim
     _ = fil.cells()
     _ = fil.cubes()
     _ = fil.size()
@@ -203,7 +203,7 @@ def test_cube_filtration_1d_api():
 #     _ = fil[0]
 #
 #     _ = fil.negate
-#     _ = fil.max_dim()
+#     _ = fil.max_dim
 #     _ = fil.cells()
 #     _ = fil.cubes()
 #     _ = fil.size()
@@ -249,7 +249,7 @@ def test_cube_filtration_1d_api():
 #     _ = fil[0]
 #
 #     _ = fil.negate
-#     _ = fil.max_dim()
+#     _ = fil.max_dim
 #     _ = fil.cells()
 #     _ = fil.cubes()
 #     _ = fil.size()

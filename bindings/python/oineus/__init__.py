@@ -101,132 +101,6 @@ except:
     _HAS_DIODE = False
 
 
-__all__ = [
-    # filtration constructors
-    "vr_filtration",
-    "freudenthal_filtration",
-    "cube_filtration",
-    "min_filtration",
-    "mapping_cylinder",
-    "multiply_filtration",
-    # diagram computation
-    "compute_diagrams_ls",
-    "compute_diagrams_vr",
-    "compute_diagrams_alpha",
-    "compute_kernel_image_cokernel_reduction",
-    "compute_ker_cok_reduction_cyl",
-    "compute_relative_diagrams",
-    "get_induced_matching",
-    "get_nth_persistence",
-    # core types
-    "Filtration",
-    "ProdFiltration",
-    "CubeFiltration_1D",
-    "CubeFiltration_2D",
-    "CubeFiltration_3D",
-    "Simplex",
-    "ProdSimplex",
-    "CombinatorialSimplex",
-    "CombinatorialProdSimplex",
-    "Cube_1D",
-    "Cube_2D",
-    "Cube_3D",
-    "CombinatorialCube_1D",
-    "CombinatorialCube_2D",
-    "CombinatorialCube_3D",
-    "Grid_1D",
-    "Grid_2D",
-    "Grid_3D",
-    "FiltrationKind",
-    "Decomposition",
-    "ReductionParams",
-    "KICRParams",
-    "KerImCokReduced",
-    "KerImCokReducedProd",
-    "TopologyOptimizer",
-    "TopologyOptimizerProd",
-    "TopologyOptimizerCube_1D",
-    "TopologyOptimizerCube_2D",
-    "TopologyOptimizerCube_3D",
-    "DiagramPoint",
-    "IndexDiagramPoint",
-    "Diagrams",
-    "IndicesValues",
-    "IndicesValuesProd",
-    "ConflictStrategy",
-    "DenoiseStrategy",
-    "VREdge",
-    "DiagramPlaneDomain",
-    "FrechetMeanInit",
-    # helpers
-    "get_boundary_matrix",
-    "is_reduced",
-    "plot_diagram",
-    "plot_diagram_gradient",
-    "plot_matching",
-    "plot_chain",
-    "bottleneck_distance",
-    "wasserstein_distance",
-    "wasserstein_matching",
-    "bottleneck_matching",
-    "DiagramMatching",
-    "BottleneckMatching",
-    "InfKind",
-    "EssentialMatches",
-    "EssentialLongestEdges",
-    "LongestEdges",
-    "FiniteLongestEdge",
-    "EssentialLongestEdge",
-    "point_to_diagonal",
-    "default_point_style",
-    "default_diagram_a_point_style",
-    "default_diagram_b_point_style",
-    "default_matching_edge_style",
-    "default_longest_edge_style",
-    "default_diagonal_style",
-    "default_diagonal_projection_a_style",
-    "default_diagonal_projection_b_style",
-    "default_inf_line_style",
-    "default_diagram_gradient_style",
-    "default_density_style",
-    "default_chain_vertex_style",
-    "default_chain_edge_style",
-    "default_chain_triangle_style",
-    "default_chain_tetrahedron_style",
-    "default_point_cloud_style",
-    "DEFAULT_POINT_STYLE",
-    "DEFAULT_DIAGRAM_A_POINT_STYLE",
-    "DEFAULT_DIAGRAM_B_POINT_STYLE",
-    "DEFAULT_MATCHING_EDGE_STYLE",
-    "DEFAULT_LONGEST_EDGE_STYLE",
-    "DEFAULT_DIAGONAL_STYLE",
-    "DEFAULT_DIAGONAL_PROJECTION_A_STYLE",
-    "DEFAULT_DIAGONAL_PROJECTION_B_STYLE",
-    "DEFAULT_INF_LINE_STYLE",
-    "DEFAULT_DIAGRAM_GRADIENT_STYLE",
-    "DEFAULT_DENSITY_STYLE",
-    "DEFAULT_DENSITY_THRESHOLD",
-    "DEFAULT_MATCHING_EDGE_QUANTILE",
-    "DEFAULT_GRADIENT_TOP_K_ARROWS",
-    "DEFAULT_CHAIN_VERTEX_STYLE",
-    "DEFAULT_CHAIN_EDGE_STYLE",
-    "DEFAULT_CHAIN_TRIANGLE_STYLE",
-    "DEFAULT_CHAIN_TETRAHEDRON_STYLE",
-    "DEFAULT_POINT_CLOUD_STYLE",
-    "init_frechet_mean_first_diagram",
-    "init_frechet_mean_random_diagram",
-    "init_frechet_mean_medoid_diagram",
-    "init_frechet_mean_diagonal_grid",
-    "frechet_mean_objective",
-    "make_frechet_mean_persistence_schedule",
-    "frechet_mean_newborn_points_from_newly_active",
-    "frechet_mean_multistart",
-    "progressive_frechet_mean",
-    "progressive_frechet_mean_multistart",
-    "frechet_mean",
-]
-
-
 def _check_numpy_diagram_shape(dgm):
     """If ``dgm`` is a numpy array, assert shape (n, 2). Otherwise pass through."""
     if isinstance(dgm, np.ndarray) and (dgm.ndim != 2 or dgm.shape[1] != 2):
@@ -464,7 +338,7 @@ def _diagram_arrays_equal_for_zero_check(dgm_1, dgm_2):
     return np.all(diff < np.finfo(arr_1.dtype).eps)
 
 
-def wasserstein_distance(dgm_1, dgm_2, q: float=2.0, delta: float=0.01, internal_p: float=np.inf,
+def wasserstein_distance(dgm_1, dgm_2, q: float=1.0, delta: float=0.01, internal_p: float=np.inf,
                          wasserstein_q: typing.Optional[float]=None,
                          check_for_zero: bool=True):
     """Compute the q-Wasserstein distance between two persistence diagrams.
@@ -951,6 +825,10 @@ def to_scipy_matrix(sparse_cols, shape=None):
 
 
 def max_distance(data: np.ndarray, from_pwdists: bool=False):
+    # 1.00001 is a small fudge factor so the returned bound is strictly
+    # greater than every pairwise distance even after floating-point
+    # rounding; callers use this as a max_diameter that must enclose all
+    # edges
     if from_pwdists:
         return 1.00001 * np.min(np.max(data, axis=1))
     else:
@@ -1043,6 +921,20 @@ def vr_filtration(data: np.ndarray,
 
 
 def is_reduced(a):
+    """Check whether a Z_2 boundary matrix is reduced.
+
+    A column is treated as nonzero in row ``i`` iff ``a[i, col] % 2 == 1``,
+    so any integer dtype with mod-2 semantics works (binary 0/1 matrices,
+    or unreduced count matrices). Returns ``True`` iff every nonzero
+    column has a distinct lowest-1 row index, which is the definition of
+    a reduced matrix in the standard persistence reduction.
+
+    Args:
+        a: 2D array-like with ``.shape[1]`` columns and integer entries.
+
+    Returns:
+        bool: True if the matrix is reduced.
+    """
     lowest_ones = []
     for col_idx in range(a.shape[1]):
         if np.any(a[:, col_idx] % 2 == 1):
@@ -1245,7 +1137,7 @@ def compute_diagrams_alpha(points: np.ndarray,
 
 
 def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d: int, q: float, mip: bool, mdp: bool):
-    func = getattr(_oineus, f"get_ls_wasserstein_matching_target_values")
+    func = _oineus.get_ls_wasserstein_matching_target_values
 
     if type(dgm) is np.ndarray:
         if len(dgm.shape) != 2 or dgm.shape[1] != 2:

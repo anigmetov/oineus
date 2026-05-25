@@ -103,6 +103,14 @@ def test_decomposition_pickle():
     dcmp.reduce(params)
     _assert_roundtrip(dcmp)
 
+    # repr should contain a header line plus the four matrix sections.
+    r = repr(dcmp)
+    assert "Decomposition(size=" in r
+    assert "Matrix D[" in r
+    assert "Matrix R[" in r
+    assert "Matrix V[" in r
+    assert "Matrix U[" in r
+
 
 def test_topology_optimizer_pickle():
     fil = _make_simplex_filtration()
@@ -157,3 +165,32 @@ def test_kicr_pickle():
     prod_fil = _make_prod_filtration()
     prod_params = oin.KICRParams(kernel=True, image=True, cokernel=True, n_threads=1)
     _assert_roundtrip(oin.KerImCokReducedProd(prod_fil, prod_fil, prod_params))
+
+
+def test_wasserstein_matching_pickle():
+    rng = np.random.default_rng(0)
+    dgm_a = rng.uniform(0, 1, size=(8, 2)).astype(np.float64)
+    dgm_a.sort(axis=1)
+    dgm_b = rng.uniform(0, 1, size=(6, 2)).astype(np.float64)
+    dgm_b.sort(axis=1)
+    _assert_roundtrip(oin.wasserstein_matching(dgm_a, dgm_b, q=2.0))
+
+
+def test_bottleneck_matching_pickle():
+    rng = np.random.default_rng(1)
+    dgm_a = rng.uniform(0, 1, size=(5, 2)).astype(np.float64)
+    dgm_a.sort(axis=1)
+    dgm_b = rng.uniform(0, 1, size=(7, 2)).astype(np.float64)
+    dgm_b.sort(axis=1)
+    _assert_roundtrip(oin.bottleneck_matching(dgm_a, dgm_b, delta=0.0))
+
+
+def test_longest_edge_struct_pickle():
+    rng = np.random.default_rng(2)
+    dgm_a = rng.uniform(0, 1, size=(4, 2)).astype(np.float64)
+    dgm_a.sort(axis=1)
+    dgm_b = rng.uniform(0, 1, size=(4, 2)).astype(np.float64)
+    dgm_b.sort(axis=1)
+    m = oin.bottleneck_matching(dgm_a, dgm_b, delta=0.0)
+    if m.longest.finite:
+        _assert_roundtrip(m.longest.finite[0])

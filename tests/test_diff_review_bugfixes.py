@@ -98,7 +98,7 @@ def test_diff_filtration_delegates_methods_correctly():
     assert df.boundary_matrix() == fil.boundary_matrix()  # default n_threads=1
 
     # Plus generic delegation -- methods we never explicitly proxied.
-    assert df.max_dim() == fil.max_dim()
+    assert df.max_dim == fil.max_dim
     assert df.size() == fil.size()
     assert df.cells() == fil.cells()
 

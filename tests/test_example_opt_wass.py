@@ -65,14 +65,14 @@ wass_q = 1.0
 indices, values = top_opt.match(
     template_dgm,
     dim,
-    wasserstein_q=wass_q,
+    q=wass_q,
     return_wasserstein_distance=False,
 )
 # if we want to get Wasserstein distance as well
 (indices, values), distance = top_opt.match(
     template_dgm,
     dim,
-    wasserstein_q=wass_q,
+    q=wass_q,
     wasserstein_delta=0.01,
     return_wasserstein_distance=True,
 )

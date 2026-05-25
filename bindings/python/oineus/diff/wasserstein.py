@@ -63,7 +63,7 @@ def wasserstein_cost(
 
     matching = _oineus.wasserstein_matching_detailed(
         dgm_a_np, dgm_b_np,
-        wasserstein_q=wasserstein_q,
+        q=wasserstein_q,
         wasserstein_delta=wasserstein_delta,
         internal_p=internal_p_hera,
         ignore_inf_points=ignore_inf_points,

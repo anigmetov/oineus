@@ -267,7 +267,7 @@ class PersistenceDiagrams:
             # everywhere. For H_k pairs the birth simplex has dim k
             # and the death simplex has dim k+1, so we need
             # range(max_dim + 1).
-            dims_to_backprop = list(range(fil.max_dim() + 1))
+            dims_to_backprop = list(range(fil.max_dim + 1))
 
         n_threads = max(1, int(n_threads) if n_threads is not None else 1)
         strategy = _resolve_strategy(conflict_strategy)
@@ -296,7 +296,7 @@ class PersistenceDiagrams:
                 fil.values, top_opt, nondiff_dgms, dim,
                 gradient_method, step_size, strategy, negate,
             )
-            for dim in range(fil.max_dim())
+            for dim in range(fil.max_dim)
         }
 
     def __getitem__(self, dim: int) -> torch.Tensor:

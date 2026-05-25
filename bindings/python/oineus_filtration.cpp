@@ -119,13 +119,14 @@ void init_oineus_filtration(nb::module_& m)
             .def("neg_infinity", &Filtration::neg_infinity, "filtration-order -inf: a value strictly earlier than every cell")
             .def("fil_min", &Filtration::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min: the value that enters earlier")
             .def("fil_max", &Filtration::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max: the value that enters later")
-            .def("max_dim", &Filtration::max_dim, "maximal dimension of a cell in filtration")
+            .def_prop_ro("max_dim", &Filtration::max_dim, "maximal dimension of a cell in filtration")
             .def("cells", &Filtration::cells_copy, "copy of all cells in filtration order")
             .def("simplices", &Filtration::cells_copy, "copy of all simplices (cells) in filtration order")
             .def("size", &Filtration::size, "number of cells in filtration")
             .def("size_in_dimension", &Filtration::size_in_dimension, nb::arg("dim"), "number of cells of dimension dim")
             .def("n_vertices", &Filtration::n_vertices)
             .def("simplex_value_by_sorted_id", &Filtration::value_by_sorted_id, nb::arg("sorted_id"))
+            .def("cell_value_by_sorted_id", &Filtration::value_by_sorted_id, nb::arg("sorted_id"))
             .def("id_by_sorted_id", &Filtration::get_id_by_sorted_id, nb::arg("sorted_id"))
             .def("sorted_id_by_id", &Filtration::get_sorted_id, nb::arg("id"))
             .def("cell", &Filtration::get_cell, nb::arg("i"))
@@ -206,7 +207,7 @@ void init_oineus_filtration(nb::module_& m)
             .def("neg_infinity", &ProdFiltration::neg_infinity, "filtration-order -inf: a value strictly earlier than every cell")
             .def("fil_min", &ProdFiltration::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min: the value that enters earlier")
             .def("fil_max", &ProdFiltration::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max: the value that enters later")
-            .def("max_dim", &ProdFiltration::max_dim, "maximal dimension of a cell in filtration")
+            .def_prop_ro("max_dim", &ProdFiltration::max_dim, "maximal dimension of a cell in filtration")
             .def("cells", &ProdFiltration::cells_copy, "copy of all cells in filtration order")
             .def("size", &ProdFiltration::size, "number of cells in filtration")
             .def_prop_ro("dim_first", &ProdFiltration::dims_first)
@@ -284,13 +285,14 @@ void init_oineus_filtration(nb::module_& m)
             .def("neg_infinity", &CubeFiltration_##DIM##D::neg_infinity, "filtration-order -inf") \
             .def("fil_min", &CubeFiltration_##DIM##D::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min") \
             .def("fil_max", &CubeFiltration_##DIM##D::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max") \
-            .def("max_dim", &CubeFiltration_##DIM##D::max_dim, "maximal dimension of a cell in filtration") \
+            .def_prop_ro("max_dim", &CubeFiltration_##DIM##D::max_dim, "maximal dimension of a cell in filtration") \
             .def("cells", &CubeFiltration_##DIM##D::cells_copy, "copy of all cells in filtration order") \
             .def("cubes", &CubeFiltration_##DIM##D::cells_copy, "copy of all cells in filtration order") \
             .def("size", &CubeFiltration_##DIM##D::size, "number of cells in filtration") \
             .def("size_in_dimension", &CubeFiltration_##DIM##D::size_in_dimension, nb::arg("dim"), "number of cells of dimension dim") \
             .def("n_vertices", &CubeFiltration_##DIM##D::n_vertices) \
             .def("cube_value_by_sorted_id", &CubeFiltration_##DIM##D::value_by_sorted_id, nb::arg("sorted_id")) \
+            .def("cell_value_by_sorted_id", &CubeFiltration_##DIM##D::value_by_sorted_id, nb::arg("sorted_id")) \
             .def("id_by_sorted_id", &CubeFiltration_##DIM##D::get_id_by_sorted_id, nb::arg("sorted_id")) \
             .def("sorted_id_by_id", &CubeFiltration_##DIM##D::get_sorted_id, nb::arg("id")) \
             .def("cell", &CubeFiltration_##DIM##D::get_cell, nb::arg("i")) \

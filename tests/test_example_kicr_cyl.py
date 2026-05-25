@@ -67,9 +67,9 @@ params.kernel = params.cokernel = True
 params.image = False
 params.verbose = False
 
-print(f"{fil_cyl.max_dim() = }")
+print(f"{fil_cyl.max_dim = }")
 print(f"{fil_cyl.size() = }")
-print(f"{fil_3_prod.max_dim() = }")
+print(f"{fil_3_prod.max_dim = }")
 print(f"{fil_3_prod.size() = }")
 
 hdim = 1

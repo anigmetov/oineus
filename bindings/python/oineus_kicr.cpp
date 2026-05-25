@@ -101,6 +101,8 @@ void init_oineus_kicr(nb::module_& m)
             .def("kernel_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_kernel_diagrams()); })
             .def("cokernel_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_cokernel_diagrams()); })
             .def("image_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_image_diagrams()); })
+            .def("domain_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_domain_diagrams()); })
+            .def("codomain_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_codomain_diagrams()); })
             // decomposition objects provide access to their R/V/U matrices
             .def_rw("decomposition_f", &KerImCokRedProdSimplex::dcmp_F_)
             .def_rw("decomposition_g", &KerImCokRedProdSimplex::dcmp_G_)

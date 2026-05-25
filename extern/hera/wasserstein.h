@@ -568,6 +568,23 @@ struct WassersteinMatching {
 };
 
 template<class Real>
+inline bool operator==(const WassersteinMatching<Real>& a, const WassersteinMatching<Real>& b)
+{
+    return a.finite_to_finite == b.finite_to_finite
+        && a.a_to_diagonal    == b.a_to_diagonal
+        && a.b_to_diagonal    == b.b_to_diagonal
+        && a.essential        == b.essential
+        && a.cost             == b.cost
+        && a.distance         == b.distance;
+}
+
+template<class Real>
+inline bool operator!=(const WassersteinMatching<Real>& a, const WassersteinMatching<Real>& b)
+{
+    return !(a == b);
+}
+
+template<class Real>
 inline std::ostream& operator<<(std::ostream& out, const WassersteinMatching<Real>& m)
 {
     int ess_total = 0;

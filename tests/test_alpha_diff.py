@@ -67,7 +67,7 @@ def _per_dim_sorted_values_from_fil(fil):
     dim_first = fil.dim_first
     dim_last = fil.dim_last
     blocks = []
-    for d in range(fil.max_dim() + 1):
+    for d in range(fil.max_dim + 1):
         block = [fil.cell(i).value for i in range(dim_first[d], dim_last[d] + 1)]
         blocks.append(np.sort(np.array(block)))
     return np.concatenate(blocks)

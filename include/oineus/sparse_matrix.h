@@ -72,6 +72,15 @@ struct SimpleSparseMatrixTraits {
 
     static Column& r_data(Column* col) { return *col; }
 
+    // Print a single column as "(row1, coeff1) (row2, coeff2) ..."
+    // For the Z_p (P != 2) form, both row and coefficient are visible
+    // because the column entries are (row, coefficient) pairs.
+    static void print_column(std::ostream& out, const Column& col)
+    {
+        for (const auto& e : col)
+            out << "(" << e.first << ", " << e.second << ") ";
+    }
+
     // get identity matrix
     static Matrix eye(size_t n)
     {
@@ -149,6 +158,14 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
     }
 
     static Column& r_data(Column* col) { return *col; }
+
+    // Print a single Z_2 column as space-separated row indices.
+    // Coefficients are implicitly 1; nothing else to show.
+    static void print_column(std::ostream& out, const Column& col)
+    {
+        for (const auto& e : col)
+            out << e << " ";
+    }
 
     static bool is_zero(const CachedColumn& col)
     {

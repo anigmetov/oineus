@@ -408,6 +408,11 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_3D& fil) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil)); },
                     nb::arg("fil"))
             .def("filtration_index", &Decomposition::filtration_index, nb::arg("matrix_index"))
+            .def("__repr__", [](const Decomposition& self) {
+                std::stringstream ss;
+                ss << self;
+                return ss.str();
+            })
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def("__getstate__", [](const Decomposition& self) -> DecompositionStateTuple {

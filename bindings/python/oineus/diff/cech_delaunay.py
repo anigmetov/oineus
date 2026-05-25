@@ -203,7 +203,7 @@ def cech_delaunay_filtration(points, eps: float = 0.0, print_time: bool = False)
         elapsed = time.time() - start
         print(f"initialize dim-0 values elapsed: {elapsed:.3f}")
 
-    for dim in range(1, alpha_fil.max_dim() + 1):
+    for dim in range(1, alpha_fil.max_dim + 1):
         if print_time:
             start_dim = time.time()
         if dim == 1:

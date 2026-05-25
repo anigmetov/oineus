@@ -119,6 +119,7 @@ def _to_matching_array(dgm):
 def wasserstein_matching(
     dgm_1,
     dgm_2,
+    *,
     q: float = 2.0,
     delta: float = 0.01,
     internal_p: float = np.inf,
@@ -183,7 +184,7 @@ def wasserstein_matching(
     internal_p_hera = -1.0 if np.isinf(internal_p) else internal_p
     return _oineus.wasserstein_matching_detailed(
         dgm_1, dgm_2,
-        wasserstein_q=q,
+        q=q,
         wasserstein_delta=delta,
         internal_p=internal_p_hera,
         ignore_inf_points=ignore_inf_points,

@@ -178,7 +178,7 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     },
                     nb::arg("template_dgm"),
                     nb::arg("dim"),
-                    nb::arg("wasserstein_q")=1.0,
+                    nb::arg("q")=1.0,
                     nb::arg("wasserstein_delta")=0.01,
                     nb::arg("return_wasserstein_distance")=false,
                     nb::call_guard<nb::gil_scoped_release>(),
@@ -276,6 +276,11 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     "row indices are passed as filtration indices; conversion "
                     "to matrix layout (fil_size - 1 - i) is done internally.")
             .def("update", &TopologyOptimizer::update)
+            .def("__repr__", [](const TopologyOptimizer& opt) {
+                std::stringstream ss;
+                ss << opt;
+                return ss.str();
+            })
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def("__getstate__", [](const TopologyOptimizer& opt) -> TopologyOptimizerStateTuple {

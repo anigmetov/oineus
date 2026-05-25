@@ -931,8 +931,10 @@ namespace oineus {
             throw std::runtime_error("VRUDecomposition: cannot check ELZ without V matrix");
         }
 
-        size_t start_idx = _dim_first.at(dim);
-        size_t end_idx = _dim_last.at(dim) + 1;
+        auto _dim = _dim_from_dim(dim);
+
+        size_t start_idx = _dim_first.at(_dim);
+        size_t end_idx = _dim_last.at(_dim) + 1;
 
         size_t n_cols_to_check = end_idx - start_idx;
 
@@ -2172,41 +2174,31 @@ namespace oineus {
     template<typename Int>
     std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m)
     {
-        out << "Matrix D[\n";
-        for(size_t col_idx = 0; col_idx < m.r_data.size(); ++col_idx) {
-            out << "Column " << col_idx << ": ";
-            for(const auto& x: m.d_data[col_idx])
-                out << x << " ";
-            out << "\n";
-        }
-        out << "]\n";
+        using Traits = SimpleSparseMatrixTraits<Int, 2>;
+        using MatrixData = typename VRUDecomposition<Int>::MatrixData;
 
-        out << "Matrix R[\n";
-        for(size_t col_idx = 0; col_idx < m.r_data.size(); ++col_idx) {
-            out << "Column " << col_idx << ": ";
-            for(const auto& x: m.r_data[col_idx])
-                out << x << " ";
-            out << "\n";
-        }
-        out << "]\n";
+        out << "Decomposition(size=" << m.r_data.size()
+            << ", dualize=" << (m.dualize() ? "true" : "false")
+            << ", reduced=" << (m.is_reduced ? "true" : "false")
+            << ", has_V=" << (m.has_matrix_v() ? "true" : "false")
+            << ", has_U=" << (m.has_matrix_u() ? "true" : "false")
+            << ")\n";
 
-        out << "Matrix V[\n";
-        for(size_t col_idx = 0; col_idx < m.v_data.size(); ++col_idx) {
-            out << "Column " << col_idx << ": ";
-            for(const auto& x: m.v_data[col_idx])
-                out << x << " ";
-            out << "\n";
-        }
-        out << "]\n";
+        auto print_matrix = [&out](const char* tag, const char* line_tag,
+                                   const MatrixData& mat) {
+            out << "Matrix " << tag << "[\n";
+            for(size_t idx = 0; idx < mat.size(); ++idx) {
+                out << line_tag << " " << idx << ": ";
+                Traits::print_column(out, mat[idx]);
+                out << "\n";
+            }
+            out << "]\n";
+        };
 
-        out << "Matrix U[\n";
-        for(size_t row_idx = 0; row_idx < m.u_data_t.size(); ++row_idx) {
-            out << "Row " << row_idx << ": ";
-            for(const auto& x: m.u_data_t[row_idx])
-                out << x << " ";
-            out << "\n";
-        }
-        out << "]\n";
+        print_matrix("D", "Column", m.d_data);
+        print_matrix("R", "Column", m.r_data);
+        print_matrix("V", "Column", m.v_data);
+        print_matrix("U", "Row",    m.u_data_t);
 
         return out;
     }

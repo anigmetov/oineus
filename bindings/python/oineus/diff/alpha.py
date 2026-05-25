@@ -195,7 +195,7 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
     n_v = alpha_fil.size_in_dimension(0)
     values_in_dim = [torch.zeros(n_v, dtype=points.dtype, device=points.device)]
 
-    for dim in range(1, alpha_fil.max_dim() + 1):
+    for dim in range(1, alpha_fil.max_dim + 1):
         if print_time:
             t_dim = time.time()
         if dim == 1:

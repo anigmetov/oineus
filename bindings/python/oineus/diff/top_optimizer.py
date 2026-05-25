@@ -86,7 +86,7 @@ class TopologyOptimizer:
         return self.under_opt.match(
             template_dgm=template_dgm,
             dim=dim,
-            wasserstein_q=wasserstein_q,
+            q=wasserstein_q,
             wasserstein_delta=wasserstein_delta,
             return_wasserstein_distance=return_wasserstein_distance,
         )

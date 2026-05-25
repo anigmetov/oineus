@@ -39,7 +39,7 @@ def weak_alpha_filtration(points, print_time: bool = False):
         torch.zeros(n0, requires_grad=True, device=points.device, dtype=points.dtype)
     ]
 
-    for dim in range(1, alpha_fil.max_dim() + 1):
+    for dim in range(1, alpha_fil.max_dim + 1):
         if print_time:
             start_dim = time.time()
 

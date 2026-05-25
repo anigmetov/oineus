@@ -524,6 +524,13 @@ void init_oineus_functions(nb::module_& m)
     // ---- DiagramMatching: hera::WassersteinMatching, exposed under the
     // user-facing Python name. Keeps the grouped-view interface.  ----
     using HeraWasserMatch = hera::WassersteinMatching<oin_real>;
+    using DiagramMatchingStateTuple = std::tuple<
+        decltype(HeraWasserMatch::finite_to_finite),
+        decltype(HeraWasserMatch::a_to_diagonal),
+        decltype(HeraWasserMatch::b_to_diagonal),
+        decltype(HeraWasserMatch::essential),
+        decltype(HeraWasserMatch::cost),
+        decltype(HeraWasserMatch::distance)>;
     nb::class_<HeraWasserMatch>(m, "DiagramMatching",
             "Optimal Wasserstein matching: bucketed pair indices, cost, distance.")
         .def_prop_ro("finite_to_finite",
@@ -564,6 +571,28 @@ void init_oineus_functions(nb::module_& m)
                 if (s.compare(0, 19, "WassersteinMatching") == 0)
                     s.replace(0, 19, "DiagramMatching");
                 return s;
+            })
+        .def(nb::self == nb::self)
+        .def(nb::self != nb::self)
+        .def("__getstate__",
+            [](const HeraWasserMatch& self) -> DiagramMatchingStateTuple {
+                return std::make_tuple(self.finite_to_finite,
+                                       self.a_to_diagonal,
+                                       self.b_to_diagonal,
+                                       self.essential,
+                                       self.cost,
+                                       self.distance);
+            })
+        .def("__setstate__",
+            [](HeraWasserMatch& self, nb::tuple t) {
+                new (&self) HeraWasserMatch();
+                size_t i = 0;
+                self.finite_to_finite = nb::cast<decltype(HeraWasserMatch::finite_to_finite)>(t[i++]);
+                self.a_to_diagonal = nb::cast<decltype(HeraWasserMatch::a_to_diagonal)>(t[i++]);
+                self.b_to_diagonal = nb::cast<decltype(HeraWasserMatch::b_to_diagonal)>(t[i++]);
+                self.essential = nb::cast<decltype(HeraWasserMatch::essential)>(t[i++]);
+                self.cost = nb::cast<decltype(HeraWasserMatch::cost)>(t[i++]);
+                self.distance = nb::cast<decltype(HeraWasserMatch::distance)>(t[i++]);
             });
 
     func_name = "wasserstein_matching_detailed";
@@ -571,7 +600,7 @@ void init_oineus_functions(nb::module_& m)
         &wasserstein_matching_detailed_impl,
         nb::arg("dgm_a"),
         nb::arg("dgm_b"),
-        nb::arg("wasserstein_q") = 2.0,
+        nb::arg("q") = 1.0,
         nb::arg("wasserstein_delta") = 0.01,
         nb::arg("internal_p") = hera::get_infinity<oin_real>(),
         nb::arg("ignore_inf_points") = true,
@@ -583,6 +612,14 @@ void init_oineus_functions(nb::module_& m)
 
     // ---- bottleneck longest-edge records + matching ----
     using HeraBtFiniteEdge = hera::FiniteLongestEdge<oin_real>;
+    using FiniteLongestEdgeStateTuple = std::tuple<
+        decltype(HeraBtFiniteEdge::length),
+        decltype(HeraBtFiniteEdge::idx_a),
+        decltype(HeraBtFiniteEdge::idx_b),
+        decltype(HeraBtFiniteEdge::a_x),
+        decltype(HeraBtFiniteEdge::a_y),
+        decltype(HeraBtFiniteEdge::b_x),
+        decltype(HeraBtFiniteEdge::b_y)>;
     nb::class_<HeraBtFiniteEdge>(m, "FiniteLongestEdge",
             "One edge tied for the bottleneck distance in the finite part of "
             "a matching. ``idx_a`` or ``idx_b`` is ``None`` if that endpoint "
@@ -616,9 +653,34 @@ void init_oineus_functions(nb::module_& m)
                    << ", point_a=(" << e.a_x << ", " << e.a_y << ")"
                    << ", point_b=(" << e.b_x << ", " << e.b_y << "))";
                 return ss.str();
+            })
+        .def(nb::self == nb::self)
+        .def(nb::self != nb::self)
+        .def("__getstate__",
+            [](const HeraBtFiniteEdge& e) -> FiniteLongestEdgeStateTuple {
+                return std::make_tuple(e.length, e.idx_a, e.idx_b,
+                                       e.a_x, e.a_y, e.b_x, e.b_y);
+            })
+        .def("__setstate__",
+            [](HeraBtFiniteEdge& e, nb::tuple t) {
+                new (&e) HeraBtFiniteEdge();
+                size_t i = 0;
+                e.length = nb::cast<decltype(HeraBtFiniteEdge::length)>(t[i++]);
+                e.idx_a  = nb::cast<decltype(HeraBtFiniteEdge::idx_a)>(t[i++]);
+                e.idx_b  = nb::cast<decltype(HeraBtFiniteEdge::idx_b)>(t[i++]);
+                e.a_x    = nb::cast<decltype(HeraBtFiniteEdge::a_x)>(t[i++]);
+                e.a_y    = nb::cast<decltype(HeraBtFiniteEdge::a_y)>(t[i++]);
+                e.b_x    = nb::cast<decltype(HeraBtFiniteEdge::b_x)>(t[i++]);
+                e.b_y    = nb::cast<decltype(HeraBtFiniteEdge::b_y)>(t[i++]);
             });
 
     using HeraBtEssEdge = hera::EssentialLongestEdge<oin_real>;
+    using EssentialLongestEdgeStateTuple = std::tuple<
+        decltype(HeraBtEssEdge::length),
+        decltype(HeraBtEssEdge::idx_a),
+        decltype(HeraBtEssEdge::idx_b),
+        decltype(HeraBtEssEdge::coord_a),
+        decltype(HeraBtEssEdge::coord_b)>;
     nb::class_<HeraBtEssEdge>(m, "EssentialLongestEdge",
             "One edge tied for the bottleneck distance within a single "
             "essential family.")
@@ -634,9 +696,35 @@ void init_oineus_functions(nb::module_& m)
                    << ", idx_a=" << e.idx_a << ", idx_b=" << e.idx_b
                    << ", coord_a=" << e.coord_a << ", coord_b=" << e.coord_b << ")";
                 return ss.str();
+            })
+        .def(nb::self == nb::self)
+        .def(nb::self != nb::self)
+        .def("__getstate__",
+            [](const HeraBtEssEdge& e) -> EssentialLongestEdgeStateTuple {
+                return std::make_tuple(e.length, e.idx_a, e.idx_b,
+                                       e.coord_a, e.coord_b);
+            })
+        .def("__setstate__",
+            [](HeraBtEssEdge& e, nb::tuple t) {
+                new (&e) HeraBtEssEdge();
+                size_t i = 0;
+                e.length  = nb::cast<decltype(HeraBtEssEdge::length)>(t[i++]);
+                e.idx_a   = nb::cast<decltype(HeraBtEssEdge::idx_a)>(t[i++]);
+                e.idx_b   = nb::cast<decltype(HeraBtEssEdge::idx_b)>(t[i++]);
+                e.coord_a = nb::cast<decltype(HeraBtEssEdge::coord_a)>(t[i++]);
+                e.coord_b = nb::cast<decltype(HeraBtEssEdge::coord_b)>(t[i++]);
             });
 
     using HeraBtMatch = hera::BottleneckMatching<oin_real>;
+    using BottleneckMatchingStateTuple = std::tuple<
+        decltype(HeraWasserMatch::finite_to_finite),
+        decltype(HeraWasserMatch::a_to_diagonal),
+        decltype(HeraWasserMatch::b_to_diagonal),
+        decltype(HeraWasserMatch::essential),
+        decltype(HeraWasserMatch::cost),
+        decltype(HeraWasserMatch::distance),
+        decltype(HeraBtMatch::longest_finite),
+        decltype(HeraBtMatch::longest_essential)>;
     // Inherits all properties of DiagramMatching (finite_to_finite,
     // a_to_diagonal, b_to_diagonal, essential, cost, distance) via the
     // C++ inheritance declared in hera::BottleneckMatching.
@@ -654,7 +742,33 @@ void init_oineus_functions(nb::module_& m)
         .def("__str__",
             [](const HeraBtMatch& s) { std::stringstream ss; ss << s; return ss.str(); })
         .def("__repr__",
-            [](const HeraBtMatch& s) { return hera::to_str_debug(s); });
+            [](const HeraBtMatch& s) { return hera::to_str_debug(s); })
+        .def(nb::self == nb::self)
+        .def(nb::self != nb::self)
+        .def("__getstate__",
+            [](const HeraBtMatch& self) -> BottleneckMatchingStateTuple {
+                return std::make_tuple(self.finite_to_finite,
+                                       self.a_to_diagonal,
+                                       self.b_to_diagonal,
+                                       self.essential,
+                                       self.cost,
+                                       self.distance,
+                                       self.longest_finite,
+                                       self.longest_essential);
+            })
+        .def("__setstate__",
+            [](HeraBtMatch& self, nb::tuple t) {
+                new (&self) HeraBtMatch();
+                size_t i = 0;
+                self.finite_to_finite = nb::cast<decltype(HeraWasserMatch::finite_to_finite)>(t[i++]);
+                self.a_to_diagonal = nb::cast<decltype(HeraWasserMatch::a_to_diagonal)>(t[i++]);
+                self.b_to_diagonal = nb::cast<decltype(HeraWasserMatch::b_to_diagonal)>(t[i++]);
+                self.essential = nb::cast<decltype(HeraWasserMatch::essential)>(t[i++]);
+                self.cost = nb::cast<decltype(HeraWasserMatch::cost)>(t[i++]);
+                self.distance = nb::cast<decltype(HeraWasserMatch::distance)>(t[i++]);
+                self.longest_finite = nb::cast<decltype(HeraBtMatch::longest_finite)>(t[i++]);
+                self.longest_essential = nb::cast<decltype(HeraBtMatch::longest_essential)>(t[i++]);
+            });
 
     func_name = "bottleneck_matching_detailed";
     m.def(func_name.c_str(),

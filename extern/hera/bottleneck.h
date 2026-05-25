@@ -218,6 +218,21 @@ namespace hera {
     };
 
     template<class Real>
+    inline bool operator==(const FiniteLongestEdge<Real>& a, const FiniteLongestEdge<Real>& b)
+    {
+        return a.length == b.length
+            && a.idx_a  == b.idx_a && a.idx_b == b.idx_b
+            && a.a_x    == b.a_x   && a.a_y   == b.a_y
+            && a.b_x    == b.b_x   && a.b_y   == b.b_y;
+    }
+
+    template<class Real>
+    inline bool operator!=(const FiniteLongestEdge<Real>& a, const FiniteLongestEdge<Real>& b)
+    {
+        return !(a == b);
+    }
+
+    template<class Real>
     struct EssentialLongestEdge {
         Real length { 0 };
         int  idx_a { -1 };
@@ -225,6 +240,20 @@ namespace hera {
         Real coord_a { 0 };
         Real coord_b { 0 };
     };
+
+    template<class Real>
+    inline bool operator==(const EssentialLongestEdge<Real>& a, const EssentialLongestEdge<Real>& b)
+    {
+        return a.length  == b.length
+            && a.idx_a   == b.idx_a  && a.idx_b   == b.idx_b
+            && a.coord_a == b.coord_a && a.coord_b == b.coord_b;
+    }
+
+    template<class Real>
+    inline bool operator!=(const EssentialLongestEdge<Real>& a, const EssentialLongestEdge<Real>& b)
+    {
+        return !(a == b);
+    }
 
     // BottleneckMatching IS-A WassersteinMatching with extra longest-edge
     // bookkeeping — exposing the inheritance lets nanobind model it directly,
@@ -234,6 +263,21 @@ namespace hera {
         std::vector<FiniteLongestEdge<Real>> longest_finite;
         std::array<std::vector<EssentialLongestEdge<Real>>, hera::kNumInfKinds> longest_essential;
     };
+
+    template<class Real>
+    inline bool operator==(const BottleneckMatching<Real>& a, const BottleneckMatching<Real>& b)
+    {
+        return static_cast<const WassersteinMatching<Real>&>(a)
+                == static_cast<const WassersteinMatching<Real>&>(b)
+            && a.longest_finite    == b.longest_finite
+            && a.longest_essential == b.longest_essential;
+    }
+
+    template<class Real>
+    inline bool operator!=(const BottleneckMatching<Real>& a, const BottleneckMatching<Real>& b)
+    {
+        return !(a == b);
+    }
 
     template<class Real>
     inline std::ostream& operator<<(std::ostream& out, const BottleneckMatching<Real>& m)
