@@ -1,0 +1,5 @@
+_build/
+jupyter_execute/
+api/_autosummary/
+.ipynb_checkpoints/
+__pycache__/

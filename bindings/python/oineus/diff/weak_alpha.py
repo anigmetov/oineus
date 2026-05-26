@@ -11,7 +11,7 @@ import time
 import numpy as np
 import torch
 
-from .. import _alpha_shapes_filtration, _oineus
+from .. import alpha_filtration, _oineus
 from .diff_filtration import DiffFiltration
 
 
@@ -29,7 +29,7 @@ def weak_alpha_filtration(points, print_time: bool = False):
         start = time.time()
 
     points_np = points.detach().cpu().numpy()
-    alpha_fil = _alpha_shapes_filtration(points_np)
+    alpha_fil = alpha_filtration(points_np)
     if print_time:
         elapsed = time.time() - start
         print(f"alpha_fil construction elapsed: {elapsed:.3f}")

@@ -1012,20 +1012,34 @@ def compute_diagrams_vr(data: np.ndarray, from_pwdists: bool=False, max_dim: int
     return dcmp.diagram(fil=fil, include_inf_points=include_inf_points)
 
 
-def _alpha_shapes_filtration(points: np.ndarray,
-                             weights: typing.Optional[np.ndarray]=None,
-                             exact: bool=False,
-                             periodic: bool=False,
-                             compute_bounding_box: bool=True,
-                             bbox_min=None,
-                             bbox_max=None,
-                             n_threads: int=1):
-    """Build an _oineus.Filtration from alpha-shape combinatorics via diode.
+def alpha_filtration(points: np.ndarray,
+                     weights: typing.Optional[np.ndarray]=None,
+                     exact: bool=False,
+                     periodic: bool=False,
+                     compute_bounding_box: bool=True,
+                     bbox_min=None,
+                     bbox_max=None,
+                     n_threads: int=1):
+    """Build an alpha-shape filtration from a 2D or 3D point cloud.
 
-    Internal helper shared by compute_diagrams_alpha and the differentiable
-    Cech-Delaunay path. The filtration values produced here are alpha values
-    from diode; downstream callers may overwrite them (e.g. with squared MEB
-    radii in the differentiable case).
+    Combinatorics come from diode (CGAL Delaunay); filtration values are the
+    alpha values returned by diode. For one-shot diagrams use
+    :func:`compute_diagrams_alpha`; the differentiable Cech-Delaunay path
+    reuses the same combinatorics with autograd-attached values.
+
+    Args:
+        points: NumPy array of shape (n, 2) or (n, 3).
+        weights: Optional 1D array of length n. If provided, computes
+            weighted (regular) alpha-shapes; currently 3D only.
+        exact: Use CGAL's exact kernel. Slower but robust against numerical
+            pathologies.
+        periodic: Use periodic alpha-shapes on a torus.
+        compute_bounding_box: If True, use the bounding box of the data.
+        bbox_min, bbox_max: Bounding box if compute_bounding_box=False.
+        n_threads: Threads used inside the Filtration constructor.
+
+    Returns:
+        A Filtration over alpha-shape simplices.
     """
     if points.ndim != 2:
         raise ValueError("points must be a 2D array of shape (n_points, dim)")
@@ -1121,7 +1135,7 @@ def compute_diagrams_alpha(points: np.ndarray,
     """
     if params is None:
         params = _oineus.ReductionParams()
-    fil = _alpha_shapes_filtration(
+    fil = alpha_filtration(
         points,
         weights=weights,
         exact=exact,

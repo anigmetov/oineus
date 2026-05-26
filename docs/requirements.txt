@@ -1,0 +1,21 @@
+# Documentation build requirements. Pinned for reproducible ReadTheDocs builds.
+# Keep in sync with docs/conf.py extensions and notebook imports.
+
+sphinx>=7.3,<9
+furo>=2024.5.6
+myst-nb>=1.1,<2
+sphinx-design>=0.6,<1
+sphinx-copybutton>=0.5,<1
+sphinx-autobuild>=2024.4.16
+
+# Runtime deps needed to execute example notebooks.
+numpy>=1.24
+scipy>=1.11
+matplotlib>=3.7
+ipykernel>=6.29
+ipywidgets>=8.1
+
+# Torch is pinned so the expert notebook (future) stays reproducible; the
+# beginners notebook does not require it, but installing it here keeps
+# environments uniform.
+torch>=2.2,<3 ; platform_system != "Windows"

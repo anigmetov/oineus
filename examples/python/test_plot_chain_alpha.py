@@ -44,7 +44,7 @@ def _alpha_filtration_and_cycle(points):
     (fil, longest_h1_cycle_chain). The cycle is a list of edge sorted-ids
     from the column of R that kills the longest H1 feature.
     """
-    fil = oin._alpha_shapes_filtration(points, n_threads=1)
+    fil = oin.alpha_filtration(points, n_threads=1)
 
     dcmp = oin.Decomposition(fil, dualize=False)
     params = oin.ReductionParams()

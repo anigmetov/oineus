@@ -560,13 +560,12 @@ def plot_diagram_gradient(
     where an optimization step would move each persistence pair when
     minimizing or maximizing a topology-aware loss.
 
-    Inputs:
-        diagram: One of
-            - ``torch.Tensor`` of shape ``(n, 2)``,
-            - ``numpy.ndarray`` of shape ``(n, 2)``,
-            - native ``oineus.Diagrams``,
-            - differentiable ``oineus.diff.PersistenceDiagrams``,
-            - ``dict[int, ndarray | torch.Tensor]``.
+    Args:
+        diagram: One of ``torch.Tensor`` of shape ``(n, 2)``,
+            ``numpy.ndarray`` of shape ``(n, 2)``, native
+            ``oineus.Diagrams``, differentiable
+            ``oineus.diff.PersistenceDiagrams``, or
+            ``dict[int, ndarray | torch.Tensor]``.
         gradient: Same shape/structure as ``diagram``, or ``None``. When
             ``None`` and the diagram is torch-backed, the gradient is pulled
             from each tensor's ``.grad``. For non-torch inputs it is

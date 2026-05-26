@@ -1,4 +1,15 @@
+---
+orphan: true
+---
+
 # Topological optimization: doing it economically
+
+```{note}
+Advanced / internals. Most users do not need this page;
+{py:func}`oineus.diff.persistence_diagram` makes the right choices
+automatically. The notes below explain *why* it does what it does, for
+readers who want to follow or extend the implementation.
+```
 
 This note is about how to *spend the least computation* on a
 gradient step through a persistence diagram. It is independent of

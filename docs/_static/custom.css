@@ -1,0 +1,17 @@
+/* Minor tweaks on top of Furo. */
+
+/* Give feature-card grids a bit more breathing room. */
+.sd-card-title {
+    font-weight: 600;
+}
+
+/* Make code blocks feel a bit tighter. */
+div.highlight pre {
+    line-height: 1.35;
+}
+
+/* Figures inside notebooks: center + cap width. */
+.cell_output img {
+    max-width: 100%;
+    height: auto;
+}

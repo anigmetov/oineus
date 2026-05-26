@@ -39,6 +39,7 @@ CMakeCache.txt
 *.tgz
 *.tar
 *.bak
+*.png
 *.vtc
 makeout
 tags
@@ -57,3 +58,7 @@ dist/
 .vscode/settings.json
 include/.DS_Store
 .DS_Store
+# uv-managed
+.venv/
+.uv-cache/
+.uv-python/

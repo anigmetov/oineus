@@ -45,15 +45,15 @@ class TopologyOptimizer:
     `self.under_fil` for callers that need it directly.
 
     The optimizer is built for one autograd backward; the reduction
-    recipe is fixed at construction time:
+    recipe is fixed at construction time::
 
-      with_crit_sets=False  -> R only (parallel + clearing).
-      with_crit_sets=True   -> R + V + restore_ELZ in the given dims.
-                                U is recovered on demand via
-                                ensure_has_u_hom / ensure_has_u_coh,
-                                unless u_strategy=LegacyInBand, in
-                                which case U is built in-band
-                                (serial, clearing off).
+        with_crit_sets=False  -> R only (parallel + clearing).
+        with_crit_sets=True   -> R + V + restore_ELZ in the given dims.
+                                  U is recovered on demand via
+                                  ensure_has_u_hom / ensure_has_u_coh,
+                                  unless u_strategy=LegacyInBand, in
+                                  which case U is built in-band
+                                  (serial, clearing off).
     """
 
     def __init__(self, fil, *, with_crit_sets: bool = True,
