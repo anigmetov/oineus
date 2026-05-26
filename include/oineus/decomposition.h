@@ -20,6 +20,8 @@
 #include "taskflow/taskflow.hpp"
 #include "taskflow/algorithm/for_each.hpp"
 
+#include "interrupt.h"
+
 #ifndef OINEUS_DISABLE_ICECREAM
 #include <icecream/icecream.hpp>
 #else
@@ -296,13 +298,12 @@ namespace oineus {
                 throw std::runtime_error("some columns in chunk not processed");
             }
 #endif
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL
-            if (my_chunk % 100 == 0) {
-                logger->debug("checking for Ctrl-C in Python...");
-                OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL;
-                logger->debug("checking for Ctrl-C in Python... done");
-            }
-#endif
+            // Worker context (std::thread): MUST NOT throw on interrupt
+            // -- uncaught exceptions from std::thread call std::terminate.
+            // Set-and-return; the orchestrator (reduce_parallel_*) checks
+            // oineus::interrupted() after join() and throws there.
+            if (my_chunk % 100 == 0 && oineus::interrupted())
+                return;
             mm->quiescent();
         } while(true); // loop over chunks
         logger->debug("thread {}, EXIT reduction, stats = {}", thread_idx, stats);
@@ -1050,11 +1051,8 @@ namespace oineus {
         for (size_t current_col = range_start_idx; current_col < range_end_idx; ++current_col) {
             n_violators += restore_elz_column_serial(r_data, v_data, has_matrix_u() ? &u_data_t : nullptr, current_col, v_only);
 
-    #ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-            if (current_col % 100 == 0) {
-                OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-            }
-    #endif
+            if (current_col % 100 == 0 && oineus::interrupted())
+                throw oineus::interrupted_exception{};
         }
 
         set_is_elz_flag(_dim, true);
@@ -1177,11 +1175,8 @@ namespace oineus {
                             u_data_t[pivot].push_back(i);
                     }
 
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-                    if (i % 1000 == 0) {
-                        OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL;
-                    }
-#endif
+                    if (i % 1000 == 0 && oineus::interrupted())
+                        throw oineus::interrupted_exception{};
                 } // reduction loop
                 MatrixTraits::load_from_cache(cached_r_col, r_data[i]);
                 if (params.compute_v)
@@ -1303,6 +1298,11 @@ namespace oineus {
         for(auto& t: ts) {
             t.join();
         }
+
+        // Workers in parallel_reduction set-and-return on interrupt; the
+        // orchestrator throws on the joining thread.
+        if (oineus::interrupted())
+            throw oineus::interrupted_exception{};
 
         params.elapsed = timer_reduction.elapsed();
         params.elapsed_restore_elz = 0.0;
@@ -1440,6 +1440,9 @@ namespace oineus {
         for(auto& t: ts) {
             t.join();
         }
+
+        if (oineus::interrupted())
+            throw oineus::interrupted_exception{};
 
         params.elapsed = timer_reduction.elapsed();
 
@@ -1679,12 +1682,8 @@ namespace oineus {
                 if (!is_zero(&r_data[i]))
                     rows_with_lowest_one.insert(low(&r_data[i]));
 
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-                if (i % 100 == 0) {
-                    OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-                }
-#endif
-
+                if (i % 100 == 0 && oineus::interrupted())
+                    throw oineus::interrupted_exception{};
             }
 
         for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
@@ -1722,12 +1721,8 @@ namespace oineus {
                 }
             }
 
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-            if (col_idx % 100 == 0) {
-                OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-            }
-#endif
-
+            if (col_idx % 100 == 0 && oineus::interrupted())
+                throw oineus::interrupted_exception{};
         }
 
         return result;
@@ -1765,12 +1760,8 @@ namespace oineus {
                 if (!is_zero(&r_data[i]))
                     rows_with_lowest_one.insert(low(&r_data[i]));
 
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-                if (i % 100 == 0) {
-                    OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-                }
-#endif
-
+                if (i % 100 == 0 && oineus::interrupted())
+                    throw oineus::interrupted_exception{};
             }
 
         for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
@@ -1818,11 +1809,8 @@ namespace oineus {
                 }
             }
 
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-            if (col_idx % 100 == 0) {
-                OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-            }
-#endif
+            if (col_idx % 100 == 0 && oineus::interrupted())
+                throw oineus::interrupted_exception{};
         }
 
         return result;

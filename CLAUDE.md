@@ -456,11 +456,42 @@ contract to preserve.
     Caches, counters, logger buffers, etc. must be either thread-safe or
     per-call.
   - **Release the GIL** on any non-trivial C++ work via
-    `nb::call_guard<nb::gil_scoped_release>()`. The Hera distance and
-    matching bindings already do this; new C++ entry points should follow
-    suit.
+    `nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()`.
+    Order matters: nanobind's `call_guard` is implemented via
+    `detail::tuple<Ts...>` where the LAST template argument is destroyed
+    LAST, so `SignalGuard` must come second so its destructor runs after
+    the GIL has been reacquired. Reversing the order causes
+    `PyErr_SetString` to fire without the GIL -- intermittent segfaults
+    have been seen here. The Hera distance and matching bindings already
+    do this; new C++ entry points should follow suit.
   - Don't rely on per-process singletons that would break under
     `multiprocessing` fork-then-spawn.
+
+### Ctrl-C handling
+
+Every Python entry point wrapped in `SignalGuard` (see
+`bindings/python/oineus_signal_guard.h`) responds to Ctrl-C within tens
+of milliseconds. The mechanism: a ref-counted C-level SIGINT handler
+flips an inline global `oineus::g_stop_flag` (`volatile sig_atomic_t`,
+the only async-signal-safe write); long-running C++ loops poll it via
+`oineus::interrupted()` and throw `oineus::interrupted_exception`; a
+nanobind exception translator converts that to `KeyboardInterrupt`.
+Polling sites live in `include/oineus/decomposition.h`,
+`grid.h`, `vietoris_rips_inorder.h`, `filtration.h`, and -- under the
+`HERA_USE_OINEUS_INTERRUPT` macro -- in `extern/hera/wasserstein/` and
+`extern/hera/bottleneck/`.
+
+**Worker threads must NOT throw on interrupt.** A `std::thread` that
+exits via an uncaught exception calls `std::terminate`. Inside
+`parallel_reduction` (decomposition.h:299), the polling site returns
+early; the orchestrating function (`reduce_parallel_r_only`,
+`reduce_parallel_rv`) checks the flag after `join()` and throws on
+the joining thread. New parallel code should follow the same pattern.
+
+Pure-C++ users get free cooperative cancellation: install their own
+SIGINT handler that calls `oineus::request_stop()` and the existing
+polling sites will pick it up. The Python `SignalGuard` only installs
+its own handler while a wrapped binding is on the stack.
 
 ## Common Issues
 

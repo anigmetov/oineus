@@ -261,11 +261,13 @@ void init_oineus_functions(nb::module_& m)
     // Lower-star Freudenthal filtration
     func_name = "get_freudenthal_filtration";
     m.def(func_name.c_str(), &get_fr_filtration<oin_int, oin_real>,
-            nb::arg("data"), nb::arg("negate") = false, nb::arg("wrap") = false, nb::arg("max_dim") = 3, nb::arg("n_threads") = 1);
+            nb::arg("data"), nb::arg("negate") = false, nb::arg("wrap") = false, nb::arg("max_dim") = 3, nb::arg("n_threads") = 1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
 
     func_name = "get_freudenthal_filtration_and_crit_vertices";
     m.def(func_name.c_str(), &get_fr_filtration_and_critical_vertices<oin_int, oin_real>,
-            nb::arg("data"), nb::arg("negate") = false, nb::arg("wrap") = false, nb::arg("max_dim") = 3, nb::arg("n_threads") = 1);
+            nb::arg("data"), nb::arg("negate") = false, nb::arg("wrap") = false, nb::arg("max_dim") = 3, nb::arg("n_threads") = 1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
 
     // Vietoris--Rips filtration
     // Reasonable default (dimension of points) for max_dim is provided in Python
@@ -274,25 +276,30 @@ void init_oineus_functions(nb::module_& m)
     // is provided in __init__.py on pure Python level
     func_name = "get_vr_filtration";
     m.def(func_name.c_str(), &get_vr_filtration<oin_int, oin_real>,
-            nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1);
+            nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
 
     func_name = "get_vr_filtration_and_critical_edges";
     m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges<oin_int, oin_real>,
-            nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1);
+            nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
 
     func_name = "get_vr_filtration_from_pwdists";
     m.def(func_name.c_str(), &get_vr_filtration_from_pwdists<oin_int, oin_real>,
-            nb::arg("pwdists"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1);
+            nb::arg("pwdists"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
 
     func_name = "get_vr_filtration_and_critical_edges_from_pwdists";
     m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges_from_pwdists<oin_int, oin_real>,
-            nb::arg("pwdists"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1);
+            nb::arg("pwdists"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
 
     // Internal: brute-force VR construction, exposed for cross-checking VRE
     // in the test suite. Not part of the user API.
     func_name = "_get_vr_filtration_naive";
     m.def(func_name.c_str(), &_get_vr_filtration_naive<oin_int, oin_real>,
-            nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1);
+            nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
 
     // boundary matrix as vector of columns
     func_name = "get_boundary_matrix";
@@ -325,7 +332,7 @@ void init_oineus_functions(nb::module_& m)
                 return bottleneck_distance_impl(normalize_diagram_ids(dgm_1), normalize_diagram_ids(dgm_2), delta);
             },
             nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("delta") = 0.01,
-            nb::call_guard<nb::gil_scoped_release>(),
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
             "Compute bottleneck distance between two persistence diagrams.");
 
     m.def(func_name.c_str(),
@@ -333,7 +340,7 @@ void init_oineus_functions(nb::module_& m)
                 return bottleneck_distance_impl(diagrams_to_diagram(dgm_1, dim), diagrams_to_diagram(dgm_2, dim), delta);
             },
             nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("dim"), nb::arg("delta") = 0.01,
-            nb::call_guard<nb::gil_scoped_release>(),
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
             "Compute bottleneck distance between two Oineus Diagrams objects in a fixed homology dimension.");
 
     m.def(func_name.c_str(),
@@ -341,7 +348,7 @@ void init_oineus_functions(nb::module_& m)
                 return bottleneck_distance_impl(numpy_to_diagram(dgm_1), numpy_to_diagram(dgm_2), delta);
             },
             nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("delta") = 0.01,
-            nb::call_guard<nb::gil_scoped_release>(),
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
             "Compute bottleneck distance between two persistence diagrams given as NumPy arrays of shape (n_points, 2).");
 
     func_name = "wasserstein_distance";
@@ -351,7 +358,7 @@ void init_oineus_functions(nb::module_& m)
             },
             nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("q") = 1.0,
             nb::arg("delta") = 0.01, nb::arg("internal_p") = hera::get_infinity<oin_real>(),
-            nb::call_guard<nb::gil_scoped_release>(),
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
             "Compute q-Wasserstein distance between two persistence diagrams.");
 
     m.def(func_name.c_str(),
@@ -360,7 +367,7 @@ void init_oineus_functions(nb::module_& m)
             },
             nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("dim"), nb::arg("q") = 1.0,
             nb::arg("delta") = 0.01, nb::arg("internal_p") = hera::get_infinity<oin_real>(),
-            nb::call_guard<nb::gil_scoped_release>(),
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
             "Compute q-Wasserstein distance between two Oineus Diagrams objects in a fixed homology dimension.");
 
     m.def(func_name.c_str(),
@@ -369,7 +376,7 @@ void init_oineus_functions(nb::module_& m)
             },
             nb::arg("dgm_1"), nb::arg("dgm_2"), nb::arg("q") = 1.0,
             nb::arg("delta") = 0.01, nb::arg("internal_p") = hera::get_infinity<oin_real>(),
-            nb::call_guard<nb::gil_scoped_release>(),
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
             "Compute q-Wasserstein distance between NumPy-array persistence diagrams of shape (n_points, 2).");
 
     // ---- enum + grouped views ----
@@ -604,7 +611,7 @@ void init_oineus_functions(nb::module_& m)
         nb::arg("wasserstein_delta") = 0.01,
         nb::arg("internal_p") = hera::get_infinity<oin_real>(),
         nb::arg("ignore_inf_points") = true,
-        nb::call_guard<nb::gil_scoped_release>(),
+        nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
         "Full Wasserstein matching: cost, distance, and bucketed pair indices "
         "for finite-to-finite, a-to-diagonal, b-to-diagonal, and the four "
         "essential families. ignore_inf_points=True drops essentials before matching.");
@@ -786,7 +793,7 @@ void init_oineus_functions(nb::module_& m)
         nb::arg("dgm_b"),
         nb::arg("delta") = 0.01,
         nb::arg("ignore_inf_points") = true,
-        nb::call_guard<nb::gil_scoped_release>(),
+        nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
         "Full bottleneck matching: distance, bucketed pair indices for "
         "finite-to-finite/diagonal/essentials, and tied-longest edges. "
         "delta=0.0 runs the exact algorithm.");
@@ -834,6 +841,7 @@ void init_oineus_functions(nb::module_& m)
                 }
                 typename oin::Diagrams<oin_real>::Dgm result;
                 {
+                    oineus_python::SignalGuard guard;
                     nb::gil_scoped_release release;
                     result = oin::init_frechet_mean_medoid_diagram<oin_real>(
                             diagram_vec, weight_vec, std::max(1, n_threads));
@@ -921,6 +929,7 @@ void init_oineus_functions(nb::module_& m)
 
                 typename oin::Diagrams<oin_real>::Dgm result;
                 {
+                    oineus_python::SignalGuard guard;
                     nb::gil_scoped_release release;
                     result = oin::frechet_mean<oin_real>(diagram_vec, weight_vec, params, custom_dgm);
                 }

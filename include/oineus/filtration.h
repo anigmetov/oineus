@@ -16,6 +16,7 @@
 #include "timer.h"
 #include "decomposition.h"
 #include "filtration_kind.h"
+#include "interrupt.h"
 namespace oineus {
 
     template<typename Int_, typename Real_, size_t D>
@@ -292,11 +293,8 @@ namespace oineus {
                             col.push_back(uid_to_sorted_id.at(tau_vertices));
                     }
 
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-                    if (col_idx % 100 == 0) {
-                      OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-                    }
-#endif
+                    if (col_idx % 100 == 0 && oineus::interrupted())
+                        throw oineus::interrupted_exception{};
 
                     std::sort(col.begin(), col.end());
 

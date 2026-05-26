@@ -7,6 +7,7 @@
 #include <cassert>
 
 #include "filtration.h"
+#include "interrupt.h"
 
 namespace oineus {
 
@@ -145,30 +146,37 @@ namespace oineus {
             bool check_initial)
     {
         CALI_CXX_MARK_FUNCTION;
+        // Cooperative cancellation: detect at hot-loop checkpoints and
+        // unwind the recursion by returning early (with `current` restored
+        // via the pop_back below). Throwing through the recursive call
+        // stack proved unsafe in practice -- see the get_vr_filtration
+        // wrapper which converts the cooperative bail to interrupted_exception.
+        if (oineus::interrupted())
+            return;
+
         if (check_initial and not current.empty())
             functor(current);
 
         if (current.size() == max_dim + 1)
             return;
 
-        [[maybe_unused]] size_t cur_idx = 0;
+        size_t cur_idx = 0;
         for(auto cur = excluded_end; cur != candidates.end(); ++cur) {
             current.push_back(*cur);
 
             VertexContainer new_candidates;
 
-            [[maybe_unused]] size_t i = 0;
+            size_t i = 0;
 
             for(auto ccur = candidates.begin(); ccur != cur; ++ccur) {
                 if (neighbor(*ccur, *cur))
                     new_candidates.push_back(*ccur);
 
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-                if (i % 500 == 0) {
-                    OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                if (i % 500 == 0 && oineus::interrupted()) {
+                    current.pop_back();
+                    return;
                 }
                 i++;
-#endif
             }
 
             size_t ex = new_candidates.size();
@@ -178,27 +186,30 @@ namespace oineus {
                 if (neighbor(*ccur, *cur))
                     new_candidates.push_back(*ccur);
 
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-                if (i % 500 == 0) {
-                    OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+                if (i % 500 == 0 && oineus::interrupted()) {
+                    current.pop_back();
+                    return;
                 }
                 i++;
-#endif
-
             }
 
             excluded_end = new_candidates.begin() + ex;
 
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-            if (cur_idx % 500 == 0) {
-                OINEUS_CHECK_FOR_PYTHON_INTERRUPT
+            if (cur_idx % 500 == 0 && oineus::interrupted()) {
+                current.pop_back();
+                return;
             }
             cur_idx++;
-#endif
 
             bron_kerbosch(current, new_candidates, excluded_end, max_dim, neighbor, functor, true);
 
             current.pop_back();
+
+            // A nested call may have bailed out; propagate the early
+            // return up the stack so the outer get_vr_filtration sees
+            // the flag and turns it into interrupted_exception.
+            if (oineus::interrupted())
+                return;
         }
     }
 
@@ -339,6 +350,8 @@ namespace oineus {
         bool check_initial {false};
 
         bron_kerbosch(current, candidates, excluded_end, max_dim, neighbor, functor, check_initial);
+        if (oineus::interrupted())
+            throw oineus::interrupted_exception{};
         // Filtration constructor will sort simplices and assign sorted ids
         Filtration<Simplex<Int>, Real> fil(std::move(simplices), negate, n_threads);
         fil.set_kind(FiltrationKind::Vr);

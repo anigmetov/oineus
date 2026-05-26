@@ -33,6 +33,10 @@ derivative works thereof, in binary and source code form.
 #include <iterator>
 #include <chrono>
 #include <numeric>
+
+#ifdef HERA_USE_OINEUS_INTERRUPT
+#include <oineus/interrupt.h>
+#endif
 #include <cmath>
 
 #include "def_debug_ws.h"
@@ -137,6 +141,12 @@ void AuctionRunnerGS<R, AO, PC>::run_auction_phases()
     for(int phase_num = 0; phase_num < params.max_num_phases; ++phase_num) {
         flush_assignment();
         run_auction_phase();
+
+#ifdef HERA_USE_OINEUS_INTERRUPT
+        if (oineus::interrupted())
+            throw oineus::interrupted_exception{};
+#endif
+
         Real current_result = getDistanceToQthPowerInternal();
         Real denominator = current_result - num_bidders * oracle.get_epsilon();
         current_result = std::pow(current_result, 1 / params.wasserstein_power);

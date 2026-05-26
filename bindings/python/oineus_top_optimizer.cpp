@@ -181,7 +181,7 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     nb::arg("q")=1.0,
                     nb::arg("wasserstein_delta")=0.01,
                     nb::arg("return_wasserstein_distance")=false,
-                    nb::call_guard<nb::gil_scoped_release>(),
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "return target from Wasserstein matching"
             )
             .def_prop_ro("homology_decomposition", &TopologyOptimizer::get_homology_decompostion)
@@ -215,9 +215,9 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     "materialized. Counterpart of is_hom_built.")
             .def("singleton", &TopologyOptimizer::singleton)
             .def("singletons", &TopologyOptimizer::singletons,
-                    nb::call_guard<nb::gil_scoped_release>())
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("reduce_all", &TopologyOptimizer::reduce_all,
-                    nb::call_guard<nb::gil_scoped_release>())
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("increase_death", nb::overload_cast<size_t>(&TopologyOptimizer::increase_death, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for increasing death to inf")
             .def("decrease_death", nb::overload_cast<size_t>(&TopologyOptimizer::decrease_death, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for decreasing death to -inf")
             .def("increase_birth", nb::overload_cast<size_t>(&TopologyOptimizer::increase_birth, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for increasing birth to inf")
@@ -225,11 +225,11 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
             .def("combine_loss", static_cast<IndicesValues (TopologyOptimizer::*)(const CriticalSets&, ConflictStrategy)>(&TopologyOptimizer::combine_loss),
                     nb::arg("critical_sets"),
                     nb::arg("strategy"),
-                    nb::call_guard<nb::gil_scoped_release>(),
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "combine critical sets into well-defined assignment of new values to indices")
             .def("crit_sets_apply", &TopologyOptimizer::crit_sets_apply,
                     nb::arg("indices"), nb::arg("values"), nb::arg("strategy"),
-                    nb::call_guard<nb::gil_scoped_release>(),
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Fused per-pair critical-set walk + conflict "
                     "resolution in one C++ call. Internally calls "
                     "ensure_hom_reduced (for the per-pair is_negative "
@@ -238,21 +238,21 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     ".indices_array() / .values_array() for zero-copy "
                     "numpy.")
             .def("ensure_hom_built", &TopologyOptimizer::ensure_hom_built,
-                    nb::call_guard<nb::gil_scoped_release>(),
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Materialize the homology Decomposition from the cached "
                     "boundary matrix (no reduction). Idempotent. Use this when "
                     "you need access to the decomposition object but not yet "
                     "to a reduced state. Most callers want ensure_hom_reduced.")
             .def("ensure_coh_built", &TopologyOptimizer::ensure_coh_built,
-                    nb::call_guard<nb::gil_scoped_release>(),
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Cohomology counterpart of ensure_hom_built.")
             .def("ensure_hom_reduced", &TopologyOptimizer::ensure_hom_reduced,
-                    nb::call_guard<nb::gil_scoped_release>(),
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Reduce the homology side with the recipe baked in at "
                     "construction time. Builds the decomposition first if "
                     "needed. Idempotent: no-op if already reduced.")
             .def("ensure_coh_reduced", &TopologyOptimizer::ensure_coh_reduced,
-                    nb::call_guard<nb::gil_scoped_release>(),
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Reduce the cohomology side with the recipe baked in at "
                     "construction time. Builds the decomposition first if "
                     "needed. Idempotent.")
@@ -261,7 +261,7 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     nb::arg("dim"),
                     nb::arg("rows_fil"),
                     nb::arg("bounds"),
-                    nb::call_guard<nb::gil_scoped_release>(),
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Ensure U-row data is available on the hom side over the "
                     "given filtration row indices (each in geometric `dim`) "
                     "with the matching value bounds. No-op for LegacyInBand "
@@ -271,7 +271,7 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     nb::arg("dim"),
                     nb::arg("rows_fil"),
                     nb::arg("bounds"),
-                    nb::call_guard<nb::gil_scoped_release>(),
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Cohomology-side counterpart of ensure_has_u_hom. The "
                     "row indices are passed as filtration indices; conversion "
                     "to matrix layout (fil_size - 1 - i) is done internally.")

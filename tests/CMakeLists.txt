@@ -79,6 +79,7 @@ else()
             fr-dgm-vertebra
             frechet
             ind-match
+            interrupt
             kicr
             match-rv-policy
             pickle

@@ -9,6 +9,8 @@ NB_MODULE(_oineus, m)
     else
         m.attr("real_dtype") = "float64";
 
+    oineus_python::register_interrupt_translator();
+
     init_oineus_common(m);
     init_oineus_cells(m);
     init_oineus_filtration(m);

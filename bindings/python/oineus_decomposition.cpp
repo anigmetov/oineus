@@ -308,7 +308,7 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def_prop_ro("dualize", &Decomposition::dualize)
             .def_ro("dim_first", &Decomposition::dim_first)
             .def_ro("dim_last", &Decomposition::dim_last)
-            .def("reduce", &Decomposition::reduce, nb::arg("params")=oin::Params(), nb::call_guard<nb::gil_scoped_release>())
+            .def("reduce", &Decomposition::reduce, nb::arg("params")=oin::Params(), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("is_elz", &Decomposition::is_elz, nb::arg("n_threads")=8)
             .def("n_elz_violators", &Decomposition::n_elz_violators, nb::arg("n_threads")=8)
             .def("n_elz_violators_in_dim", &Decomposition::n_elz_violators_in_dim, nb::arg("dim"), nb::arg("n_threads")=8)
@@ -356,7 +356,7 @@ void init_oineus_common_decomposition(nb::module_& m)
                  nb::arg("filtration"), nb::arg("rows"), nb::arg("bounds"),
                  nb::arg("dim"), nb::arg("cmp")="above",
                  nb::arg("n_threads")=1, nb::arg("verbose")=false,
-                 nb::call_guard<nb::gil_scoped_release>())
+                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("compute_full_u_rows",
                  [](Decomposition& self, const SimplexFiltration& fil,
                     int dim, int n_threads, bool verbose) {
@@ -369,19 +369,19 @@ void init_oineus_common_decomposition(nb::module_& m)
                  },
                  nb::arg("filtration"), nb::arg("dim"),
                  nb::arg("n_threads")=1, nb::arg("verbose")=false,
-                 nb::call_guard<nb::gil_scoped_release>())
+                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("densify_v_for_selinv", [](Decomposition& self, const std::set<oin_int>& rows_to_invert, int n_threads) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
                      int num_rows = self.r_data.size();
                      return densify_v_for_selinv(self, rows_to_invert, num_rows, n_threads);
                  },
                  nb::arg("rows_to_invert"), nb::arg("n_threads")=1,
-                 nb::call_guard<nb::gil_scoped_release>())
+                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("densify_v_for_selinv_with_targets", [](Decomposition& self, const SimplexFiltration& fil, const std::vector<oin_int>& rows_to_invert, const std::vector<oin_real>& targets) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
                      int num_rows = self.r_data.size();
                      return densify_v_for_selinv_1(self, fil, rows_to_invert, targets, num_rows);
                  },
                  nb::arg("filtration"), nb::arg("rows_to_invert"), nb::arg("targets"),
-                 nb::call_guard<nb::gil_scoped_release>())            .def("sanity_check", &Decomposition::sanity_check, nb::call_guard<nb::gil_scoped_release>())
+                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())            .def("sanity_check", &Decomposition::sanity_check, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("diagram", [](const Decomposition& self, const SimplexFiltration& fil, bool include_inf_points)
                             { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points)); },
                     nb::arg("fil"), nb::arg("include_inf_points") = true)

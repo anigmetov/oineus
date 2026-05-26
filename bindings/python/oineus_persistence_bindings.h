@@ -24,14 +24,11 @@
 #include "nanobind/make_iterator.h"
 
 #include "uid128_caster.h"
+#include "oineus_signal_guard.h"
 
 namespace nb = nanobind;
 
 using namespace nb::literals;
-
-
-//#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT {if (PyErr_CheckSignals() != 0) throw nb::error_already_set();}
-//#define OINEUS_CHECK_FOR_PYTHON_INTERRUPT_WITH_GIL { nb::gil_scoped_acquire acq; if (PyErr_CheckSignals() != 0) throw nb::error_already_set(); }
 
 
 #include <oineus/timer.h>

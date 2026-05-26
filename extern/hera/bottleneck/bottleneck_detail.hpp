@@ -44,6 +44,10 @@ derivative works thereof, in binary and source code form.
 
 #include "bottleneck_detail.h"
 
+#ifdef HERA_USE_OINEUS_INTERRUPT
+#include <oineus/interrupt.h>
+#endif
+
 namespace hera {
     namespace bt {
 
@@ -90,6 +94,11 @@ namespace hera {
                 }
 
                 distProbe = (distMin + distMax) / 2.0;
+
+#ifdef HERA_USE_OINEUS_INTERRUPT
+                if (oineus::interrupted())
+                    throw oineus::interrupted_exception{};
+#endif
             }
         }
 

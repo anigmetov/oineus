@@ -28,6 +28,10 @@ derivative works thereof, in binary and source code form.
 #ifndef AUCTION_RUNNER_JAC_HPP
 #define AUCTION_RUNNER_JAC_HPP
 
+#ifdef HERA_USE_OINEUS_INTERRUPT
+#include <oineus/interrupt.h>
+#endif
+
 #include <assert.h>
 #include <algorithm>
 #include <functional>
@@ -326,6 +330,11 @@ namespace ws {
         for (int phase_num = 0; phase_num < params.max_num_phases; ++phase_num) {
             flush_assignment();
             run_auction_phase();
+
+#ifdef HERA_USE_OINEUS_INTERRUPT
+            if (oineus::interrupted())
+                throw oineus::interrupted_exception{};
+#endif
 
             if (is_done())
                 break;

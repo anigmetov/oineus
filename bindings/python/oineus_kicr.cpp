@@ -77,7 +77,8 @@ void init_oineus_kicr(nb::module_& m)
     const std::string ker_im_cok_reduced_prod_class_name = "KerImCokReducedProd";
 
     auto kicr_simplex = nb::class_<KerImCokRedSimplex>(m, ker_im_cok_reduced_class_name.c_str())
-            .def(nb::init<const Filtration&, const Filtration&, oin::KICRParams&>(), nb::arg("K"), nb::arg("L"), nb::arg("params"))
+            .def(nb::init<const Filtration&, const Filtration&, oin::KICRParams&>(), nb::arg("K"), nb::arg("L"), nb::arg("params"),
+                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("domain_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_domain_diagrams()); })
             .def("codomain_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_codomain_diagrams()); })
             .def("kernel_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_kernel_diagrams()); })
@@ -97,7 +98,8 @@ void init_oineus_kicr(nb::module_& m)
     bind_kicr_pickle_and_equality(kicr_simplex);
 
     auto kicr_prod = nb::class_<KerImCokRedProdSimplex>(m, ker_im_cok_reduced_prod_class_name.c_str())
-            .def(nb::init<const ProdFiltration&, const ProdFiltration&, oin::KICRParams&>(), nb::arg("K"), nb::arg("L"), nb::arg("params"))
+            .def(nb::init<const ProdFiltration&, const ProdFiltration&, oin::KICRParams&>(), nb::arg("K"), nb::arg("L"), nb::arg("params"),
+                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("kernel_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_kernel_diagrams()); })
             .def("cokernel_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_cokernel_diagrams()); })
             .def("image_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_image_diagrams()); })

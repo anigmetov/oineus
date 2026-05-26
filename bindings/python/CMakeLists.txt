@@ -44,7 +44,7 @@ nanobind_add_module(_oineus NOMINSIZE oineus.cpp
                                       oineus_functions.cpp
                                       oineus_top_optimizer.cpp
                              )
-target_compile_definitions(_oineus PRIVATE OINEUS_PYTHON_REAL=${OINEUS_PYTHON_REAL} OINEUS_PYTHON_INT=${OINEUS_PYTHON_INT})
+target_compile_definitions(_oineus PRIVATE OINEUS_PYTHON_REAL=${OINEUS_PYTHON_REAL} OINEUS_PYTHON_INT=${OINEUS_PYTHON_INT} HERA_USE_OINEUS_INTERRUPT)
 target_link_libraries       (_oineus PRIVATE ${libraries})
 target_include_directories  (_oineus PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include"
                                               "${CMAKE_CURRENT_SOURCE_DIR}/../../extern")

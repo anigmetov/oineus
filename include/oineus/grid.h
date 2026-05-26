@@ -13,6 +13,7 @@
 #include "simplex.h"
 #include "cube.h"
 #include "timer.h"
+#include "interrupt.h"
 
 namespace oineus {
 
@@ -207,11 +208,8 @@ public:
 
                     cubes.emplace_back(cube, cube_value);
 
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-                    if (v % 100 == 0) {
-                        OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-                    }
-#endif
+                    if (v % 100 == 0 && oineus::interrupted())
+                        throw oineus::interrupted_exception{};
                 }
             }
         } else {
@@ -324,11 +322,8 @@ public:
                     cubes.emplace_back(cube, cube_value);
                     critical_indices.emplace_back(critical_index);
 
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-                    if (v % 100 == 0) {
-                        OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-                    }
-#endif
+                    if (v % 100 == 0 && oineus::interrupted())
+                        throw oineus::interrupted_exception{};
                 }
             }
         } else {
@@ -483,11 +478,8 @@ private:
             GridPoint v = id_to_point(i);
             add_freudenthal_simplices_from_vertex(v, d, negate, disps, simplices, critical_vertices, return_critical_vertices);
 
-#ifdef OINEUS_CHECK_FOR_PYTHON_INTERRUPT
-            if (i % 100 == 0) {
-                OINEUS_CHECK_FOR_PYTHON_INTERRUPT;
-            }
-#endif
+            if (i % 100 == 0 && oineus::interrupted())
+                throw oineus::interrupted_exception{};
         }
     }
 

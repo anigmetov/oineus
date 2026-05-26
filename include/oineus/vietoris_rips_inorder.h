@@ -10,6 +10,7 @@
 
 #include "filtration.h"
 #include "vietoris_rips.h"
+#include "interrupt.h"
 
 // In-order Vietoris-Rips construction (VRE), following
 //   Vejdemo-Johansson, Matuszewski, Bauer, "In-order generation of
@@ -225,6 +226,8 @@ void vre_build(Int n_points,
         };
         std::vector<EdgeData> raw_edges;
         for (Int u = 0; u < n_points; ++u) {
+            if ((u & 1023) == 0 && oineus::interrupted())
+                throw oineus::interrupted_exception{};
             for (Int v = u + 1; v < n_points; ++v) {
                 const Real cv = compare_dist(u, v);
                 if (cv > max_compare) continue;
@@ -270,7 +273,11 @@ void vre_build(Int n_points,
             auto emit_final = [&](VreFrame<Int, Real>&& child) {
                 record(std::move(child.vertices), child.diameter, child.cached_edge);
             };
+            size_t i = 0;
             for (const auto& parent : current) {
+                if ((i & 4095) == 0 && oineus::interrupted())
+                    throw oineus::interrupted_exception{};
+                ++i;
                 generate_cofacets<Int, Real>(parent, n_points, compare_dist, emit_final);
             }
             // Loop terminates next iteration; no need to update `current`.
@@ -280,7 +287,11 @@ void vre_build(Int n_points,
                 record(child.vertices, child.diameter, child.cached_edge);
                 next.push_back(std::move(child));
             };
+            size_t i = 0;
             for (const auto& parent : current) {
+                if ((i & 4095) == 0 && oineus::interrupted())
+                    throw oineus::interrupted_exception{};
+                ++i;
                 generate_cofacets<Int, Real>(parent, n_points, compare_dist, emit_frame);
             }
             current = std::move(next);
