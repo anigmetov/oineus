@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-__version__ = "0.9.27"
+__version__ = "0.9.28"
 
 import typing
 from concurrent.futures import ThreadPoolExecutor
@@ -29,55 +29,61 @@ from ._oineus import frechet_mean as _frechet_mean_cpp
 from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D, CubeFiltration_1D
 from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, CubeFiltration_2D
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
-from .vis import (
-    plot_diagram,
-    plot_diagram_gradient,
-    plot_matching,
-    plot_chain,
-    default_point_style,
-    default_diagram_a_point_style,
-    default_diagram_b_point_style,
-    default_matching_edge_style,
-    default_longest_edge_style,
-    default_diagonal_style,
-    default_diagonal_projection_a_style,
-    default_diagonal_projection_b_style,
-    default_inf_line_style,
-    default_inf_point_style,
-    default_diagram_gradient_style,
-    default_density_style,
-    default_grid_style,
-    default_chain_vertex_style,
-    default_chain_edge_style,
-    default_chain_triangle_style,
-    default_chain_tetrahedron_style,
-    default_point_cloud_style,
-    DEFAULT_POINT_STYLE,
-    DEFAULT_DIAGRAM_A_POINT_STYLE,
-    DEFAULT_DIAGRAM_B_POINT_STYLE,
-    DEFAULT_MATCHING_EDGE_STYLE,
-    DEFAULT_LONGEST_EDGE_STYLE,
-    DEFAULT_DIAGONAL_STYLE,
-    DEFAULT_DIAGONAL_PROJECTION_A_STYLE,
-    DEFAULT_DIAGONAL_PROJECTION_B_STYLE,
-    DEFAULT_INF_LINE_STYLE,
-    DEFAULT_INF_POINT_STYLE,
-    DEFAULT_DIAGRAM_GRADIENT_STYLE,
-    DEFAULT_DENSITY_STYLE,
-    DEFAULT_DENSITY_THRESHOLD,
-    DEFAULT_GRID_STYLE,
-    DEFAULT_MATCHING_EDGE_QUANTILE,
-    DEFAULT_GRADIENT_TOP_K_ARROWS,
-    DEFAULT_CHAIN_VERTEX_STYLE,
-    DEFAULT_CHAIN_EDGE_STYLE,
-    DEFAULT_CHAIN_TRIANGLE_STYLE,
-    DEFAULT_CHAIN_TETRAHEDRON_STYLE,
-    DEFAULT_POINT_CLOUD_STYLE,
-    OKABE_ITO_BLUE,
-    OKABE_ITO_VERMILLION,
-)
-# Keep vis_utils as a backward-compat alias.
-from . import vis_utils  # noqa: F401
+# Visualization helpers require matplotlib, an optional extra
+# (`pip install oineus[vis]`). When it is absent, the plot_* helpers and
+# style constants are simply unavailable; the rest of oineus works normally.
+try:
+    from .vis import (
+        plot_diagram,
+        plot_diagram_gradient,
+        plot_matching,
+        plot_chain,
+        default_point_style,
+        default_diagram_a_point_style,
+        default_diagram_b_point_style,
+        default_matching_edge_style,
+        default_longest_edge_style,
+        default_diagonal_style,
+        default_diagonal_projection_a_style,
+        default_diagonal_projection_b_style,
+        default_inf_line_style,
+        default_inf_point_style,
+        default_diagram_gradient_style,
+        default_density_style,
+        default_grid_style,
+        default_chain_vertex_style,
+        default_chain_edge_style,
+        default_chain_triangle_style,
+        default_chain_tetrahedron_style,
+        default_point_cloud_style,
+        DEFAULT_POINT_STYLE,
+        DEFAULT_DIAGRAM_A_POINT_STYLE,
+        DEFAULT_DIAGRAM_B_POINT_STYLE,
+        DEFAULT_MATCHING_EDGE_STYLE,
+        DEFAULT_LONGEST_EDGE_STYLE,
+        DEFAULT_DIAGONAL_STYLE,
+        DEFAULT_DIAGONAL_PROJECTION_A_STYLE,
+        DEFAULT_DIAGONAL_PROJECTION_B_STYLE,
+        DEFAULT_INF_LINE_STYLE,
+        DEFAULT_INF_POINT_STYLE,
+        DEFAULT_DIAGRAM_GRADIENT_STYLE,
+        DEFAULT_DENSITY_STYLE,
+        DEFAULT_DENSITY_THRESHOLD,
+        DEFAULT_GRID_STYLE,
+        DEFAULT_MATCHING_EDGE_QUANTILE,
+        DEFAULT_GRADIENT_TOP_K_ARROWS,
+        DEFAULT_CHAIN_VERTEX_STYLE,
+        DEFAULT_CHAIN_EDGE_STYLE,
+        DEFAULT_CHAIN_TRIANGLE_STYLE,
+        DEFAULT_CHAIN_TETRAHEDRON_STYLE,
+        DEFAULT_POINT_CLOUD_STYLE,
+        OKABE_ITO_BLUE,
+        OKABE_ITO_VERMILLION,
+    )
+    # Keep vis_utils as a backward-compat alias.
+    from . import vis_utils  # noqa: F401
+except ImportError:
+    pass
 from .matching import (
     DiagramMatching,
     BottleneckMatching,
@@ -90,6 +96,10 @@ from .matching import (
     point_to_diagonal,
     wasserstein_matching,
     bottleneck_matching,
+)
+from .sliced_wasserstein import (
+    sliced_wasserstein_distance,
+    sliced_wasserstein_distance_diag_corrected,
 )
 from ._dtype import REAL_DTYPE, as_real_numpy
 # from ._oineus import Z2_Column, Z2_Matrix

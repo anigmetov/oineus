@@ -6,7 +6,7 @@ from ._tensor_utils import tensor_to_real_numpy
 
 
 def vr_filtration(data, from_pwdists: bool = False, max_dim: int = -1,
-                  max_diameter: float = -1.0, eps=1e-6, n_threads=8) -> DiffFiltration:
+                  max_diameter: float = -1.0, eps=1e-6, n_threads=1) -> DiffFiltration:
     data = epy.astensor(data)
     data_np = tensor_to_real_numpy(data)
     assert data.ndim == 2

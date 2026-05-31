@@ -57,6 +57,15 @@ Auto-generated function and class reference for `oineus` and `oineus.diff`.
 :::
 ::::
 
+## Name and pronunciation
+
+Oineus is named after a king in Greek mythology.
+
+Say it **OY-neh-oos**, IPA `/ˈɔɪneʊs/`, with the stress on the first syllable:
+
+- **Oi** as in **oil** or **coin**.
+- **-eus** as in Orpheus, Theseus, or Prometheus, roughly "eh-oos".
+
 ## What's inside
 
 - **Filtrations** on cubical complexes, Vietoris–Rips complexes, alpha shapes,

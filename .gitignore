@@ -62,3 +62,8 @@ include/.DS_Store
 .venv/
 .uv-cache/
 .uv-python/
+.python-version
+# build / packaging artifacts
+oineus.egg-info/
+# julia bindings local depot
+.julia_depot/

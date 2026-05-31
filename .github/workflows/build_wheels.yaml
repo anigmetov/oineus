@@ -82,9 +82,26 @@ jobs:
           name: built-wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
 
+  make_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build sdist
+        run: pipx run build --sdist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
   upload_pypi:
-    name: Upload wheels to PyPI
-    needs: build_wheels
+    name: Upload wheels and sdist to PyPI
+    needs: [build_wheels, make_sdist]
     runs-on: ubuntu-latest
     if: ${{ inputs.publish_to_pypi }}
 
@@ -93,6 +110,11 @@ jobs:
         with:
           pattern: built-wheels-*
           merge-multiple: true
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
           path: dist
 
       - name: Upload to PyPI

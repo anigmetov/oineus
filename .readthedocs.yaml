@@ -9,7 +9,6 @@ build:
     python: "3.11"
   apt_packages:
     - libboost-dev
-    - libtbb-dev
     - cmake
     - ninja-build
   jobs:

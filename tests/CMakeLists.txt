@@ -87,6 +87,7 @@ else()
             plot-chain
             plot-gradient
             sliced-wass
+            sliced-wass-nodiff
             wass-match)
         string(REPLACE "-" "_" STEM "${NAME}")
         add_test(NAME py-${NAME}

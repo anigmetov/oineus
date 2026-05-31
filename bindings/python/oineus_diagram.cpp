@@ -128,6 +128,17 @@ void init_oineus_diagram(nb::module_& m)
                  "Extend diagrams to dimensions [0..new_top_dim] by appending empty diagrams as needed.")
             .def("trim_to_dim", &Diagram::trim_to_dim, nb::arg("max_dim"),
                  "Trim diagrams to dimensions [0..max_dim].")
+            .def("__repr__", [](const Diagram& self) {
+                const auto& dims = self.data().diagram_in_dimension_;
+                std::stringstream ss;
+                ss << "Diagrams(n_dims=" << dims.size() << ", sizes=[";
+                for (size_t d = 0; d < dims.size(); ++d) {
+                    if (d) ss << ", ";
+                    ss << dims[d].size();
+                }
+                ss << "])";
+                return ss.str();
+            })
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def("__getstate__", [](const Diagram& d) -> DiagramStateTuple {

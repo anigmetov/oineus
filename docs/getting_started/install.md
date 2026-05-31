@@ -7,17 +7,22 @@ pip install oineus
 ```
 
 This installs pre-built wheels where available. Oineus has runtime
-dependencies on NumPy, SciPy, and `eagerpy`; PyTorch is **optional** and only
-needed for the differentiable API in {py:mod}`oineus.diff`.
+dependencies on NumPy, SciPy, and `eagerpy`. Plotting helpers in
+{py:mod}`oineus.vis` need matplotlib, available as the `vis` extra; PyTorch is
+**optional** and only needed for the differentiable API in
+{py:mod}`oineus.diff`. `import oineus` works without either -- the relevant
+helpers are simply unavailable until you install them.
 
 ```bash
+pip install oineus[vis]    # plotting helpers (matplotlib)
 pip install oineus torch   # if you want oineus.diff
 ```
 
 ## From source
 
-Oineus builds with CMake. You need a C++17 compiler, **Boost**, and **Intel
-TBB**.
+Oineus builds with CMake. You need a C++17 compiler and **Boost**. All other
+dependencies (including the taskflow library used for parallelism) are vendored
+under `extern/`, so there is no system TBB or OpenMP requirement.
 
 ```bash
 git clone https://github.com/anigmetov/oineus.git

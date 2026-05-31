@@ -213,14 +213,20 @@ def sliced_wasserstein_distance_diag_corrected(dgm1, dgm2, n_directions=100, ign
     """
     Diagonal-corrected sliced Wasserstein distance.
 
-    This version differs from standard sliced Wasserstein in two ways:
-    1. Diagonal projections do NOT contribute to gradients (they are detached)
-    2. When a point p is matched to a diagonal projection, the cost is computed
-       as if p is matched to its own diagonal projection (not the other diagram's)
-    3. Matchings between two diagonal projections contribute zero cost
+    This variant makes the sliced distance behave like true Wasserstein at the
+    diagonal. The 1D rank-matching used by the standard sliced distance can
+    pair an off-diagonal point p with the diagonal projection of a *different*
+    point p'; true Wasserstein never does this -- such skew edges can always be
+    straightened to ``p <-> diag(p)`` without raising the cost. The correction
+    re-charges those matches:
 
-    This matches the behavior of standard Wasserstein distance where each point
-    is matched to its own diagonal projection with cost = persistence/2.
+    1. A point matched to a diagonal slot is charged
+       ``|proj(p) - proj(diag(p))|`` -- its distance to *its own* diagonal
+       projection -- not to whichever point's diagonal stand-in the sort
+       aligned it with.
+    2. ``diag(p)`` is held constant (detached), so the gradient flows only to
+       p, not to the unrelated point whose stand-in it happened to match.
+    3. A match between two diagonal stand-ins costs zero.
 
     Args:
         dgm1: (N, 2) tensor of persistence diagram points (birth, death)

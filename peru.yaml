@@ -1,12 +1,6 @@
 imports:
-    pybind11: ./bindings/python/pybind11
     Catch2:   ./extern/Catch2
     opts:     ./extern/opts
-
-git module pybind11:
-    url: https://github.com/pybind/pybind11
-    rev: 708ce4d9c7bf55075608eb3cfcb5fa0dc43e070f
-    drop: [docs/, tests/, .github/]
 
 git module Catch2:
     url: https://github.com/catchorg/Catch2

@@ -8,9 +8,8 @@ filtration   -->   Decomposition   -->   reduce   -->   diagram
 
 The one-shot helpers ({py:func}`oineus.compute_diagrams_ls`,
 {py:func}`oineus.compute_diagrams_vr`, {py:func}`oineus.compute_diagrams_alpha`)
-collapse the middle two stages, but for anything non-trivial -- multi-threaded
-reduction, cycle representatives, the V/U matrices, custom diagram options --
-you want the explicit object. {py:class}`oineus.Decomposition` is the
+collapse the middle two stages, but
+you can have more control using a more explicit approach. {py:class}`oineus.Decomposition` is the
 reduction engine: it holds the boundary matrix $D$ derived from a
 {py:class}`oineus.Filtration`, performs the column reduction
 $R = D V$, and exposes the resulting matrices.
@@ -32,14 +31,14 @@ simplices = [
 ]
 fil = oin.Filtration(simplices, negate=False, n_threads=1)
 
-# 2. Wrap it in a Decomposition
+# 2. Construct a Decomposition object (no reduction performed yet)
 dcmp = oin.Decomposition(fil, dualize=False)
 
 # 3. Configure and reduce
 params = oin.ReductionParams()
-params.n_threads = 4          # parallel reduction
-params.compute_v = True       # we want cycle representatives
-params.compute_u = False      # cannot be computed multi-threaded
+params.n_threads = 2          # parallel reduction
+params.compute_v = True       # we want matrix V (cycle representatives)
+params.compute_u = False      # cannot directly compute U with parallel reduction
 params.clearing_opt = True
 dcmp.reduce(params)
 
@@ -57,7 +56,7 @@ for {py:func}`oineus.freudenthal_filtration`, {py:func}`oineus.vr_filtration`,
 
 The reduction maintains
 
-$$ R \;=\; D V, \qquad R = R_{\text{reduced}}, \qquad V \in \mathrm{GL}(\mathbb{F}_2). $$
+$$ R \;=\; D V, R U \;=\; D, \qquad D, R, U, V \in \mathrm{GL}(\mathbb{F}_2). $$
 
 After {py:meth}`oineus.Decomposition.reduce`:
 
@@ -69,15 +68,11 @@ After {py:meth}`oineus.Decomposition.reduce`:
 - `dcmp.r_as_csc()`, `dcmp.v_as_csc()`, `dcmp.d_as_csc()`,
   `dcmp.u_as_csr()` -- SciPy-compatible sparse views over $\mathbb{F}_2$.
 
-`compute_u = True` cannot be combined with multi-threaded reduction; the
-binding will silently use a single thread if you set both. For sanity-checking
-the reduction algebraically you usually only need $R$ and $V$.
-
+`compute_u = True` cannot be combined with multi-threaded reduction; Oineus
+will silently use a single thread if you set both.
 ## Reduction parameters
 
-{py:class}`oineus.ReductionParams` controls the algorithm. The defaults
-match what {py:func}`oineus.compute_diagrams_ls` and friends do
-internally: parallel reduction, $V$ not computed, clearing on.
+{py:class}`oineus.ReductionParams` controls the algorithm. 
 
 - `n_threads` -- threads for the parallel column reduction. Set to `1`
   for deterministic ordering or to debug.
@@ -86,14 +81,11 @@ internally: parallel reduction, $V$ not computed, clearing on.
   literature timings that don't use it.
 - `compute_v`, `compute_u` -- see above.
 
-For a memory and runtime guide, see {doc}`performance`.
-
 ## Cohomology and the `dualize` switch
 
-`Decomposition(fil, dualize=True)` reduces the cohomology boundary instead of
-the homology one. The diagrams are identical (Poincare duality of persistence
-modules), but for **VR and dense filtrations the dual is often much faster**
-because the cohomology boundary matrix is sparser. {py:func}`oineus.compute_diagrams_vr`
+`Decomposition(fil, dualize=True)` reduces the coboundary matrix (cohomology) 
+instead of the bounday matrix (homology). The diagrams are identical, 
+but for **VR the dual is normally much faster**. {py:func}`oineus.compute_diagrams_vr`
 sets `dualize=True` by default for exactly this reason. For grid filtrations
 the choice is less clear-cut; both run.
 
@@ -115,8 +107,8 @@ cells that created and killed the homology class.
 
 The standard diagram filters out pairs with `birth == death` -- these are
 "zero-persistence" pairs, generated and immediately killed by simplices with
-the same filtration value (very common on grids with plateaus, or on
-duplicate-distance VR filtrations). When you actually want them, Oineus
+the same filtration value (very common on grids with plateaus, or so-called
+apparent pairs in VR filtrations). When you actually want them, Oineus
 exposes two routes:
 
 ```{code-block} python

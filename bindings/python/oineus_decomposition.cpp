@@ -75,8 +75,6 @@ Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv_1(
     const std::vector<oin_real>& u_targets,
     int num_rows_)
 {
-    Timer timer;
-
     if (not dcmp.has_matrix_v())
         throw std::runtime_error("densify_v_for_selinv called on matrix without V");
     if (not dcmp.is_reduced)
@@ -165,8 +163,6 @@ Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv_1(
             values[k] = 0.0;
         }
     }
-
-    std::cerr << "Densifying V took " << timer.elapsed() << " seconds" << std::endl;
 
     return densified_v;
 }

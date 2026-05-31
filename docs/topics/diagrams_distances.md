@@ -26,7 +26,7 @@ d = oin.bottleneck_distance(dgm_a, dgm_b, delta=0.01)
 
 ```{code-block} python
 d = oin.wasserstein_distance(dgm_a, dgm_b,
-                             q=2.0, internal_p=np.inf, delta=0.01)
+                             q=1.0, internal_p=np.inf, delta=0.01)
 ```
 
 - `q` -- the Wasserstein exponent. `q = 1` is canonical Wasserstein-1;
@@ -37,9 +37,8 @@ d = oin.wasserstein_distance(dgm_a, dgm_b,
   sublevel-set persistence. `internal_p = 2.0` gives Euclidean ground
   cost.
 - `delta` -- relative-error tolerance. **Must be strictly positive.**
-  Unlike bottleneck, Wasserstein has no exact mode -- the underlying
+  Unlike bottleneck, Wasserstein in Oineus has no exact mode -- the underlying
   algorithm always returns an approximation, controlled by `delta`.
-  Tighten to `1e-4` for "publication-quality" answers.
 
 If both diagrams contain points at infinity (essential pairs), they are
 matched within their family (positive-inf to positive-inf, etc.).
@@ -89,25 +88,41 @@ picture.
 
 ## Sliced Wasserstein
 
-For training loops where you want a smooth, fast, differentiable
-approximation of $W_2$, use the sliced variant from
-{py:mod}`oineus.diff`:
+Sliced Wasserstein is the average of one-dimensional optimal-transport
+costs over `n_directions` random projections of the diagram, with each
+point augmented by diagonal projections. Hera has no sliced variant, so
+Oineus provides a plain-NumPy implementation in the main namespace:
+
+```{code-block} python
+d = oin.sliced_wasserstein_distance(dgm_a, dgm_b, n_directions=100, seed=0)
+```
+
+- `n_directions` -- number of random projection directions; more
+  directions reduce Monte-Carlo variance.
+- `seed` -- seeds the random directions for reproducibility. Pass an
+  explicit `directions` array of shape `(n_directions, 2)` to fix them
+  exactly (e.g. to compare two distances under identical projections).
+- `ignore_inf_points` -- drop essential pairs and match only the finite
+  part. As with the closed-form distances, mismatched essential counts
+  otherwise raise.
+
+A diagonal-corrected variant,
+{py:func}`oineus.sliced_wasserstein_distance_diag_corrected`, charges a
+point matched to a diagonal projection against its *own* diagonal
+projection (closer to true Wasserstein behaviour).
+
+For training loops where you need gradients on the diagram side, the
+{py:mod}`oineus.diff` package has a differentiable (PyTorch) counterpart:
 
 ```{code-block} python
 import torch
 import oineus.diff as diff
 
-dgm_a_t = torch.tensor(dgm_a)
-dgm_b_t = torch.tensor(dgm_b)
-
-d = diff.sliced_wasserstein_distance(dgm_a_t, dgm_b_t, n_directions=50)
+d = diff.sliced_wasserstein_distance(torch.tensor(dgm_a), torch.tensor(dgm_b), n_directions=50)
 d.backward()
 ```
 
-Sliced Wasserstein is the average of one-dimensional Wasserstein
-distances over `n_directions` random projections. It is differentiable on
-the diagram side, which the closed-form distances above are not. See
-{doc}`differentiable`.
+See {doc}`differentiable`.
 
 ## See also
 

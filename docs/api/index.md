@@ -19,6 +19,7 @@ types are accurate; prose will improve over time.
    freudenthal_filtration
    vr_filtration
    cube_filtration
+   alpha_filtration
    compute_diagrams_alpha
    list_to_filtration
    mapping_cylinder
@@ -60,7 +61,10 @@ types are accurate; prose will improve over time.
 
    bottleneck_distance
    wasserstein_distance
+   sliced_wasserstein_distance
+   sliced_wasserstein_distance_diag_corrected
    wasserstein_matching
+   bottleneck_matching
    point_to_diagonal
    get_permutation_dtv
 ```
@@ -175,9 +179,15 @@ types are accurate; prose will improve over time.
    freudenthal_filtration
    vr_filtration
    cube_filtration
+   alpha_filtration
+   weak_alpha_filtration
+   cech_delaunay_filtration
    mapping_cylinder_filtration
    min_filtration
    persistence_diagram
+   sliced_wasserstein_distance
+   sliced_wasserstein_distance_diag_corrected
+   wasserstein_cost
 
 .. autosummary::
    :toctree: _autosummary

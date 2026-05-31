@@ -1,8 +1,6 @@
 include CMakeLists.txt description.rst MANIFEST.in README.md licence.txt legal.txt
 include requirements.txt peru.yaml version.txt
 recursive-include bindings/python *
-recursive-exclude bindings/python/pybind11/docs *
-recursive-exclude bindings/python/pybind11/tests *
 recursive-include extern *
 recursive-include include/oineus *
 recursive-include src *

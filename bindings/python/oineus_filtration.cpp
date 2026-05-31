@@ -138,12 +138,12 @@ void init_oineus_filtration(nb::module_& m)
             .def("value_by_uid", &Filtration::value_by_uid, nb::arg("uid"))
             .def("sorted_id_by_uid", &Filtration::get_sorted_id_by_uid, nb::arg("uid"))
             .def("cell_by_uid", &Filtration::get_cell_by_uid, nb::arg("uid"))
-            .def("boundary_matrix", &Filtration::boundary_matrix, nb::arg("n_threads")=1)
-            .def("boundary_matrix_in_dimension", &Filtration::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1)
-            .def("coboundary_matrix", &Filtration::coboundary_matrix, nb::arg("n_threads")=1)
+            .def("boundary_matrix", &Filtration::boundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("boundary_matrix_in_dimension", &Filtration::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("coboundary_matrix", &Filtration::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("boundary_matrix_rel", &Filtration::boundary_matrix_rel)
             .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids)
-            .def("set_values", &Filtration::set_values, nb::arg("new_values"), nb::arg("n_threads")=1)
+            .def("set_values", &Filtration::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("subfiltration", [](Filtration& self, const
                 std::function<bool(const Simplex&)>& py_pred) -> Filtration {
                 auto pred = [&py_pred](const Filtration::Cell& c) -> bool { return py_pred(c.cell_);
@@ -219,11 +219,11 @@ void init_oineus_filtration(nb::module_& m)
             .def("get_cell", &ProdFiltration::get_cell, nb::arg("i"))
             .def("get_sorting_permutation", &ProdFiltration::get_sorting_permutation)
             .def("get_inv_sorting_permutation", &ProdFiltration::get_inv_sorting_permutation)
-            .def("boundary_matrix", &ProdFiltration::boundary_matrix, nb::arg("n_threads"))
-            .def("boundary_matrix_in_dimension", &ProdFiltration::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads"))
-            .def("coboundary_matrix", &ProdFiltration::coboundary_matrix, nb::arg("n_threads"))
+            .def("boundary_matrix", &ProdFiltration::boundary_matrix, nb::arg("n_threads"), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("boundary_matrix_in_dimension", &ProdFiltration::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads"), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("coboundary_matrix", &ProdFiltration::coboundary_matrix, nb::arg("n_threads"), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("reset_ids_to_sorted_ids", &ProdFiltration::reset_ids_to_sorted_ids)
-            .def("set_values", &ProdFiltration::set_values, nb::arg("new_values"), nb::arg("n_threads")=1)
+            .def("set_values", &ProdFiltration::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("__repr__", [](const ProdFiltration& fil) {
               std::stringstream ss;
               ss << fil;
@@ -304,12 +304,12 @@ void init_oineus_filtration(nb::module_& m)
             .def("value_by_uid", &CubeFiltration_##DIM##D::value_by_uid, nb::arg("uid")) \
             .def("sorted_id_by_uid", &CubeFiltration_##DIM##D::get_sorted_id_by_uid, nb::arg("uid")) \
             .def("cell_by_uid", &CubeFiltration_##DIM##D::get_cell_by_uid, nb::arg("uid")) \
-            .def("boundary_matrix", &CubeFiltration_##DIM##D::boundary_matrix, nb::arg("n_threads")=1) \
-            .def("boundary_matrix_in_dimension", &CubeFiltration_##DIM##D::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1) \
-            .def("coboundary_matrix", &CubeFiltration_##DIM##D::coboundary_matrix, nb::arg("n_threads")=1) \
+            .def("boundary_matrix", &CubeFiltration_##DIM##D::boundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
+            .def("boundary_matrix_in_dimension", &CubeFiltration_##DIM##D::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
+            .def("coboundary_matrix", &CubeFiltration_##DIM##D::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
             .def("boundary_matrix_rel", &CubeFiltration_##DIM##D::boundary_matrix_rel) \
             .def("reset_ids_to_sorted_ids", &CubeFiltration_##DIM##D::reset_ids_to_sorted_ids) \
-            .def("set_values", &CubeFiltration_##DIM##D::set_values, nb::arg("new_values"), nb::arg("n_threads")=1) \
+            .def("set_values", &CubeFiltration_##DIM##D::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
             .def(nb::self == nb::self) \
             .def(nb::self != nb::self) \
             .def("__repr__", [](const CubeFiltration_##DIM##D& fil) { \

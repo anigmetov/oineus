@@ -25,7 +25,19 @@ It can compute image, kernel and cokernel persistence.
 Oineus provides differentiable filtrations to simplify topological
 optimization. It can compute zero-persistence diagrams. It provides
 a convenience function for mapping cylinder construction.
-It is written in C++ with python bindings (pybind11).
+It is written in C++ with Python bindings (nanobind).
+
+## Pronunciation
+
+Say it **OY-neh-oos**, IPA `/ˈɔɪneʊs/`, with the stress on the first
+syllable:
+
+- **Oi** as in **oil** or **coin**.
+- **-eus** as in Orpheus, Theseus, or Prometheus, roughly "eh-oos".
+
+## Documentation
+
+Full documentation is hosted at https://oineus.readthedocs.io.
 
 ## Installation
 
@@ -35,13 +47,12 @@ pip install oineus
 
 ## Compilation
 
-Oineus requires C++17 standard and python3.
-`Pybind11` is included as a submodule.
-Other dependencies are Boost and TBB,
-install them before compiling Oineus.
-E.g., on Ubuntu
+Oineus requires a C++17 compiler, Python 3 and Boost. All other
+dependencies (nanobind for the Python bindings, the taskflow library
+used for parallelism, Hera, Eigen, etc.) are vendored under `extern/`
+and `bindings/python/`, so there is no system TBB or OpenMP requirement.
+Install Boost before compiling Oineus, e.g. on Ubuntu:
 ```shell
-$ sudo apt-get install libtbb-dev
 $ sudo apt-get install libboost-all-dev
 ```
 
@@ -49,14 +60,14 @@ $ sudo apt-get install libboost-all-dev
 After that compilation is standard:
 
 ```shell
-$ git clone --recurse-submodules git@github.com:anigmetov/oineus.git
+$ git clone git@github.com:anigmetov/oineus.git
 $ cd oineus
 $ mkdir build
 $ cd build
 $ cmake ..
 $ make -j4
 ```
-Compiled Oineus python package is located in `[build_directory]/python/bindings`.
+Compiled Oineus python package is located in `[build_directory]/bindings/python`.
 The `oineus` directory there contains the `__init__.py` and the binary
 with C++ bindings whose name is platform-dependent, say, `_oineus.cpython-311-x86_64-linux-gnu.so`.
 If you get an error similar to
@@ -70,11 +81,11 @@ ImportError: cannot import name '_oineus' from partially initialized module 'oin
 you are most probably trying to import Oineus from the source directory `oineus/bindings/python`,
 which contains only the `__init__.py`. Make sure that `PYTHONPATH` contains the directory `oineus/build/bindings/python`.
 
-Another possibility can be that Pybind11 did not pick up the correct Python
+Another possibility can be that nanobind did not pick up the correct Python
 executable. Suppose that you have system-wide Python, version 3.11,
 but you want to compile for your virtual environment, `venv` or `conda`,
 in which you have Python 3.9. Sometimes, even you activated your Python
-virtual environment, pybind11 chooses a different Python (you can see which one
+virtual environment, nanobind chooses a different Python (you can see which one
 in the output of `cmake ..`; also, the name of the binary
 `_oineus.cpython-311-x86_64-linux-gnu.so` contains the version).
 In this case, remove CMakeCache.txt and run
@@ -97,7 +108,8 @@ environment.
 
 ## Usage
 
-See [Tutorial](doc/tutorial.md).
+See the [documentation](https://oineus.readthedocs.io) for tutorials,
+a user guide, and the full API reference.
 
 ## License
 

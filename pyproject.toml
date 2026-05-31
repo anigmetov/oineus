@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core>=0.10", "pybind11>=2.6"]
+requires = ["scikit-build-core>=0.10"]
 build-backend = "scikit_build_core.build"
 
 # ============================================================
@@ -43,6 +43,12 @@ dependencies = [
     "eagerpy",
 ]
 
+# Optional extras. `pip install oineus[vis]` pulls in matplotlib for the
+# oineus.vis plotting helpers (plot_diagram, plot_matching, ...); without it
+# `import oineus` still works, those helpers are just unavailable.
+[project.optional-dependencies]
+vis = ["matplotlib"]
+
 [project.urls]
 Homepage = "https://github.com/anigmetov/oineus"
 
@@ -81,9 +87,9 @@ build = "cp312-*"
 archs = ["arm64"]
 
 [tool.cibuildwheel.linux]
-before-all = "yum install -y boost-devel"
-manylinux-x86_64-image = "manylinux2014"
-manylinux-aarch64-image = "manylinux2014"
+before-all = "dnf install -y boost-devel || yum install -y boost-devel"
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
 
 # ============================================================
 # Local dev environment

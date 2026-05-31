@@ -7,6 +7,7 @@ deserve more prose than a docstring can carry.
 :maxdepth: 1
 
 filtrations
+filtration_object
 decomposition
 diagrams_distances
 visualization

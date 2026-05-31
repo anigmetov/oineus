@@ -103,10 +103,6 @@ fil = diff.vr_filtration(D, from_pwdists=True, max_dim=2)
 dgms = diff.persistence_diagram(fil)
 ```
 
-VR is the right choice when the metric is not Euclidean (and so alpha /
-Cech-Delaunay do not apply), but it is also the most expensive of the
-four -- cap `max_dim` and `max_diameter` aggressively.
-
 ## Function data on a grid
 
 The Freudenthal and cubical builders both have a `oineus.diff` mirror.
@@ -155,6 +151,41 @@ Sliced Wasserstein averages one-dimensional Wasserstein distances over
 gradients to the diagram points (which the closed-form distance does
 not). For a worked end-to-end example see
 {doc}`../tutorials/03_differentiable_wasserstein_gradients`.
+
+### Match a target diagram with differentiable Wasserstein
+
+When sliced Wasserstein is too coarse -- a small number of high-
+persistence features whose individual matchings really matter -- use
+{py:func}`oineus.diff.wasserstein_cost` for the true $W_q$ matching with
+gradient flow through every matched pair:
+
+```{code-block} python
+cost = diff.wasserstein_cost(
+    dgms[1], target,
+    wasserstein_q=2.0,
+    wasserstein_delta=0.05,
+    internal_p=float("inf"),
+    ignore_inf_points=True,
+)
+loss = cost ** (1.0 / 2.0)        # the actual W_2 distance
+loss.backward()
+```
+
+It returns the *cost* $\sum_{\text{pair}} d(p, q)^q$, so the
+$W_q$ distance itself is `cost ** (1 / q)`. Internally it calls Hera once
+(non-differentiable) to discover the optimal matching, then reconstructs
+the cost in torch so gradients flow back to every finite-to-finite,
+finite-to-diagonal, and essential-to-essential pair. Trade-offs vs.
+sliced Wasserstein:
+
+- More expensive per call (one Hera matching per forward).
+- Discontinuous when the optimal matching changes -- the gradient is
+  well-defined within a matching region but jumps when the pairing flips.
+- Exact on the chosen $q$ and $p$-norm; no Monte Carlo variance.
+
+For training loops with many small steps, sliced Wasserstein is usually
+faster overall; for single-shot "shape this diagram" optimizations,
+`wasserstein_cost` is the right tool.
 
 ### Denoise / sculpt with the critical-set method
 
