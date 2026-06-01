@@ -34,7 +34,10 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest numpy scipy gudhi dionysus icecream argh
+          python -m pip install pytest numpy scipy gudhi dionysus icecream argh eagerpy matplotlib diode
+
+      - name: Install PyTorch (CPU build)
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Configure
         run: |
