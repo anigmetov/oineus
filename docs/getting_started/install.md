@@ -62,7 +62,7 @@ The important bit: the _source_ directory `bindings/python/` only contains
 | --- | --- |
 | `torch` | differentiable filtrations and diagrams in {py:mod}`oineus.diff` |
 | `diode` | alpha-shape filtrations via {py:func}`oineus.compute_diagrams_alpha` |
-| `mpl_scatter_density` | density plots in {py:func}`oineus.plot_persistence_diagram` |
+| `mpl_scatter_density` | density plots in {py:func}`oineus.plot_diagram` |
 | `gudhi` | convenient loaders for example datasets (not an Oineus dependency) |
 
 ## Verifying the install
