@@ -37,6 +37,7 @@
 #include "diagram.h"
 #include "mem_reclamation.h"
 #include "sparse_matrix.h"
+#include "column_repr.h"
 #include "timer.h"
 
 namespace oineus {
@@ -130,6 +131,12 @@ namespace oineus {
 
         const int n_cols = rv.size();
 
+        // Reusable per-thread working column. load_to_cache fills it in place
+        // (clearing first), so dense representations (Full, BitTree) are sized
+        // once here instead of being reallocated for every column.
+        typename MatrixTraits::CachedColumn cached_reduced_col;
+        MatrixTraits::reserve(cached_reduced_col, pivots.size());
+
         int my_chunk, chunk_begin, chunk_end;
         Int current_dim = params.clearing_opt ? dim_first.size() - 1 : 0;
         bool done;
@@ -175,7 +182,7 @@ namespace oineus {
 
                 assert(MatrixTraits::check_col_duplicates(orig_col).empty());
 
-                auto cached_reduced_col = MatrixTraits::load_to_cache(orig_col);
+                MatrixTraits::load_to_cache(orig_col, cached_reduced_col);
 
 #ifndef NDEBUG
                 unprocessed_cols.erase(current_column_idx);
@@ -265,7 +272,7 @@ namespace oineus {
                         if (pivots[current_low].compare_exchange_weak(pivot_idx, current_column_idx, rel, relax)) {
                             current_column_idx = pivot_idx;
                             orig_col = rv[current_column_idx].load(acq);
-                            cached_reduced_col = MatrixTraits::load_to_cache(orig_col);
+                            MatrixTraits::load_to_cache(orig_col, cached_reduced_col);
                             logger->debug("Pivot to the right, CAS okay, set current_column_idx = {}, next_column = {}", current_column_idx, next_column);
                         } else {
                             logger->debug("Pivot to the right, CAS failed, set start_over = TRUE");
@@ -583,10 +590,17 @@ namespace oineus {
 
         void reduce(Params& params);
 
+        // Public dispatchers: select the working-column representation from
+        // params.col_repr and forward to the templated *_impl below.
         void reduce_serial(Params& params);
-
         void reduce_parallel_r_only(Params& params);
         void reduce_parallel_rv(Params& params);
+
+        // Templated reduction kernels, one instantiation per working-column type
+        // (WorkCol = SetColumn<Int>, HeapColumn<Int>, FullColumn<Int>, BitTreeColumn<Int>).
+        template<class WorkCol> void reduce_serial_impl(Params& params);
+        template<class WorkCol> void reduce_parallel_r_only_impl(Params& params);
+        template<class WorkCol> void reduce_parallel_rv_impl(Params& params);
 
         bool is_negative(size_t simplex) const
         {
@@ -1091,8 +1105,44 @@ namespace oineus {
             reduce_parallel_r_only(params);
     }
 
+    // ---- working-column dispatchers: pick WorkCol from params.col_repr ----
+
     template<class Int>
     void VRUDecomposition<Int>::reduce_serial(Params& params)
+    {
+        switch (params.col_repr) {
+            case ColumnRepr::Set:     reduce_serial_impl<SetColumn<Int>>(params); break;
+            case ColumnRepr::Heap:    reduce_serial_impl<HeapColumn<Int>>(params); break;
+            case ColumnRepr::Full:    reduce_serial_impl<FullColumn<Int>>(params); break;
+            case ColumnRepr::BitTree: reduce_serial_impl<BitTreeColumn<Int>>(params); break;
+        }
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::reduce_parallel_r_only(Params& params)
+    {
+        switch (params.col_repr) {
+            case ColumnRepr::Set:     reduce_parallel_r_only_impl<SetColumn<Int>>(params); break;
+            case ColumnRepr::Heap:    reduce_parallel_r_only_impl<HeapColumn<Int>>(params); break;
+            case ColumnRepr::Full:    reduce_parallel_r_only_impl<FullColumn<Int>>(params); break;
+            case ColumnRepr::BitTree: reduce_parallel_r_only_impl<BitTreeColumn<Int>>(params); break;
+        }
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::reduce_parallel_rv(Params& params)
+    {
+        switch (params.col_repr) {
+            case ColumnRepr::Set:     reduce_parallel_rv_impl<SetColumn<Int>>(params); break;
+            case ColumnRepr::Heap:    reduce_parallel_rv_impl<HeapColumn<Int>>(params); break;
+            case ColumnRepr::Full:    reduce_parallel_rv_impl<FullColumn<Int>>(params); break;
+            case ColumnRepr::BitTree: reduce_parallel_rv_impl<BitTreeColumn<Int>>(params); break;
+        }
+    }
+
+    template<class Int>
+    template<class WorkCol>
+    void VRUDecomposition<Int>::reduce_serial_impl(Params& params)
     {
         CALI_CXX_MARK_FUNCTION;
 
@@ -1103,7 +1153,7 @@ namespace oineus {
 
         Timer timer_reduction;
 
-        using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
+        using MatrixTraits = GenericSparseMatrixTraits<Int, WorkCol>;
 
         ThreadStats stats {0};
         int n_cleared = 0;
@@ -1127,7 +1177,14 @@ namespace oineus {
         // homology: go from top dimension to 0, to make clearing possible
         // cohomology: the opposite
         // NB: _dim_first, _dim_last were reversed in ctor for cohomology!
-        IntSparseColumn new_col;
+        // Reusable working columns, filled in place per column so dense
+        // representations are sized once rather than reallocated per column.
+        typename MatrixTraits::CachedColumn cached_r_col;
+        typename MatrixTraits::CachedColumn cached_v_col;
+        MatrixTraits::reserve(cached_r_col, n_rows);
+        if (params.compute_v)
+            MatrixTraits::reserve(cached_v_col, n_rows);
+
         for(int dim = _dim_first.size() - 1; dim >= 0; --dim) {
             for(Int i = _dim_first[dim]; i <= _dim_last[dim]; ++i) {
                 if (params.clearing_opt and not is_zero(r_data[i])) {
@@ -1143,11 +1200,10 @@ namespace oineus {
                     }
                 }
 
-                typename MatrixTraits::CachedColumn cached_r_col = MatrixTraits::load_to_cache(r_data[i]);
-                typename MatrixTraits::CachedColumn cached_v_col;
+                MatrixTraits::load_to_cache(r_data[i], cached_r_col);
 
                 if (params.compute_v) {
-                    cached_v_col = MatrixTraits::load_to_cache(v_data[i]);
+                    MatrixTraits::load_to_cache(v_data[i], cached_v_col);
                 }
 
                 while(not MatrixTraits::is_zero(cached_r_col)) {
@@ -1216,7 +1272,8 @@ namespace oineus {
     }
 
     template<class Int>
-    void VRUDecomposition<Int>::reduce_parallel_r_only(Params& params)
+    template<class WorkCol>
+    void VRUDecomposition<Int>::reduce_parallel_r_only_impl(Params& params)
     {
         CALI_CXX_MARK_FUNCTION;
         using namespace std::placeholders;
@@ -1226,7 +1283,7 @@ namespace oineus {
         if (n_cols == 0)
             return;
 
-        using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
+        using MatrixTraits = GenericSparseMatrixTraits<Int, WorkCol>;
         using Column = typename MatrixTraits::Column;
         using AMatrix = std::vector<typename MatrixTraits::APColumn>;
         using MemoryReclaimC = MemoryReclaim<Column>;
@@ -1353,7 +1410,8 @@ namespace oineus {
     }
 
     template<class Int>
-    void VRUDecomposition<Int>::reduce_parallel_rv(Params& params)
+    template<class WorkCol>
+    void VRUDecomposition<Int>::reduce_parallel_rv_impl(Params& params)
     {
         CALI_CXX_MARK_FUNCTION;
         using namespace std::placeholders;
@@ -1367,7 +1425,7 @@ namespace oineus {
 
         v_data = std::vector<IntSparseColumn>(n_cols);
 
-        using MatrixTraits = SimpleRVMatrixTraits<Int, 2>;
+        using MatrixTraits = GenericRVMatrixTraits<Int, WorkCol>;
 
         using RVColumn = typename MatrixTraits::Column;
         using RVMatrix = std::vector<typename MatrixTraits::APColumn>;

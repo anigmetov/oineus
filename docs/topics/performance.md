@@ -41,6 +41,38 @@ What actually matters:
   $R$). Only enable them when you actually need cycle representatives,
   matrix sanity checks, or critical-set / ELZ workflows.
 
+### Column representation (advanced -- you almost never need this)
+
+While a column is being reduced it lives in a transient *working* data
+structure; the stored columns themselves are always sorted integer
+vectors. `ReductionParams.col_repr` selects that working structure. The
+options follow the accelerated column representations of the PHAT library
+([Bauer et al., 2017](https://doi.org/10.1016/j.jsc.2016.03.008)):
+
+- **`BitTree`** (default) -- a hierarchical 64-ary dense bit-set (PHAT's
+  `bit_tree`). Fastest on essentially every input we have measured and the
+  best behaved at high thread counts.
+- **`Full`** -- a dense bit-set paired with a max-heap. Within ~15% of
+  `BitTree`, occasionally a hair faster on the homology of large, sparse
+  grid filtrations. A fine alternative default.
+- **`Heap`** -- a lazy max-heap. Lower constant memory than the dense
+  options and ~2x faster than `Set`, but slower than `Full` / `BitTree`.
+- **`Set`** -- a `std::set`. The simplest representation and the previous
+  default; kept for comparison and reproducibility. Typically 2.5-7x
+  slower than `BitTree`.
+
+```{code-block} python
+# The default (BitTree) is right for almost everyone; this is opt-in tuning.
+params = oin.ReductionParams(col_repr=oin.ColumnRepr.Full)
+```
+
+This is a knob for experts and benchmarking. Reach for `Full` only to
+sanity-check that `BitTree` is not pathological on an unusual input (the
+two should agree to within ~15%), or `Set` to reproduce results from
+before the knob existed. The dense representations (`Full`, `BitTree`)
+allocate roughly one bit per cell per worker thread for the working
+column -- negligible next to the boundary matrix itself.
+
 ## Filtration construction
 
 The filtration builders themselves can be the bottleneck on dense inputs:

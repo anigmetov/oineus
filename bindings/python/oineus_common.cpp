@@ -61,13 +61,20 @@ void init_oineus_common(nb::module_& m)
                                       double, //elapsed_copy_back
                                       double, //elapsed_copy_pivots
                                       bool,   // verbose
-                                      int     // spdlog_level
+                                      int,    // spdlog_level
+                                      int     // col_repr
                                     >;
+
+    nb::enum_<oin::ColumnRepr>(m, "ColumnRepr", "Working-column data structure used during reduction")
+            .value("Set", oin::ColumnRepr::Set, "std::set (baseline, PHAT A-Set)")
+            .value("Heap", oin::ColumnRepr::Heap, "lazy max-heap (PHAT A-Heap)")
+            .value("Full", oin::ColumnRepr::Full, "dense bitset + max-heap (PHAT A-Full)")
+            .value("BitTree", oin::ColumnRepr::BitTree, "hierarchical 64-ary bitset (PHAT A-Bit-Tree, default)");
 
     nb::class_<ReductionParams>(m, "ReductionParams")
             .def(nb::init<>())
             .def("__init__",
-                [](ReductionParams* p, int n_threads, int chunk_size, bool clearing_opt, bool compute_v, bool compute_u, std::vector<dim_type> dims_to_restore_elz, bool verbose) {
+                [](ReductionParams* p, int n_threads, int chunk_size, bool clearing_opt, bool compute_v, bool compute_u, std::vector<dim_type> dims_to_restore_elz, oin::ColumnRepr col_repr, bool verbose) {
                     new (p) ReductionParams();
                     p->n_threads = n_threads;
                     p->chunk_size = chunk_size;
@@ -75,8 +82,9 @@ void init_oineus_common(nb::module_& m)
                     p->compute_v = compute_v;
                     p->compute_u = compute_u;
                     p->dims_to_restore_elz = dims_to_restore_elz;
+                    p->col_repr = col_repr;
                     p->verbose = verbose;
-                }, nb::arg("n_threads")=8, nb::arg("chunk_size")=256, nb::arg("clearing_opt")=true, nb::arg("compute_v")=false, nb::arg("compute_u")=false, nb::arg("dims_to_restore_elz")=std::vector<dim_type>{}, nb::arg("verbose")=false)
+                }, nb::arg("n_threads")=8, nb::arg("chunk_size")=256, nb::arg("clearing_opt")=true, nb::arg("compute_v")=false, nb::arg("compute_u")=false, nb::arg("dims_to_restore_elz")=std::vector<dim_type>{}, nb::arg("col_repr")=oin::ColumnRepr::BitTree, nb::arg("verbose")=false)
             .def_rw("n_threads", &ReductionParams::n_threads)
             .def_rw("chunk_size", &ReductionParams::chunk_size)
             .def_rw("write_dgms", &ReductionParams::write_dgms)
@@ -87,6 +95,7 @@ void init_oineus_common(nb::module_& m)
             .def_rw("elapsed", &ReductionParams::elapsed)
             .def_rw("compute_v", &ReductionParams::compute_v)
             .def_rw("compute_u", &ReductionParams::compute_u)
+            .def_rw("col_repr", &ReductionParams::col_repr)
             .def_rw("dims_to_restore_elz", &ReductionParams::dims_to_restore_elz)
             .def_rw("do_sanity_check", &ReductionParams::do_sanity_check)
             .def_rw("elapsed_restore_elz", &ReductionParams::elapsed_restore_elz)
@@ -101,7 +110,8 @@ void init_oineus_common(nb::module_& m)
                               p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
                               p.dims_to_restore_elz, p.do_sanity_check, p.elapsed, p
                               .elapsed_restore_elz,
-                              p.elapsed_copy_back, p.elapsed_copy_pivots, p.verbose, static_cast<int>(p.spdlog_level));
+                              p.elapsed_copy_back, p.elapsed_copy_pivots, p.verbose, static_cast<int>(p.spdlog_level),
+                              static_cast<int>(p.col_repr));
                     })
             .def("__setstate__", [](ReductionParams& p, const RedParamsTuple& t) {
                     new (&p) ReductionParams();
@@ -122,6 +132,7 @@ void init_oineus_common(nb::module_& m)
                       p.elapsed_copy_pivots = std::get<14>(t);
                       p.verbose         = std::get<15>(t);
                       p.spdlog_level    = static_cast<spd::level::level_enum>(std::get<16>(t));
+                      p.col_repr        = static_cast<oin::ColumnRepr>(std::get<17>(t));
                     })
     ;
 

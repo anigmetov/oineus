@@ -9,6 +9,33 @@
 #include "common_defs.h"
 
 namespace oineus {
+    // Working-column data structure used during reduction. The at-rest storage
+    // of a column is always a sorted std::vector; this only selects the
+    // transient residual representation (see column_repr.h).
+    enum class ColumnRepr {
+        Set = 0,        // std::set (PHAT A-Set)
+        Heap = 1,       // lazy max-heap (PHAT A-Heap)
+        Full = 2,       // dense bitset + max-heap (PHAT A-Full)
+        BitTree = 3     // hierarchical 64-ary bitset (PHAT A-Bit-Tree)
+    };
+
+    inline const char* to_string(ColumnRepr cr)
+    {
+        switch (cr) {
+            case ColumnRepr::Set:        return "Set";
+            case ColumnRepr::Heap:       return "Heap";
+            case ColumnRepr::Full:       return "Full";
+            case ColumnRepr::BitTree:    return "BitTree";
+        }
+        return "Unknown";
+    }
+
+    inline std::ostream& operator<<(std::ostream& out, ColumnRepr cr)
+    {
+        out << to_string(cr);
+        return out;
+    }
+
     struct Params {
 
         int n_threads{1};
@@ -20,6 +47,7 @@ namespace oineus {
         bool print_time{false};
         bool compute_v{false};
         bool compute_u{false};
+        ColumnRepr col_repr{ColumnRepr::BitTree};
         DimVec dims_to_restore_elz;
         bool do_sanity_check{false};
         double elapsed{0.0};
@@ -41,6 +69,7 @@ namespace oineus {
         out << ", print_time = " << p.print_time;
         out << ", compute_v = " << p.compute_v;
         out << ", compute_u = " << p.compute_u;
+        out << ", col_repr = " << p.col_repr;
         // out << ", dims_to_restore_elz = " << p.dims_to_restore_elz;
         out << ", do_sanity_check = " << p.do_sanity_check;
         out << ", elapsed = " << p.elapsed;
@@ -63,6 +92,7 @@ namespace oineus {
             && a.print_time == b.print_time
             && a.compute_v == b.compute_v
             && a.compute_u == b.compute_u
+            && a.col_repr == b.col_repr
             && a.dims_to_restore_elz == b.dims_to_restore_elz
             && a.do_sanity_check == b.do_sanity_check
             && a.elapsed == b.elapsed

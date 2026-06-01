@@ -80,6 +80,9 @@ will silently use a single thread if you set both.
   lower dimension. Usually a big win; turn it off only to compare with
   literature timings that don't use it.
 - `compute_v`, `compute_u` -- see above.
+- `col_repr` -- advanced: the working-column data structure used during
+  reduction. The default is the fastest choice; see
+  {doc}`performance` for when (rarely) to change it.
 
 ## Cohomology and the `dualize` switch
 
