@@ -510,6 +510,7 @@ oin::KerImCokReduced<C, Real, 2> compute_kernel_image_cokernel_reduction(const o
 
 
 void init_oineus_common(nb::module_& m);
+void init_oineus_dcmp_stats(nb::module_& m);
 void init_oineus_common_decomposition(nb::module_& m);
 void init_oineus_diagram(nb::module_& m);
 void init_oineus_functions(nb::module_& m);

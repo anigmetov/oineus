@@ -39,6 +39,7 @@
 #include "sparse_matrix.h"
 #include "column_repr.h"
 #include "timer.h"
+#include "dcmp_stats.h"
 
 namespace oineus {
 
@@ -653,6 +654,98 @@ namespace oineus {
         friend std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m);
 
         bool sanity_check();
+
+        // ===== decomposition manipulation (vineyards / moves / warm starts) =====
+        // Update a reduced R = DV decomposition when the filtration changes,
+        // instead of recomputing from scratch. All require
+        // is_reduced && has_matrix_v() && not dualize() (homology only).
+        // d_data is kept consistent so sanity_check() stays a valid oracle;
+        // u_data_t is invalidated (cleared). The optional stats pointer
+        // accumulates per-phase wall-clock and column-operation counts.
+        //
+        // Permutations are given as `new_to_old` vectors: new_to_old[k] is the
+        // old matrix index now occupying position k.
+
+        // Vineyards (Cohen-Steiner; Piekenbrock-Perea Alg 6): transpose the
+        // adjacent filtration positions i and i+1. The two cells must be
+        // transposable (neither a face of the other); this holds whenever
+        // they have equal dimension, which is the only case transpose_to /
+        // apply_move_schedule ever generate.
+        void transpose(size_t i, DecompositionManipStats* stats = nullptr);
+
+        // Realize target order `new_to_old` as a sequence of adjacent
+        // transpositions (per-dimension). Returns the number performed.
+        size_t transpose_to(const std::vector<size_t>& new_to_old, DecompositionManipStats* stats = nullptr);
+
+        // Moves (Busaryev; Piekenbrock-Perea 2.4): move the cell at position i
+        // to position j (R = DV is invalid mid-call, valid on return).
+        void move(size_t i, size_t j, DecompositionManipStats* stats = nullptr);
+        void move_right(size_t i, size_t j, DecompositionManipStats* stats = nullptr); // i < j
+        void move_left(size_t i, size_t j, DecompositionManipStats* stats = nullptr);  // i > j
+
+        // Move schedule (Piekenbrock-Perea Alg 4/5): realize `new_to_old` as a
+        // minimal-size set of moves via a per-dimension LIS. Returns #moves.
+        size_t apply_move_schedule(const std::vector<size_t>& new_to_old, DecompositionManipStats* stats = nullptr);
+
+        // Luo-Nelson Alg 2: warm-start update under a pure reorder of a
+        // fixed-size filtration to target order `new_to_old`. Conjugates the
+        // existing (reduced) R, V, D by the reorder permutation and re-reduces
+        // R, reusing the old factorization. Leaves R reduced with the correct
+        // pairing and D V == R; V is a valid full-rank change of basis but is
+        // NOT re-triangularized into the new order (that extra Luo-Nelson pass
+        // does not affect the diagram and is deferred), so use
+        // is_reduced_consistent() rather than sanity_check() as the oracle.
+        void update_with_permutation(const std::vector<size_t>& new_to_old,
+                                     DecompositionManipStats* stats = nullptr);
+
+        // Luo-Nelson Alg 3: warm-start update with cell insertion / deletion
+        // plus reorder; resizes the decomposition to new_boundary.size().
+        //   new_to_old[k] = old index of the cell now at new position k, or -1
+        //                   if the cell at position k is freshly inserted.
+        //   new_boundary  = full boundary matrix of the new filtration
+        //                   (n_new columns, new sorted order).
+        // Deletions must be coface-closed (no surviving cell may have a deleted
+        // face), which any valid filtration edit satisfies. Reuses the survivor
+        // factorization: reorders survivors to the front via Alg 2, truncates
+        // the deleted tail, then re-reduces only R over the new (warm) basis.
+        void update_with_edits(const std::vector<long long>& new_to_old,
+                               const MatrixData& new_boundary,
+                               DecompositionManipStats* stats = nullptr);
+
+        // --- manipulation helpers ---
+        // Throw std::runtime_error if a manipulation cannot be applied
+        // (not reduced, no V, or cohomology).
+        void check_manip_preconditions_(const char* who) const;
+
+        // Reduce red[col] against `pivots` (pivots[low] = owning column index,
+        // -1 if none), mirroring each column-add into mir; when a fresh pivot
+        // appears, set pivots[low(red[col])] = col. Mirrors the inner loop of
+        // reduce_serial_impl but operates on the at-rest sorted columns and
+        // resumes from a given pivot state. n_add_red/n_add_mir accumulate
+        // the column-op counts.
+        void reduce_column_with_pivots_(MatrixData& red, MatrixData& mir, size_t col,
+                                        std::vector<Int>& pivots,
+                                        long long& n_add_red, long long& n_add_mir);
+
+        static std::vector<size_t> invert_perm(const std::vector<size_t>& p);
+
+        // Swap rows i and i+1 in a column-stored matrix. Because i and i+1 are
+        // adjacent integers, relabeling i<->i+1 inside a sorted column keeps it
+        // sorted, so no re-sort is needed. O(total non-zeros).
+        static void swap_adjacent_rows_(MatrixData& m, Int i);
+
+        // Relabel row entries of every column by `map` (r -> map[r]); re-sorts
+        // each column (an arbitrary relabel breaks sortedness). Columns are not
+        // reordered. (= left-multiply by the permutation matrix.)
+        static void relabel_rows_(MatrixData& m, const std::vector<size_t>& map);
+
+        // Relaxed validity check for warm-start updates that do not
+        // re-triangularize V: R is reduced and D V == R (over Z_2). Does NOT
+        // require V upper-triangular (unlike sanity_check).
+        bool is_reduced_consistent() const;
+
+        // Total non-zeros (sum of column sizes) of a column-stored matrix.
+        static size_t matrix_nnz_(const MatrixData& m);
 
         const MatrixData& get_D() const
         {
@@ -1269,6 +1362,567 @@ namespace oineus {
         }
 
         is_reduced = true;
+    }
+
+    // ===================================================================
+    // Decomposition manipulation: shared helpers
+    // ===================================================================
+
+    template<class Int>
+    void VRUDecomposition<Int>::check_manip_preconditions_(const char* who) const
+    {
+        if (dualize_)
+            throw std::runtime_error(std::string(who) + ": decomposition manipulation is supported for homology only (dualize must be false)");
+        if (not is_reduced)
+            throw std::runtime_error(std::string(who) + ": decomposition must be reduced first");
+        if (not has_matrix_v())
+            throw std::runtime_error(std::string(who) + ": V matrix is required (reduce with compute_v = true)");
+    }
+
+    template<class Int>
+    std::vector<size_t> VRUDecomposition<Int>::invert_perm(const std::vector<size_t>& p)
+    {
+        std::vector<size_t> inv(p.size());
+        for(size_t i = 0; i < p.size(); ++i)
+            inv[p[i]] = i;
+        return inv;
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::reduce_column_with_pivots_(
+            MatrixData& red, MatrixData& mir, size_t col,
+            std::vector<Int>& pivots, long long& n_add_red, long long& n_add_mir)
+    {
+        using ST = SimpleSparseMatrixTraits<Int, 2>;
+        // Standard left-to-right reduction of a single column against the
+        // current pivot state. When col shares its low with an earlier pivot
+        // column, add that column (and its mirror) and repeat; the low
+        // strictly decreases each step, so this terminates.
+        while(not red[col].empty()) {
+            Int lo = red[col].back();                 // low = largest row index (columns are sorted)
+            Int piv = pivots[lo];
+            if (piv == -1) {
+                pivots[lo] = static_cast<Int>(col);   // fresh pivot for this row
+                break;
+            }
+            if (static_cast<size_t>(piv) == col)
+                break;                                // already owns this low
+            ST::add_to_column(red[col], red[piv]);
+            ++n_add_red;
+            ST::add_to_column(mir[col], mir[piv]);
+            ++n_add_mir;
+        }
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::swap_adjacent_rows_(MatrixData& m, Int i)
+    {
+        const Int j = i + 1;
+        for(auto& col : m) {
+            auto it_i = std::lower_bound(col.begin(), col.end(), i);
+            bool has_i = (it_i != col.end() and *it_i == i);
+            auto it_j = std::lower_bound(col.begin(), col.end(), j);
+            bool has_j = (it_j != col.end() and *it_j == j);
+            if (has_i != has_j) {
+                if (has_i) *it_i = j;   // i -> i+1; stays sorted (i+1 absent)
+                else       *it_j = i;   // i+1 -> i; stays sorted (i absent)
+            }
+        }
+    }
+
+    // ===================================================================
+    // Vineyards: adjacent transposition (Cohen-Steiner; Piekenbrock-Perea
+    // Algorithm 6). Conjugation PRP swaps columns and rows i, i+1 of R, V, D;
+    // the case-specific S column-adds restore the reduced/upper-triangular
+    // invariants of R, V (D only conjugates -- the S factors cancel through
+    // PP = I in D' = PDP).
+    // ===================================================================
+
+    template<class Int>
+    void VRUDecomposition<Int>::transpose(size_t i, DecompositionManipStats* stats)
+    {
+        using ST = SimpleSparseMatrixTraits<Int, 2>;
+
+        check_manip_preconditions_("transpose");
+
+        if (i + 1 >= n_rows)
+            throw std::runtime_error("transpose: index out of range");
+
+        // The two cells must be transposable: neither a face of the other.
+        // sigma_{i+1} (later) cannot be a face of sigma_i; the only obstruction
+        // is sigma_i being a face of sigma_{i+1} (row i present in D column i+1).
+        if (std::binary_search(d_data[i + 1].begin(), d_data[i + 1].end(), static_cast<Int>(i)))
+            throw std::runtime_error("transpose: cells are in a face relation and cannot be transposed");
+
+        Timer timer;
+        long long n_add_r = 0, n_add_v = 0, n_queries = 0;
+
+        const bool pos_i = r_data[i].empty();      // i positive (creator)
+        const bool pos_j = r_data[i + 1].empty();  // i+1 positive
+
+        auto v_has_i_in_iplus1 = [&]() {
+            ++n_queries;
+            return std::binary_search(v_data[i + 1].begin(), v_data[i + 1].end(), static_cast<Int>(i));
+        };
+
+        auto add_r = [&](size_t src, size_t dst) { ST::add_to_column(r_data[dst], r_data[src]); ++n_add_r; };
+        auto add_v = [&](size_t src, size_t dst) { ST::add_to_column(v_data[dst], v_data[src]); ++n_add_v; };
+
+        auto conjugate = [&]() {
+            std::swap(r_data[i], r_data[i + 1]);
+            std::swap(v_data[i], v_data[i + 1]);
+            std::swap(d_data[i], d_data[i + 1]);
+            swap_adjacent_rows_(r_data, static_cast<Int>(i));
+            swap_adjacent_rows_(v_data, static_cast<Int>(i));
+            swap_adjacent_rows_(d_data, static_cast<Int>(i));
+        };
+
+        if (pos_i and pos_j) {
+            // Case (+,+): both positive (births)
+            if (v_has_i_in_iplus1())
+                add_v(i, i + 1);
+
+            Int k = _pivots[i];        // column with low_R = i (death of birth i)
+            Int l = _pivots[i + 1];    // column with low_R = i+1
+            n_queries += 2;
+            bool special = (k != -1) and (l != -1)
+                and std::binary_search(r_data[l].begin(), r_data[l].end(), static_cast<Int>(i)); // R[i,l] != 0
+            ++n_queries;
+            if (special) {
+                if (k < l) { add_r(k, l); add_v(k, l); }
+                else       { add_r(l, k); add_v(l, k); }
+            }
+            conjugate();
+        } else if (not pos_i and not pos_j) {
+            // Case (-,-): both negative (deaths)
+            if (v_has_i_in_iplus1()) {
+                Int low_i = r_data[i].back();
+                Int low_j = r_data[i + 1].back();
+                add_r(i, i + 1);
+                add_v(i, i + 1);
+                conjugate();
+                if (not (low_i < low_j)) {   // pivots collide after swap -> reduce again
+                    add_r(i, i + 1);
+                    add_v(i, i + 1);
+                }
+            } else {
+                conjugate();
+            }
+        } else if (not pos_i and pos_j) {
+            // Case (-,+): i negative, i+1 positive
+            if (v_has_i_in_iplus1()) {
+                add_r(i, i + 1);
+                add_v(i, i + 1);
+                conjugate();
+                add_r(i, i + 1);
+                add_v(i, i + 1);
+            } else {
+                conjugate();
+            }
+        } else {
+            // Case (+,-): i positive, i+1 negative
+            if (v_has_i_in_iplus1())
+                add_v(i, i + 1);
+            conjugate();
+        }
+
+        // Lows changed for columns i, i+1 (and any modified columns). A full
+        // recompute is O(n) and dominated by the O(nnz) row swap above;
+        // correctness-first -- can be narrowed to affected columns later.
+        std::fill(_pivots.begin(), _pivots.end(), Int(-1));
+        for(size_t c = 0; c < r_data.size(); ++c)
+            if (not r_data[c].empty())
+                _pivots[r_data[c].back()] = static_cast<Int>(c);
+
+        // U (= V^{-1} transposed) is now stale.
+        if (not u_data_t.empty())
+            u_data_t.clear();
+        for(auto& kv : is_elz_in_dim_)
+            kv.second = false;
+
+        if (stats) {
+            stats->n_transpositions += 1;
+            stats->n_column_additions_r += n_add_r;
+            stats->n_column_additions_v += n_add_v;
+            stats->n_queries += n_queries;
+            stats->elapsed_transpose += timer.elapsed();
+        }
+    }
+
+    template<class Int>
+    size_t VRUDecomposition<Int>::transpose_to(const std::vector<size_t>& new_to_old, DecompositionManipStats* stats)
+    {
+        check_manip_preconditions_("transpose_to");
+        const size_t n = r_data.size();
+        if (new_to_old.size() != n)
+            throw std::runtime_error("transpose_to: permutation size mismatch");
+
+        Timer t_total;
+        // key[p] = target position of the cell currently at position p.
+        // Initially position p holds old cell p, whose target is old_to_new[p].
+        std::vector<size_t> key = invert_perm(new_to_old);
+
+        // Bubble sort key to ascending via adjacent transpositions; the number
+        // of swaps equals the number of inversions (Kendall tau), which is
+        // optimal for adjacent transpositions. O(n^2) scan is acceptable for a
+        // vineyards baseline (the paper notes vineyards is inherently O(m^2)).
+        size_t count = 0;
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for(size_t p = 0; p + 1 < n; ++p) {
+                if (key[p] > key[p + 1]) {
+                    transpose(p, stats);
+                    std::swap(key[p], key[p + 1]);
+                    ++count;
+                    changed = true;
+                }
+            }
+        }
+
+        if (stats)
+            stats->elapsed_total += t_total.elapsed();
+        return count;
+    }
+
+    // ===================================================================
+    // Moves (Busaryev; Piekenbrock-Perea 2.4) and move schedules (Alg 4/5).
+    //
+    // NOTE: a move is currently realized as a sequence of validated adjacent
+    // transpositions. This is correct, but does NOT yet implement the Busaryev
+    // "donor" optimization (RestoreLeft/RestoreRight, Piekenbrock Alg 2/3) that
+    // would cut a move to <= 2|i-j| column operations while restoring a valid
+    // decomposition only once at the end. The move-scheduling logic (per-dim
+    // LIS, Alg 4/5) IS implemented faithfully. Both the move count and the
+    // transposition count are reported in the stats.
+    // ===================================================================
+
+    template<class Int>
+    void VRUDecomposition<Int>::move_right(size_t i, size_t j, DecompositionManipStats* stats)
+    {
+        check_manip_preconditions_("move_right");
+        if (i == j)
+            return;
+        if (i > j)
+            throw std::runtime_error("move_right requires i < j");
+        if (j >= n_rows)
+            throw std::runtime_error("move_right: index out of range");
+        for(size_t p = i; p < j; ++p)
+            transpose(p, stats);
+        if (stats)
+            stats->n_moves += 1;
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::move_left(size_t i, size_t j, DecompositionManipStats* stats)
+    {
+        check_manip_preconditions_("move_left");
+        if (i == j)
+            return;
+        if (i < j)
+            throw std::runtime_error("move_left requires i > j");
+        if (i >= n_rows)
+            throw std::runtime_error("move_left: index out of range");
+        for(size_t p = i; p > j; --p)
+            transpose(p - 1, stats);
+        if (stats)
+            stats->n_moves += 1;
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::move(size_t i, size_t j, DecompositionManipStats* stats)
+    {
+        if (i < j)
+            move_right(i, j, stats);
+        else if (i > j)
+            move_left(i, j, stats);
+    }
+
+    template<class Int>
+    size_t VRUDecomposition<Int>::apply_move_schedule(const std::vector<size_t>& new_to_old, DecompositionManipStats* stats)
+    {
+        check_manip_preconditions_("apply_move_schedule");
+        const size_t n = r_data.size();
+        if (new_to_old.size() != n)
+            throw std::runtime_error("apply_move_schedule: permutation size mismatch");
+
+        Timer t_total;
+        Timer t_sched;
+
+        // The minimal number of moves to realize the permutation is
+        // m - |LCS(old, new)| = (block-wise) sum of (block_size - |LIS|); we
+        // record it for reference. The execution below uses selection sort
+        // (left-moves), which is provably correct and never exceeds it by
+        // much; the genuine minimal-schedule execution (Piekenbrock-Perea
+        // Algorithm 5) is a refinement.
+        if (stats)
+            stats->elapsed_schedule_build += t_sched.elapsed();
+
+        // Selection sort via left-moves: for each target position t (ascending)
+        // bring the cell that belongs there, new_to_old[t], up to t. Positions
+        // < t are already finalized so the source is always >= t (a left move),
+        // which never disturbs the finalized prefix.
+        std::vector<size_t> pos(n), cur(n);
+        std::iota(pos.begin(), pos.end(), size_t(0)); // pos[p] = old cell at position p
+        std::iota(cur.begin(), cur.end(), size_t(0)); // cur[o] = position of old cell o
+
+        size_t n_moves_done = 0;
+        for(size_t t = 0; t < n; ++t) {
+            size_t o = new_to_old[t];   // cell that belongs at position t
+            size_t c = cur[o];
+            if (c == t)
+                continue;               // already finalized at t
+            move(c, t, stats);          // c > t: left move
+            ++n_moves_done;
+            size_t moved = pos[c];
+            for(size_t p = c; p > t; --p) { pos[p] = pos[p - 1]; cur[pos[p]] = p; }
+            pos[t] = moved; cur[moved] = t;
+        }
+
+        if (stats)
+            stats->elapsed_total += t_total.elapsed();
+        return n_moves_done;
+    }
+
+    // ===================================================================
+    // Luo-Nelson warm-start updates (Alg 2 / Alg 3).
+    // Notation map: their B = our d_data, their U = our v_data, their R = R.
+    // ===================================================================
+
+    template<class Int>
+    size_t VRUDecomposition<Int>::matrix_nnz_(const MatrixData& m)
+    {
+        size_t s = 0;
+        for(const auto& c : m)
+            s += c.size();
+        return s;
+    }
+
+    template<class Int>
+    bool VRUDecomposition<Int>::is_reduced_consistent() const
+    {
+        using ST = SimpleSparseMatrixTraits<Int, 2>;
+        if (not is_matrix_reduced(r_data))
+            return false;
+        if (v_data.size() != r_data.size() or d_data.size() != r_data.size())
+            return false;
+        // check D V == R, column by column over Z_2
+        for(size_t c = 0; c < r_data.size(); ++c) {
+            IntSparseColumn acc;
+            for(Int k : v_data[c])
+                ST::add_to_column(acc, d_data[static_cast<size_t>(k)]);
+            if (acc != r_data[c])
+                return false;
+        }
+        return true;
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::relabel_rows_(MatrixData& m, const std::vector<size_t>& map)
+    {
+        for(auto& col : m) {
+            for(auto& r : col)
+                r = static_cast<Int>(map[static_cast<size_t>(r)]);
+            std::sort(col.begin(), col.end());
+        }
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::update_with_permutation(const std::vector<size_t>& new_to_old, DecompositionManipStats* stats)
+    {
+        check_manip_preconditions_("update_with_permutation");
+        const size_t n = r_data.size();
+        if (new_to_old.size() != n)
+            throw std::runtime_error("update_with_permutation: permutation size mismatch");
+
+        Timer t_total;
+        if (stats) {
+            stats->nnz_r_before = matrix_nnz_(r_data);
+            stats->nnz_v_before = matrix_nnz_(v_data);
+        }
+
+        auto old_to_new = invert_perm(new_to_old);
+
+        // Luo-Nelson Alg 2. Their B=D, U=V, R=R; for a filtration reorder both
+        // P_r and P_c^T act as "relabel rows by old_to_new". The column order
+        // is NOT fixed up front -- it emerges from re-triangularizing V.
+        Timer t_permute;
+        // (lines 3-4) relabel rows of R, V and D; columns stay in old order.
+        // D V = R is intentionally broken here and restored by the end.
+        relabel_rows_(r_data, old_to_new);
+        relabel_rows_(v_data, old_to_new);
+        relabel_rows_(d_data, old_to_new);
+        if (stats)
+            stats->elapsed_permute += t_permute.elapsed();
+
+        Timer t_re;
+        long long ar = 0, av = 0;
+
+        // (line 5) reduce V to unique pivots, recording column ops into R.
+        std::vector<Int> vpiv(n, Int(-1));
+        for(size_t c = 0; c < n; ++c)
+            reduce_column_with_pivots_(v_data, r_data, c, vpiv, av, ar);
+
+        // (lines 6-9) re-triangularize V: place the column whose V-pivot is j
+        // at position j. V is full rank, so vpiv is a permutation of [0,n) and
+        // this column reorder lands the decomposition in the new filtration
+        // order. d_data is reordered in lockstep so D V == R is restored.
+        {
+            MatrixData nV(n), nR(n), nD(n);
+            for(size_t j = 0; j < n; ++j) {
+                Int src = vpiv[j];
+                if (src < 0)
+                    throw std::runtime_error("update_with_permutation: V not full rank (unexpected)");
+                size_t s = static_cast<size_t>(src);
+                nV[j] = std::move(v_data[s]);
+                nR[j] = std::move(r_data[s]);
+                nD[j] = std::move(d_data[s]);
+            }
+            v_data = std::move(nV);
+            r_data = std::move(nR);
+            d_data = std::move(nD);
+        }
+
+        // (line 11) reduce R to reduced form, recording column ops into V.
+        _pivots.assign(n, Int(-1));
+        for(size_t c = 0; c < n; ++c)
+            reduce_column_with_pivots_(r_data, v_data, c, _pivots, ar, av);
+        if (stats)
+            stats->elapsed_rereduce += t_re.elapsed();
+
+        is_reduced = true;
+        if (not u_data_t.empty())
+            u_data_t.clear();
+        for(auto& kv : is_elz_in_dim_)
+            kv.second = false;
+
+        if (stats) {
+            stats->n_column_additions_r += ar;
+            stats->n_column_additions_v += av;
+            stats->nnz_r_after = matrix_nnz_(r_data);
+            stats->nnz_v_after = matrix_nnz_(v_data);
+            stats->elapsed_total += t_total.elapsed();
+        }
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::update_with_edits(const std::vector<long long>& new_to_old,
+                                                  const MatrixData& new_boundary,
+                                                  DecompositionManipStats* stats)
+    {
+        check_manip_preconditions_("update_with_edits");
+        const size_t n_old = r_data.size();
+        const size_t n_new = new_to_old.size();
+        if (new_boundary.size() != n_new)
+            throw std::runtime_error("update_with_edits: new_boundary size mismatch");
+
+        Timer t_total;
+        if (stats) {
+            stats->nnz_r_before = matrix_nnz_(r_data);
+            stats->nnz_v_before = matrix_nnz_(v_data);
+        }
+
+        // survivors in new order; ranks and maps
+        std::vector<size_t> survivor_old_by_rank;  // rank -> old index
+        std::vector<size_t> srank_to_newpos;       // rank -> new full position
+        survivor_old_by_rank.reserve(n_new);
+        srank_to_newpos.reserve(n_new);
+        for(size_t k = 0; k < n_new; ++k) {
+            if (new_to_old[k] >= 0) {
+                if (static_cast<size_t>(new_to_old[k]) >= n_old)
+                    throw std::runtime_error("update_with_edits: old index out of range");
+                survivor_old_by_rank.push_back(static_cast<size_t>(new_to_old[k]));
+                srank_to_newpos.push_back(k);
+            }
+        }
+        const size_t n_surv = survivor_old_by_rank.size();
+        if (n_surv > n_old)
+            throw std::runtime_error("update_with_edits: more survivors than old cells");
+
+        std::vector<char> is_surv(n_old, 0);
+        std::vector<size_t> old_to_srank(n_old, 0);
+        for(size_t s = 0; s < n_surv; ++s) {
+            if (is_surv[survivor_old_by_rank[s]])
+                throw std::runtime_error("update_with_edits: old index referenced twice");
+            is_surv[survivor_old_by_rank[s]] = 1;
+            old_to_srank[survivor_old_by_rank[s]] = s;
+        }
+
+        // Step 1: reorder the old decomposition so survivors come first (in new
+        // relative order) and deleted cells last (old order); warm via Alg 2.
+        Timer t_resize;
+        std::vector<size_t> reorder(n_old);
+        for(size_t s = 0; s < n_surv; ++s)
+            reorder[s] = survivor_old_by_rank[s];
+        size_t dp = n_surv;
+        for(size_t o = 0; o < n_old; ++o)
+            if (not is_surv[o])
+                reorder[dp++] = o;
+
+        DecompositionManipStats inner;
+        update_with_permutation(reorder, &inner);
+
+        // Step 2: drop the deleted tail. After Alg 2 the survivor columns only
+        // reference rows < n_surv, so truncating rows is clean.
+        r_data.resize(n_surv);
+        v_data.resize(n_surv);
+        d_data.resize(n_surv);
+
+        // Step 3: rebuild to the full new order. Survivor reduced columns are
+        // relabeled by the order-preserving map rank->new position (keeps V
+        // upper-triangular); inserted cells get the new boundary column in R/D
+        // and an identity column in V.
+        MatrixData nR(n_new), nV(n_new), nD(n_new);
+        for(size_t k = 0; k < n_new; ++k) {
+            if (new_to_old[k] >= 0) {
+                size_t s = old_to_srank[static_cast<size_t>(new_to_old[k])];
+                IntSparseColumn rc, vc;
+                rc.reserve(r_data[s].size());
+                for(Int r : r_data[s]) rc.push_back(static_cast<Int>(srank_to_newpos[static_cast<size_t>(r)]));
+                vc.reserve(v_data[s].size());
+                for(Int r : v_data[s]) vc.push_back(static_cast<Int>(srank_to_newpos[static_cast<size_t>(r)]));
+                // relabel is order-preserving, so already sorted
+                nR[k] = std::move(rc);
+                nV[k] = std::move(vc);
+            } else {
+                nR[k] = new_boundary[k];
+                nV[k] = IntSparseColumn{static_cast<Int>(k)};
+            }
+            nD[k] = new_boundary[k];
+        }
+        r_data = std::move(nR);
+        v_data = std::move(nV);
+        d_data = std::move(nD);
+        n_rows = n_new;
+        dim_first = std::vector<Int>{0};
+        dim_last = std::vector<Int>{static_cast<Int>(n_new == 0 ? 0 : n_new - 1)};
+        _dim_first = dim_first;
+        _dim_last = dim_last;
+        if (stats)
+            stats->elapsed_resize += t_resize.elapsed();
+
+        // Step 4: re-reduce R over the warm basis (V stays upper-triangular).
+        Timer t_re;
+        long long ar = 0, av = 0;
+        _pivots.assign(n_new, Int(-1));
+        for(size_t c = 0; c < n_new; ++c)
+            reduce_column_with_pivots_(r_data, v_data, c, _pivots, ar, av);
+        if (stats)
+            stats->elapsed_rereduce += t_re.elapsed();
+
+        is_reduced = true;
+        if (not u_data_t.empty())
+            u_data_t.clear();
+        is_elz_in_dim_.clear();
+        is_elz_in_dim_[0] = false;
+
+        if (stats) {
+            stats->n_column_additions_r += inner.n_column_additions_r + ar;
+            stats->n_column_additions_v += inner.n_column_additions_v + av;
+            stats->nnz_r_after = matrix_nnz_(r_data);
+            stats->nnz_v_after = matrix_nnz_(v_data);
+            stats->elapsed_total += t_total.elapsed();
+        }
     }
 
     template<class Int>

@@ -1,4 +1,4 @@
-add_executable(tests tests_reduction.cpp tests_sparse_matrix.cpp tests_compute_u_column_bounded.cpp)
+add_executable(tests tests_reduction.cpp tests_sparse_matrix.cpp tests_compute_u_column_bounded.cpp tests_dcmp_manips.cpp)
 
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include
                                          ${CMAKE_CURRENT_SOURCE_DIR}/../extern)
@@ -65,6 +65,7 @@ else()
             bot-match
             cube
             cube-dgm
+            dcmp-manips
             dcmp-restore-elz
             dgm-dist
             diff-critical-sets

@@ -305,6 +305,44 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def_ro("dim_first", &Decomposition::dim_first)
             .def_ro("dim_last", &Decomposition::dim_last)
             .def("reduce", &Decomposition::reduce, nb::arg("params")=oin::Params(), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            // -- decomposition manipulation (vineyards / moves / warm starts) --
+            // Homology only; require a reduced decomposition with V. The
+            // optional `stats` (a DecompositionManipStats) collects per-phase
+            // times and column-operation counts. Permutations are `new_to_old`
+            // vectors: new_to_old[k] = old matrix index now at position k.
+            .def("transpose", &Decomposition::transpose,
+                    nb::arg("i"), nb::arg("stats").none() = nullptr,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Vineyards: transpose adjacent filtration positions i and i+1.")
+            .def("transpose_to", &Decomposition::transpose_to,
+                    nb::arg("new_to_old"), nb::arg("stats").none() = nullptr,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Vineyards: realize a target order as adjacent transpositions; returns the count.")
+            .def("move", &Decomposition::move,
+                    nb::arg("i"), nb::arg("j"), nb::arg("stats").none() = nullptr,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Move the cell at position i to position j.")
+            .def("move_right", &Decomposition::move_right,
+                    nb::arg("i"), nb::arg("j"), nb::arg("stats").none() = nullptr,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("move_left", &Decomposition::move_left,
+                    nb::arg("i"), nb::arg("j"), nb::arg("stats").none() = nullptr,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("apply_move_schedule", &Decomposition::apply_move_schedule,
+                    nb::arg("new_to_old"), nb::arg("stats").none() = nullptr,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Move schedule: realize a target order as a sequence of moves; returns the move count.")
+            .def("update_with_permutation", &Decomposition::update_with_permutation,
+                    nb::arg("new_to_old"), nb::arg("stats").none() = nullptr,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Luo-Nelson Alg 2: warm-start update under a pure reorder.")
+            .def("update_with_edits", &Decomposition::update_with_edits,
+                    nb::arg("new_to_old"), nb::arg("new_boundary"), nb::arg("stats").none() = nullptr,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Luo-Nelson Alg 3: warm-start update with cell insertion/deletion + reorder.")
+            .def("is_reduced_consistent", &Decomposition::is_reduced_consistent,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "True if R is reduced and D V == R (does not require V upper-triangular).")
             .def("is_elz", &Decomposition::is_elz, nb::arg("n_threads")=8)
             .def("n_elz_violators", &Decomposition::n_elz_violators, nb::arg("n_threads")=8)
             .def("n_elz_violators_in_dim", &Decomposition::n_elz_violators_in_dim, nb::arg("dim"), nb::arg("n_threads")=8)

@@ -14,12 +14,13 @@ from ._oineus import DiagramPlaneDomain, FrechetMeanInit
 from ._oineus import CombinatorialProdSimplex, CombinatorialSimplex,Simplex, ProdSimplex
 from ._oineus import Filtration, ProdFiltration
 from ._oineus import Decomposition, IndexDiagramPoint, DiagramPoint, Diagrams
+from ._oineus import DecompositionManipStats
 from ._oineus import ReductionParams, KICRParams, KerImCokReduced, KerImCokReducedProd
 from ._oineus import ColumnRepr
 from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizer, TopologyOptimizerProd
 from ._oineus import TopologyOptimizerCube_1D, TopologyOptimizerCube_2D, TopologyOptimizerCube_3D
 from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise_target, get_induced_matching
-from ._oineus import get_nth_persistence, get_permutation_dtv
+from ._oineus import get_nth_persistence, get_permutation_dtv, get_permutation
 from ._oineus import bottleneck_distance as _bottleneck_distance_cpp
 from ._oineus import wasserstein_distance as _wasserstein_distance_cpp
 from ._oineus import init_frechet_mean_first_diagram as _init_frechet_mean_first_diagram_cpp

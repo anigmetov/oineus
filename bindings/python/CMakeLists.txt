@@ -36,6 +36,7 @@ set_property(CACHE OINEUS_PYTHON_REAL PROPERTY STRINGS "float" "double")
 
 nanobind_add_module(_oineus NOMINSIZE oineus.cpp
                                       oineus_common.cpp
+                                      oineus_dcmp_stats.cpp
                                       oineus_decomposition.cpp
                                       oineus_diagram.cpp
                                       oineus_cells.cpp

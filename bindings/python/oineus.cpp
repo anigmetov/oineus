@@ -12,6 +12,7 @@ NB_MODULE(_oineus, m)
     oineus_python::register_interrupt_translator();
 
     init_oineus_common(m);
+    init_oineus_dcmp_stats(m);
     init_oineus_cells(m);
     init_oineus_filtration(m);
     init_oineus_common_decomposition(m);
