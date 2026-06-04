@@ -259,6 +259,34 @@ TEST_CASE("move within dimension block")
 }
 
 // ---------------------------------------------------------------------------
+// move : stress test, many random within-dimension moves both directions
+// (the donor / conjugate-once implementation, validated per move)
+// ---------------------------------------------------------------------------
+TEST_CASE("move stress random both directions")
+{
+    for(unsigned seed = 0; seed < 4; ++seed) {
+        Decomp dc = grid_decomp(5, 500 + seed);
+        std::mt19937 gen(seed + 123);
+
+        for(int step = 0; step < 12; ++step) {
+            // pick a dimension block with >= 2 cells and two distinct positions in it
+            size_t d = gen() % dc.dim_first.size();
+            size_t lo = static_cast<size_t>(dc.dim_first[d]);
+            size_t hi = static_cast<size_t>(dc.dim_last[d]);
+            if (hi <= lo)
+                continue;
+            size_t a = lo + gen() % (hi - lo + 1);
+            size_t b = lo + gen() % (hi - lo + 1);
+            if (a == b)
+                continue;
+            dc.move(a, b);
+            REQUIRE(dc.sanity_check());
+            REQUIRE(pairing(dc) == pairing(reduce_from_scratch(dc.d_data)));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // apply_move_schedule : random within-dimension permutations on a grid
 // ---------------------------------------------------------------------------
 TEST_CASE("apply_move_schedule random within-dimension permutation")

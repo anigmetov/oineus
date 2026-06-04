@@ -734,6 +734,12 @@ namespace oineus {
         // sorted, so no re-sort is needed. O(total non-zeros).
         static void swap_adjacent_rows_(MatrixData& m, Int i);
 
+        // Conjugate R, V, D by the move permutation P that sends position i to
+        // j (cyclically shifting the band in between): rotate the band columns
+        // once and relabel band rows in a single pass. This replaces the
+        // |i-j| separate row-swaps a move would otherwise need.
+        void conjugate_by_move_(size_t i, size_t j);
+
         // Relabel row entries of every column by `map` (r -> map[r]); re-sorts
         // each column (an arbitrary relabel breaks sortedness). Columns are not
         // reordered. (= left-multiply by the permutation matrix.)
@@ -1588,18 +1594,65 @@ namespace oineus {
     // ===================================================================
     // Moves (Busaryev; Piekenbrock-Perea 2.4) and move schedules (Alg 4/5).
     //
-    // NOTE: a move is currently realized as a sequence of validated adjacent
-    // transpositions. This is correct, but does NOT yet implement the Busaryev
-    // "donor" optimization (RestoreLeft/RestoreRight, Piekenbrock Alg 2/3) that
-    // would cut a move to <= 2|i-j| column operations while restoring a valid
-    // decomposition only once at the end. The move-scheduling logic (per-dim
-    // LIS, Alg 4/5) IS implemented faithfully. Both the move count and the
-    // transposition count are reported in the stats.
+    // A move applies the cyclic permutation P (i -> j) to the decomposition
+    // with a SINGLE conjugation (one band rotation + one row-relabel pass),
+    // instead of the |i-j| separate row-swaps that the equivalent sequence of
+    // transpositions would do. To keep V upper-triangular after the
+    // conjugation we first clear the V entries that the permutation would push
+    // below the diagonal (the asymmetric step: MoveRight clears a row of V,
+    // MoveLeft clears column i of V -- cf. Piekenbrock-Perea RestoreRight /
+    // RestoreLeft and the "donor" discussion); a single reduce-R pass then
+    // restores a valid R = DV. R = DV is not maintained mid-move, only at the
+    // end -- any valid end state is correct (the canonical form is separate).
     // ===================================================================
+
+    template<class Int>
+    void VRUDecomposition<Int>::conjugate_by_move_(size_t i, size_t j)
+    {
+        const size_t lo = std::min(i, j);
+        const size_t hi = std::max(i, j);
+        const bool right = (i < j);
+
+        auto rotate_cols = [&](MatrixData& m) {
+            if (right)
+                std::rotate(m.begin() + i, m.begin() + i + 1, m.begin() + j + 1);
+            else
+                std::rotate(m.begin() + j, m.begin() + i, m.begin() + i + 1);
+        };
+        rotate_cols(r_data);
+        rotate_cols(v_data);
+        rotate_cols(d_data);
+
+        // P on row indices: i -> j; the rest of the band shifts by one.
+        auto pmap = [&](Int e) -> Int {
+            if (e < static_cast<Int>(lo) || e > static_cast<Int>(hi))
+                return e;
+            if (e == static_cast<Int>(i))
+                return static_cast<Int>(j);
+            return right ? e - 1 : e + 1;
+        };
+        auto relabel = [&](MatrixData& m) {
+            for(auto& col : m) {
+                bool touched = false;
+                for(auto& e : col) {
+                    if (e >= static_cast<Int>(lo) and e <= static_cast<Int>(hi)) {
+                        Int ne = pmap(e);
+                        if (ne != e) { e = ne; touched = true; }
+                    }
+                }
+                if (touched)
+                    std::sort(col.begin(), col.end());
+            }
+        };
+        relabel(r_data);
+        relabel(v_data);
+        relabel(d_data);
+    }
 
     template<class Int>
     void VRUDecomposition<Int>::move_right(size_t i, size_t j, DecompositionManipStats* stats)
     {
+        using ST = SimpleSparseMatrixTraits<Int, 2>;
         check_manip_preconditions_("move_right");
         if (i == j)
             return;
@@ -1607,15 +1660,46 @@ namespace oineus {
             throw std::runtime_error("move_right requires i < j");
         if (j >= n_rows)
             throw std::runtime_error("move_right: index out of range");
-        for(size_t p = i; p < j; ++p)
-            transpose(p, stats);
-        if (stats)
+
+        Timer t;
+        long long nar = 0, nav = 0, nq = 0;
+
+        // Clear row i from V columns c in (i, j]: when sigma_i moves down to j
+        // these columns move to c-1 < j, so a surviving row-i entry would
+        // become a below-diagonal j. Adding column i (which has V[i,i]=1)
+        // clears it.
+        for(size_t c = i + 1; c <= j; ++c) {
+            ++nq;
+            if (std::binary_search(v_data[c].begin(), v_data[c].end(), static_cast<Int>(i))) {
+                ST::add_to_column(r_data[c], r_data[i]); ++nar;
+                ST::add_to_column(v_data[c], v_data[i]); ++nav;
+            }
+        }
+
+        conjugate_by_move_(i, j);
+
+        _pivots.assign(n_rows, Int(-1));
+        for(size_t c = 0; c < r_data.size(); ++c)
+            reduce_column_with_pivots_(r_data, v_data, c, _pivots, nar, nav);
+
+        if (not u_data_t.empty())
+            u_data_t.clear();
+        for(auto& kv : is_elz_in_dim_)
+            kv.second = false;
+
+        if (stats) {
             stats->n_moves += 1;
+            stats->n_column_additions_r += nar;
+            stats->n_column_additions_v += nav;
+            stats->n_queries += nq;
+            stats->elapsed_move += t.elapsed();
+        }
     }
 
     template<class Int>
     void VRUDecomposition<Int>::move_left(size_t i, size_t j, DecompositionManipStats* stats)
     {
+        using ST = SimpleSparseMatrixTraits<Int, 2>;
         check_manip_preconditions_("move_left");
         if (i == j)
             return;
@@ -1623,10 +1707,46 @@ namespace oineus {
             throw std::runtime_error("move_left requires i > j");
         if (i >= n_rows)
             throw std::runtime_error("move_left: index out of range");
-        for(size_t p = i; p > j; --p)
-            transpose(p - 1, stats);
-        if (stats)
+
+        Timer t;
+        long long nar = 0, nav = 0, nq = 0;
+
+        // Clear V column i's entries in [j, i): when sigma_i moves up to j the
+        // column lands at position j, so any entry in [j, i) would be
+        // below-diagonal. Repeatedly add the column for the largest such entry
+        // (its V[k,k]=1 clears it), like reducing column i against the
+        // diagonal; the largest entry strictly decreases, so this terminates.
+        while (true) {
+            auto& col = v_data[i];
+            auto it = std::lower_bound(col.begin(), col.end(), static_cast<Int>(i)); // first >= i (the diagonal)
+            if (it == col.begin())
+                break;
+            Int k = *(it - 1);                  // largest entry < i
+            if (k < static_cast<Int>(j))
+                break;
+            ++nq;
+            ST::add_to_column(r_data[i], r_data[static_cast<size_t>(k)]); ++nar;
+            ST::add_to_column(v_data[i], v_data[static_cast<size_t>(k)]); ++nav;
+        }
+
+        conjugate_by_move_(i, j);
+
+        _pivots.assign(n_rows, Int(-1));
+        for(size_t c = 0; c < r_data.size(); ++c)
+            reduce_column_with_pivots_(r_data, v_data, c, _pivots, nar, nav);
+
+        if (not u_data_t.empty())
+            u_data_t.clear();
+        for(auto& kv : is_elz_in_dim_)
+            kv.second = false;
+
+        if (stats) {
             stats->n_moves += 1;
+            stats->n_column_additions_r += nar;
+            stats->n_column_additions_v += nav;
+            stats->n_queries += nq;
+            stats->elapsed_move += t.elapsed();
+        }
     }
 
     template<class Int>
