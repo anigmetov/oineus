@@ -310,6 +310,11 @@ void init_oineus_common_decomposition(nb::module_& m)
             // optional `stats` (a DecompositionManipStats) collects per-phase
             // times and column-operation counts. Permutations are `new_to_old`
             // vectors: new_to_old[k] = old matrix index now at position k.
+            .def("make_dynamic", &Decomposition::make_dynamic, nb::arg("n_threads") = 1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Build the row-incidence indices (in parallel) so subsequent manipulations "
+                    "cost O(changed support); optional, built on first use otherwise. Dropped by reduce().")
+            .def("is_dynamic", &Decomposition::is_dynamic)
             .def("transpose", &Decomposition::transpose,
                     nb::arg("i"), nb::arg("stats").none() = nullptr,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),

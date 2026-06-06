@@ -436,6 +436,18 @@ namespace oineus {
         // in parallel versions we use atomic pivots, in serial - normal
         std::vector<Int> _pivots;
 
+        // Row-incidence indices (row -> sorted columns containing it) for R, V,
+        // D, used to localize dynamic updates (vineyards / moves / warm starts)
+        // to the changed support instead of scanning the whole matrix. Built
+        // on demand by make_dynamic() (reusing the parallel col->row transpose)
+        // and maintained incrementally by the manipulation methods. A static
+        // decomposition never builds them. Invalidated by reduce() and any
+        // resize.
+        MatrixData ri_r_;
+        MatrixData ri_v_;
+        MatrixData ri_d_;
+        bool is_dynamic_ {false};
+
         std::vector<Int> dim_first;
         std::vector<Int> dim_last;
 
@@ -666,6 +678,13 @@ namespace oineus {
         // Permutations are given as `new_to_old` vectors: new_to_old[k] is the
         // old matrix index now occupying position k.
 
+        // Opt into dynamic mode: build the row-incidence indices (in parallel)
+        // so subsequent manipulations cost O(changed support) instead of
+        // O(whole matrix). Optional -- the manipulation methods build the
+        // indices on first use if absent. reduce() and resizes drop them.
+        void make_dynamic(int n_threads = 1);
+        bool is_dynamic() const { return is_dynamic_; }
+
         // Vineyards (Cohen-Steiner; Piekenbrock-Perea Alg 6): transpose the
         // adjacent filtration positions i and i+1. The two cells must be
         // transposable (neither a face of the other); this holds whenever
@@ -745,6 +764,21 @@ namespace oineus {
         // adjacent integers, relabeling i<->i+1 inside a sorted column keeps it
         // sorted, so no re-sort is needed. O(total non-zeros).
         static void swap_adjacent_rows_(MatrixData& m, Int i);
+
+        // --- dynamic-mode (row-index) helpers ---
+        void ensure_dynamic_(int n_threads = 1);
+        void invalidate_dynamic_();
+        // a row's incidence list is a sorted std::vector<Int> of column indices
+        static bool ri_contains_(const IntSparseColumn& lst, Int c);
+        static void ri_insert_(IntSparseColumn& lst, Int c);
+        static void ri_remove_(IntSparseColumn& lst, Int c);
+        // Indexed column ops that keep the row index `ri` (for matrix `m`) in
+        // sync. col_add: m[dst] += src_col. col_swap: swap m[a], m[b].
+        // row_swap_adjacent: swap rows i, i+1 of m, touching only columns the
+        // index says contain those rows.
+        static void col_add_indexed_(MatrixData& m, MatrixData& ri, size_t dst, const IntSparseColumn& src_col);
+        static void col_swap_indexed_(MatrixData& m, MatrixData& ri, size_t a, size_t b);
+        static void row_swap_adjacent_indexed_(MatrixData& m, MatrixData& ri, Int i);
 
         // Conjugate R, V, D by the move permutation P that sends position i to
         // j (cyclically shifting the band in between): rotate the band columns
@@ -1190,6 +1224,7 @@ namespace oineus {
     {
         CALI_CXX_MARK_FUNCTION;
 
+        invalidate_dynamic_();   // R, V are rebuilt; any row index is now stale
         params.elapsed = 0.0;
         params.elapsed_restore_elz = 0.0;
         params.elapsed_copy_back = 0.0;
@@ -1483,6 +1518,113 @@ namespace oineus {
     }
 
     template<class Int>
+    void VRUDecomposition<Int>::make_dynamic(int n_threads)
+    {
+        using ST = SimpleSparseMatrixTraits<Int, 2>;
+        auto build = [&](const MatrixData& m) -> MatrixData {
+            MatrixData ri = ST::col_to_row_format_parallel(m, n_threads, 0, m.size(), static_cast<Int>(n_rows));
+            ri.resize(n_rows);          // one list per row, including trailing empty rows
+            for(auto& lst : ri)
+                std::sort(lst.begin(), lst.end());
+            return ri;
+        };
+        ri_r_ = build(r_data);
+        ri_v_ = build(v_data);
+        ri_d_ = build(d_data);
+        is_dynamic_ = true;
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::ensure_dynamic_(int n_threads)
+    {
+        if (not is_dynamic_)
+            make_dynamic(n_threads);
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::invalidate_dynamic_()
+    {
+        is_dynamic_ = false;
+        ri_r_.clear();
+        ri_v_.clear();
+        ri_d_.clear();
+    }
+
+    template<class Int>
+    bool VRUDecomposition<Int>::ri_contains_(const IntSparseColumn& lst, Int c)
+    {
+        return std::binary_search(lst.begin(), lst.end(), c);
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::ri_insert_(IntSparseColumn& lst, Int c)
+    {
+        auto it = std::lower_bound(lst.begin(), lst.end(), c);
+        if (it == lst.end() or *it != c)
+            lst.insert(it, c);
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::ri_remove_(IntSparseColumn& lst, Int c)
+    {
+        auto it = std::lower_bound(lst.begin(), lst.end(), c);
+        if (it != lst.end() and *it == c)
+            lst.erase(it);
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::col_add_indexed_(MatrixData& m, MatrixData& ri, size_t dst, const IntSparseColumn& src_col)
+    {
+        using ST = SimpleSparseMatrixTraits<Int, 2>;
+        const Int cdst = static_cast<Int>(dst);
+        // each row r of src_col flips membership in m[dst], so toggle dst in ri[r]
+        for(Int r : src_col) {
+            auto& lst = ri[static_cast<size_t>(r)];
+            auto it = std::lower_bound(lst.begin(), lst.end(), cdst);
+            if (it != lst.end() and *it == cdst)
+                lst.erase(it);
+            else
+                lst.insert(it, cdst);
+        }
+        ST::add_to_column(m[dst], src_col);
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::col_swap_indexed_(MatrixData& m, MatrixData& ri, size_t a, size_t b)
+    {
+        const Int ca = static_cast<Int>(a), cb = static_cast<Int>(b);
+        for(Int r : m[a])                 // rows in m[a] only move a -> b in ri
+            if (not ri_contains_(ri[static_cast<size_t>(r)], cb)) {
+                ri_remove_(ri[static_cast<size_t>(r)], ca);
+                ri_insert_(ri[static_cast<size_t>(r)], cb);
+            }
+        for(Int r : m[b])                 // rows in m[b] only move b -> a in ri
+            if (not ri_contains_(ri[static_cast<size_t>(r)], ca)) {
+                ri_remove_(ri[static_cast<size_t>(r)], cb);
+                ri_insert_(ri[static_cast<size_t>(r)], ca);
+            }
+        std::swap(m[a], m[b]);
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::row_swap_adjacent_indexed_(MatrixData& m, MatrixData& ri, Int i)
+    {
+        const Int j = i + 1;
+        for(Int c : ri[static_cast<size_t>(i)])      // columns with row i only: relabel i -> j
+            if (not ri_contains_(ri[static_cast<size_t>(j)], c)) {
+                auto& col = m[static_cast<size_t>(c)];
+                *std::lower_bound(col.begin(), col.end(), i) = j;
+            }
+        for(Int c : ri[static_cast<size_t>(j)])      // columns with row j only: relabel j -> i
+            if (not ri_contains_(ri[static_cast<size_t>(i)], c)) {
+                auto& col = m[static_cast<size_t>(c)];
+                *std::lower_bound(col.begin(), col.end(), j) = i;
+            }
+        // rows i, j exchange their whole incidence sets
+        std::swap(ri[static_cast<size_t>(i)], ri[static_cast<size_t>(j)]);
+    }
+
+    template<class Int>
     void VRUDecomposition<Int>::swap_adjacent_rows_(MatrixData& m, Int i)
     {
         const Int j = i + 1;
@@ -1509,8 +1651,6 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::transpose(size_t i, DecompositionManipStats* stats)
     {
-        using ST = SimpleSparseMatrixTraits<Int, 2>;
-
         check_manip_preconditions_("transpose");
 
         if (i + 1 >= n_rows)
@@ -1522,6 +1662,8 @@ namespace oineus {
         if (std::binary_search(d_data[i + 1].begin(), d_data[i + 1].end(), static_cast<Int>(i)))
             throw std::runtime_error("transpose: cells are in a face relation and cannot be transposed");
 
+        ensure_dynamic_();   // localizes the conjugation to the cells' stars
+
         Timer timer;
         long long n_add_r = 0, n_add_v = 0, n_queries = 0;
 
@@ -1530,20 +1672,32 @@ namespace oineus {
 
         auto v_has_i_in_iplus1 = [&]() {
             ++n_queries;
-            return std::binary_search(v_data[i + 1].begin(), v_data[i + 1].end(), static_cast<Int>(i));
+            // V[i][i+1] != 0  <=>  column i+1 is in the row-i incidence list of V
+            return ri_contains_(ri_v_[i], static_cast<Int>(i + 1));
         };
 
-        auto add_r = [&](size_t src, size_t dst) { ST::add_to_column(r_data[dst], r_data[src]); ++n_add_r; };
-        auto add_v = [&](size_t src, size_t dst) { ST::add_to_column(v_data[dst], v_data[src]); ++n_add_v; };
+        auto add_r = [&](size_t src, size_t dst) { col_add_indexed_(r_data, ri_r_, dst, r_data[src]); ++n_add_r; };
+        auto add_v = [&](size_t src, size_t dst) { col_add_indexed_(v_data, ri_v_, dst, v_data[src]); ++n_add_v; };
 
         auto conjugate = [&]() {
-            std::swap(r_data[i], r_data[i + 1]);
-            std::swap(v_data[i], v_data[i + 1]);
-            std::swap(d_data[i], d_data[i + 1]);
-            swap_adjacent_rows_(r_data, static_cast<Int>(i));
-            swap_adjacent_rows_(v_data, static_cast<Int>(i));
-            swap_adjacent_rows_(d_data, static_cast<Int>(i));
+            col_swap_indexed_(r_data, ri_r_, i, i + 1);
+            col_swap_indexed_(v_data, ri_v_, i, i + 1);
+            col_swap_indexed_(d_data, ri_d_, i, i + 1);
+            row_swap_adjacent_indexed_(r_data, ri_r_, static_cast<Int>(i));
+            row_swap_adjacent_indexed_(v_data, ri_v_, static_cast<Int>(i));
+            row_swap_adjacent_indexed_(d_data, ri_d_, static_cast<Int>(i));
         };
+
+        // R columns whose low may change = stars of rows i, i+1 (plus i, i+1).
+        // Snapshot their lows now; recompute _pivots only for these afterward.
+        std::vector<size_t> cand{i, i + 1};
+        for(Int c : ri_r_[i]) cand.push_back(static_cast<size_t>(c));
+        for(Int c : ri_r_[i + 1]) cand.push_back(static_cast<size_t>(c));
+        std::sort(cand.begin(), cand.end());
+        cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
+        std::vector<Int> cand_old_low(cand.size());
+        for(size_t t = 0; t < cand.size(); ++t)
+            cand_old_low[t] = r_data[cand[t]].empty() ? Int(-1) : r_data[cand[t]].back();
 
         if (pos_i and pos_j) {
             // Case (+,+): both positive (births)
@@ -1594,11 +1748,12 @@ namespace oineus {
             conjugate();
         }
 
-        // Lows changed for columns i, i+1 (and any modified columns). A full
-        // recompute is O(n) and dominated by the O(nnz) row swap above;
-        // correctness-first -- can be narrowed to affected columns later.
-        std::fill(_pivots.begin(), _pivots.end(), Int(-1));
-        for(size_t c = 0; c < r_data.size(); ++c)
+        // Incremental pivot update: only the candidate columns' lows can have
+        // changed. Clear the stale entries they owned, then set their new lows.
+        for(size_t t = 0; t < cand.size(); ++t)
+            if (cand_old_low[t] >= 0 and _pivots[cand_old_low[t]] == static_cast<Int>(cand[t]))
+                _pivots[cand_old_low[t]] = -1;
+        for(size_t c : cand)
             if (not r_data[c].empty())
                 _pivots[r_data[c].back()] = static_cast<Int>(c);
 
@@ -1613,8 +1768,10 @@ namespace oineus {
             stats->n_column_additions_r += n_add_r;
             stats->n_column_additions_v += n_add_v;
             stats->n_queries += n_queries;
-            // 3 full row-swaps (R, V, D) + 1 full pivot rebuild
-            stats->n_columns_scanned += 4 * static_cast<long long>(r_data.size());
+            // localized: columns actually visited (stars of rows i, i+1)
+            stats->n_columns_scanned += static_cast<long long>(cand.size()
+                    + ri_v_[i].size() + ri_v_[i + 1].size()
+                    + ri_d_[i].size() + ri_d_[i + 1].size());
             stats->elapsed_transpose += timer.elapsed();
         }
     }
@@ -1730,6 +1887,7 @@ namespace oineus {
             throw std::runtime_error("move_right requires i < j");
         if (j >= n_rows)
             throw std::runtime_error("move_right: index out of range");
+        invalidate_dynamic_();   // not yet localized: drops the row index
 
         Timer t;
         long long nar = 0, nav = 0, nq = 0;
@@ -1779,6 +1937,7 @@ namespace oineus {
             throw std::runtime_error("move_left requires i > j");
         if (i >= n_rows)
             throw std::runtime_error("move_left: index out of range");
+        invalidate_dynamic_();   // not yet localized: drops the row index
 
         Timer t;
         long long nar = 0, nav = 0, nq = 0;
@@ -1969,6 +2128,7 @@ namespace oineus {
         check_manip_preconditions_("update_with_permutation");
         const size_t n = r_data.size();
         validate_permutation_(new_to_old, n, "update_with_permutation");
+        invalidate_dynamic_();   // not yet localized: drops the row index
 
         Timer t_total;
         if (stats) {
@@ -2051,6 +2211,7 @@ namespace oineus {
                                                   DecompositionManipStats* stats)
     {
         check_manip_preconditions_("update_with_edits");
+        invalidate_dynamic_();   // resizes; not yet localized
         const size_t n_old = r_data.size();
         const size_t n_new = new_to_old.size();
         if (new_boundary.size() != n_new)

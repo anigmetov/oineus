@@ -250,6 +250,45 @@ TEST_CASE("transpose_to random within-dimension permutation")
     }
 }
 
+// Rebuild row-incidence indices from the matrices and compare to the ones the
+// decomposition maintains in dynamic mode.
+static bool ri_consistent(const Decomp& d)
+{
+    auto build = [&](const MatrixData& m) {
+        MatrixData ri(d.n_rows);
+        for(size_t c = 0; c < m.size(); ++c)
+            for(Int r : m[c])
+                ri[static_cast<size_t>(r)].push_back(static_cast<Int>(c));
+        return ri;   // already sorted: columns visited in increasing order
+    };
+    return d.ri_r_ == build(d.r_data) and d.ri_v_ == build(d.v_data) and d.ri_d_ == build(d.d_data);
+}
+
+// ---------------------------------------------------------------------------
+// dynamic mode: the row index stays consistent through chained transpositions
+// ---------------------------------------------------------------------------
+TEST_CASE("dynamic row index stays consistent under transpositions")
+{
+    Decomp dc = grid_decomp(5, 314);
+    dc.make_dynamic(2);
+    REQUIRE(dc.is_dynamic());
+    REQUIRE(ri_consistent(dc));
+
+    std::mt19937 gen(7);
+    const MatrixData D0 = dc.d_data;
+    for(int step = 0; step < 40; ++step) {
+        size_t n = dc.r_data.size();
+        size_t i = gen() % (n - 1);
+        // only transpose a valid (same-dimension) adjacent pair
+        if (std::binary_search(dc.d_data[i + 1].begin(), dc.d_data[i + 1].end(), static_cast<Int>(i)))
+            continue;
+        dc.transpose(i);
+        REQUIRE(ri_consistent(dc));
+    }
+    REQUIRE(dc.sanity_check());
+    REQUIRE(pairing(dc) == pairing(reduce_from_scratch(dc.d_data)));
+}
+
 // new_to_old for Move(i,j): cell at i goes to j; cells in between shift by one.
 static std::vector<size_t> move_perm(size_t n, size_t i, size_t j)
 {
