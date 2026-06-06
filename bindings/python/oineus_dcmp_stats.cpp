@@ -6,6 +6,7 @@ void init_oineus_dcmp_stats(nb::module_& m)
 
     using StatsStateTuple = std::tuple<double, double, double, double, double, double, double, // elapsed_*
                                        long long, long long, long long, long long, long long,  // counters
+                                       long long,                                              // n_columns_scanned
                                        size_t, size_t, size_t, size_t>;                        // nnz_*
 
     nb::class_<Stats>(m, "DecompositionManipStats",
@@ -25,6 +26,7 @@ void init_oineus_dcmp_stats(nb::module_& m)
             .def_rw("n_column_additions_r", &Stats::n_column_additions_r)
             .def_rw("n_column_additions_v", &Stats::n_column_additions_v)
             .def_rw("n_queries", &Stats::n_queries)
+            .def_rw("n_columns_scanned", &Stats::n_columns_scanned)
             .def_rw("nnz_r_before", &Stats::nnz_r_before)
             .def_rw("nnz_r_after", &Stats::nnz_r_after)
             .def_rw("nnz_v_before", &Stats::nnz_v_before)
@@ -37,7 +39,7 @@ void init_oineus_dcmp_stats(nb::module_& m)
                 return std::make_tuple(s.elapsed_total, s.elapsed_schedule_build, s.elapsed_transpose,
                         s.elapsed_move, s.elapsed_permute, s.elapsed_rereduce, s.elapsed_resize,
                         s.n_transpositions, s.n_moves, s.n_column_additions_r, s.n_column_additions_v,
-                        s.n_queries, s.nnz_r_before, s.nnz_r_after, s.nnz_v_before, s.nnz_v_after);
+                        s.n_queries, s.n_columns_scanned, s.nnz_r_before, s.nnz_r_after, s.nnz_v_before, s.nnz_v_after);
             })
             .def("__setstate__", [](Stats& s, const StatsStateTuple& t) {
                 new (&s) Stats();
@@ -53,9 +55,10 @@ void init_oineus_dcmp_stats(nb::module_& m)
                 s.n_column_additions_r   = std::get<9>(t);
                 s.n_column_additions_v   = std::get<10>(t);
                 s.n_queries              = std::get<11>(t);
-                s.nnz_r_before           = std::get<12>(t);
-                s.nnz_r_after            = std::get<13>(t);
-                s.nnz_v_before           = std::get<14>(t);
-                s.nnz_v_after            = std::get<15>(t);
+                s.n_columns_scanned      = std::get<12>(t);
+                s.nnz_r_before           = std::get<13>(t);
+                s.nnz_r_after            = std::get<14>(t);
+                s.nnz_v_before           = std::get<15>(t);
+                s.nnz_v_after            = std::get<16>(t);
             });
 }

@@ -153,7 +153,8 @@ def run_reorder_family(label, fils, max_dim, rows):
             rows.append({
                 "input": label, "step": step, "method": m, "n_cells": fil_new.size(),
                 "col_ops": col_ops(stats), "n_transp": stats.n_transpositions,
-                "n_moves": stats.n_moves, "nnz_after": stats.nnz_r_after + stats.nnz_v_after,
+                "n_moves": stats.n_moves, "n_scan": stats.n_columns_scanned,
+                "nnz_after": stats.nnz_r_after + stats.nnz_v_after,
                 "t_method": t_wall, "t_full": t_full, "ok": ok,
             })
             if not ok:
@@ -175,7 +176,7 @@ def run_edit_family(label, fils, max_dim, rows):
 
         stats = oin.DecompositionManipStats()
         t0 = time.perf_counter()
-        running.update_with_edits(nto, new_b, stats)
+        running.update_with_edits(nto, new_b, list(fil_new.dim_first), list(fil_new.dim_last), stats)
         t_wall = time.perf_counter() - t0
         ok = keys_equal(diagram_key(running, fil_new, max_dim), key_full)
         n_ins = sum(1 for x in nto if x < 0)
@@ -183,6 +184,7 @@ def run_edit_family(label, fils, max_dim, rows):
         rows.append({
             "input": label, "step": step, "method": "warm_edits", "n_cells": fil_new.size(),
             "col_ops": col_ops(stats), "n_transp": stats.n_transpositions, "n_moves": stats.n_moves,
+            "n_scan": stats.n_columns_scanned,
             "nnz_after": stats.nnz_r_after + stats.nnz_v_after, "t_method": t_wall,
             "t_full": t_full, "ok": ok, "n_ins": n_ins, "n_del": n_del,
         })
@@ -235,6 +237,7 @@ def run_optimization_step(rows, seed=0):
         rows.append({
             "input": "optimization", "step": 1, "method": m, "n_cells": fil.size(),
             "col_ops": col_ops(stats), "n_transp": stats.n_transpositions, "n_moves": stats.n_moves,
+            "n_scan": stats.n_columns_scanned,
             "nnz_after": stats.nnz_r_after + stats.nnz_v_after, "t_method": t_wall,
             "t_full": 0.0, "ok": ok,
         })
@@ -255,7 +258,7 @@ def pairing_of_boundary(boundary):
 # --------------------------------------------------------------------------
 def write_results(rows, path_csv, path_md):
     cols = ["input", "step", "method", "n_cells", "col_ops", "n_transp", "n_moves",
-            "nnz_after", "t_method", "t_full", "ok"]
+            "n_scan", "nnz_after", "t_method", "t_full", "ok"]
     with open(path_csv, "w") as f:
         f.write(",".join(cols) + "\n")
         for r in rows:
@@ -272,13 +275,15 @@ def write_results(rows, path_csv, path_md):
                 "(`transpose_to`), **moves** (`apply_move_schedule`), **warm_perm** "
                 "(Luo-Nelson Alg 2 `update_with_permutation`), **warm_edits** "
                 "(Luo-Nelson Alg 3 `update_with_edits`).\n\n")
-        f.write("Headline metric is total column operations (paper metric); "
-                "wall-clock in seconds.\n\n")
+        f.write("Headline column-operation count plus **col_scans** = columns "
+                "visited in whole-matrix passes (row relabels, pivot rebuilds, "
+                "reductions, materializations) -- the global O(nnz)/O(n) work the "
+                "column-op count hides. Wall-clock in seconds.\n\n")
         for inp in inputs:
             f.write(f"## {inp}\n\n")
-            f.write("| method | total col_ops | total transp | total moves | "
-                    "sum t_method (s) | sum t_full (s) | all ok |\n")
-            f.write("|---|---|---|---|---|---|---|\n")
+            f.write("| method | total col_ops | total col_scans | total transp | "
+                    "total moves | sum t_method (s) | sum t_full (s) | all ok |\n")
+            f.write("|---|---|---|---|---|---|---|---|\n")
             methods = []
             for r in rows:
                 if r["input"] == inp and r["method"] not in methods:
@@ -286,6 +291,7 @@ def write_results(rows, path_csv, path_md):
             for m in methods:
                 sub = [r for r in rows if r["input"] == inp and r["method"] == m]
                 f.write(f"| {m} | {sum(r['col_ops'] for r in sub)} | "
+                        f"{sum(r['n_scan'] for r in sub)} | "
                         f"{sum(r['n_transp'] for r in sub)} | {sum(r['n_moves'] for r in sub)} | "
                         f"{sum(r['t_method'] for r in sub):.4f} | "
                         f"{sum(r['t_full'] for r in sub):.4f} | "

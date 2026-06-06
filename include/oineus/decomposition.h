@@ -708,8 +708,13 @@ namespace oineus {
         // face), which any valid filtration edit satisfies. Reuses the survivor
         // factorization: reorders survivors to the front via Alg 2, truncates
         // the deleted tail, then re-reduces only R over the new (warm) basis.
+        // new_dim_first/new_dim_last carry the dimension-block layout of the new
+        // filtration so the decomposition stays consistent with Oineus's
+        // dimension-blocked model.
         void update_with_edits(const std::vector<long long>& new_to_old,
                                const MatrixData& new_boundary,
+                               const std::vector<Int>& new_dim_first,
+                               const std::vector<Int>& new_dim_last,
                                DecompositionManipStats* stats = nullptr);
 
         // --- manipulation helpers ---
@@ -728,6 +733,13 @@ namespace oineus {
                                         long long& n_add_red, long long& n_add_mir);
 
         static std::vector<size_t> invert_perm(const std::vector<size_t>& p);
+
+        // Throw if p is not a permutation of [0, n): wrong size, out of range,
+        // or duplicate entries.
+        static void validate_permutation_(const std::vector<size_t>& p, size_t n, const char* who);
+
+        // Boolean mask of one longest strictly-increasing subsequence of `a`.
+        static std::vector<char> lis_mask(const std::vector<size_t>& a);
 
         // Swap rows i and i+1 in a column-stored matrix. Because i and i+1 are
         // adjacent integers, relabeling i<->i+1 inside a sorted column keeps it
@@ -1388,10 +1400,60 @@ namespace oineus {
     template<class Int>
     std::vector<size_t> VRUDecomposition<Int>::invert_perm(const std::vector<size_t>& p)
     {
-        std::vector<size_t> inv(p.size());
-        for(size_t i = 0; i < p.size(); ++i)
+        std::vector<size_t> inv(p.size(), p.size());
+        for(size_t i = 0; i < p.size(); ++i) {
+            if (p[i] >= p.size() or inv[p[i]] != p.size())
+                throw std::runtime_error("invert_perm: argument is not a permutation");
             inv[p[i]] = i;
+        }
         return inv;
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::validate_permutation_(const std::vector<size_t>& p, size_t n, const char* who)
+    {
+        if (p.size() != n)
+            throw std::runtime_error(std::string(who) + ": permutation size mismatch");
+        std::vector<char> seen(n, 0);
+        for(size_t e : p) {
+            if (e >= n)
+                throw std::runtime_error(std::string(who) + ": permutation entry out of range");
+            if (seen[e])
+                throw std::runtime_error(std::string(who) + ": permutation has duplicate entries");
+            seen[e] = 1;
+        }
+    }
+
+    template<class Int>
+    std::vector<char> VRUDecomposition<Int>::lis_mask(const std::vector<size_t>& a)
+    {
+        const size_t n = a.size();
+        std::vector<char> in_lis(n, 0);
+        if (n == 0)
+            return in_lis;
+        std::vector<size_t> tails;          // tails[k] = index into a of the smallest tail of an increasing subseq of length k+1
+        std::vector<size_t> prev(n, n);     // predecessor index in the reconstructed subsequence
+        for(size_t idx = 0; idx < n; ++idx) {
+            // strictly increasing: first tail whose value is >= a[idx]
+            size_t lo = 0, hi = tails.size();
+            while (lo < hi) {
+                size_t mid = (lo + hi) / 2;
+                if (a[tails[mid]] < a[idx]) lo = mid + 1;
+                else hi = mid;
+            }
+            if (lo > 0)
+                prev[idx] = tails[lo - 1];
+            if (lo == tails.size())
+                tails.push_back(idx);
+            else
+                tails[lo] = idx;
+        }
+        size_t k = tails.back();
+        while (k != n) {
+            in_lis[k] = 1;
+            k = prev[k];
+        }
+        return in_lis;
     }
 
     template<class Int>
@@ -1551,6 +1613,8 @@ namespace oineus {
             stats->n_column_additions_r += n_add_r;
             stats->n_column_additions_v += n_add_v;
             stats->n_queries += n_queries;
+            // 3 full row-swaps (R, V, D) + 1 full pivot rebuild
+            stats->n_columns_scanned += 4 * static_cast<long long>(r_data.size());
             stats->elapsed_transpose += timer.elapsed();
         }
     }
@@ -1560,10 +1624,13 @@ namespace oineus {
     {
         check_manip_preconditions_("transpose_to");
         const size_t n = r_data.size();
-        if (new_to_old.size() != n)
-            throw std::runtime_error("transpose_to: permutation size mismatch");
+        validate_permutation_(new_to_old, n, "transpose_to");
 
         Timer t_total;
+        if (stats) {
+            stats->nnz_r_before = matrix_nnz_(r_data);
+            stats->nnz_v_before = matrix_nnz_(v_data);
+        }
         // key[p] = target position of the cell currently at position p.
         // Initially position p holds old cell p, whose target is old_to_new[p].
         std::vector<size_t> key = invert_perm(new_to_old);
@@ -1586,8 +1653,11 @@ namespace oineus {
             }
         }
 
-        if (stats)
+        if (stats) {
+            stats->nnz_r_after = matrix_nnz_(r_data);
+            stats->nnz_v_after = matrix_nnz_(v_data);
             stats->elapsed_total += t_total.elapsed();
+        }
         return count;
     }
 
@@ -1692,6 +1762,8 @@ namespace oineus {
             stats->n_column_additions_r += nar;
             stats->n_column_additions_v += nav;
             stats->n_queries += nq;
+            // 3 full row-relabels (R, V, D) in the conjugation + 1 full reduce-R pass
+            stats->n_columns_scanned += 4 * static_cast<long long>(r_data.size());
             stats->elapsed_move += t.elapsed();
         }
     }
@@ -1745,6 +1817,8 @@ namespace oineus {
             stats->n_column_additions_r += nar;
             stats->n_column_additions_v += nav;
             stats->n_queries += nq;
+            // 3 full row-relabels (R, V, D) in the conjugation + 1 full reduce-R pass
+            stats->n_columns_scanned += 4 * static_cast<long long>(r_data.size());
             stats->elapsed_move += t.elapsed();
         }
     }
@@ -1763,44 +1837,86 @@ namespace oineus {
     {
         check_manip_preconditions_("apply_move_schedule");
         const size_t n = r_data.size();
-        if (new_to_old.size() != n)
-            throw std::runtime_error("apply_move_schedule: permutation size mismatch");
+        validate_permutation_(new_to_old, n, "apply_move_schedule");
 
         Timer t_total;
         Timer t_sched;
+        if (stats) {
+            stats->nnz_r_before = matrix_nnz_(r_data);
+            stats->nnz_v_before = matrix_nnz_(v_data);
+        }
 
-        // The minimal number of moves to realize the permutation is
-        // m - |LCS(old, new)| = (block-wise) sum of (block_size - |LIS|); we
-        // record it for reference. The execution below uses selection sort
-        // (left-moves), which is provably correct and never exceeds it by
-        // much; the genuine minimal-schedule execution (Piekenbrock-Perea
-        // Algorithm 5) is a refinement.
+        // Minimal move schedule (Piekenbrock-Perea Alg 4/5). Per dimension,
+        // the cells of a longest increasing subsequence of the target-position
+        // sequence already sit in correct relative order and never move; every
+        // other cell is moved exactly once, so #moves = n - sum|LIS| = the
+        // optimal m - |LCS|. The remaining cells are inserted in ascending
+        // target order, each placed immediately after the cell that should
+        // precede it (target t-1), which keeps the placed cells' relative order
+        // correct -- their absolute positions settle as the rotations cascade.
+        auto old_to_new = invert_perm(new_to_old);
+        std::vector<char> fixed(n, 0);
+        for(size_t d = 0; d < dim_first.size(); ++d) {
+            size_t lo = static_cast<size_t>(dim_first[d]);
+            size_t hi = static_cast<size_t>(dim_last[d]);
+            if (hi < lo)
+                continue;
+            std::vector<size_t> seq;            // target position of each cell, in current (old) order
+            seq.reserve(hi - lo + 1);
+            for(size_t p = lo; p <= hi; ++p)
+                seq.push_back(old_to_new[p]);
+            auto mask = lis_mask(seq);
+            for(size_t t = 0; t < seq.size(); ++t)
+                if (mask[t])
+                    fixed[lo + t] = 1;
+        }
+        // non-fixed cells in ascending target order
+        std::vector<size_t> order;
+        for(size_t o = 0; o < n; ++o)
+            if (not fixed[o])
+                order.push_back(o);
+        std::sort(order.begin(), order.end(),
+                  [&](size_t a, size_t b) { return old_to_new[a] < old_to_new[b]; });
         if (stats)
             stats->elapsed_schedule_build += t_sched.elapsed();
 
-        // Selection sort via left-moves: for each target position t (ascending)
-        // bring the cell that belongs there, new_to_old[t], up to t. Positions
-        // < t are already finalized so the source is always >= t (a left move),
-        // which never disturbs the finalized prefix.
         std::vector<size_t> pos(n), cur(n);
         std::iota(pos.begin(), pos.end(), size_t(0)); // pos[p] = old cell at position p
         std::iota(cur.begin(), cur.end(), size_t(0)); // cur[o] = position of old cell o
 
         size_t n_moves_done = 0;
-        for(size_t t = 0; t < n; ++t) {
-            size_t o = new_to_old[t];   // cell that belongs at position t
-            size_t c = cur[o];
-            if (c == t)
-                continue;               // already finalized at t
-            move(c, t, stats);          // c > t: left move
+        for(size_t o : order) {
+            size_t t_o = old_to_new[o];
+            size_t o_pos = cur[o];
+            // destination = right after the predecessor (target t_o - 1) in the
+            // current arrangement; t_o == 0 means the very front.
+            size_t dest;
+            if (t_o == 0) {
+                dest = 0;
+            } else {
+                size_t pred_pos = cur[new_to_old[t_o - 1]];
+                dest = (o_pos > pred_pos) ? pred_pos + 1 : pred_pos;
+            }
+            if (o_pos == dest)
+                continue;
+            move(o_pos, dest, stats);
             ++n_moves_done;
-            size_t moved = pos[c];
-            for(size_t p = c; p > t; --p) { pos[p] = pos[p - 1]; cur[pos[p]] = p; }
-            pos[t] = moved; cur[moved] = t;
+            if (o_pos < dest) {       // move_right: (o_pos, dest] shift left by one
+                size_t moved = pos[o_pos];
+                for(size_t p = o_pos; p < dest; ++p) { pos[p] = pos[p + 1]; cur[pos[p]] = p; }
+                pos[dest] = moved; cur[moved] = dest;
+            } else {                  // move_left: [dest, o_pos) shift right by one
+                size_t moved = pos[o_pos];
+                for(size_t p = o_pos; p > dest; --p) { pos[p] = pos[p - 1]; cur[pos[p]] = p; }
+                pos[dest] = moved; cur[moved] = dest;
+            }
         }
 
-        if (stats)
+        if (stats) {
+            stats->nnz_r_after = matrix_nnz_(r_data);
+            stats->nnz_v_after = matrix_nnz_(v_data);
             stats->elapsed_total += t_total.elapsed();
+        }
         return n_moves_done;
     }
 
@@ -1852,8 +1968,7 @@ namespace oineus {
     {
         check_manip_preconditions_("update_with_permutation");
         const size_t n = r_data.size();
-        if (new_to_old.size() != n)
-            throw std::runtime_error("update_with_permutation: permutation size mismatch");
+        validate_permutation_(new_to_old, n, "update_with_permutation");
 
         Timer t_total;
         if (stats) {
@@ -1919,6 +2034,9 @@ namespace oineus {
         if (stats) {
             stats->n_column_additions_r += ar;
             stats->n_column_additions_v += av;
+            // 3 row-relabels (R, V, D) + 2 reduction passes + 3 column
+            // materializations (nR, nV, nD) -- all whole-matrix
+            stats->n_columns_scanned += 8 * static_cast<long long>(n);
             stats->nnz_r_after = matrix_nnz_(r_data);
             stats->nnz_v_after = matrix_nnz_(v_data);
             stats->elapsed_total += t_total.elapsed();
@@ -1928,6 +2046,8 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::update_with_edits(const std::vector<long long>& new_to_old,
                                                   const MatrixData& new_boundary,
+                                                  const std::vector<Int>& new_dim_first,
+                                                  const std::vector<Int>& new_dim_last,
                                                   DecompositionManipStats* stats)
     {
         check_manip_preconditions_("update_with_edits");
@@ -2014,10 +2134,16 @@ namespace oineus {
         v_data = std::move(nV);
         d_data = std::move(nD);
         n_rows = n_new;
-        dim_first = std::vector<Int>{0};
-        dim_last = std::vector<Int>{static_cast<Int>(n_new == 0 ? 0 : n_new - 1)};
-        _dim_first = dim_first;
-        _dim_last = dim_last;
+        // dimension layout of the new filtration (homology: _dim == dim)
+        if (new_dim_first.size() != new_dim_last.size())
+            throw std::runtime_error("update_with_edits: dim arrays size mismatch");
+        dim_first = new_dim_first;
+        dim_last = new_dim_last;
+        _dim_first = new_dim_first;
+        _dim_last = new_dim_last;
+        is_elz_in_dim_.clear();
+        for(dim_type d = 0; d < dim_first.size(); ++d)
+            is_elz_in_dim_[d] = false;
         if (stats)
             stats->elapsed_resize += t_resize.elapsed();
 
@@ -2033,12 +2159,12 @@ namespace oineus {
         is_reduced = true;
         if (not u_data_t.empty())
             u_data_t.clear();
-        is_elz_in_dim_.clear();
-        is_elz_in_dim_[0] = false;
 
         if (stats) {
             stats->n_column_additions_r += inner.n_column_additions_r + ar;
             stats->n_column_additions_v += inner.n_column_additions_v + av;
+            // inner Alg-2 reorder + rebuild materialization (nR, nV, nD) + reduce-R
+            stats->n_columns_scanned += inner.n_columns_scanned + 4 * static_cast<long long>(n_new);
             stats->nnz_r_after = matrix_nnz_(r_data);
             stats->nnz_v_after = matrix_nnz_(v_data);
             stats->elapsed_total += t_total.elapsed();

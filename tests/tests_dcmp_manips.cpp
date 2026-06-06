@@ -38,6 +38,38 @@ static std::vector<size_t> invert(const std::vector<size_t>& p)
     return inv;
 }
 
+// O(n^2) longest strictly-increasing subsequence length (test oracle).
+static size_t lis_len(const std::vector<size_t>& a)
+{
+    if (a.empty())
+        return 0;
+    std::vector<size_t> dp(a.size(), 1);
+    size_t best = 1;
+    for(size_t i = 0; i < a.size(); ++i) {
+        for(size_t j = 0; j < i; ++j)
+            if (a[j] < a[i])
+                dp[i] = std::max(dp[i], dp[j] + 1);
+        best = std::max(best, dp[i]);
+    }
+    return best;
+}
+
+// Optimal move-schedule size: n - sum of per-dimension LIS.
+static size_t expected_min_moves(const std::vector<size_t>& new_to_old,
+                                 const std::vector<Int>& dim_first,
+                                 const std::vector<Int>& dim_last)
+{
+    auto old_to_new = invert(new_to_old);
+    size_t total_lis = 0;
+    for(size_t d = 0; d < dim_first.size(); ++d) {
+        std::vector<size_t> seq;
+        for(size_t p = static_cast<size_t>(dim_first[d]); p <= static_cast<size_t>(dim_last[d]); ++p)
+            seq.push_back(old_to_new[p]);
+        total_lis += lis_len(seq);
+    }
+    return new_to_old.size() - total_lis;
+}
+
 // new column k = (old column new_to_old[k]) with row entries relabeled by
 // old_to_new, kept sorted.
 static MatrixData permute_boundary(const MatrixData& d, const std::vector<size_t>& new_to_old)
@@ -316,9 +348,28 @@ TEST_CASE("apply_move_schedule random within-dimension permutation")
         REQUIRE(dc.d_data == permute_boundary(D0, new_to_old));
         REQUIRE(pairing(dc) == pairing(reduce_from_scratch(dc.d_data)));
         REQUIRE(static_cast<long long>(n_moves) == stats.n_moves);
-        // schedule size never exceeds the number of displaced cells
+        // schedule must be of optimal size n - sum|LIS| (Piekenbrock Alg 4/5)
+        REQUIRE(n_moves == expected_min_moves(new_to_old, base.dim_first, base.dim_last));
         REQUIRE(n_moves <= n_nonidentity);
     }
+}
+
+// ---------------------------------------------------------------------------
+// apply_move_schedule : minimality on a known rotation (single dim block)
+// ---------------------------------------------------------------------------
+TEST_CASE("apply_move_schedule minimal on a rotation")
+{
+    // four dim-0 cells (empty boundary) -> one dimension block of size 4
+    MatrixData D(4);  // all empty columns
+    Decomp dc = reduce_from_scratch(D);
+
+    // new_to_old = [1,2,3,0]: cell 0 rotates to the back -- optimal is 1 move
+    std::vector<size_t> new_to_old{1, 2, 3, 0};
+    oineus::DecompositionManipStats st;
+    size_t n_moves = dc.apply_move_schedule(new_to_old, &st);
+
+    REQUIRE(n_moves == 1);
+    REQUIRE(dc.d_data == permute_boundary(D, new_to_old));
 }
 
 // ---------------------------------------------------------------------------
@@ -393,6 +444,30 @@ static MatrixData build_survivor_boundary(const MatrixData& D0, const std::vecto
     return out;
 }
 
+static int cell_dim(size_t o, const std::vector<Int>& df, const std::vector<Int>& dl)
+{
+    for(size_t d = 0; d < df.size(); ++d)
+        if (static_cast<Int>(o) >= df[d] and static_cast<Int>(o) <= dl[d])
+            return static_cast<int>(d);
+    return -1;
+}
+
+// derive dim_first/dim_last from a dimension-sorted per-cell dim vector
+static void derive_dims(const std::vector<int>& dims, std::vector<Int>& ndf, std::vector<Int>& ndl)
+{
+    int maxd = 0;
+    for(int d : dims)
+        maxd = std::max(maxd, d);
+    ndf.assign(maxd + 1, 0);
+    ndl.assign(maxd + 1, -1);
+    std::vector<char> seen(maxd + 1, 0);
+    for(size_t k = 0; k < dims.size(); ++k) {
+        int d = dims[k];
+        if (not seen[d]) { ndf[d] = static_cast<Int>(k); seen[d] = 1; }
+        ndl[d] = static_cast<Int>(k);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Luo-Nelson Alg 3 : deletion of top cells + reorder of survivors
 // ---------------------------------------------------------------------------
@@ -432,14 +507,21 @@ TEST_CASE("update_with_edits delete top cells and reorder")
         }
 
         MatrixData newB = build_survivor_boundary(D0, new_to_old);
+        std::vector<int> dims;
+        for(long long o : new_to_old)
+            dims.push_back(cell_dim(static_cast<size_t>(o), base.dim_first, base.dim_last));
+        std::vector<Int> ndf, ndl;
+        derive_dims(dims, ndf, ndl);
 
         Decomp dc = reduce_from_scratch(D0);
         oineus::DecompositionManipStats st;
-        dc.update_with_edits(new_to_old, newB, &st);
+        dc.update_with_edits(new_to_old, newB, ndf, ndl, &st);
 
         REQUIRE(dc.r_data.size() == new_to_old.size());
         REQUIRE(dc.sanity_check());
         REQUIRE(dc.d_data == newB);
+        REQUIRE(dc.dim_first == ndf);
+        REQUIRE(dc.dim_last == ndl);
         REQUIRE(pairing(dc) == pairing(reduce_from_scratch(newB)));
     }
 }
@@ -452,24 +534,37 @@ TEST_CASE("update_with_edits insert cells at end")
     Decomp base = grid_decomp(4, 55);
     const MatrixData D0 = base.d_data;
     const size_t n_old = D0.size();
+    const size_t top_dim = base.dim_first.size() - 1;
+    const Int e0 = base.dim_first[1];   // first edge index
 
-    // append a couple of new edges on existing vertices (valid: faces precede)
+    // append two new top-dimensional cells (boundary = three existing edges),
+    // which keeps the order dimension-blocked
     std::vector<long long> new_to_old(n_old);
     std::iota(new_to_old.begin(), new_to_old.end(), 0);
     new_to_old.push_back(-1);
     new_to_old.push_back(-1);
 
     MatrixData newB = D0;
-    newB.push_back(std::vector<Int>{0, 1});   // new edge {v0, v1}
-    newB.push_back(std::vector<Int>{1, 2});   // new edge {v1, v2}
+    newB.push_back(std::vector<Int>{e0, e0 + 1, e0 + 2});
+    newB.push_back(std::vector<Int>{e0 + 1, e0 + 2, e0 + 3});
+
+    std::vector<int> dims;
+    for(size_t o = 0; o < n_old; ++o)
+        dims.push_back(cell_dim(o, base.dim_first, base.dim_last));
+    dims.push_back(static_cast<int>(top_dim));
+    dims.push_back(static_cast<int>(top_dim));
+    std::vector<Int> ndf, ndl;
+    derive_dims(dims, ndf, ndl);
 
     Decomp dc = reduce_from_scratch(D0);
     oineus::DecompositionManipStats st;
-    dc.update_with_edits(new_to_old, newB, &st);
+    dc.update_with_edits(new_to_old, newB, ndf, ndl, &st);
 
     REQUIRE(dc.r_data.size() == n_old + 2);
     REQUIRE(dc.sanity_check());
     REQUIRE(dc.d_data == newB);
+    REQUIRE(dc.dim_first == ndf);
+    REQUIRE(dc.dim_last == ndl);
     REQUIRE(pairing(dc) == pairing(reduce_from_scratch(newB)));
 }
 
@@ -483,23 +578,32 @@ TEST_CASE("update_with_edits combined delete reorder insert")
     const size_t n_old = D0.size();
     const size_t top_dim = base.dim_first.size() - 1;
     const size_t top_hi = static_cast<size_t>(base.dim_last[top_dim]);
+    const Int e0 = base.dim_first[1];
 
-    // delete the last top cell; reorder survivors (identity here); append edge
+    // delete the last top cell; append a new top cell (boundary = three edges)
     std::vector<long long> new_to_old;
     for(size_t o = 0; o < n_old; ++o)
         if (o != top_hi)
             new_to_old.push_back(static_cast<long long>(o));
     MatrixData newB = build_survivor_boundary(D0, new_to_old);
-    // append a new edge on existing vertices
     new_to_old.push_back(-1);
-    newB.push_back(std::vector<Int>{0, 2});
+    newB.push_back(std::vector<Int>{e0, e0 + 2, e0 + 4});
+
+    std::vector<int> dims;
+    for(long long o : new_to_old)
+        dims.push_back(o >= 0 ? cell_dim(static_cast<size_t>(o), base.dim_first, base.dim_last)
+                              : static_cast<int>(top_dim));
+    std::vector<Int> ndf, ndl;
+    derive_dims(dims, ndf, ndl);
 
     Decomp dc = reduce_from_scratch(D0);
     oineus::DecompositionManipStats st;
-    dc.update_with_edits(new_to_old, newB, &st);
+    dc.update_with_edits(new_to_old, newB, ndf, ndl, &st);
 
     REQUIRE(dc.r_data.size() == new_to_old.size());
     REQUIRE(dc.sanity_check());
     REQUIRE(dc.d_data == newB);
+    REQUIRE(dc.dim_first == ndf);
+    REQUIRE(dc.dim_last == ndl);
     REQUIRE(pairing(dc) == pairing(reduce_from_scratch(newB)));
 }

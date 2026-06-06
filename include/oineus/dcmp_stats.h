@@ -34,6 +34,11 @@ struct DecompositionManipStats {
     long long n_column_additions_r {0};    // add_to_column applied to r_data
     long long n_column_additions_v {0};    // add_to_column applied to v_data
     long long n_queries {0};               // pivot / membership lookups
+    // Columns visited in whole-matrix passes (row relabels, pivot rebuilds,
+    // reductions, materializations). This is the O(nnz)/O(n) global work that
+    // the column-addition count hides -- the cost that makes a local update
+    // degrade toward a full pass.
+    long long n_columns_scanned {0};
 
     // fill-in metrics (sum of column sizes)
     std::size_t nnz_r_before {0}, nnz_r_after {0};
@@ -56,6 +61,7 @@ inline std::ostream& operator<<(std::ostream& out, const DecompositionManipStats
     out << ", n_transpositions = " << s.n_transpositions;
     out << ", n_moves = " << s.n_moves;
     out << ", n_queries = " << s.n_queries;
+    out << ", n_columns_scanned = " << s.n_columns_scanned;
     out << ", elapsed_total = " << s.elapsed_total << "s";
     out << " (schedule = " << s.elapsed_schedule_build;
     out << ", transpose = " << s.elapsed_transpose;

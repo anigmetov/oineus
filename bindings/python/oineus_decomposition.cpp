@@ -337,7 +337,9 @@ void init_oineus_common_decomposition(nb::module_& m)
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Luo-Nelson Alg 2: warm-start update under a pure reorder.")
             .def("update_with_edits", &Decomposition::update_with_edits,
-                    nb::arg("new_to_old"), nb::arg("new_boundary"), nb::arg("stats").none() = nullptr,
+                    nb::arg("new_to_old"), nb::arg("new_boundary"),
+                    nb::arg("new_dim_first"), nb::arg("new_dim_last"),
+                    nb::arg("stats").none() = nullptr,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Luo-Nelson Alg 3: warm-start update with cell insertion/deletion + reorder.")
             .def("is_reduced_consistent", &Decomposition::is_reduced_consistent,

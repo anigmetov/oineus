@@ -76,19 +76,31 @@ def test_update_with_edits_delete_and_insert():
     base = grid_decomposition(seed=5)
     D0 = [list(col) for col in base.d_data]
     n_old = len(D0)
+    df, dl = list(base.dim_first), list(base.dim_last)
+    top_dim = len(df) - 1
+    e0 = df[1]  # first edge index
 
-    # delete the last (top-dimensional, coface-free) cell, append a new edge
+    def cell_dim(o):
+        return next(d for d in range(len(df)) if df[d] <= o <= dl[d])
+
+    # delete the last (top-dimensional) cell, append a new top cell (3 edges):
+    # keeps the order dimension-blocked
     new_to_old = list(range(n_old - 1)) + [-1]
     new_boundary = [list(col) for col in D0[:n_old - 1]]
-    new_boundary.append([0, 1])  # new edge on existing vertices 0,1
+    new_boundary.append([e0, e0 + 1, e0 + 2])
+
+    dims = [cell_dim(o) for o in range(n_old - 1)] + [top_dim]
+    ndf = [dims.index(d) for d in range(top_dim + 1)]
+    ndl = [max(k for k, dd in enumerate(dims) if dd == d) for d in range(top_dim + 1)]
 
     dcmp = grid_decomposition(seed=5)
     stats = oin.DecompositionManipStats()
-    dcmp.update_with_edits(new_to_old, new_boundary, stats)
+    dcmp.update_with_edits(new_to_old, new_boundary, ndf, ndl, stats)
 
     assert len(dcmp.r_data) == n_old
     assert dcmp.sanity_check()
     assert [list(c) for c in dcmp.d_data] == new_boundary
+    assert list(dcmp.dim_first) == ndf and list(dcmp.dim_last) == ndl
     assert pairing(dcmp.r_data) == from_scratch_pairing(dcmp.d_data)
 
 
