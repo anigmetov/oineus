@@ -1895,26 +1895,34 @@ namespace oineus {
         // precede it (target t-1), which keeps the placed cells' relative order
         // correct -- their absolute positions settle as the rotations cascade.
         auto old_to_new = invert_perm(new_to_old);
-        std::vector<char> fixed(n, 0);
+        // Schedule on the changed support: per dimension, trim the fixed
+        // (old_to_new[p] == p) prefix/suffix and run the LIS only over the
+        // window that actually moved. Cells outside the window are fixed and
+        // cost nothing, so the O(n log n) LIS becomes O(window log window) --
+        // the rest of the call is then dominated by the moves themselves.
+        std::vector<size_t> order;             // movable cells, collected from the windows
         for(size_t d = 0; d < dim_first.size(); ++d) {
-            size_t lo = static_cast<size_t>(dim_first[d]);
-            size_t hi = static_cast<size_t>(dim_last[d]);
-            if (hi < lo)
+            size_t blo = static_cast<size_t>(dim_first[d]);
+            size_t bhi = static_cast<size_t>(dim_last[d]);
+            if (bhi < blo)
                 continue;
-            std::vector<size_t> seq;            // target position of each cell, in current (old) order
-            seq.reserve(hi - lo + 1);
-            for(size_t p = lo; p <= hi; ++p)
+            size_t wlo = blo;
+            while (wlo <= bhi and old_to_new[wlo] == wlo)
+                ++wlo;
+            if (wlo > bhi)
+                continue;                       // whole block already in place
+            size_t whi = bhi;
+            while (old_to_new[whi] == whi)
+                --whi;                          // stops at >= wlo (wlo is movable)
+            std::vector<size_t> seq;            // target position of each cell in the window
+            seq.reserve(whi - wlo + 1);
+            for(size_t p = wlo; p <= whi; ++p)
                 seq.push_back(old_to_new[p]);
             auto mask = lis_mask(seq);
             for(size_t t = 0; t < seq.size(); ++t)
-                if (mask[t])
-                    fixed[lo + t] = 1;
+                if (not mask[t])
+                    order.push_back(wlo + t);   // non-LIS window cells move
         }
-        // non-fixed cells in ascending target order
-        std::vector<size_t> order;
-        for(size_t o = 0; o < n; ++o)
-            if (not fixed[o])
-                order.push_back(o);
         std::sort(order.begin(), order.end(),
                   [&](size_t a, size_t b) { return old_to_new[a] < old_to_new[b]; });
         if (stats)
