@@ -289,6 +289,10 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def(nb::init<const CubeFiltration_3D&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
             .def(nb::init<const typename Decomposition::MatrixData&, size_t, bool, bool>(),
                     nb::arg("d"), nb::arg("n_rows"), nb::arg("dualize")=false, nb::arg("skip_check")=false)
+            // Fast deep copy at C++ speed (the copy constructor), unlike a
+            // pickle-backed copy.deepcopy that round-trips through Python lists.
+            .def("clone", [](const Decomposition& self) { return Decomposition(self); },
+                    nb::call_guard<nb::gil_scoped_release>())
             .def_rw("r_data", &Decomposition::r_data)
             .def_rw("v_data", &Decomposition::v_data)
             .def_rw("u_data_t", &Decomposition::u_data_t)

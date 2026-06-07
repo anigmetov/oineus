@@ -134,11 +134,55 @@ def test_stats_pickle_and_counters():
     assert stats.n_column_additions() == 0
 
 
-def test_dualize_raises():
-    # manipulation methods are homology-only
-    dcmp = grid_decomposition(seed=9)
-    dcmp_coh = oin.Decomposition(oin.freudenthal_filtration(
-        np.random.default_rng(9).random((6, 6)), max_dim=2), True)
+def _coh_dgm_keys(dcmp, fil, max_dim=2):
+    out = []
+    for d in range(max_dim + 1):
+        a = dcmp.diagram(fil, include_inf_points=True).in_dimension(d)
+        a = a[np.isfinite(a).all(axis=1)] if len(a) else a
+        out.append(np.round(np.sort(a, axis=0), 6) if len(a) else np.zeros((0, 2)))
+    return out
+
+
+def _keys_equal(a, b):
+    return len(a) == len(b) and all(x.shape == y.shape and np.allclose(x, y) for x, y in zip(a, b))
+
+
+@pytest.mark.parametrize("method", ["transpose_to", "apply_move_schedule", "update_with_permutation"])
+def test_cohomology_reorder_matches_full_recompute(method):
+    # Cohomology (dualize=True) is supported. The matrix is the antitransposed
+    # boundary in reversed filtration order, so a filtration reorder is handed to
+    # the matrix-space methods as the reversal-conjugate permutation. The warm
+    # cohomology diagram must match the from-scratch dualize reduction (and the
+    # homology diagram).
+    rng = np.random.default_rng(11)
+    d0 = np.ascontiguousarray(rng.random((8, 8)))
+    d1 = d0.copy()
+    for _ in range(5):
+        r, c = rng.integers(0, 8, 2)
+        d1[r, c] = rng.random()
+    f0 = oin.freudenthal_filtration(d0, max_dim=2)
+    f1 = oin.freudenthal_filtration(np.ascontiguousarray(d1), max_dim=2)
+    n = f0.size()
+    o0 = {c.uid: c.sorted_id for c in f0.cells()}
+    nto_fil = [o0[c.uid] for c in f1.cells()]
+    nto_mat = [(n - 1) - nto_fil[(n - 1) - k] for k in range(n)]   # reversal-conjugate
+
+    scratch = oin.Decomposition(f1, True)
+    scratch.reduce(reduce_params())
+    key = _coh_dgm_keys(scratch, f1)
+
+    dcmp = oin.Decomposition(f0, True)
+    dcmp.reduce(reduce_params())
+    getattr(dcmp, method)(nto_mat)
+    assert _keys_equal(_coh_dgm_keys(dcmp, f1), key)
+
+
+def test_update_with_edits_dualize_raises():
+    # Edits (insert/delete) under the reversed cohomology layout are not handled.
+    f = oin.freudenthal_filtration(np.random.default_rng(9).random((6, 6)), max_dim=2)
+    dcmp_coh = oin.Decomposition(f, True)
     dcmp_coh.reduce(reduce_params())
+    n = len(dcmp_coh.d_data)
     with pytest.raises(Exception):
-        dcmp_coh.transpose(0)
+        dcmp_coh.update_with_edits(list(range(n)), [list(c) for c in dcmp_coh.d_data],
+                                   list(dcmp_coh.dim_first), list(dcmp_coh.dim_last))

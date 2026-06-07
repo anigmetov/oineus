@@ -1418,8 +1418,13 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::check_manip_preconditions_(const char* who) const
     {
-        if (dualize_)
-            throw std::runtime_error(std::string(who) + ": decomposition manipulation is supported for homology only (dualize must be false)");
+        // Homology and cohomology are both fine: the manipulation methods are
+        // generic R = D V maintenance in MATRIX-index space. For cohomology
+        // (dualize), the matrix stores the antitransposed boundary in reversed
+        // filtration order, the dimension blocks are _dim_first/_dim_last
+        // (matrix space), and the caller must give the permutation in matrix
+        // space (= reversal-conjugate of a filtration reorder). diagram() maps
+        // matrix indices back via index_in_filtration(., dualize()).
         if (not is_reduced)
             throw std::runtime_error(std::string(who) + ": decomposition must be reduced first");
         if (not has_matrix_v())
@@ -1901,9 +1906,12 @@ namespace oineus {
         // cost nothing, so the O(n log n) LIS becomes O(window log window) --
         // the rest of the call is then dominated by the moves themselves.
         std::vector<size_t> order;             // movable cells, collected from the windows
-        for(size_t d = 0; d < dim_first.size(); ++d) {
-            size_t blo = static_cast<size_t>(dim_first[d]);
-            size_t bhi = static_cast<size_t>(dim_last[d]);
+        // Window per MATRIX-space dimension block: _dim_first/_dim_last are the
+        // column-index blocks (== dim_first/dim_last for homology; reversed for
+        // cohomology). Using these keeps the per-dimension LIS correct in both.
+        for(size_t d = 0; d < _dim_first.size(); ++d) {
+            size_t blo = static_cast<size_t>(_dim_first[d]);
+            size_t bhi = static_cast<size_t>(_dim_last[d]);
             if (bhi < blo)
                 continue;
             size_t wlo = blo;
@@ -2100,6 +2108,9 @@ namespace oineus {
                                                   DecompositionManipStats* stats)
     {
         check_manip_preconditions_("update_with_edits");
+        if (dualize_)
+            throw std::runtime_error("update_with_edits: cohomology (dualize) not supported yet "
+                                     "(insert/delete under the reversed layout is not handled)");
         invalidate_dynamic_();   // resizes; not yet localized
         const size_t n_old = r_data.size();
         const size_t n_new = new_to_old.size();
