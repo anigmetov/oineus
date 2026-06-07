@@ -105,7 +105,14 @@ The previous workflow used a plain `python -m venv venv_build` plus a cmake buil
 - `oin_build_tests` (ON): Build C++ and Python tests
 - `oin_build_examples` (ON): Build example programs
 - `oin_use_spdlog` (OFF): Enable spdlog for logging
-- `oin_use_jemalloc` (OFF): Use jemalloc allocator
+- `oin_use_jemalloc` (ON): Link jemalloc (a HARD requirement by default). Its
+  thread-caching allocator roughly halves the free-heavy copy-back phase of the
+  parallel reduction (per-column frees + cross-thread hazard-pointer
+  reclamation), ~30% faster parallel wall on large grids. If jemalloc is not
+  found, configure FAILS with a message explaining the fixes. Point CMake at a
+  non-standard install with `-DJEMALLOC_ROOT=/prefix` (or the `JEMALLOC_ROOT` env
+  var); to build without it and use the system allocator, pass
+  `-Doin_use_jemalloc=OFF`.
 - `oin_build_julia` (OFF): Build Julia bindings
 - `OINEUS_PYTHON_INT` ("long int"): Integer type for Python bindings
 - `OINEUS_PYTHON_REAL` ("double"): Real type for Python bindings
