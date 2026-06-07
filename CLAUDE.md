@@ -105,13 +105,16 @@ The previous workflow used a plain `python -m venv venv_build` plus a cmake buil
 - `oin_build_tests` (ON): Build C++ and Python tests
 - `oin_build_examples` (ON): Build example programs
 - `oin_use_spdlog` (OFF): Enable spdlog for logging
-- `oin_use_jemalloc` (ON): Link jemalloc (a HARD requirement by default). Its
-  thread-caching allocator roughly halves the free-heavy copy-back phase of the
-  parallel reduction (per-column frees + cross-thread hazard-pointer
-  reclamation), ~30% faster parallel wall on large grids. If jemalloc is not
-  found, configure FAILS with a message explaining the fixes. Point CMake at a
-  non-standard install with `-DJEMALLOC_ROOT=/prefix` (or the `JEMALLOC_ROOT` env
-  var); to build without it and use the system allocator, pass
+- `oin_use_jemalloc` (ON): Build and statically link the VENDORED jemalloc under
+  `extern/jemalloc/` (no system jemalloc needed; nothing to install). It is built
+  at configure time -- one-time, prefixed (`je_malloc`/`je_free`, no interposition)
+  and PIC-static -- so it is baked INTO `_oineus`/the wheel with no runtime
+  dependency, and the reduction column types call `je_malloc`/`je_free` explicitly
+  (the `OINEUS_USE_JEMALLOC` paths in `sparse_matrix.h`: `JeAllocator` for the
+  overflow buffer, `operator new`/`delete` on `OinColumn`/`RVColumn` for the column
+  object). Its thread-caching allocator roughly halves the free-heavy copy-back
+  phase of the parallel reduction (~40% faster parallel wall on large grids,
+  -65% copy_back). To build with the system allocator instead, pass
   `-Doin_use_jemalloc=OFF`.
 - `oin_build_julia` (OFF): Build Julia bindings
 - `OINEUS_PYTHON_INT` ("long int"): Integer type for Python bindings

@@ -46,6 +46,18 @@ using namespace nb::literals;
 #include <oineus/timer.h>
 #include <oineus/oineus.h>
 
+#ifndef OINEUS_COL_USE_STD_VECTOR
+// The at-rest column is oineus::OinColumn (derives from small_vector). It is a
+// distinct type from its base, so the small_vector caster above does not apply --
+// give it its own list_caster so r_data/v_data/u_data_t still round-trip as Python
+// lists of lists. Defined after oineus.h, where OinColumn is complete.
+namespace nanobind { namespace detail {
+template <typename Int>
+struct type_caster<oineus::OinColumn<Int>>
+    : list_caster<oineus::OinColumn<Int>, Int> {};
+}}
+#endif
+
 #ifndef OINEUS_PYTHON_INT
 #define OINEUS_PYTHON_INT long int
 #endif

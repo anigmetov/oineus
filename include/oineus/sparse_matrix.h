@@ -11,7 +11,12 @@
 #include <cassert>
 #include <algorithm>
 #include <atomic>
+#include <cstdlib>
+#include <new>
 #include <boost/container/small_vector.hpp>
+#ifdef OINEUS_USE_JEMALLOC
+#include <jemalloc/jemalloc.h>
+#endif
 #include <taskflow/taskflow.hpp>
 #include <taskflow/algorithm/for_each.hpp>
 
@@ -23,18 +28,75 @@ namespace oineus {
 #define OINEUS_COL_INLINE_CAP 4
 #endif
 
+// Allocator for a column's overflow buffer. Routes to jemalloc (je_malloc/je_free)
+// when the build links it, else the system allocator. Stateless, so it adds no size
+// to the column (empty-base optimization in small_vector).
+template<class T>
+struct JeAllocator {
+    using value_type = T;
+    JeAllocator() noexcept = default;
+    template<class U> JeAllocator(const JeAllocator<U>&) noexcept { }
+
+    T* allocate(std::size_t n)
+    {
+#ifdef OINEUS_USE_JEMALLOC
+        void* p = je_malloc(n * sizeof(T));
+#else
+        void* p = std::malloc(n * sizeof(T));
+#endif
+        if (p == nullptr)
+            throw std::bad_alloc();
+        return static_cast<T*>(p);
+    }
+
+    void deallocate(T* p, std::size_t) noexcept
+    {
+#ifdef OINEUS_USE_JEMALLOC
+        je_free(p);
+#else
+        std::free(p);
+#endif
+    }
+
+    template<class U> bool operator==(const JeAllocator<U>&) const noexcept { return true; }
+    template<class U> bool operator!=(const JeAllocator<U>&) const noexcept { return false; }
+};
+
 #ifdef OINEUS_COL_USE_STD_VECTOR
+// Benchmark baseline: plain std::vector columns -- no SBO, no jemalloc routing.
 template<class Int>
 using SparseColumn = std::vector<Int>;
 #else
+// At-rest / working sparse column. Small-buffer-optimized vector whose OVERFLOW
+// buffer is routed to jemalloc via JeAllocator, and whose heap-allocated OBJECT
+// (a column `new`'d as a parallel-reduction working column) is routed to jemalloc
+// via the class-scoped operator new/delete. Deriving from small_vector keeps the
+// full container interface; `delete p` auto-dispatches to operator delete, so the
+// reduction's `new`/`delete` sites need no changes.
 template<class Int>
-using SparseColumn = boost::container::small_vector<Int, OINEUS_COL_INLINE_CAP>;
+struct OinColumn : boost::container::small_vector<Int, OINEUS_COL_INLINE_CAP, JeAllocator<Int>> {
+    using Base = boost::container::small_vector<Int, OINEUS_COL_INLINE_CAP, JeAllocator<Int>>;
+    using Base::Base;
+#ifdef OINEUS_USE_JEMALLOC
+    static void* operator new(std::size_t n)
+    {
+        void* p = je_malloc(n);
+        if (p == nullptr)
+            throw std::bad_alloc();
+        return p;
+    }
+    static void operator delete(void* p) noexcept { je_free(p); }
+#endif
+};
+
+template<class Int>
+using SparseColumn = OinColumn<Int>;
 #endif
 
-// Catch accidental N blowup of the small-vector inline buffer. With N=4,
-// boost::container::small_vector<long int, 4> is 56 bytes here (small_vector
-// header + the 4-element 8-byte inline buffer); 64 keeps a margin while still
-// flagging an order-of-magnitude mistake.
+// Catch accidental N blowup of the inline buffer. With N=4, the column is 56 bytes
+// here (small_vector header + the 4-element 8-byte inline buffer); 64 keeps a margin
+// while still flagging an order-of-magnitude mistake. JeAllocator is stateless, so it
+// does not change the size vs the default allocator.
 static_assert(sizeof(SparseColumn<long int>) <= 64,
         "SparseColumn inline buffer unexpectedly large -- check OINEUS_COL_INLINE_CAP");
 
@@ -466,6 +528,19 @@ struct RVColumn<Int_, 2> {
         r_column.swap(other.r_column);
         v_column.swap(other.v_column);
     }
+
+#ifdef OINEUS_USE_JEMALLOC
+    // Route the heap-allocated working-column OBJECT to jemalloc. `new RVColumn`
+    // and `delete p` (incl. via MemoryReclaim) auto-dispatch to these.
+    static void* operator new(std::size_t n)
+    {
+        void* p = je_malloc(n);
+        if (p == nullptr)
+            throw std::bad_alloc();
+        return p;
+    }
+    static void operator delete(void* p) noexcept { je_free(p); }
+#endif
 
     template<class I>
     friend std::ostream& operator<<(std::ostream& out, const RVColumn<I, 2>& rv);
