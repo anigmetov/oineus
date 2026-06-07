@@ -12,6 +12,18 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/vector.h>
+// SBO column caster: lets boost::container::small_vector<T,N> (the at-rest
+// reduction-column type) round-trip as a Python list, exactly like
+// std::vector<T>. This keeps r_data/v_data/u_data_t exposed as list-of-lists
+// (def_rw, pickle, the MatrixData ctor, diagram/boundary returns) with no
+// other binding changes. Harmless under the OINEUS_COL_USE_STD_VECTOR
+// baseline -- the specialization is simply never instantiated then.
+#include <boost/container/small_vector.hpp>
+namespace nanobind { namespace detail {
+template <typename T, std::size_t N, typename A>
+struct type_caster<boost::container::small_vector<T, N, A>>
+    : list_caster<boost::container::small_vector<T, N, A>, T> {};
+}}
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/map.h>
 #include <nanobind/stl/pair.h>

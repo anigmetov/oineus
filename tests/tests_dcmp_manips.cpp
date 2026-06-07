@@ -12,6 +12,9 @@ using dim_type = size_t;
 using Int = int;
 using Decomp = oineus::VRUDecomposition<Int>;
 using MatrixData = Decomp::MatrixData;
+// at-rest column type (SBO small_vector under the default config); use this for
+// column locals so the tests do not hard-code the container.
+using Col = MatrixData::value_type;
 
 // ---------------------------------------------------------------------------
 // Oracles / helpers
@@ -78,7 +81,7 @@ static MatrixData permute_boundary(const MatrixData& d, const std::vector<size_t
     MatrixData out(d.size());
     for(size_t k = 0; k < d.size(); ++k) {
         const auto& src = d[new_to_old[k]];
-        std::vector<Int> col;
+        Col col;
         col.reserve(src.size());
         for(Int r : src)
             col.push_back(static_cast<Int>(old_to_new[static_cast<size_t>(r)]));
@@ -471,7 +474,7 @@ static MatrixData build_survivor_boundary(const MatrixData& D0, const std::vecto
         old_to_new[static_cast<size_t>(new_to_old[k])] = static_cast<long long>(k);
     MatrixData out(n_new);
     for(size_t k = 0; k < n_new; ++k) {
-        std::vector<Int> col;
+        Col col;
         for(Int r : D0[static_cast<size_t>(new_to_old[k])]) {
             long long nr = old_to_new[static_cast<size_t>(r)];
             REQUIRE(nr >= 0);   // face must survive
@@ -584,8 +587,8 @@ TEST_CASE("update_with_edits insert cells at end")
     new_to_old.push_back(-1);
 
     MatrixData newB = D0;
-    newB.push_back(std::vector<Int>{e0, e0 + 1, e0 + 2});
-    newB.push_back(std::vector<Int>{e0 + 1, e0 + 2, e0 + 3});
+    newB.push_back(Col{e0, e0 + 1, e0 + 2});
+    newB.push_back(Col{e0 + 1, e0 + 2, e0 + 3});
 
     std::vector<int> dims;
     for(size_t o = 0; o < n_old; ++o)
@@ -626,7 +629,7 @@ TEST_CASE("update_with_edits combined delete reorder insert")
             new_to_old.push_back(static_cast<long long>(o));
     MatrixData newB = build_survivor_boundary(D0, new_to_old);
     new_to_old.push_back(-1);
-    newB.push_back(std::vector<Int>{e0, e0 + 2, e0 + 4});
+    newB.push_back(Col{e0, e0 + 2, e0 + 4});
 
     std::vector<int> dims;
     for(long long o : new_to_old)

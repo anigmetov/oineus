@@ -11,6 +11,7 @@
 #include <cassert>
 #include <algorithm>
 #include <atomic>
+#include <boost/container/small_vector.hpp>
 #include <taskflow/taskflow.hpp>
 #include <taskflow/algorithm/for_each.hpp>
 
@@ -18,31 +19,50 @@
 
 namespace oineus {
 
+#ifndef OINEUS_COL_INLINE_CAP
+#define OINEUS_COL_INLINE_CAP 4
+#endif
+
+#ifdef OINEUS_COL_USE_STD_VECTOR
 template<class Int>
 using SparseColumn = std::vector<Int>;
-
+#else
 template<class Int>
-bool is_zero(const SparseColumn<Int>& col)
+using SparseColumn = boost::container::small_vector<Int, OINEUS_COL_INLINE_CAP>;
+#endif
+
+// Catch accidental N blowup of the small-vector inline buffer. With N=4,
+// boost::container::small_vector<long int, 4> is 56 bytes here (small_vector
+// header + the 4-element 8-byte inline buffer); 64 keeps a margin while still
+// flagging an order-of-magnitude mistake.
+static_assert(sizeof(SparseColumn<long int>) <= 64,
+        "SparseColumn inline buffer unexpectedly large -- check OINEUS_COL_INLINE_CAP");
+
+// Column-content predicates, templated on the container so they accept both
+// the at-rest SBO column (SparseColumn) and a plain std::vector column that a
+// caller might still hold. Only .empty()/.back() are used.
+template<class Col>
+bool is_zero(const Col& col)
 {
     return col.empty();
 }
 
-template<class Int>
-bool is_zero(const SparseColumn<Int>* col)
+template<class Col>
+bool is_zero(const Col* col)
 {
     return col->empty();
 }
 
-template<class Int>
-Int low(const SparseColumn<Int>* col)
+template<class Col>
+auto low(const Col* col) -> typename Col::value_type
 {
-    return is_zero(col) ? -1 : col->back();
+    return is_zero(col) ? typename Col::value_type(-1) : col->back();
 }
 
-template<class Int>
-Int low(const SparseColumn<Int>& col)
+template<class Col>
+auto low(const Col& col) -> typename Col::value_type
 {
-    return is_zero(col) ? -1 : col.back();
+    return is_zero(col) ? typename Col::value_type(-1) : col.back();
 }
 
 template<typename Int_, int P>
@@ -97,7 +117,7 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
     using Int = Int_;
     using Entry = Int;
 
-    using Column = std::vector<Entry>;
+    using Column = SparseColumn<Entry>;
     using Matrix = std::vector<Column>;
     using PColumn = Column*;
     using APColumn = std::atomic<PColumn>;
@@ -377,6 +397,8 @@ struct RVColumn {
     using Int = Int_;
     using FieldElement = Int_;
     using Entry = std::pair<Int_, FieldElement>;
+    // generic (Z_p, P != 2) path: entries are (row, coeff) pairs and this
+    // path is not the at-rest reduction column, so plain std::vector is fine.
     using Column = std::vector<Entry>;
 
     Column r_column;
@@ -415,7 +437,7 @@ template<typename Int_>
 struct RVColumn<Int_, 2> {
     using Int = Int_;
     using Entry = Int;
-    using Column = std::vector<Entry>;
+    using Column = SparseColumn<Entry>;
 
     Column r_column;
     Column v_column;
@@ -593,7 +615,7 @@ template<typename Int_>
 struct SparseMatrix {
     // types
     using Int = Int_;
-    using Column = std::vector<Int>;
+    using Column = SparseColumn<Int>;
     using Data = std::vector<Column>;
 
     template<class I> friend class VRUDecomposition;
@@ -741,7 +763,7 @@ struct SparseMatrix {
     void reorder_rows(std::vector<int> new_order)
     {
         for(int i = 0 ; i < n_cols() ; i++) {
-            std::vector<int> new_col;
+            Column new_col;
             for(int j = 0 ; j < get_col(i).size() ; j++) {
                 new_col.push_back(new_order[get_col(i)[j]]);
             }
@@ -869,19 +891,30 @@ std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m)
 {
     out << "Matrix(n_rows = " << m.n_rows() << ", n_cols = " << m.n_cols() << "\n[";
     for(size_t col_idx = 0 ; col_idx < m.n_cols() ; ++col_idx) {
-        out << m.col(col_idx) << "\n";
+        const auto& c = m.col(col_idx);
+        out << "[";
+        for(size_t i = 0 ; i < c.size() ; ++i) {
+            out << c[i];
+            if (i + 1 != c.size())
+                out << ", ";
+        }
+        out << "]\n";
     }
     out << "]\n";
     return out;
 }
 
-template<typename Int>
-std::vector<std::vector<Int>> antitranspose(const std::vector<std::vector<Int>>& a, size_t n_rows)
+// Container-generic: works for both std::vector<std::vector<Int>> and the
+// at-rest std::vector<SparseColumn<Int>> (MatrixData). Returns the same
+// matrix/column type as the input so the result assigns straight into d_data.
+template<typename Matrix>
+Matrix antitranspose(const Matrix& a, size_t n_rows)
 {
-    using SparseColumn = std::vector<Int>;
-    std::vector<SparseColumn> result {a.size(), SparseColumn()};
+    using Column = typename Matrix::value_type;
+    using Int = typename Column::value_type;
+    Matrix result(a.size());
     for(size_t row_idx = 0 ; row_idx < a.size() ; ++row_idx) {
-        for(auto c: a[n_rows - 1 - row_idx]) {
+        for(Int c: a[n_rows - 1 - row_idx]) {
             size_t col_idx = a.size() - 1 - c;
             result[col_idx].push_back(row_idx);
         }
@@ -889,9 +922,11 @@ std::vector<std::vector<Int>> antitranspose(const std::vector<std::vector<Int>>&
     return result;
 }
 
-template<typename Int>
-std::vector<std::vector<Int>> transpose(const std::vector<std::vector<Int>>& col_format, int num_rows = -1, int n_threads = 1)
+template<typename Matrix>
+Matrix transpose(const Matrix& col_format, int num_rows = -1, int n_threads = 1)
 {
+    using Column = typename Matrix::value_type;
+    using Int = typename Column::value_type;
     if (col_format.empty()) {
         return {};
     }
@@ -906,7 +941,7 @@ std::vector<std::vector<Int>> transpose(const std::vector<std::vector<Int>>& col
         }
     }
 
-    std::vector<std::vector<Int>> row_format(num_rows);
+    Matrix row_format(num_rows);
 
     if (n_threads <= 1 or col_format.size() < 20 * n_threads) {
         // Iterate through each column

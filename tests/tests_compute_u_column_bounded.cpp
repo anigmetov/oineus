@@ -93,7 +93,9 @@ TEST_CASE("compute_u_column_1 with restore_elz matches the in-band U")
                                                /*restore_elz=*/true);
 
     for (size_t c = 0; c < decmp.size(); ++c) {
-        std::vector<Int> ref_col;
+        // match the at-rest column type returned by compute_u_column_1 so the
+        // REQUIRE(solved == ref_col) compares like with like
+        typename std::decay_t<decltype(decmp)>::IntSparseColumn ref_col;
         for (size_t r = 0; r < decmp_ref.u_data_t.size(); ++r) {
             const auto& row = decmp_ref.u_data_t[r];
             if (std::find(row.begin(), row.end(), static_cast<Int>(c)) != row.end()) {

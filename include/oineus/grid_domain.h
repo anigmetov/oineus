@@ -8,6 +8,7 @@
 #include <cassert>
 #include <stdexcept>
 #include <functional>
+#include <boost/container/small_vector.hpp>
 
 #ifdef OINEUS_PYTHON_FRIENDS
 namespace nanobind { class module_; }
@@ -17,6 +18,25 @@ void init_oineus_cells(nanobind::module_&);
 namespace std {
     template<typename T>
     std::ostream& operator<<(std::ostream& os, const std::vector<T>& v)
+    {
+        os << "[";
+
+        for(size_t i = 0 ; i < v.size() ; ++i) {
+            os << v[i];
+            if (i + 1 < v.size())
+                os << ", ";
+        }
+
+        os << "]";
+        return os;
+    }
+
+    // Same pretty-printer for the SBO at-rest column type (small_vector).
+    // Found via ADL through the std::ostream argument, mirroring the
+    // std::vector overload above so existing `out << column` sites keep
+    // compiling once columns become small_vectors.
+    template<typename T, std::size_t N, typename A>
+    std::ostream& operator<<(std::ostream& os, const boost::container::small_vector<T, N, A>& v)
     {
         os << "[";
 

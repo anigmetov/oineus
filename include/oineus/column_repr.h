@@ -42,9 +42,11 @@ struct SetColumn {
 
     void reserve(size_t) { }
     void clear() { data_.clear(); }
-    void load(const std::vector<Int>& col) { data_.clear(); data_.insert(col.begin(), col.end()); }
+    template<class Col>
+    void load(const Col& col) { data_.clear(); data_.insert(col.begin(), col.end()); }
 
-    void add(const std::vector<Int>& pivot)
+    template<class Col>
+    void add(const Col& pivot)
     {
         for (Int e : pivot) {
             auto res = data_.insert(e);
@@ -55,7 +57,8 @@ struct SetColumn {
 
     bool is_zero() const { return data_.empty(); }
     Int low() const { return data_.empty() ? Int(-1) : *data_.rbegin(); }
-    void to_vector(std::vector<Int>& out) const { out.assign(data_.begin(), data_.end()); }
+    template<class Col>
+    void to_vector(Col& out) const { out.assign(data_.begin(), data_.end()); }
     size_t size() const { return data_.size(); }
 };
 
@@ -72,13 +75,15 @@ struct HeapColumn {
     void reserve(size_t) { }
     void clear() { heap_.clear(); }
 
-    void load(const std::vector<Int>& col)
+    template<class Col>
+    void load(const Col& col)
     {
         heap_.assign(col.begin(), col.end());
         std::make_heap(heap_.begin(), heap_.end());
     }
 
-    void add(const std::vector<Int>& pivot)
+    template<class Col>
+    void add(const Col& pivot)
     {
         for (Int e : pivot) {
             heap_.push_back(e);
@@ -117,7 +122,8 @@ struct HeapColumn {
 
     bool is_zero() const { return low() == Int(-1); }
 
-    void to_vector(std::vector<Int>& out) const
+    template<class Col>
+    void to_vector(Col& out) const
     {
         out.clear();
         Int piv;
@@ -185,8 +191,10 @@ struct FullColumn {
         }
     }
 
-    void load(const std::vector<Int>& col) { clear(); for (Int e : col) flip(e); }
-    void add(const std::vector<Int>& pivot) { for (Int e : pivot) flip(e); }
+    template<class Col>
+    void load(const Col& col) { clear(); for (Int e : col) flip(e); }
+    template<class Col>
+    void add(const Col& pivot) { for (Int e : pivot) flip(e); }
 
     bool is_zero() const { return nnz_ == 0; }
 
@@ -202,7 +210,8 @@ struct FullColumn {
         return Int(-1);
     }
 
-    void to_vector(std::vector<Int>& out) const
+    template<class Col>
+    void to_vector(Col& out) const
     {
         out.clear();
         std::vector<size_t> words(dirty_.begin(), dirty_.end());
@@ -301,8 +310,10 @@ struct BitTreeColumn {
         nnz_ = 0;
     }
 
-    void load(const std::vector<Int>& col) { clear(); for (Int e : col) flip(e); }
-    void add(const std::vector<Int>& pivot) { for (Int e : pivot) flip(e); }
+    template<class Col>
+    void load(const Col& col) { clear(); for (Int e : col) flip(e); }
+    template<class Col>
+    void add(const Col& pivot) { for (Int e : pivot) flip(e); }
 
     bool is_zero() const { return nnz_ == 0; }
 
@@ -320,7 +331,8 @@ struct BitTreeColumn {
         return Int(pos);
     }
 
-    void to_vector(std::vector<Int>& out) const
+    template<class Col>
+    void to_vector(Col& out) const
     {
         out.clear();
         std::vector<size_t> words(dirty_.begin(), dirty_.end());
@@ -388,7 +400,7 @@ struct GenericSparseMatrixTraits {
     using Int = Int_;
     using Entry = Int;
 
-    using Column = std::vector<Entry>;
+    using Column = SparseColumn<Entry>;
     using Matrix = std::vector<Column>;
     using PColumn = Column*;
     using APColumn = std::atomic<PColumn>;
@@ -517,7 +529,7 @@ struct GenericRVMatrixTraits {
 
     static PColumn load_from_cache(const CachedColumn& col)
     {
-        std::vector<Int> rvec, vvec;
+        typename Column::Column rvec, vvec;
         col.first.to_vector(rvec);
         col.second.to_vector(vvec);
         return new Column(std::move(rvec), std::move(vvec));

@@ -317,13 +317,16 @@ namespace oineus {
         logger->debug("thread {}, EXIT reduction, stats = {}", thread_idx, stats);
     }
 
-    template<class Int>
-    size_t restore_elz_column_serial(std::vector<std::vector<Int>>& r_data,
-            std::vector<std::vector<Int>>& v_data,
-            std::vector<std::vector<Int>>* u_data_t,
+    // Matrix is the at-rest column container (std::vector<SparseColumn<Int>>),
+    // templated so the SBO column type flows through without a copy.
+    template<class Matrix>
+    size_t restore_elz_column_serial(Matrix& r_data,
+            Matrix& v_data,
+            Matrix* u_data_t,
             size_t current_col,
             bool v_only)
     {
+        using Int = typename Matrix::value_type::value_type;
         using MatrixTraits = SimpleSparseMatrixTraits<Int, 2>;
 
         size_t n_fixes = 0;
@@ -416,7 +419,7 @@ namespace oineus {
     struct VRUDecomposition {
         // types
         using Int = Int_;
-        using IntSparseColumn = std::vector<Int>;
+        using IntSparseColumn = SparseColumn<Int>;
         using MatrixData = std::vector<IntSparseColumn>;
 
         // data
@@ -573,6 +576,21 @@ namespace oineus {
                 }
             }
         }
+
+#ifndef OINEUS_COL_USE_STD_VECTOR
+        // Convenience overload for C++ callers that hand-build a boundary
+        // matrix as std::vector<std::vector<Int>> (the natural literal type).
+        // The at-rest column container is an SBO small_vector, so a plain
+        // vector-of-vectors no longer binds to the MatrixData ctor above;
+        // copy column-by-column into MatrixData and delegate. Guarded out of
+        // the std::vector baseline, where MatrixData *is* this type and the
+        // two ctors would collide.
+        VRUDecomposition(const std::vector<std::vector<Int>>& d,
+                         size_t n_rows = std::numeric_limits<decltype(VRUDecomposition::n_rows)>::max(),
+                         bool dualize = false, bool skip_check = false)
+                : VRUDecomposition(to_matrix_data_(d), n_rows, dualize, skip_check)
+        { }
+#endif
 
         [[nodiscard]] size_t size() const { return r_data.size(); }
 
@@ -796,6 +814,16 @@ namespace oineus {
         // Total non-zeros (sum of column sizes) of a column-stored matrix.
         static size_t matrix_nnz_(const MatrixData& m);
 
+        // Copy a plain vector-of-vectors boundary matrix into the at-rest
+        // MatrixData (SBO columns). Used by the convenience ctor above.
+        static MatrixData to_matrix_data_(const std::vector<std::vector<Int>>& d)
+        {
+            MatrixData out(d.size());
+            for(size_t i = 0; i < d.size(); ++i)
+                out[i].assign(d[i].begin(), d[i].end());
+            return out;
+        }
+
         const MatrixData& get_D() const
         {
             return d_data;
@@ -874,8 +902,8 @@ namespace oineus {
         size_t range_end_(dim_type _dim) const;
     };
 
-    template<class Int>
-    bool are_matrix_columns_sorted(const std::vector<std::vector<Int>>& matrix_cols)
+    template<class Matrix>
+    bool are_matrix_columns_sorted(const Matrix& matrix_cols)
     {
         for(auto&& col: matrix_cols) {
             if (not std::is_sorted(col.begin(), col.end())) {
@@ -887,9 +915,10 @@ namespace oineus {
         return true;
     }
 
-    template<class Int>
-    bool is_matrix_reduced(const std::vector<std::vector<Int>>& matrix_cols)
+    template<class Matrix>
+    bool is_matrix_reduced(const Matrix& matrix_cols)
     {
+        using Int = typename Matrix::value_type::value_type;
         std::unordered_set<Int> lowest_ones;
 
         for(auto&& col: matrix_cols) {
@@ -904,8 +933,8 @@ namespace oineus {
         return true;
     }
 
-    template<class Int>
-    bool do_rows_and_columns_match(const std::vector<std::vector<Int>>& matrix_cols, const std::vector<std::vector<Int>>& matrix_rows)
+    template<class Matrix>
+    bool do_rows_and_columns_match(const Matrix& matrix_cols, const Matrix& matrix_rows)
     {
         if (matrix_cols.empty())
             return matrix_rows.empty();
