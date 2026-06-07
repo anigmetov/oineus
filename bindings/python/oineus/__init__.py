@@ -15,7 +15,7 @@ from ._oineus import CombinatorialProdSimplex, CombinatorialSimplex,Simplex, Pro
 from ._oineus import Filtration, ProdFiltration
 from ._oineus import Decomposition, IndexDiagramPoint, DiagramPoint, Diagrams
 from ._oineus import DecompositionManipStats
-from ._oineus import ReductionParams, KICRParams, KerImCokReduced, KerImCokReducedProd
+from ._oineus import ReductionParams, ReductionTimings, KICRParams, KerImCokReduced, KerImCokReducedProd
 from ._oineus import ColumnRepr
 from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizer, TopologyOptimizerProd
 from ._oineus import TopologyOptimizerCube_1D, TopologyOptimizerCube_2D, TopologyOptimizerCube_3D

@@ -71,6 +71,37 @@ void init_oineus_common(nb::module_& m)
             .value("Full", oin::ColumnRepr::Full, "dense bitset + max-heap (PHAT A-Full)")
             .value("BitTree", oin::ColumnRepr::BitTree, "hierarchical 64-ary bitset (PHAT A-Bit-Tree, default)");
 
+    using ReductionTimings = oin::ReductionTimings;
+    using TimingsStateTuple = std::tuple<double, double, double, double, double>;
+
+    nb::class_<ReductionTimings>(m, "ReductionTimings",
+            "Per-phase wall-clock breakdown (seconds) of the last reduce() call. Some "
+            "fields are 0 when a path skips that phase: the serial path reduces in place, "
+            "so it has no prepare / copy_back / copy_pivots. reduction_total is the "
+            "path-comparable total; ReductionParams.elapsed equals it.")
+            .def(nb::init<>())
+            .def_rw("prepare", &ReductionTimings::prepare, "build the working atomic-pointer matrix (parallel only)")
+            .def_rw("reduce", &ReductionTimings::reduce, "the reduction itself (serial loop or parallel threads)")
+            .def_rw("restore_elz", &ReductionTimings::restore_elz, "ELZ-restore phase (only if dims_to_restore_elz set)")
+            .def_rw("copy_back", &ReductionTimings::copy_back, "move working matrix back into r_data/v_data (parallel only)")
+            .def_rw("copy_pivots", &ReductionTimings::copy_pivots, "copy pivots into the at-rest pivot array (parallel only)")
+            .def_prop_ro("reduction_total", &ReductionTimings::reduction_total,
+                    "Total reduction wall-clock across every phase -- comparable across serial and parallel paths.")
+            .def_prop_ro("total", &ReductionTimings::total, "Synonym for reduction_total.")
+            .def("reset", &ReductionTimings::reset)
+            .def("__repr__", [](const ReductionTimings& self) { std::stringstream ss; ss << self; return ss.str(); })
+            .def("__getstate__", [](const ReductionTimings& t) -> TimingsStateTuple {
+                return std::make_tuple(t.prepare, t.reduce, t.restore_elz, t.copy_back, t.copy_pivots);
+            })
+            .def("__setstate__", [](ReductionTimings& t, const TimingsStateTuple& s) {
+                new (&t) ReductionTimings();
+                t.prepare     = std::get<0>(s);
+                t.reduce      = std::get<1>(s);
+                t.restore_elz = std::get<2>(s);
+                t.copy_back   = std::get<3>(s);
+                t.copy_pivots = std::get<4>(s);
+            });
+
     nb::class_<ReductionParams>(m, "ReductionParams")
             .def(nb::init<>())
             .def("__init__",
@@ -101,6 +132,8 @@ void init_oineus_common(nb::module_& m)
             .def_rw("elapsed_restore_elz", &ReductionParams::elapsed_restore_elz)
             .def_rw("elapsed_copy_back", &ReductionParams::elapsed_copy_back)
             .def_rw("elapsed_copy_pivots", &ReductionParams::elapsed_copy_pivots)
+            .def_ro("timings", &ReductionParams::timings,
+                    "Per-phase wall-clock breakdown of the last reduce() (ReductionTimings).")
             .def_rw("verbose", &ReductionParams::verbose)
             .def("__repr__", [](const ReductionParams& self) { std::stringstream ss; ss << self; return ss.str(); })
             .def(nb::self == nb::self)

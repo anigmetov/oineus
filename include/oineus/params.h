@@ -7,6 +7,7 @@
 
 #include "log_wrapper.h"
 #include "common_defs.h"
+#include "reduction_timings.h"
 
 namespace oineus {
     // Working-column data structure used during reduction. The at-rest storage
@@ -50,12 +51,19 @@ namespace oineus {
         ColumnRepr col_repr{ColumnRepr::BitTree};
         DimVec dims_to_restore_elz;
         bool do_sanity_check{false};
+        // Back-compat scalar timings (seconds). elapsed now equals
+        // timings.reduction_total() (the full, path-comparable reduction time);
+        // the other three mirror the matching timings.* phase. The detailed
+        // per-phase breakdown lives in `timings`.
         double elapsed{0.0};
         double elapsed_restore_elz{0.0};
         double elapsed_copy_back{0.0};
         double elapsed_copy_pivots{0.0};
         bool verbose{false};
         spd::level::level_enum spdlog_level {spd::level::level_enum::info};
+        // Per-phase wall-clock breakdown of the last reduce(); transient output,
+        // not part of operator== or pickling.
+        ReductionTimings timings;
     };
 
     inline std::ostream& operator<<(std::ostream& out, const Params& p)
@@ -73,9 +81,7 @@ namespace oineus {
         // out << ", dims_to_restore_elz = " << p.dims_to_restore_elz;
         out << ", do_sanity_check = " << p.do_sanity_check;
         out << ", elapsed = " << p.elapsed;
-        out << ", elapsed_restore_elz = " << p.elapsed_restore_elz;
-        out << ", elapsed_copy_back = " << p.elapsed_copy_back;
-        out << ", elapsed_copy_pivots = " << p.elapsed_copy_pivots;
+        out << ", timings = " << p.timings;
         out << ", verbose = " << p.verbose;
         out << ")";
         return out;

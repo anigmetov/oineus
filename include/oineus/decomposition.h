@@ -615,6 +615,9 @@ namespace oineus {
         template<class WorkCol> void reduce_parallel_r_only_impl(Params& params);
         template<class WorkCol> void reduce_parallel_rv_impl(Params& params);
 
+        // Copy params.timings into the back-compat scalar timing fields.
+        static void sync_elapsed_from_timings_(Params& params);
+
         bool is_negative(size_t simplex) const
         {
             return not is_positive(simplex);
@@ -1219,13 +1222,11 @@ namespace oineus {
         CALI_CXX_MARK_FUNCTION;
 
         invalidate_dynamic_();   // R, V are rebuilt; any row index is now stale
-        params.elapsed = 0.0;
-        params.elapsed_restore_elz = 0.0;
-        params.elapsed_copy_back = 0.0;
-        params.elapsed_copy_pivots = 0.0;
+        params.timings.reset();
 
         if (d_data.empty()) {
             is_reduced = true;
+            sync_elapsed_from_timings_(params);
             return;
         }
 
@@ -1243,6 +1244,21 @@ namespace oineus {
             reduce_parallel_rv(params);
         else
             reduce_parallel_r_only(params);
+
+        // Derive the back-compat scalar timers from the per-phase breakdown:
+        // elapsed is now the full, path-comparable reduction time.
+        sync_elapsed_from_timings_(params);
+    }
+
+    // Mirror params.timings into the historical scalar timing fields so existing
+    // callers (and the pickle layout) keep working. elapsed becomes the total.
+    template<class Int>
+    void VRUDecomposition<Int>::sync_elapsed_from_timings_(Params& params)
+    {
+        params.elapsed             = params.timings.reduction_total();
+        params.elapsed_restore_elz = params.timings.restore_elz;
+        params.elapsed_copy_back   = params.timings.copy_back;
+        params.elapsed_copy_pivots = params.timings.copy_pivots;
     }
 
     // ---- working-column dispatchers: pick WorkCol from params.col_repr ----
@@ -1380,8 +1396,8 @@ namespace oineus {
             } // loop over columns in fixed dimension
         } // loop over dimensions
 
-        params.elapsed = timer_reduction.elapsed();
-        params.elapsed_restore_elz = 0.0;
+        // Serial reduces in place: no prepare / copy_back / copy_pivots phases.
+        params.timings.reduce = timer_reduction.elapsed();
 
         // Serial reduction with clearing off produces ELZ by construction.
         if (not params.clearing_opt) {
@@ -1395,16 +1411,16 @@ namespace oineus {
                     continue;
                 restore_elz(dim, false, params.verbose, 1);
             }
-            params.elapsed_restore_elz = timer_restore.elapsed();
+            params.timings.restore_elz = timer_restore.elapsed();
         }
 
         if (params.print_time or params.verbose) {
             std::cerr << "reduce_serial, matrix_size = " << r_data.size()
                       << ", clearing_opt = " << params.clearing_opt
                       << ", n_cleared = " << n_cleared
-                      << ", reduction elapsed: " << params.elapsed
-                      << ", restore_elz elapsed: " << params.elapsed_restore_elz
-                      << ", total elapsed: " << (params.elapsed + params.elapsed_restore_elz)
+                      << ", reduction elapsed: " << params.timings.reduce
+                      << ", restore_elz elapsed: " << params.timings.restore_elz
+                      << ", total elapsed: " << params.timings.reduction_total()
                       << std::endl;
         }
 
@@ -2260,6 +2276,8 @@ namespace oineus {
 
         const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
 
+        Timer timer_prepare;
+
         AMatrix ar_matrix(n_cols);
         AtomicIdxVector pivots(n_rows);
 
@@ -2279,6 +2297,7 @@ namespace oineus {
                     });
             executor.run(taskflow_prepare).get();
         }
+        params.timings.prepare = timer_prepare.elapsed();
 
         spd::debug("Pivots initialized");
 
@@ -2322,8 +2341,7 @@ namespace oineus {
         if (oineus::interrupted())
             throw oineus::interrupted_exception{};
 
-        params.elapsed = timer_reduction.elapsed();
-        params.elapsed_restore_elz = 0.0;
+        params.timings.reduce = timer_reduction.elapsed();
 
         if (params.print_time) {
             long total_cleared = 0;
@@ -2331,7 +2349,7 @@ namespace oineus {
                 total_cleared += s.n_cleared;
                 spd::info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
             }
-            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, params.elapsed);
+            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, params.timings.reduce);
         }
 
 #ifdef OINEUS_GATHER_ADD_STATS
@@ -2351,7 +2369,7 @@ namespace oineus {
                         }
                     });
             executor.run(taskflow_finish).get();
-            params.elapsed_copy_back = timer_copy_back.elapsed();
+            params.timings.copy_back = timer_copy_back.elapsed();
         }
 
         {
@@ -2364,7 +2382,17 @@ namespace oineus {
                         _pivots[col_idx] = pivots[col_idx].load(std::memory_order_relaxed);
                     });
             executor.run(taskflow_copy_pivots).get();
-            params.elapsed_copy_pivots = timer_copy_pivots.elapsed();
+            params.timings.copy_pivots = timer_copy_pivots.elapsed();
+        }
+
+        // Free the working columns retired during reduction (deferred by the
+        // hazard-pointer reclaimers). This is real teardown of the working
+        // matrix, so account it under copy_back rather than leaving it untimed
+        // at scope exit. Safe now that all worker threads have joined.
+        {
+            Timer timer_teardown;
+            mms.clear();
+            params.timings.copy_back += timer_teardown.elapsed();
         }
 
         is_reduced = true;
@@ -2383,6 +2411,8 @@ namespace oineus {
             return;
 
         int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+
+        Timer timer_prepare;
 
         v_data = std::vector<IntSparseColumn>(n_cols);
 
@@ -2422,6 +2452,7 @@ namespace oineus {
                     });
             executor.run(taskflow_prepare).get();
         }
+        params.timings.prepare = timer_prepare.elapsed();
 
         std::vector<std::thread> ts;
         std::vector<std::unique_ptr<MemoryReclaimC>> mms;
@@ -2463,7 +2494,7 @@ namespace oineus {
         if (oineus::interrupted())
             throw oineus::interrupted_exception{};
 
-        params.elapsed = timer_reduction.elapsed();
+        params.timings.reduce = timer_reduction.elapsed();
 
         if (params.print_time) {
             long total_cleared = 0;
@@ -2471,7 +2502,7 @@ namespace oineus {
                 total_cleared += s.n_cleared;
                 spd::info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
             }
-            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, params.elapsed);
+            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, params.timings.reduce);
         }
 
 #ifdef OINEUS_GATHER_ADD_STATS
@@ -2588,7 +2619,7 @@ namespace oineus {
                 const dim_type _dim = static_cast<dim_type>(_dim_from_dim(dim));
                 set_is_elz_flag(_dim, true);
             }
-            params.elapsed_restore_elz = timer_restore.elapsed();
+            params.timings.restore_elz = timer_restore.elapsed();
 
             // Step 4: copy back from r_v_matrix to r_data / v_data.
             Timer timer_copy_back;
@@ -2625,10 +2656,9 @@ namespace oineus {
                     delete p_original;
                 }
             }
-            params.elapsed_copy_back = timer_copy_back.elapsed();
+            params.timings.copy_back = timer_copy_back.elapsed();
 
         } else {
-            params.elapsed_restore_elz = 0.0;
             Timer timer_copy_back;
             for(int dim_idx = _dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
                 for(Int col_idx = _dim_first[dim_idx]; col_idx <= _dim_last[dim_idx]; ++col_idx) {
@@ -2659,7 +2689,7 @@ namespace oineus {
                     }
                 } // loop over columns
             } // loop over dimensions
-            params.elapsed_copy_back = timer_copy_back.elapsed();
+            params.timings.copy_back = timer_copy_back.elapsed();
         }
 
         {
@@ -2672,7 +2702,17 @@ namespace oineus {
                         _pivots[col_idx] = pivots[col_idx].load(std::memory_order_relaxed);
                     });
             executor.run(taskflow_copy_pivots).get();
-            params.elapsed_copy_pivots = timer_copy_pivots.elapsed();
+            params.timings.copy_pivots = timer_copy_pivots.elapsed();
+        }
+
+        // Free the working columns retired during reduction (deferred by the
+        // hazard-pointer reclaimers). This is real teardown of the working
+        // matrix, so account it under copy_back rather than leaving it untimed
+        // at scope exit. Safe now that all worker threads have joined.
+        {
+            Timer timer_teardown;
+            mms.clear();
+            params.timings.copy_back += timer_teardown.elapsed();
         }
 
         is_reduced = true;
