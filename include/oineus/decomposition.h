@@ -1093,6 +1093,11 @@ namespace oineus {
         template<typename Cell, typename Real>
         Diagrams<Real> diagram_general_par(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const;
 
+        // Non-relative general diagram, parallel implementation using raw
+        // std::thread (benchmark-only A/B variant; not exposed to Python).
+        template<typename Cell, typename Real>
+        Diagrams<Real> diagram_general_par_stdthread(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const;
+
         // Non-relative general diagram, dispatcher: n_threads <= 1 -> serial, else parallel.
         template<typename Cell, typename Real>
         Diagrams<Real> diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads = 1) const;
@@ -3488,6 +3493,102 @@ namespace oineus {
             throw oineus::interrupted_exception{};
 
         // Merge: concatenate per-dimension vectors (cost O(|diagram|) << n_cols).
+        Diagrams<Real> result(max_dim);
+        for(dim_type d = 0; d <= max_dim; ++d) {
+            size_t total = 0;
+            for(int t = 0; t < eff_threads; ++t)
+                total += locals[t][d].size();
+            auto& dst = result[d];
+            dst.reserve(total);
+            for(int t = 0; t < eff_threads; ++t) {
+                auto& src = locals[t][d];
+                dst.insert(dst.end(), std::make_move_iterator(src.begin()), std::make_move_iterator(src.end()));
+            }
+        }
+
+        return result;
+    }
+
+    // Raw-std::thread variant of diagram_general_par: same algorithm, same emit
+    // logic (emit_column_), same contiguous chunking and merge, but barriers are
+    // std::thread joins instead of taskflow. Exists only to A/B the taskflow
+    // scheduler overhead in benchmarks; not exposed to Python.
+    template<class Int>
+    template<class Cell, class Real>
+    Diagrams<Real> VRUDecomposition<Int>::diagram_general_par_stdthread(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const
+    {
+        if (not is_reduced)
+            throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
+
+        if (fil.size() == 0)
+            return Diagrams<Real>();
+
+        const dim_type max_dim = fil.max_dim();
+        const bool from_pivots = r_data.empty() and not _pivots.empty();
+        const size_t n_cols = from_pivots ? n_rows : r_data.size();
+
+        constexpr size_t min_cols_for_par = 4096;
+        const int eff_threads = std::min<int>(n_threads, static_cast<int>(std::max<size_t>(1, n_cols)));
+        if (eff_threads <= 1 or n_cols < min_cols_for_par)
+            return diagram_general_serial(fil, include_all, include_inf_points, only_zero_persistence);
+
+        std::vector<Int> col_to_low;
+        if (from_pivots) {
+            col_to_low.assign(n_cols, Int(-1));
+            for(size_t r = 0; r < _pivots.size(); ++r)
+                if (_pivots[r] >= 0)
+                    col_to_low[static_cast<size_t>(_pivots[r])] = static_cast<Int>(r);
+        }
+        auto col_low = [&](size_t i) -> Int { return from_pivots ? col_to_low[i] : low(&r_data[i]); };
+        auto col_is_zero = [&](size_t i) -> bool { return from_pivots ? (col_to_low[i] < 0) : is_zero(&r_data[i]); };
+
+        if (include_all) {
+            include_inf_points = true;
+            only_zero_persistence = false;
+        } else if (only_zero_persistence) {
+            include_inf_points = false;
+        }
+
+        const size_t chunk = (n_cols + static_cast<size_t>(eff_threads) - 1) / static_cast<size_t>(eff_threads);
+
+        // Contiguous-chunk parallel-for over [0, n_cols) with raw std::thread;
+        // barrier via join. Workers poll the interrupt flag and return (never
+        // throw); the orchestrator throws after join.
+        auto run_chunks = [&](auto&& body) {
+            std::vector<std::thread> workers;
+            workers.reserve(eff_threads);
+            for(int t = 0; t < eff_threads; ++t) {
+                workers.emplace_back([&, t]() {
+                    const size_t lo = static_cast<size_t>(t) * chunk;
+                    const size_t hi = std::min(lo + chunk, n_cols);
+                    for(size_t i = lo; i < hi; ++i) {
+                        if ((i - lo) % 1024 == 0 and oineus::interrupted())
+                            return;
+                        body(i, static_cast<size_t>(t));
+                    }
+                });
+            }
+            for(auto& w : workers)
+                w.join();
+            if (oineus::interrupted())
+                throw oineus::interrupted_exception{};
+        };
+
+        std::vector<char> is_pivot_row;
+        if (include_inf_points) {
+            is_pivot_row.assign(n_cols, 0);
+            run_chunks([&](size_t i, size_t) {
+                if (!col_is_zero(i))
+                    is_pivot_row[static_cast<size_t>(col_low(i))] = 1;
+            });
+        }
+
+        std::vector<Diagrams<Real>> locals(eff_threads, Diagrams<Real>(max_dim));
+        run_chunks([&](size_t i, size_t t) {
+            emit_column_(fil, i, col_low(i), col_is_zero(i), is_pivot_row,
+                    include_all, include_inf_points, only_zero_persistence, locals[t]);
+        });
+
         Diagrams<Real> result(max_dim);
         for(dim_type d = 0; d <= max_dim; ++d) {
             size_t total = 0;
