@@ -1089,6 +1089,10 @@ namespace oineus {
         template<typename Cell, typename Real>
         Diagrams<Real> diagram_general_serial(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const;
 
+        // Non-relative general diagram, parallel implementation (taskflow).
+        template<typename Cell, typename Real>
+        Diagrams<Real> diagram_general_par(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const;
+
         // Non-relative general diagram, dispatcher: n_threads <= 1 -> serial, else parallel.
         template<typename Cell, typename Real>
         Diagrams<Real> diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads = 1) const;
@@ -3396,15 +3400,119 @@ namespace oineus {
         return result;
     }
 
-    // Dispatcher: routes to the serial or parallel implementation by thread
-    // count. The parallel path is added in a subsequent step; for now this
-    // always runs serially.
+    // Parallel diagram extraction (taskflow). Mirrors diagram_general_serial but
+    // splits the O(n_cols) passes across n_threads: invert _pivots (serial,
+    // cheap), build the pivot-row bitmap (race-free scatter), then emit into
+    // per-worker local diagrams that are concatenated at the end. Covers both the
+    // classic (r_data) and fused (_pivots-only) states via the same col_low /
+    // col_is_zero accessors as the serial path. add_point is not thread-safe, so
+    // each worker owns its own Diagrams and there is no shared mutable diagram.
+    template<class Int>
+    template<class Cell, class Real>
+    Diagrams<Real> VRUDecomposition<Int>::diagram_general_par(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const
+    {
+        if (not is_reduced)
+            throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
+
+        if (fil.size() == 0)
+            return Diagrams<Real>();
+
+        const dim_type max_dim = fil.max_dim();
+        const bool from_pivots = r_data.empty() and not _pivots.empty();
+        const size_t n_cols = from_pivots ? n_rows : r_data.size();
+
+        // Fall back to serial for a single effective thread or tiny inputs, where
+        // thread setup costs more than the O(n_cols) scan it parallelizes.
+        constexpr size_t min_cols_for_par = 4096;
+        const int eff_threads = std::min<int>(n_threads, static_cast<int>(std::max<size_t>(1, n_cols)));
+        if (eff_threads <= 1 or n_cols < min_cols_for_par)
+            return diagram_general_serial(fil, include_all, include_inf_points, only_zero_persistence);
+
+        // Pass A: invert _pivots -> col_to_low (serial; race-free but cheap).
+        std::vector<Int> col_to_low;
+        if (from_pivots) {
+            col_to_low.assign(n_cols, Int(-1));
+            for(size_t r = 0; r < _pivots.size(); ++r)
+                if (_pivots[r] >= 0)
+                    col_to_low[static_cast<size_t>(_pivots[r])] = static_cast<Int>(r);
+        }
+        auto col_low = [&](size_t i) -> Int { return from_pivots ? col_to_low[i] : low(&r_data[i]); };
+        auto col_is_zero = [&](size_t i) -> bool { return from_pivots ? (col_to_low[i] < 0) : is_zero(&r_data[i]); };
+
+        if (include_all) {
+            include_inf_points = true;
+            only_zero_persistence = false;
+        } else if (only_zero_persistence) {
+            include_inf_points = false;
+        }
+
+        tf::Executor executor(eff_threads);
+
+        // Pass B: mark pivot rows in a dense bitmap. Writes are race-free: each
+        // row is the low of at most one column (distinct indices), and distinct
+        // char cells are distinct memory locations. Only needed for inf points.
+        std::vector<char> is_pivot_row;
+        if (include_inf_points) {
+            is_pivot_row.assign(n_cols, 0);
+            tf::Taskflow tf_b;
+            tf_b.for_each_index((size_t)0, n_cols, (size_t)1, [&](size_t i) {
+                if (i % 1024 == 0 and oineus::interrupted())
+                    return;
+                if (!col_is_zero(i))
+                    is_pivot_row[static_cast<size_t>(col_low(i))] = 1;
+            });
+            executor.run(tf_b).get();
+            if (oineus::interrupted())
+                throw oineus::interrupted_exception{};
+        }
+
+        // Pass C: emit into per-worker local diagrams over contiguous column
+        // chunks. Workers poll the interrupt flag and return (never throw); the
+        // orchestrator throws after the barrier.
+        const size_t chunk = (n_cols + static_cast<size_t>(eff_threads) - 1) / static_cast<size_t>(eff_threads);
+        std::vector<Diagrams<Real>> locals(eff_threads, Diagrams<Real>(max_dim));
+        tf::Taskflow tf_c;
+        tf_c.for_each_index((size_t)0, (size_t)eff_threads, (size_t)1, [&](size_t t) {
+            const size_t lo = static_cast<size_t>(t) * chunk;
+            const size_t hi = std::min(lo + chunk, n_cols);
+            Diagrams<Real>& out = locals[t];
+            for(size_t col_idx = lo; col_idx < hi; ++col_idx) {
+                if ((col_idx - lo) % 1024 == 0 and oineus::interrupted())
+                    return;
+                emit_column_(fil, col_idx, col_low(col_idx), col_is_zero(col_idx), is_pivot_row,
+                        include_all, include_inf_points, only_zero_persistence, out);
+            }
+        });
+        executor.run(tf_c).get();
+        if (oineus::interrupted())
+            throw oineus::interrupted_exception{};
+
+        // Merge: concatenate per-dimension vectors (cost O(|diagram|) << n_cols).
+        Diagrams<Real> result(max_dim);
+        for(dim_type d = 0; d <= max_dim; ++d) {
+            size_t total = 0;
+            for(int t = 0; t < eff_threads; ++t)
+                total += locals[t][d].size();
+            auto& dst = result[d];
+            dst.reserve(total);
+            for(int t = 0; t < eff_threads; ++t) {
+                auto& src = locals[t][d];
+                dst.insert(dst.end(), std::make_move_iterator(src.begin()), std::make_move_iterator(src.end()));
+            }
+        }
+
+        return result;
+    }
+
+    // Dispatcher: n_threads <= 1 runs the serial implementation; otherwise the
+    // parallel one (which itself falls back to serial for tiny inputs).
     template<class Int>
     template<class Cell, class Real>
     Diagrams<Real> VRUDecomposition<Int>::diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const
     {
-        (void) n_threads;
-        return diagram_general_serial(fil, include_all, include_inf_points, only_zero_persistence);
+        if (n_threads <= 1)
+            return diagram_general_serial(fil, include_all, include_inf_points, only_zero_persistence);
+        return diagram_general_par(fil, include_all, include_inf_points, only_zero_persistence, n_threads);
     }
 
     template<class Int>
