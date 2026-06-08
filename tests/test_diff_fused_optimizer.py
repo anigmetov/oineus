@@ -61,21 +61,32 @@ def test_fused_optimizer_diagram_and_validity():
         assert a.shape == b.shape and np.allclose(a, b)
 
 
-def test_fused_optimizer_crit_sets_backward_runs():
-    # A crit-sets backward with n_threads > 1 drives the fused keep-working path
-    # end to end: is_negative + increase/decrease death/birth through the
-    # working-form accessors, and U computed from the working V. The gradient
-    # must be finite and nonzero. (crit-sets is a big-step method, so its signal
-    # is not the finite-difference loss gradient -- that is the dgm-loss path.)
+def _crit_grad(pts_np, nt, dim=1):
     import oineus.diff as od
-    pts_np = _circle()
     t = torch.tensor(pts_np, dtype=torch.float64, requires_grad=True)
     fil = od.vr_filtration(t, max_dim=2, max_diameter=10.0, n_threads=1)
     dgms = od.persistence_diagram(fil, gradient_method="crit-sets",
-                                  n_threads=4, dualize=False)
-    if dgms[1].shape[0] == 0:
+                                  n_threads=nt, dualize=False)
+    d = dgms[dim]
+    if d.shape[0] == 0:
+        return None
+    ((d[:, 1] - d[:, 0]) ** 2).sum().backward()
+    return t.grad.numpy()
+
+
+def test_fused_optimizer_crit_sets_backward_deterministic():
+    # A crit-sets backward with n_threads > 1 drives the fused keep-working path
+    # end to end: is_negative + increase/decrease death/birth through the
+    # working-form accessors, and U computed from the working V. The optimizer
+    # restores ELZ in the optimization dims, and the ELZ form is UNIQUE, so the
+    # critical sets -- and hence the gradient -- are deterministic across thread
+    # counts: the parallel (keep-working) gradient equals the serial one bit for
+    # bit, not merely up to the non-uniqueness of a raw parallel V.
+    pts_np = _circle()
+    g_serial = _crit_grad(pts_np, 1)
+    if g_serial is None:
         pytest.skip("no H1 points")
-    ((dgms[1][:, 1] - dgms[1][:, 0]) ** 2).sum().backward()
-    g = t.grad.numpy()
-    assert np.isfinite(g).all()
-    assert float((g ** 2).sum()) > 1e-10
+    assert np.isfinite(g_serial).all()
+    assert float((g_serial ** 2).sum()) > 1e-10
+    for nt in (2, 4, 8):
+        np.testing.assert_array_equal(_crit_grad(pts_np, nt), g_serial)
