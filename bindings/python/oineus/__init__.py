@@ -1012,7 +1012,7 @@ def compute_diagrams_ls(data: np.ndarray, negate: bool=False, wrap: bool=False,
     fil = freudenthal_filtration(data=data, negate=negate, wrap=wrap, max_dim=max_dim + 1, n_threads=params.n_threads)
     dcmp = _oineus.Decomposition(fil, dualize)
     dcmp.reduce(params)
-    return dcmp.diagram(fil=fil, include_inf_points=include_inf_points)
+    return dcmp.diagram(fil=fil, include_inf_points=include_inf_points, n_threads=params.n_threads)
 
 
 def compute_diagrams_vr(data: np.ndarray, from_pwdists: bool=False, max_dim: int=-1, max_diameter: float = -1.0, params: typing.Optional[ReductionParams]=None, include_inf_points: bool=True, dualize: bool=True):
@@ -1022,7 +1022,7 @@ def compute_diagrams_vr(data: np.ndarray, from_pwdists: bool=False, max_dim: int
     fil = vr_filtration(data, from_pwdists, max_dim=max_dim, max_diameter=max_diameter, with_critical_edges=False, n_threads=params.n_threads)
     dcmp = _oineus.Decomposition(fil, dualize)
     dcmp.reduce(params)
-    return dcmp.diagram(fil=fil, include_inf_points=include_inf_points)
+    return dcmp.diagram(fil=fil, include_inf_points=include_inf_points, n_threads=params.n_threads)
 
 
 def alpha_filtration(points: np.ndarray,
@@ -1160,7 +1160,7 @@ def compute_diagrams_alpha(points: np.ndarray,
     )
     dcmp = _oineus.Decomposition(fil, dualize)
     dcmp.reduce(params)
-    return dcmp.diagram(fil=fil, include_inf_points=include_inf_points)
+    return dcmp.diagram(fil=fil, include_inf_points=include_inf_points, n_threads=params.n_threads)
 
 
 def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d: int, q: float, mip: bool, mdp: bool):

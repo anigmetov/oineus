@@ -488,31 +488,66 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def("sanity_check", [](Decomposition& self, const typename Decomposition::MatrixData& d) { return self.sanity_check(d); },
                     nb::arg("d") = typename Decomposition::MatrixData{},
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram", [](const Decomposition& self, const SimplexFiltration& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true)
-            .def("diagram", [](const Decomposition& self, const ProdSimplexFiltration& fil, bool include_inf_points) { return PyOineusDiagrams<oin_real>(self.diagram(fil,
-                    include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true)
-            .def("diagram", [](const Decomposition& self, const CubeFiltration_1D& fil, bool include_inf_points) { return PyOineusDiagrams<oin_real>(self.diagram(fil,
-                    include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true)
-            .def("diagram", [](const Decomposition& self, const CubeFiltration_2D& fil, bool include_inf_points) { return PyOineusDiagrams<oin_real>(self.diagram(fil,
-                    include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true)
-            .def("diagram", [](const Decomposition& self, const CubeFiltration_3D& fil, bool include_inf_points) { return PyOineusDiagrams<oin_real>(self.diagram(fil,
-                    include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true)
-            .def("zero_pers_diagram", [](const Decomposition& self, const SimplexFiltration& fil) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil)); },
-                    nb::arg("fil"))
-            .def("zero_pers_diagram", [](const Decomposition& self, const ProdSimplexFiltration& fil) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil)); },
-                    nb::arg("fil"))
-            .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_1D& fil) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil)); },
-                    nb::arg("fil"))
-            .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_2D& fil) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil)); },
-                    nb::arg("fil"))
-            .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_3D& fil) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil)); },
-                    nb::arg("fil"))
+            // diagram(): parallel by default (n_threads), GIL released so the
+            // taskflow workers run truly parallel and Ctrl-C surfaces as
+            // KeyboardInterrupt. n_threads = 1 keeps the original serial behavior.
+            .def("diagram", [](const Decomposition& self, const SimplexFiltration& fil, bool include_inf_points, int n_threads)
+                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
+                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("diagram", [](const Decomposition& self, const ProdSimplexFiltration& fil, bool include_inf_points, int n_threads)
+                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
+                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("diagram", [](const Decomposition& self, const CubeFiltration_1D& fil, bool include_inf_points, int n_threads)
+                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
+                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("diagram", [](const Decomposition& self, const CubeFiltration_2D& fil, bool include_inf_points, int n_threads)
+                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
+                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("diagram", [](const Decomposition& self, const CubeFiltration_3D& fil, bool include_inf_points, int n_threads)
+                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
+                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            // diagram_serial(): the untouched serial implementation, kept as a
+            // regression oracle for the parallel diagram().
+            .def("diagram_serial", [](const Decomposition& self, const SimplexFiltration& fil, bool include_inf_points)
+                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
+                    nb::arg("fil"), nb::arg("include_inf_points") = true,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("diagram_serial", [](const Decomposition& self, const ProdSimplexFiltration& fil, bool include_inf_points)
+                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
+                    nb::arg("fil"), nb::arg("include_inf_points") = true,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("diagram_serial", [](const Decomposition& self, const CubeFiltration_1D& fil, bool include_inf_points)
+                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
+                    nb::arg("fil"), nb::arg("include_inf_points") = true,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("diagram_serial", [](const Decomposition& self, const CubeFiltration_2D& fil, bool include_inf_points)
+                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
+                    nb::arg("fil"), nb::arg("include_inf_points") = true,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("diagram_serial", [](const Decomposition& self, const CubeFiltration_3D& fil, bool include_inf_points)
+                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
+                    nb::arg("fil"), nb::arg("include_inf_points") = true,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("zero_pers_diagram", [](const Decomposition& self, const SimplexFiltration& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
+                    nb::arg("fil"), nb::arg("n_threads") = 1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("zero_pers_diagram", [](const Decomposition& self, const ProdSimplexFiltration& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
+                    nb::arg("fil"), nb::arg("n_threads") = 1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_1D& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
+                    nb::arg("fil"), nb::arg("n_threads") = 1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_2D& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
+                    nb::arg("fil"), nb::arg("n_threads") = 1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_3D& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
+                    nb::arg("fil"), nb::arg("n_threads") = 1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("filtration_index", &Decomposition::filtration_index, nb::arg("matrix_index"))
             .def("__repr__", [](const Decomposition& self) {
                 std::stringstream ss;
