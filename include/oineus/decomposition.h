@@ -2824,6 +2824,23 @@ namespace oineus {
 
         std::unordered_set<Int> rows_with_lowest_one;
 
+        // Diagram needs only low(R[col]) and is_zero(R[col]) per column. When R is
+        // materialized we read it directly; in the fused / diagram-only state R is
+        // not kept, so derive both from _pivots (invert it: col_to_low[c] = r where
+        // _pivots[r] == c). Both yield identical diagrams. The matrix is square, so
+        // the column count is n_rows when R is absent.
+        const bool from_pivots = r_data.empty() and not _pivots.empty();
+        const size_t n_cols = from_pivots ? n_rows : r_data.size();
+        std::vector<Int> col_to_low;
+        if (from_pivots) {
+            col_to_low.assign(n_cols, Int(-1));
+            for(size_t r = 0; r < _pivots.size(); ++r)
+                if (_pivots[r] >= 0)
+                    col_to_low[static_cast<size_t>(_pivots[r])] = static_cast<Int>(r);
+        }
+        auto col_low = [&](size_t i) -> Int { return from_pivots ? col_to_low[i] : low(&r_data[i]); };
+        auto col_is_zero = [&](size_t i) -> bool { return from_pivots ? (col_to_low[i] < 0) : is_zero(&r_data[i]); };
+
         if (include_all) {
             include_inf_points = true;
             only_zero_persistence = false;
@@ -2832,20 +2849,18 @@ namespace oineus {
         }
 
         if (include_inf_points)
-            for(size_t i = 0; i < r_data.size(); ++i) {
-                if (!is_zero(&r_data[i]))
-                    rows_with_lowest_one.insert(low(&r_data[i]));
+            for(size_t i = 0; i < n_cols; ++i) {
+                if (!col_is_zero(i))
+                    rows_with_lowest_one.insert(col_low(i));
 
                 if (i % 100 == 0 && oineus::interrupted())
                     throw oineus::interrupted_exception{};
             }
 
-        for(size_t col_idx = 0; col_idx < r_data.size(); ++col_idx) {
-            auto col = &r_data[col_idx];
-
+        for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
             auto simplex_idx = fil.index_in_filtration(col_idx, dualize());
 			auto simplex_idx_us = fil.get_id_by_sorted_id(simplex_idx);
-            if (is_zero(col)) {
+            if (col_is_zero(col_idx)) {
                 if (not include_inf_points or rows_with_lowest_one.count(col_idx) != 0)
                     // we don't want infinite points or col_idx is a negative simplex
                     continue;
@@ -2858,7 +2873,7 @@ namespace oineus {
                 result.add_point(dim, birth, death, simplex_idx, plus_inf, simplex_idx_us, plus_inf);
             } else {
                 // finite point
-                Int birth_idx = fil.index_in_filtration(low(col), dualize()), death_idx = simplex_idx;
+                Int birth_idx = fil.index_in_filtration(col_low(col_idx), dualize()), death_idx = simplex_idx;
 		Int birth_idx_us = fil.get_id_by_sorted_id(birth_idx), death_idx_us = fil.get_id_by_sorted_id(death_idx);
                 dim_type dim = fil.dim_by_sorted_id(birth_idx);
                 Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
