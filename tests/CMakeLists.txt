@@ -62,6 +62,7 @@ else()
             api-dgm
             api-fil
             api-kicr
+            api-reduce
             bot-match
             cube
             cube-dgm
