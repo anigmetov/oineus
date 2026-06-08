@@ -96,7 +96,7 @@ def test_reduce_serial_r_only_keeps_r_data():
 
 
 def test_reduce_rv_parallel_exposes_r_and_v():
-    # compute_v keeps both R and V even in parallel (copy-back happens).
+    # compute_v keeps both R and V even in parallel (lazy-materialized on access).
     fil = _grid_fil(seed=4)
     p = oin.ReductionParams()
     p.compute_v = True
@@ -131,3 +131,62 @@ def test_reduce_timings_propagate():
 
     assert p.timings.reduce >= 0.0
     assert p.elapsed >= 0.0
+
+
+def test_reduce_keep_working_diagram_then_materialize():
+    # Parallel RV keeps the working form: the diagram reads pivots (no
+    # materialization), and a later v_data/r_data access materializes lazily,
+    # giving a valid D*V == R decomposition.
+    fil = _grid_fil(seed=7)
+    D = fil.boundary_matrix()
+    oracle = _classic_dgms(fil)
+
+    p = oin.ReductionParams()
+    p.compute_v = True
+    p.n_threads = 4
+    dcmp = oin.reduce(fil, p)
+
+    # diagram works straight from pivots, before any matrix access
+    got = [dcmp.diagram(fil).in_dimension(d) for d in range(3)]
+    assert _dgms_equal(got, oracle)
+
+    # first matrix access materializes; the decomposition stays valid
+    assert len(dcmp.v_data) == fil.size()
+    assert dcmp.sanity_check(D)
+
+
+def test_reduce_keep_working_clone():
+    # clone() copies via the C++ copy ctor, which materializes the source's
+    # working form first; both the clone and the original must be valid.
+    fil = _grid_fil(seed=8)
+    D = fil.boundary_matrix()
+
+    p = oin.ReductionParams()
+    p.compute_v = True
+    p.n_threads = 4
+    dcmp = oin.reduce(fil, p)
+
+    clone = dcmp.clone()
+    assert clone.sanity_check(D)
+    assert len(clone.r_data) == fil.size()
+    # original is independently valid
+    assert dcmp.sanity_check(D)
+
+
+def test_reduce_keep_working_pickle_roundtrip():
+    # Pickling a keep-working decomposition materializes it first, so the
+    # round trip preserves diagrams and validity.
+    import pickle
+    fil = _grid_fil(seed=9)
+    D = fil.boundary_matrix()
+    oracle = _classic_dgms(fil)
+
+    p = oin.ReductionParams()
+    p.compute_v = True
+    p.n_threads = 4
+    dcmp = oin.reduce(fil, p)
+
+    dcmp2 = pickle.loads(pickle.dumps(dcmp))
+    got = [dcmp2.diagram(fil).in_dimension(d) for d in range(3)]
+    assert _dgms_equal(got, oracle)
+    assert dcmp2.sanity_check(D)

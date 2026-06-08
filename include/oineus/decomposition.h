@@ -466,12 +466,138 @@ namespace oineus {
 
         size_t n_rows {0};
 
+        // Live working RV columns retained by the fused keep-working path
+        // (oin.reduce with compute_v and n_threads > 1, and the TopologyOptimizer).
+        // When has_working_rv_ is true, R and V are NOT materialized in
+        // r_data/v_data; the reduced columns live here as heap-owned RVColumn
+        // pointers (a col_repr-independent type) and the at-rest matrices are
+        // reconstructed lazily by materialize_from_working_(). Empty/false on every
+        // classic path. The keep-working core always runs the Bauer fill, so every
+        // entry here is non-null.
+        std::vector<std::atomic<RVColumn<Int, 2>*>> working_rv_;
+        bool has_working_rv_ {false};
+
         // methods
         VRUDecomposition() = default;
-        VRUDecomposition(const VRUDecomposition&) = default;
-        VRUDecomposition(VRUDecomposition&&) noexcept = default;
-        VRUDecomposition& operator=(VRUDecomposition&&) noexcept = default;
-        VRUDecomposition& operator=(const VRUDecomposition&) = default;
+        // working_rv_ holds heap-owned, non-copyable atomic pointers, so the
+        // special members are hand-written. Copy materializes the source first
+        // (a copy never carries a live working form); move steals the buffer and
+        // disowns the source; the destructor frees a live working form.
+        VRUDecomposition(const VRUDecomposition& other) { copy_from_(other); }
+        VRUDecomposition(VRUDecomposition&& other) noexcept { move_from_(std::move(other)); }
+        VRUDecomposition& operator=(const VRUDecomposition& other)
+        {
+            if (this != &other) { free_working_(); copy_from_(other); }
+            return *this;
+        }
+        VRUDecomposition& operator=(VRUDecomposition&& other) noexcept
+        {
+            if (this != &other) { free_working_(); move_from_(std::move(other)); }
+            return *this;
+        }
+        ~VRUDecomposition() { free_working_(); }
+
+        void free_working_() noexcept
+        {
+            if (has_working_rv_) {
+                for (auto& a : working_rv_)
+                    delete a.load(std::memory_order_relaxed);
+                working_rv_.clear();
+                has_working_rv_ = false;
+            }
+        }
+
+        void copy_from_(const VRUDecomposition& other)
+        {
+            other.ensure_materialized_();
+            d_data = other.d_data;
+            r_data = other.r_data;
+            v_data = other.v_data;
+            u_data_t = other.u_data_t;
+            is_reduced = other.is_reduced;
+            has_d_data_ = other.has_d_data_;
+            dualize_ = other.dualize_;
+            is_elz_in_dim_ = other.is_elz_in_dim_;
+            _pivots = other._pivots;
+            ri_r_ = other.ri_r_;
+            ri_v_ = other.ri_v_;
+            ri_d_ = other.ri_d_;
+            is_dynamic_ = other.is_dynamic_;
+            dim_first = other.dim_first;
+            dim_last = other.dim_last;
+            _dim_first = other._dim_first;
+            _dim_last = other._dim_last;
+            n_rows = other.n_rows;
+            has_working_rv_ = false;
+        }
+
+        void move_from_(VRUDecomposition&& other) noexcept
+        {
+            d_data = std::move(other.d_data);
+            r_data = std::move(other.r_data);
+            v_data = std::move(other.v_data);
+            u_data_t = std::move(other.u_data_t);
+            is_reduced = other.is_reduced;
+            has_d_data_ = other.has_d_data_;
+            dualize_ = other.dualize_;
+            is_elz_in_dim_ = std::move(other.is_elz_in_dim_);
+            _pivots = std::move(other._pivots);
+            ri_r_ = std::move(other.ri_r_);
+            ri_v_ = std::move(other.ri_v_);
+            ri_d_ = std::move(other.ri_d_);
+            is_dynamic_ = other.is_dynamic_;
+            dim_first = std::move(other.dim_first);
+            dim_last = std::move(other.dim_last);
+            _dim_first = std::move(other._dim_first);
+            _dim_last = std::move(other._dim_last);
+            n_rows = other.n_rows;
+            working_rv_ = std::move(other.working_rv_);
+            has_working_rv_ = other.has_working_rv_;
+            other.has_working_rv_ = false;
+            other.working_rv_.clear();
+        }
+
+        // Materialize r_data/v_data from the kept working RV columns, then drop the
+        // working form. Lazy-cache idiom: logically const (the observable at-rest
+        // matrices are the same whether built eagerly by copy-back or here), so the
+        // const wrapper const_casts. No-op when there is no working form.
+        void materialize_from_working_();
+        void ensure_materialized_() const
+        {
+            if (has_working_rv_)
+                const_cast<VRUDecomposition*>(this)->materialize_from_working_();
+        }
+
+        // Column count valid in both states: size() reads r_data.size(), which is
+        // empty while keep-working.
+        size_t n_cols_total() const { return has_working_rv_ ? working_rv_.size() : r_data.size(); }
+
+        // Per-column reads that work directly on the kept working form (no
+        // materialization), falling back to at-rest r_data/v_data otherwise. The
+        // topology optimizer's hot read sites use these. v_col assumes a non-null
+        // column (true in keep-working thanks to the Bauer fill).
+        Int r_low(size_t col) const
+        {
+            if (has_working_rv_) {
+                auto* p = working_rv_[col].load(std::memory_order_relaxed);
+                return p ? p->low() : Int(-1);
+            }
+            return low(&r_data[col]);
+        }
+        bool r_is_zero(size_t col) const
+        {
+            if (has_working_rv_) {
+                auto* p = working_rv_[col].load(std::memory_order_relaxed);
+                return p == nullptr or p->is_zero();
+            }
+            return is_zero(&r_data[col]);
+        }
+        const IntSparseColumn& v_col(size_t col) const
+        {
+            if (has_working_rv_)
+                return working_rv_[col].load(std::memory_order_relaxed)->v_column;
+            return v_data[col];
+        }
 
         template<class C, class R>
         VRUDecomposition(const Filtration<C, R>& fil, bool _dualize, int n_threads=8)
@@ -614,16 +740,15 @@ namespace oineus {
             if (params.compute_v) {
                 auto rv = dualize ? fil.coboundary_matrix_for_par_with_v(params.n_threads)
                                   : fil.boundary_matrix_for_par_with_v(params.n_threads);
-                // Materialize R and V: size r_data/v_data to n_cols (empty columns);
-                // the core's copy-back fills every column.
-                dcmp.r_data = MatrixData(n_cols);
-                dcmp.v_data = MatrixData(n_cols);
+                // Keep the working RV columns: r_data/v_data stay empty and are
+                // reconstructed lazily on first matrix/pickle access. diagram(fil)
+                // reads _pivots, so diagram-only callers never pay the copy-back.
                 params.timings.prepare = timer_build.elapsed();
                 switch (params.col_repr) {
-                    case ColumnRepr::Set:     dcmp.reduce_parallel_rv_core_<SetColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads); break;
-                    case ColumnRepr::Heap:    dcmp.reduce_parallel_rv_core_<HeapColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads); break;
-                    case ColumnRepr::Full:    dcmp.reduce_parallel_rv_core_<FullColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads); break;
-                    case ColumnRepr::BitTree: dcmp.reduce_parallel_rv_core_<BitTreeColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads); break;
+                    case ColumnRepr::Set:     dcmp.reduce_parallel_rv_core_<SetColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, /*keep_working=*/true); break;
+                    case ColumnRepr::Heap:    dcmp.reduce_parallel_rv_core_<HeapColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, true); break;
+                    case ColumnRepr::Full:    dcmp.reduce_parallel_rv_core_<FullColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, true); break;
+                    case ColumnRepr::BitTree: dcmp.reduce_parallel_rv_core_<BitTreeColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, true); break;
                 }
             } else {
                 auto ar = dualize ? fil.coboundary_matrix_for_par(params.n_threads)
@@ -740,10 +865,17 @@ namespace oineus {
         // diagram(fil) still works (it reads _pivots); the R contents are gone
         // and cannot be recovered without re-reducing. Used to give a clear
         // error on r_data access rather than silently returning an empty matrix.
-        bool is_pivots_only() const { return is_reduced and r_data.empty() and n_rows > 0; }
+        // The R-only fused path frees the reduced columns, leaving only _pivots
+        // (r_data empty, no working form). Keep-working also leaves r_data empty but
+        // R is recoverable from working_rv_, so it is NOT pivots-only.
+        bool is_pivots_only() const { return is_reduced and r_data.empty() and not has_working_rv_ and n_rows > 0; }
 
         bool operator==(const VRUDecomposition& other) const
         {
+            // Compare at-rest data; materialize either side that is still
+            // keep-working so r_data/v_data are populated.
+            ensure_materialized_();
+            other.ensure_materialized_();
             return d_data == other.d_data
                 && r_data == other.r_data
                 && v_data == other.v_data
@@ -793,7 +925,8 @@ namespace oineus {
         template<class WorkCol> void reduce_parallel_rv_core_(Params& params,
                 tf::Executor& executor,
                 typename GenericRVMatrixTraits<Int, WorkCol>::AMatrix& r_v_matrix,
-                AtomicIdxVector& pivots, size_t n_cols, int n_threads);
+                AtomicIdxVector& pivots, size_t n_cols, int n_threads,
+                bool keep_working);
 
         // Copy params.timings into the back-compat scalar timing fields.
         static void sync_elapsed_from_timings_(Params& params);
@@ -1120,6 +1253,9 @@ namespace oineus {
     bool VRUDecomposition<Int>::sanity_check(const MatrixData& d_provided)
     {
         bool verbose = true;
+        // Keep-working decompositions hold R/V only in the working form; build the
+        // at-rest matrices this check reads.
+        materialize_from_working_();
         // D comes from the held d_data, or from the caller for the fused path.
         const MatrixData& d_use = has_d_data_ ? d_data : d_provided;
         if (not has_d_data_ and d_provided.empty()) {
@@ -2685,7 +2821,7 @@ namespace oineus {
         }
         params.timings.prepare = timer_prepare.elapsed();
 
-        reduce_parallel_rv_core_<WorkCol>(params, executor, r_v_matrix, pivots, n_cols, n_threads);
+        reduce_parallel_rv_core_<WorkCol>(params, executor, r_v_matrix, pivots, n_cols, n_threads, /*keep_working=*/false);
     }
 
     // Parallel RV core: consumes a prepared working RV-column array (built by the
@@ -2698,7 +2834,8 @@ namespace oineus {
     void VRUDecomposition<Int>::reduce_parallel_rv_core_(Params& params,
             tf::Executor& executor,
             typename GenericRVMatrixTraits<Int, WorkCol>::AMatrix& r_v_matrix,
-            AtomicIdxVector& pivots, size_t n_cols, int n_threads)
+            AtomicIdxVector& pivots, size_t n_cols, int n_threads,
+            bool keep_working)
     {
         using MatrixTraits = GenericRVMatrixTraits<Int, WorkCol>;
         using RVColumn = typename MatrixTraits::Column;
@@ -2819,14 +2956,22 @@ namespace oineus {
         // };
 
 
-        if (params.dims_to_restore_elz.size() > 0) {
+        const bool do_restore = params.dims_to_restore_elz.size() > 0;
+        // Keep-working hands the live RV columns to the decomposition, so every
+        // column must be non-null (the optimizer and materialize read V on cleared
+        // columns); run the Bauer fill for keep_working as well as for restore_elz.
+        const bool need_bauer = do_restore or keep_working;
+
+        // Snapshot of pre-restore pointers, populated only when restoring ELZ so
+        // the pointers restore_elz replaces can be freed without a double-free.
+        std::vector<RVColumn*> r_v_matrix_copy;
+
+        if (need_bauer) {
             Timer timer_restore;
 
-            // Step 1: Bauer-trick fill for ALL cleared columns across
-            // every dim. The downstream copy-back walks every dim and
-            // expects every column pointer to be non-null, so we must
-            // fill cleared columns everywhere, not just in the dims
-            // we will restore_elz on.
+            // Bauer-trick fill for ALL cleared columns across every dim. Both the
+            // copy-back below and the kept working form require every column
+            // pointer to be non-null.
             {
                 std::atomic<Int> missing_bauer_col{-1};
                 for (dim_type d = 0;
@@ -2859,27 +3004,44 @@ namespace oineus {
                 }
             }
 
-            // Step 2: snapshot pointers (for double-free-safe reclaim
-            // after restore_elz may swap pointers below).
-            std::vector<RVColumn*> r_v_matrix_copy(n_cols, nullptr);
-            for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
-                r_v_matrix_copy[col_idx] = r_v_matrix[col_idx].load(std::memory_order_relaxed);
-            }
+            if (do_restore) {
+                // snapshot pointers before restore_elz swaps some of them
+                r_v_matrix_copy.assign(n_cols, nullptr);
+                for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
+                    r_v_matrix_copy[col_idx] = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+                }
 
-            // Step 3: ELZ restore over the requested dims (others stay
-            // unrestored but still have valid Bauer-filled V columns).
-            for(dim_type dim: params.dims_to_restore_elz) {
-                run_parallel_cols(dim, [&](size_t col_idx) {
-                    restore_elz_column_parallel<Int>(r_v_matrix, col_idx);
-                });
-                // is_elz_in_dim_ uses the internal _dim key (matrix layout).
-                const dim_type _dim = static_cast<dim_type>(_dim_from_dim(dim));
-                set_is_elz_flag(_dim, true);
+                // ELZ restore over the requested dims (others stay unrestored but
+                // still have valid Bauer-filled V columns).
+                for(dim_type dim: params.dims_to_restore_elz) {
+                    run_parallel_cols(dim, [&](size_t col_idx) {
+                        restore_elz_column_parallel<Int>(r_v_matrix, col_idx);
+                    });
+                    // is_elz_in_dim_ uses the internal _dim key (matrix layout).
+                    const dim_type _dim = static_cast<dim_type>(_dim_from_dim(dim));
+                    set_is_elz_flag(_dim, true);
+                }
             }
             params.timings.restore_elz = timer_restore.elapsed();
+        }
 
-            // Step 4: copy back from r_v_matrix to r_data / v_data.
-            Timer timer_copy_back;
+        Timer timer_copy_back;
+        if (keep_working) {
+            // Free the pre-restore versions that restore_elz replaced; the current
+            // (live) pointers move into working_rv_. r_data/v_data stay empty and
+            // are reconstructed lazily by materialize_from_working_().
+            if (do_restore) {
+                for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
+                    auto p_current = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+                    auto p_original = r_v_matrix_copy[col_idx];
+                    if (p_current != p_original)
+                        delete p_original;
+                }
+            }
+            working_rv_ = std::move(r_v_matrix);
+            has_working_rv_ = true;
+        } else if (do_restore) {
+            // copy-back (restore branch): every column non-null after Bauer fill.
             for(int dim_idx = _dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
                 for(Int col_idx = _dim_first[dim_idx]; col_idx <= _dim_last[dim_idx]; ++col_idx) {
                     auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
@@ -2913,10 +3075,7 @@ namespace oineus {
                     delete p_original;
                 }
             }
-            params.timings.copy_back = timer_copy_back.elapsed();
-
         } else {
-            Timer timer_copy_back;
             for(int dim_idx = _dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
                 for(Int col_idx = _dim_first[dim_idx]; col_idx <= _dim_last[dim_idx]; ++col_idx) {
                     auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
@@ -2946,8 +3105,8 @@ namespace oineus {
                     }
                 } // loop over columns
             } // loop over dimensions
-            params.timings.copy_back = timer_copy_back.elapsed();
         }
+        params.timings.copy_back = timer_copy_back.elapsed();
 
         {
             Timer timer_copy_pivots;
@@ -2973,6 +3132,28 @@ namespace oineus {
         }
 
         is_reduced = true;
+    }
+
+    // Deferred copy-back: build at-rest r_data/v_data from the kept working RV
+    // columns, then drop the working form. The keep-working core always Bauer-fills
+    // (every column non-null), so this is a flat move -- no dim walk, no Bauer
+    // reconstruction here.
+    template<class Int>
+    void VRUDecomposition<Int>::materialize_from_working_()
+    {
+        if (not has_working_rv_)
+            return;
+        const size_t nc = working_rv_.size();
+        r_data = MatrixData(nc);
+        v_data = MatrixData(nc);
+        for(size_t col = 0; col < nc; ++col) {
+            auto* p = working_rv_[col].load(std::memory_order_relaxed);
+            r_data[col] = std::move(p->r_column);
+            v_data[col] = std::move(p->v_column);
+            delete p;
+        }
+        working_rv_.clear();
+        has_working_rv_ = false;
     }
 
     template<class Int>
