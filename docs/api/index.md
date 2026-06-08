@@ -33,6 +33,7 @@ types are accurate; prose will improve over time.
 .. autosummary::
    :toctree: _autosummary
 
+   reduce
    compute_diagrams_ls
    compute_diagrams_vr
    compute_relative_diagrams
@@ -100,6 +101,7 @@ types are accurate; prose will improve over time.
    ProdFiltration
    Decomposition
    ReductionParams
+   ReductionTimings
 ```
 
 ## Kernel / image / cokernel

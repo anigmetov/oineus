@@ -73,6 +73,71 @@ before the knob existed. The dense representations (`Full`, `BitTree`)
 allocate roughly one bit per cell per worker thread for the working
 column -- negligible next to the boundary matrix itself.
 
+## Fused reduction and the timing breakdown (advanced)
+
+{py:func}`oineus.reduce` is the *fused* one-shot path (see
+{doc}`decomposition` for the user-facing view). "Fused" means the filtration
+builds the parallel reducer's working-column array **directly**: there is no
+intermediate at-rest boundary matrix and no prepare-copy. Relative to the
+explicit `Decomposition(fil) + reduce`, it drops two $O(\mathrm{nnz})$ column
+copies (boundary $\to D \to R$) and, for the parallel $R{+}V$ path, the
+copy-back of $R/V$.
+
+### Reading the per-phase timings
+
+`ReductionParams` is passed by reference, so after `reduce` the field
+`params.timings` ({py:class}`oineus.ReductionTimings`) holds the wall-clock
+breakdown in seconds:
+
+| phase | meaning | nonzero when |
+|---|---|---|
+| `prepare` | build the working atomic-pointer column array | parallel only |
+| `reduce` | the lock-free reduction core itself | always |
+| `restore_elz` | restore the canonical ELZ form of $V$ | only if `dims_to_restore_elz` is set |
+| `copy_back` | move the working columns back into `r_data`/`v_data` | parallel, *materializing* paths |
+| `copy_pivots` | copy the pivot array into the at-rest `_pivots` | parallel only |
+
+`params.timings.reduction_total` is the path-comparable sum, and
+`params.elapsed` equals it. The serial path reduces in place, so it has no
+`prepare` / `copy_back` / `copy_pivots`. Pass `verbose=True` for a printed
+trace as well.
+
+What the fuse changes in this breakdown:
+
+- The boundary build is folded into `prepare`; there is no separate "build
+  $D$, copy into $R$" cost before the reduction starts.
+- For the parallel keep-working $R{+}V$ path -- the default of
+  {py:func}`oineus.reduce` with `compute_v=True`, and of the topology
+  optimizer -- **`copy_back` is ~0**: the reduced columns are kept in the
+  working form and materialized into `r_data`/`v_data` only lazily, on first
+  access. That materialization runs *after* `reduce` returns and so is not part
+  of these timings.
+
+On realistic inputs the boundary build dominates `fil -> reduced`; everything
+above it is the reduction-side plumbing the fuse trims (do not assume the
+reduction core itself dominates -- it usually does not).
+
+### Measured
+
+2D Freudenthal grid, 8 threads, vs `Decomposition(fil)+reduce`:
+
+- {py:func}`oineus.reduce` diagram-only (R): ~1.5x faster.
+- {py:func}`oineus.reduce` with `compute_v=True` (R+V): ~1.5x faster -- both
+  the prepare-copy and the copy-back are gone.
+
+The topology optimizer ({doc}`optimization`, {doc}`differentiable`) reduces
+through the same fused, keep-working path by default and reads $R$/$V$/$U$
+straight out of the working form, so its forward reduction inherits these
+savings without ever materializing the full matrices.
+
+### Why the stored working-column type is fixed
+
+`col_repr` (above) selects only the per-thread *scratch* used while reducing a
+column; the columns actually *stored* in the working array are always sorted
+integer vectors, independent of `col_repr`. That is what lets the fused path
+and the keep-working optimizer hand one working array to any `col_repr` core
+and keep it around afterwards.
+
 ## Filtration construction
 
 The filtration builders themselves can be the bottleneck on dense inputs:

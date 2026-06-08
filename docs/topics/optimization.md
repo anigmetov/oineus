@@ -90,10 +90,24 @@ useful when you want to do something custom rather than "denoise":
 - `singleton(idx, target_value)` -- critical set for moving a single
   pair to a single target value.
 
+## Performance and determinism
+
+`TopologyOptimizer(fil, n_threads=N)` caches the boundary matrix once and, on
+the first `ensure_*_reduced` / `compute_diagram` / `singletons` call, reduces it
+through the *fused, keep-working* path: it builds the working columns straight
+from the cached boundary and keeps the reduced $R/V$ in working form (no
+copy-back), reading them through per-column accessors and computing $U$ on
+demand. Set `n_threads` to the cores you can spare; see {doc}`performance`.
+
+Because the optimizer restores the canonical ELZ form of $V$ in the optimized
+dimensions, and that form is unique, the critical sets it returns are
+**deterministic across thread counts** -- `n_threads` is purely a speed knob.
+
 ## See also
 
 - {doc}`differentiable` -- the canonical PyTorch-driven path.
 - {doc}`decomposition` -- under the hood, `TopologyOptimizer` holds a
   cached boundary matrix and builds decompositions lazily.
+- {doc}`performance` -- the fused reduction and its per-phase timings.
 - `examples/python/example_opt_vr.py` -- runnable demo of the non-diff
   path.

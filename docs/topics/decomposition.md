@@ -52,6 +52,46 @@ The same pattern works with any {py:class}`oineus.Filtration` -- swap step 1
 for {py:func}`oineus.freudenthal_filtration`, {py:func}`oineus.vr_filtration`,
 {py:func}`oineus.cube_filtration`, etc. See {doc}`filtrations`.
 
+## The fast path: `oineus.reduce`
+
+When performance is the priority and you mostly want diagrams (or cycle
+representatives), skip the explicit `Decomposition(fil)` constructor and use
+the one-shot {py:func}`oineus.reduce`:
+
+```{code-block} python
+params = oin.ReductionParams()
+params.n_threads = 8
+params.compute_v = False          # diagram only; True if you also need V
+dcmp = oin.reduce(fil, params, dualize=False)
+dgms = dcmp.diagram(fil)
+```
+
+`oineus.reduce` builds the reduction matrix **directly from the filtration**
+and feeds it straight to the parallel reducer, skipping the intermediate
+boundary-matrix copies the explicit `Decomposition(fil) + reduce` path makes.
+The diagrams are identical; this is simply the recommended default when speed
+matters. (`params` is taken by reference, so the per-phase timings land back on
+it -- see {doc}`performance`.) `dualize=True` selects cohomology, exactly as for
+`Decomposition`.
+
+Two post-reduce details, both invisible if you only call `dcmp.diagram(fil)`:
+
+- **`compute_v=False`, parallel.** Once the pairing is known the reduced
+  columns are freed ("pivots-only" state). The diagram still works -- it reads
+  the pivots -- but `dcmp.r_data` / `dcmp.r_as_csc()` then raise a clear error
+  instead of returning an empty matrix. Use `compute_v=True`, or the explicit
+  `Decomposition(fil) + reduce`, if you need the reduced $R$ itself.
+- **`compute_v=True`, parallel.** $R$ and $V$ are kept in a compact working
+  form and **materialized lazily**: the first access to `dcmp.r_data` /
+  `dcmp.v_data`, pickling, or `sanity_check` reconstructs the at-rest matrices.
+  `dcmp.diagram(fil)` does not trigger that, so diagram-only callers never pay
+  for it.
+
+The serial path (`n_threads=1`) reduces in place and always leaves `r_data`
+populated. A fused decomposition does not hold the original boundary $D$, so
+`sanity_check` needs it passed explicitly:
+`dcmp.sanity_check(fil.boundary_matrix())`.
+
 ## What the matrices are
 
 The reduction maintains

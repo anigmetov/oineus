@@ -242,6 +242,25 @@ dgms = diff.persistence_diagram(fil, gradient_method="crit-sets")
 
 For most loss surfaces, `dgm-loss` is the right default.
 
+## Threads and the fused reduction
+
+```{code-block} python
+dgms = diff.persistence_diagram(fil, n_threads=8)
+```
+
+`persistence_diagram(fil, n_threads=N)` runs the forward (and the crit-sets
+backward) reduction on `N` threads through the *fused, keep-working* path --
+the same fast route as {py:func}`oineus.reduce`, which builds the reducer's
+columns straight from the filtration and skips the copy-back of $R/V$. For
+anything past toy sizes this is the single biggest performance lever on the
+diff path; set it to the cores you can spare. See {doc}`performance` for the
+internals and the per-phase timing breakdown.
+
+It does not change the answer. The optimizer restores the canonical ELZ form of
+$V$ in the optimized dimensions, and that form is unique, so the crit-sets
+critical sets -- and the gradient -- are **deterministic across thread
+counts**: raising `n_threads` changes the speed, not the result.
+
 ## Pitfalls
 
 - **Discontinuities of the persistence map.** The persistence map is
