@@ -2849,8 +2849,6 @@ namespace oineus {
 
         Diagrams<Real> result = fil.size() == 0 ? Diagrams<Real>() : Diagrams<Real>(fil.max_dim());
 
-        std::unordered_set<Int> rows_with_lowest_one;
-
         // Diagram needs only low(R[col]) and is_zero(R[col]) per column. When R is
         // materialized we read it directly; in the fused / diagram-only state R is
         // not kept, so derive both from _pivots (invert it: col_to_low[c] = r where
@@ -2875,40 +2873,53 @@ namespace oineus {
             include_inf_points = false;
         }
 
-        if (include_inf_points)
+        // Mark pivot rows (rows that are the lowest one of some column = deaths)
+        // in a dense bitmap, so the inf-point test in the loop below is an O(1)
+        // array read instead of an unordered_set hash lookup per cell. Same
+        // source of truth (col_low) as before, just a faster container.
+        std::vector<char> is_pivot_row;
+        if (include_inf_points) {
+            is_pivot_row.assign(n_cols, 0);
             for(size_t i = 0; i < n_cols; ++i) {
                 if (!col_is_zero(i))
-                    rows_with_lowest_one.insert(col_low(i));
+                    is_pivot_row[static_cast<size_t>(col_low(i))] = 1;
 
                 if (i % 100 == 0 && oineus::interrupted())
                     throw oineus::interrupted_exception{};
             }
+        }
 
+        // The per-cell filtration lookups (index_in_filtration, dim_by_sorted_id,
+        // value_by_sorted_id, get_id_by_sorted_id) are deferred into the branches
+        // and past the include filters, so they run only for the points actually
+        // emitted (typically a tiny fraction of the cells) rather than once per
+        // cell.
         for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
-            auto simplex_idx = fil.index_in_filtration(col_idx, dualize());
-			auto simplex_idx_us = fil.get_id_by_sorted_id(simplex_idx);
             if (col_is_zero(col_idx)) {
-                if (not include_inf_points or rows_with_lowest_one.count(col_idx) != 0)
+                if (not include_inf_points or is_pivot_row[col_idx])
                     // we don't want infinite points or col_idx is a negative simplex
                     continue;
 
                 // point at infinity
+                auto simplex_idx = fil.index_in_filtration(col_idx, dualize());
                 dim_type dim = fil.dim_by_sorted_id(simplex_idx);
                 Real birth = fil.value_by_sorted_id(simplex_idx);
-                Real death = fil.infinity();
+                auto simplex_idx_us = fil.get_id_by_sorted_id(simplex_idx);
 
-                result.add_point(dim, birth, death, simplex_idx, plus_inf, simplex_idx_us, plus_inf);
+                result.add_point(dim, birth, fil.infinity(), simplex_idx, plus_inf, simplex_idx_us, plus_inf);
             } else {
                 // finite point
-                Int birth_idx = fil.index_in_filtration(col_low(col_idx), dualize()), death_idx = simplex_idx;
-		Int birth_idx_us = fil.get_id_by_sorted_id(birth_idx), death_idx_us = fil.get_id_by_sorted_id(death_idx);
-                dim_type dim = fil.dim_by_sorted_id(birth_idx);
+                Int death_idx = fil.index_in_filtration(col_idx, dualize());
+                Int birth_idx = fil.index_in_filtration(col_low(col_idx), dualize());
                 Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
 
                 bool include_point = include_all or (only_zero_persistence ? birth == death : birth != death);
 
                 if (not include_point)
                     continue;
+
+                dim_type dim = fil.dim_by_sorted_id(birth_idx);
+                Int birth_idx_us = fil.get_id_by_sorted_id(birth_idx), death_idx_us = fil.get_id_by_sorted_id(death_idx);
 
                 if (dualize()) {
                     result.add_point(dim - 1, death, birth, death_idx, birth_idx, death_idx_us, birth_idx_us);
