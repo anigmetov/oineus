@@ -16,7 +16,12 @@ void init_oineus_cells(nanobind::module_&);
 #endif
 
 namespace std {
-    template<typename T>
+    // The `typename = void_t<decltype(os << element)>` guard restricts these
+    // pretty-printers to element types that are actually streamable. Under C++20
+    // `os << wchar_t` (and other char types) is a DELETED operator, and debug
+    // libraries (icecream) probe `std::vector<wchar_t>` streamability; without the
+    // guard our template would match and then select the deleted element operator.
+    template<typename T, typename = std::void_t<decltype(std::declval<std::ostream&>() << std::declval<const T&>())>>
     std::ostream& operator<<(std::ostream& os, const std::vector<T>& v)
     {
         os << "[";
@@ -35,7 +40,7 @@ namespace std {
     // Found via ADL through the std::ostream argument, mirroring the
     // std::vector overload above so existing `out << column` sites keep
     // compiling once columns become small_vectors.
-    template<typename T, std::size_t N, typename A>
+    template<typename T, std::size_t N, typename A, typename = std::void_t<decltype(std::declval<std::ostream&>() << std::declval<const T&>())>>
     std::ostream& operator<<(std::ostream& os, const boost::container::small_vector<T, N, A>& v)
     {
         os << "[";
@@ -50,7 +55,7 @@ namespace std {
         return os;
     }
 
-    template<typename Int, size_t D>
+    template<typename Int, size_t D, typename = std::void_t<decltype(std::declval<std::ostream&>() << std::declval<const Int&>())>>
     std::ostream& operator<<(std::ostream& os, const std::array<Int, D>& p)
     {
         os << "(";

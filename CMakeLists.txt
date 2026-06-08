@@ -17,8 +17,14 @@ if (NOT CMAKE_BUILD_TYPE)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# The vendored icecream debug-print library is not C++20-clean (its char-type
+# Tree handling is ambiguous under std::construct_at). All library IC() calls are
+# debug no-ops behind this guard, so disable icecream globally on C++20.
+add_compile_definitions(OINEUS_DISABLE_ICECREAM)
 
 find_package (Threads REQUIRED)
 find_package (Boost REQUIRED)
