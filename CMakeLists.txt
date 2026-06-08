@@ -6,6 +6,7 @@ option(oin_use_spdlog "Use spdlog" OFF)
 option(oin_use_jemalloc "Use jemalloc" ON)
 option(oin_build_tests "Build tests" ON)
 option(oin_build_examples "Build examples" ON)
+option(oin_build_benchmarks "Build benchmarks" OFF)
 option(oin_build_julia "Build Julia bindings (CxxWrap.jl)" OFF)
 option(oin_gather_add_stats "Gather statistics about summand sizes" OFF)
 option(oin_caliper "Enable profiling with Caliper" OFF)
@@ -94,6 +95,10 @@ endif()
 
 if (oin_build_examples)
     add_subdirectory(examples)
+endif ()
+
+if (oin_build_benchmarks)
+    add_subdirectory(benchmarks)
 endif ()
 
 add_subdirectory(bindings/python)
