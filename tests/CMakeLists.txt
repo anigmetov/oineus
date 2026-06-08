@@ -85,6 +85,7 @@ else()
             interrupt
             kicr
             match-rv-policy
+            parallel-dgm
             pickle
             plot
             plot-chain
