@@ -303,7 +303,7 @@ void init_oineus_common_decomposition(nb::module_& m)
     // dcmp = oin.reduce(fil, params). sanity_check then needs D passed explicitly.
     {
         auto reduce_fil = [](const auto& fil, oin::Params& params, bool dualize) {
-            return Decomposition::reduce_from_filtration(fil, params, dualize);
+            return Decomposition::reduce_from_filtration_fused(fil, params, dualize);
         };
         m.def("reduce", [reduce_fil](const SimplexFiltration& fil, oin::Params& params, bool dualize)
                 { return reduce_fil(fil, params, dualize); },

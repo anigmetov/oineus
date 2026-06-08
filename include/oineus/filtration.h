@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <iterator>
 #include <ostream>
+#include <atomic>
 
 #include <algorithm>
 
@@ -46,6 +47,14 @@ namespace oineus {
         using Int = typename Cell::Int;
         using CellVector = std::vector<Cell>;
         using BoundaryMatrix = typename VRUDecomposition<Int>::MatrixData;
+
+        // Working-column arrays consumed directly by the parallel reduction core
+        // (no intermediate at-rest MatrixData, no prepare-copy). RWorkingMatrix is
+        // for R-only reduction (compute_v == false), RVWorkingMatrix for the fused
+        // R+V columns. Both are col_repr-independent: the stored column type is the
+        // sorted-vector form; col_repr only selects the per-thread reduction scratch.
+        using RWorkingMatrix  = std::vector<std::atomic<SparseColumn<Int>*>>;
+        using RVWorkingMatrix = std::vector<std::atomic<RVColumn<Int, 2>*>>;
 
         using CellUid = typename Cell::Uid;
 
@@ -314,6 +323,125 @@ namespace oineus {
         {
             CALI_CXX_MARK_FUNCTION;
             return antitranspose(boundary_matrix(n_threads), size());
+        }
+
+        // Build the R-only working-column array straight from the boundary, ready
+        // for the parallel reduction core: each column is a heap-allocated sorted
+        // SparseColumn (the same form the classic prepare produces via
+        // `new Column(...)`), but fused with the boundary computation -- no
+        // intermediate at-rest MatrixData, no prepare-copy. Every column is
+        // non-null, including dimension-0 cells (empty boundary), because the core
+        // dereferences a pointer for every index.
+        RWorkingMatrix boundary_matrix_for_par(int n_threads=1) const
+        {
+            CALI_CXX_MARK_FUNCTION;
+            RWorkingMatrix result(size());
+
+            bool missing_ok = is_subfiltration();
+
+            tf::Executor executor(n_threads);
+            tf::Taskflow taskflow;
+            taskflow.for_each_index((size_t)0, size(), (size_t)1,
+                    [this, missing_ok, &result](size_t col_idx) {
+                        auto* col = new SparseColumn<Int>();
+                        // boundary of a vertex is empty; only positive dim needs work
+                        if (col_idx > static_cast<size_t>(dim_last(0))) {
+                            const auto& sigma = cells_[col_idx];
+                            col->reserve(sigma.dim() + 1);
+                            for(const auto& tau_vertices: sigma.boundary()) {
+                                if (missing_ok) {
+                                    auto iter = uid_to_sorted_id.find(tau_vertices);
+                                    if (iter != uid_to_sorted_id.end())
+                                        col->push_back(iter->second);
+                                } else {
+                                    col->push_back(uid_to_sorted_id.at(tau_vertices));
+                                }
+                            }
+                            std::sort(col->begin(), col->end());
+                        }
+                        result[col_idx].store(col, std::memory_order_relaxed);
+                    });
+            executor.run(taskflow).get();
+            return result;
+        }
+
+        // Same as boundary_matrix_for_par, but each column is a fused RV working
+        // column: r_column = boundary, v_column = identity {col_idx}. This is the
+        // input reduce_parallel_rv_core_ consumes with no prepare-copy.
+        RVWorkingMatrix boundary_matrix_for_par_with_v(int n_threads=1) const
+        {
+            CALI_CXX_MARK_FUNCTION;
+            RVWorkingMatrix result(size());
+
+            bool missing_ok = is_subfiltration();
+
+            tf::Executor executor(n_threads);
+            tf::Taskflow taskflow;
+            taskflow.for_each_index((size_t)0, size(), (size_t)1,
+                    [this, missing_ok, &result](size_t col_idx) {
+                        SparseColumn<Int> col;
+                        if (col_idx > static_cast<size_t>(dim_last(0))) {
+                            const auto& sigma = cells_[col_idx];
+                            col.reserve(sigma.dim() + 1);
+                            for(const auto& tau_vertices: sigma.boundary()) {
+                                if (missing_ok) {
+                                    auto iter = uid_to_sorted_id.find(tau_vertices);
+                                    if (iter != uid_to_sorted_id.end())
+                                        col.push_back(iter->second);
+                                } else {
+                                    col.push_back(uid_to_sorted_id.at(tau_vertices));
+                                }
+                            }
+                            std::sort(col.begin(), col.end());
+                        }
+                        SparseColumn<Int> v_column = {static_cast<Int>(col_idx)};
+                        result[col_idx].store(
+                                new RVColumn<Int, 2>(std::move(col), std::move(v_column)),
+                                std::memory_order_relaxed);
+                    });
+            executor.run(taskflow).get();
+            return result;
+        }
+
+        // Coboundary variants. antitranspose is a global scatter (an output column
+        // gathers from many input rows), so it is not per-output-column independent
+        // and cannot be built lock-free directly. Build the antitransposed
+        // MatrixData first (reusing the proven scatter), then move each column into
+        // a heap working column -- this still eliminates the prepare deep-copy and
+        // the temporary is drained by moves.
+        RWorkingMatrix coboundary_matrix_for_par(int n_threads=1) const
+        {
+            CALI_CXX_MARK_FUNCTION;
+            auto cb = antitranspose(boundary_matrix(n_threads), size());
+            RWorkingMatrix result(cb.size());
+            tf::Executor executor(n_threads);
+            tf::Taskflow taskflow;
+            taskflow.for_each_index((size_t)0, cb.size(), (size_t)1,
+                    [&cb, &result](size_t col_idx) {
+                        result[col_idx].store(
+                                new SparseColumn<Int>(std::move(cb[col_idx])),
+                                std::memory_order_relaxed);
+                    });
+            executor.run(taskflow).get();
+            return result;
+        }
+
+        RVWorkingMatrix coboundary_matrix_for_par_with_v(int n_threads=1) const
+        {
+            CALI_CXX_MARK_FUNCTION;
+            auto cb = antitranspose(boundary_matrix(n_threads), size());
+            RVWorkingMatrix result(cb.size());
+            tf::Executor executor(n_threads);
+            tf::Taskflow taskflow;
+            taskflow.for_each_index((size_t)0, cb.size(), (size_t)1,
+                    [&cb, &result](size_t col_idx) {
+                        SparseColumn<Int> v_column = {static_cast<Int>(col_idx)};
+                        result[col_idx].store(
+                                new RVColumn<Int, 2>(std::move(cb[col_idx]), std::move(v_column)),
+                                std::memory_order_relaxed);
+                    });
+            executor.run(taskflow).get();
+            return result;
         }
 
         template<typename I, typename R, size_t D>

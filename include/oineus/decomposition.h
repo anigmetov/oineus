@@ -509,22 +509,21 @@ namespace oineus {
             }
         }
 
-        // Fused path: build R directly from the filtration (boundary, or for
-        // dualize the coboundary) WITHOUT keeping the original boundary D, so we
-        // skip the d_data->r_data copy of the ordinary ctor. sanity_check then
-        // needs D supplied explicitly. Used by reduce_from_filtration().
+        // Set the dim blocks, dualize remap, n_rows, has_d_data_, and ELZ flags
+        // from a filtration WITHOUT building any matrix. Shared by init_fused_
+        // (which builds r_data) and reduce_from_filtration_fused (which builds the
+        // working-column array directly and leaves r_data empty). The matrix is
+        // square, so n_rows == n_cols == fil.size().
         template<class C, class R>
-        void init_fused_(const Filtration<C, R>& fil, bool _dualize, int n_threads)
+        void set_dims_from_fil_(const Filtration<C, R>& fil, bool _dualize)
         {
-            r_data = _dualize ? fil.coboundary_matrix(n_threads) : fil.boundary_matrix(n_threads);
-            d_data.clear();
             has_d_data_ = false;
             dualize_ = _dualize;
             dim_first = fil.dims_first();
             dim_last = fil.dims_last();
             _dim_first = dim_first;
             _dim_last = dim_last;
-            n_rows = r_data.size();
+            n_rows = fil.size();
 
             if (dualize_) {
                 std::reverse(_dim_first.begin(), _dim_first.end());
@@ -547,6 +546,18 @@ namespace oineus {
                 is_elz_in_dim_[_dim] = false;
         }
 
+        // Fused path: build R directly from the filtration (boundary, or for
+        // dualize the coboundary) WITHOUT keeping the original boundary D, so we
+        // skip the d_data->r_data copy of the ordinary ctor. sanity_check then
+        // needs D supplied explicitly. Used by reduce_from_filtration().
+        template<class C, class R>
+        void init_fused_(const Filtration<C, R>& fil, bool _dualize, int n_threads)
+        {
+            r_data = _dualize ? fil.coboundary_matrix(n_threads) : fil.boundary_matrix(n_threads);
+            d_data.clear();
+            set_dims_from_fil_(fil, _dualize);
+        }
+
         // One-shot fused reduction from a filtration: build R directly (no D, no
         // d_data->r_data copy), reduce with `params`, return the reduced
         // decomposition. diagram(fil) works as usual; sanity_check needs D passed
@@ -557,6 +568,76 @@ namespace oineus {
             VRUDecomposition dcmp;
             dcmp.init_fused_(fil, dualize, params.n_threads);
             dcmp.reduce(params);
+            return dcmp;
+        }
+
+        // True-fused reduction: build the parallel working-column array DIRECTLY
+        // from the (co)boundary (no intermediate at-rest r_data, no prepare-copy)
+        // and feed it straight to the reduction core. The diagram reads from
+        // _pivots either way. For the parallel R-only path this leaves the
+        // pivots-only state (r_data empty); for the parallel RV path R and V are
+        // materialized into r_data/v_data. col_repr is honored via the same switch
+        // the classic reducers use. Serial, compute_u, the empty complex, and
+        // R-only-with-restore-ELZ fall back to the classic fused path
+        // (init_fused_ + reduce), which handles them correctly.
+        template<class C, class R>
+        static VRUDecomposition reduce_from_filtration_fused(const Filtration<C, R>& fil, Params& params, bool dualize = false)
+        {
+            VRUDecomposition dcmp;
+            const size_t n_cols = fil.size();
+
+            const bool restore_elz_r_only = (not params.dims_to_restore_elz.empty() and not params.compute_v);
+            const bool can_fuse = params.n_threads > 1 and n_cols > 0
+                    and not params.compute_u and not restore_elz_r_only;
+
+            if (not can_fuse) {
+                dcmp.init_fused_(fil, dualize, params.n_threads);
+                dcmp.reduce(params);
+                return dcmp;
+            }
+
+            dcmp.set_dims_from_fil_(fil, dualize);
+            params.timings.reset();
+
+            const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+
+            tf::Executor executor(n_threads);
+            AtomicIdxVector pivots(dcmp.n_rows);
+            {
+                tf::Taskflow tf_pivots;
+                tf_pivots.for_each_index((size_t)0, static_cast<size_t>(dcmp.n_rows), (size_t)1,
+                        [&pivots](size_t i) { pivots[i].store(-1, std::memory_order_relaxed); });
+                executor.run(tf_pivots).get();
+            }
+
+            Timer timer_build;
+            if (params.compute_v) {
+                auto rv = dualize ? fil.coboundary_matrix_for_par_with_v(params.n_threads)
+                                  : fil.boundary_matrix_for_par_with_v(params.n_threads);
+                // Materialize R and V: size r_data/v_data to n_cols (empty columns);
+                // the core's copy-back fills every column.
+                dcmp.r_data = MatrixData(n_cols);
+                dcmp.v_data = MatrixData(n_cols);
+                params.timings.prepare = timer_build.elapsed();
+                switch (params.col_repr) {
+                    case ColumnRepr::Set:     dcmp.reduce_parallel_rv_core_<SetColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads); break;
+                    case ColumnRepr::Heap:    dcmp.reduce_parallel_rv_core_<HeapColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads); break;
+                    case ColumnRepr::Full:    dcmp.reduce_parallel_rv_core_<FullColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads); break;
+                    case ColumnRepr::BitTree: dcmp.reduce_parallel_rv_core_<BitTreeColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads); break;
+                }
+            } else {
+                auto ar = dualize ? fil.coboundary_matrix_for_par(params.n_threads)
+                                  : fil.boundary_matrix_for_par(params.n_threads);
+                params.timings.prepare = timer_build.elapsed();
+                switch (params.col_repr) {
+                    case ColumnRepr::Set:     dcmp.reduce_parallel_r_only_core_<SetColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, false); break;
+                    case ColumnRepr::Heap:    dcmp.reduce_parallel_r_only_core_<HeapColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, false); break;
+                    case ColumnRepr::Full:    dcmp.reduce_parallel_r_only_core_<FullColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, false); break;
+                    case ColumnRepr::BitTree: dcmp.reduce_parallel_r_only_core_<BitTreeColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, false); break;
+                }
+            }
+
+            dcmp.sync_elapsed_from_timings_(params);
             return dcmp;
         }
 
