@@ -698,6 +698,22 @@ namespace oineus {
         template<class WorkCol> void reduce_parallel_r_only_impl(Params& params);
         template<class WorkCol> void reduce_parallel_rv_impl(Params& params);
 
+        // Parallel reduction "cores": everything after the prepare phase (thread
+        // spawn/join, interrupt, stats, copy-back, copy-pivots, teardown). The
+        // working column array and the pivots are built by the caller -- either the
+        // classic *_impl prepare (from r_data) or a fused from-filtration builder --
+        // and handed in. parallel_reduction itself is untouched. n_cols is sourced
+        // from the working array (never size(), which is r_data.size()).
+        template<class WorkCol> void reduce_parallel_r_only_core_(Params& params,
+                tf::Executor& executor,
+                typename GenericSparseMatrixTraits<Int, WorkCol>::AMatrix& ar_matrix,
+                AtomicIdxVector& pivots, size_t n_cols, int n_threads,
+                bool copy_back_to_r);
+        template<class WorkCol> void reduce_parallel_rv_core_(Params& params,
+                tf::Executor& executor,
+                typename GenericRVMatrixTraits<Int, WorkCol>::AMatrix& r_v_matrix,
+                AtomicIdxVector& pivots, size_t n_cols, int n_threads);
+
         // Copy params.timings into the back-compat scalar timing fields.
         static void sync_elapsed_from_timings_(Params& params);
 
@@ -2367,16 +2383,6 @@ namespace oineus {
         using MatrixTraits = GenericSparseMatrixTraits<Int, WorkCol>;
         using Column = typename MatrixTraits::Column;
         using AMatrix = std::vector<typename MatrixTraits::APColumn>;
-        using MemoryReclaimC = MemoryReclaim<Column>;
-
-        std::atomic<typename MemoryReclaimC::EpochCounter> counter;
-        counter = 0;
-
-        std::atomic<int> next_free_chunk = 0;
-        std::vector<std::atomic<int>> next_free_chunks(_dim_first.size());
-        for(auto& nfc : next_free_chunks) {
-            nfc.store(0, std::memory_order_relaxed);
-        }
 
         const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
 
@@ -2405,6 +2411,37 @@ namespace oineus {
 
         spd::debug("Pivots initialized");
 
+        // copy_back_to_r mirrors the classic has_d_data_ gate: the ordinary
+        // ctor+reduce path keeps R in r_data; the fused diagram-only path frees the
+        // working columns and leaves the pivots-only state.
+        reduce_parallel_r_only_core_<WorkCol>(params, executor, ar_matrix, pivots,
+                n_cols, n_threads, has_d_data_);
+    }
+
+    // Parallel R-only core: consumes a prepared working-column array (built by the
+    // classic prepare from r_data, or by a fused from-filtration builder) plus an
+    // initialized pivots array, and runs the reduction, copy-back (or free),
+    // copy-pivots, and teardown. parallel_reduction itself is untouched.
+    template<class Int>
+    template<class WorkCol>
+    void VRUDecomposition<Int>::reduce_parallel_r_only_core_(Params& params,
+            tf::Executor& executor,
+            typename GenericSparseMatrixTraits<Int, WorkCol>::AMatrix& ar_matrix,
+            AtomicIdxVector& pivots, size_t n_cols, int n_threads,
+            bool copy_back_to_r)
+    {
+        using MatrixTraits = GenericSparseMatrixTraits<Int, WorkCol>;
+        using Column = typename MatrixTraits::Column;
+        using MemoryReclaimC = MemoryReclaim<Column>;
+
+        std::atomic<typename MemoryReclaimC::EpochCounter> counter;
+        counter = 0;
+
+        std::atomic<int> next_free_chunk = 0;
+        std::vector<std::atomic<int>> next_free_chunks(_dim_first.size());
+        for(auto& nfc : next_free_chunks) {
+            nfc.store(0, std::memory_order_relaxed);
+        }
 
         std::vector<std::thread> ts;
         std::vector<std::unique_ptr<MemoryReclaimC>> mms;
@@ -2461,7 +2498,7 @@ namespace oineus {
 #endif
         {
             Timer timer_copy_back;
-            if (has_d_data_) {
+            if (copy_back_to_r) {
                 // Normal path: move the reduced columns back into r_data.
                 tf::Taskflow taskflow_finish;
                 taskflow_finish.for_each_index((size_t)0, n_cols, (size_t)1,
@@ -2542,24 +2579,15 @@ namespace oineus {
 
         using RVColumn = typename MatrixTraits::Column;
         using RVMatrix = std::vector<typename MatrixTraits::APColumn>;
-        using MemoryReclaimC = MemoryReclaim<RVColumn>;
 
         RVMatrix r_v_matrix(n_cols);
-
-        std::atomic<typename MemoryReclaimC::EpochCounter> counter;
-        counter = 0;
-
-        std::atomic<int> next_free_chunk = 0;
-        std::vector<std::atomic<int>> next_free_chunks(_dim_first.size());
-        for(auto& nfc : next_free_chunks) {
-            nfc.store(0, std::memory_order_seq_cst);
-        }
 
         AtomicIdxVector pivots(n_rows);
 
         tf::Executor executor(n_threads);
 
-        // move data to ar_matrix and set pivots in parallel
+        // move data to r_v_matrix and set pivots in parallel (classic prepare: the
+        // boundary column is copied into the fused RV working column)
         {
             tf::Taskflow taskflow_prepare;
 
@@ -2576,14 +2604,40 @@ namespace oineus {
         }
         params.timings.prepare = timer_prepare.elapsed();
 
+        reduce_parallel_rv_core_<WorkCol>(params, executor, r_v_matrix, pivots, n_cols, n_threads);
+    }
+
+    // Parallel RV core: consumes a prepared working RV-column array (built by the
+    // classic prepare from r_data, or by a fused from-filtration builder) plus an
+    // initialized pivots array, runs the reduction, optional ELZ restore, copy-back
+    // into r_data/v_data, copy-pivots, and teardown. Assumes v_data is sized to
+    // n_cols by the caller. parallel_reduction itself is untouched.
+    template<class Int>
+    template<class WorkCol>
+    void VRUDecomposition<Int>::reduce_parallel_rv_core_(Params& params,
+            tf::Executor& executor,
+            typename GenericRVMatrixTraits<Int, WorkCol>::AMatrix& r_v_matrix,
+            AtomicIdxVector& pivots, size_t n_cols, int n_threads)
+    {
+        using MatrixTraits = GenericRVMatrixTraits<Int, WorkCol>;
+        using RVColumn = typename MatrixTraits::Column;
+        using MemoryReclaimC = MemoryReclaim<RVColumn>;
+
+        std::atomic<typename MemoryReclaimC::EpochCounter> counter;
+        counter = 0;
+
+        std::atomic<int> next_free_chunk = 0;
+        std::vector<std::atomic<int>> next_free_chunks(_dim_first.size());
+        for(auto& nfc : next_free_chunks) {
+            nfc.store(0, std::memory_order_seq_cst);
+        }
+
         std::vector<std::thread> ts;
         std::vector<std::unique_ptr<MemoryReclaimC>> mms;
         std::vector<ThreadStats> stats;
 
         mms.reserve(n_threads);
         stats.reserve(n_threads);
-
-        next_free_chunk = 0;
 
         Timer timer_reduction;
 
@@ -2818,7 +2872,7 @@ namespace oineus {
             Timer timer_copy_pivots;
             tf::Taskflow taskflow_copy_pivots;
             _pivots.clear();
-            _pivots.resize(r_data.size());
+            _pivots.resize(n_cols);
             taskflow_copy_pivots.for_each_index((size_t)0, n_cols, (size_t)1,
                     [this, &pivots](size_t col_idx) {
                         _pivots[col_idx] = pivots[col_idx].load(std::memory_order_relaxed);
