@@ -2452,18 +2452,36 @@ namespace oineus {
 #endif
         {
             Timer timer_copy_back;
-            tf::Taskflow taskflow_finish;
-            taskflow_finish.for_each_index((size_t)0, n_cols, (size_t)1,
-                    [this, &ar_matrix](size_t col_idx) {
-                        auto p = ar_matrix[col_idx].load(std::memory_order_relaxed);
-                        if (p) {
-                            r_data[col_idx] = std::move(*p);
-                            delete p;
-                        } else {
-                            r_data[col_idx].clear();
-                        }
-                    });
-            executor.run(taskflow_finish).get();
+            if (has_d_data_) {
+                // Normal path: move the reduced columns back into r_data.
+                tf::Taskflow taskflow_finish;
+                taskflow_finish.for_each_index((size_t)0, n_cols, (size_t)1,
+                        [this, &ar_matrix](size_t col_idx) {
+                            auto p = ar_matrix[col_idx].load(std::memory_order_relaxed);
+                            if (p) {
+                                r_data[col_idx] = std::move(*p);
+                                delete p;
+                            } else {
+                                r_data[col_idx].clear();
+                            }
+                        });
+                executor.run(taskflow_finish).get();
+            } else {
+                // Fused diagram-only path (reduce_from_filtration, R-only): the
+                // reduced R contents are never needed -- the diagram is read from
+                // _pivots alone (diagram_general's from_pivots branch) -- so free
+                // the working columns WITHOUT copying them back and leave r_data
+                // empty. This is the "skip copy-back" win and the pivots-only
+                // post-state. (n_cols is captured for the resize below, since
+                // r_data.size() becomes 0 here.)
+                tf::Taskflow taskflow_free;
+                taskflow_free.for_each_index((size_t)0, n_cols, (size_t)1,
+                        [&ar_matrix](size_t col_idx) {
+                            delete ar_matrix[col_idx].load(std::memory_order_relaxed);
+                        });
+                executor.run(taskflow_free).get();
+                r_data.clear();
+            }
             params.timings.copy_back = timer_copy_back.elapsed();
         }
 
@@ -2471,7 +2489,7 @@ namespace oineus {
             Timer timer_copy_pivots;
             tf::Taskflow taskflow_copy_pivots;
             _pivots.clear();
-            _pivots.resize(r_data.size());
+            _pivots.resize(n_cols);
             taskflow_copy_pivots.for_each_index((size_t)0, n_cols, (size_t)1,
                     [this, &pivots](size_t col_idx) {
                         _pivots[col_idx] = pivots[col_idx].load(std::memory_order_relaxed);
