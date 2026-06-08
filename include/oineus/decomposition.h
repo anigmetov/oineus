@@ -635,21 +635,24 @@ namespace oineus {
             }
         }
 
-        // Set the dim blocks, dualize remap, n_rows, has_d_data_, and ELZ flags
-        // from a filtration WITHOUT building any matrix. Shared by init_fused_
-        // (which builds r_data) and reduce_from_filtration_fused (which builds the
-        // working-column array directly and leaves r_data empty). The matrix is
-        // square, so n_rows == n_cols == fil.size().
-        template<class C, class R>
-        void set_dims_from_fil_(const Filtration<C, R>& fil, bool _dualize)
+        // Concrete working-array types consumed by the parallel cores. The stored
+        // column type is col_repr-independent (see column_repr.h), so these are the
+        // same type the filtration builders return.
+        using RVWorkingMatrix = std::vector<std::atomic<RVColumn<Int, 2>*>>;
+        using RWorkingMatrix  = std::vector<std::atomic<SparseColumn<Int>*>>;
+
+        // Set the dim blocks (with the dualize remap), n_rows, has_d_data_, and ELZ
+        // flags WITHOUT building any matrix. Used by the fused factories that build
+        // the working-column array directly and leave r_data empty.
+        void set_dims_(std::vector<Int> df, std::vector<Int> dl, bool _dualize, size_t n_cells)
         {
             has_d_data_ = false;
             dualize_ = _dualize;
-            dim_first = fil.dims_first();
-            dim_last = fil.dims_last();
+            dim_first = std::move(df);
+            dim_last = std::move(dl);
             _dim_first = dim_first;
             _dim_last = dim_last;
-            n_rows = fil.size();
+            n_rows = n_cells;
 
             if (dualize_) {
                 std::reverse(_dim_first.begin(), _dim_first.end());
@@ -670,6 +673,49 @@ namespace oineus {
             }
             for(dim_type _dim = 0; _dim < static_cast<dim_type>(dim_first.size()); ++_dim)
                 is_elz_in_dim_[_dim] = false;
+        }
+
+        // init_fused_ / reduce_from_filtration_fused convenience: pull dims from a
+        // filtration. The matrix is square, so n_rows == n_cols == fil.size().
+        template<class C, class R>
+        void set_dims_from_fil_(const Filtration<C, R>& fil, bool _dualize)
+        {
+            set_dims_(fil.dims_first(), fil.dims_last(), _dualize, fil.size());
+        }
+
+        // Run the parallel RV / R-only core, dispatching on params.col_repr exactly
+        // like reduce_parallel_rv / reduce_parallel_r_only do. The working array is
+        // already built; the col_repr choice flows in as the per-thread scratch.
+        void run_rv_core_dispatch_(Params& params, tf::Executor& executor,
+                RVWorkingMatrix& rv, AtomicIdxVector& pivots, size_t n_cols,
+                int n_threads, bool keep_working)
+        {
+            switch (params.col_repr) {
+                case ColumnRepr::Set:     reduce_parallel_rv_core_<SetColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, keep_working); break;
+                case ColumnRepr::Heap:    reduce_parallel_rv_core_<HeapColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, keep_working); break;
+                case ColumnRepr::Full:    reduce_parallel_rv_core_<FullColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, keep_working); break;
+                case ColumnRepr::BitTree: reduce_parallel_rv_core_<BitTreeColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, keep_working); break;
+            }
+        }
+        void run_r_only_core_dispatch_(Params& params, tf::Executor& executor,
+                RWorkingMatrix& ar, AtomicIdxVector& pivots, size_t n_cols,
+                int n_threads, bool copy_back_to_r)
+        {
+            switch (params.col_repr) {
+                case ColumnRepr::Set:     reduce_parallel_r_only_core_<SetColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, copy_back_to_r); break;
+                case ColumnRepr::Heap:    reduce_parallel_r_only_core_<HeapColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, copy_back_to_r); break;
+                case ColumnRepr::Full:    reduce_parallel_r_only_core_<FullColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, copy_back_to_r); break;
+                case ColumnRepr::BitTree: reduce_parallel_r_only_core_<BitTreeColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, copy_back_to_r); break;
+            }
+        }
+
+        // Parallel pivots init shared by the fused factories.
+        static void init_pivots_(tf::Executor& executor, AtomicIdxVector& pivots, size_t n)
+        {
+            tf::Taskflow tf_pivots;
+            tf_pivots.for_each_index((size_t)0, n, (size_t)1,
+                    [&pivots](size_t i) { pivots[i].store(-1, std::memory_order_relaxed); });
+            executor.run(tf_pivots).get();
         }
 
         // Fused path: build R directly from the filtration (boundary, or for
@@ -729,12 +775,7 @@ namespace oineus {
 
             tf::Executor executor(n_threads);
             AtomicIdxVector pivots(dcmp.n_rows);
-            {
-                tf::Taskflow tf_pivots;
-                tf_pivots.for_each_index((size_t)0, static_cast<size_t>(dcmp.n_rows), (size_t)1,
-                        [&pivots](size_t i) { pivots[i].store(-1, std::memory_order_relaxed); });
-                executor.run(tf_pivots).get();
-            }
+            init_pivots_(executor, pivots, dcmp.n_rows);
 
             Timer timer_build;
             if (params.compute_v) {
@@ -744,22 +785,89 @@ namespace oineus {
                 // reconstructed lazily on first matrix/pickle access. diagram(fil)
                 // reads _pivots, so diagram-only callers never pay the copy-back.
                 params.timings.prepare = timer_build.elapsed();
-                switch (params.col_repr) {
-                    case ColumnRepr::Set:     dcmp.reduce_parallel_rv_core_<SetColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, /*keep_working=*/true); break;
-                    case ColumnRepr::Heap:    dcmp.reduce_parallel_rv_core_<HeapColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, true); break;
-                    case ColumnRepr::Full:    dcmp.reduce_parallel_rv_core_<FullColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, true); break;
-                    case ColumnRepr::BitTree: dcmp.reduce_parallel_rv_core_<BitTreeColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, true); break;
-                }
+                dcmp.run_rv_core_dispatch_(params, executor, rv, pivots, n_cols, n_threads, /*keep_working=*/true);
             } else {
                 auto ar = dualize ? fil.coboundary_matrix_for_par(params.n_threads)
                                   : fil.boundary_matrix_for_par(params.n_threads);
                 params.timings.prepare = timer_build.elapsed();
-                switch (params.col_repr) {
-                    case ColumnRepr::Set:     dcmp.reduce_parallel_r_only_core_<SetColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, false); break;
-                    case ColumnRepr::Heap:    dcmp.reduce_parallel_r_only_core_<HeapColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, false); break;
-                    case ColumnRepr::Full:    dcmp.reduce_parallel_r_only_core_<FullColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, false); break;
-                    case ColumnRepr::BitTree: dcmp.reduce_parallel_r_only_core_<BitTreeColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, false); break;
+                dcmp.run_r_only_core_dispatch_(params, executor, ar, pivots, n_cols, n_threads, /*copy_back_to_r=*/false);
+            }
+
+            dcmp.sync_elapsed_from_timings_(params);
+            return dcmp;
+        }
+
+        // True-fused reduction from a pre-built boundary matrix (the optimizer
+        // already caches one). Same as reduce_from_filtration_fused, but the
+        // working-column array is built from `bdry`: hom copies its columns, coh
+        // antitransposes it -- both leave `bdry` intact so the optimizer can build
+        // the other side. With keep_working the reduced RVColumns are kept (no
+        // copy-back) and read via r_low/r_is_zero/v_col. Falls back to the classic
+        // boundary ctor + reduce for serial / compute_u / empty / R-only+restoreELZ.
+        static VRUDecomposition reduce_from_boundary_fused(const MatrixData& bdry,
+                std::vector<Int> dim_first_, std::vector<Int> dim_last_,
+                bool dualize, Params& params, bool keep_working)
+        {
+            VRUDecomposition dcmp;
+            const size_t n_cols = bdry.size();
+
+            const bool restore_elz_r_only = (not params.dims_to_restore_elz.empty() and not params.compute_v);
+            const bool can_fuse = params.n_threads > 1 and n_cols > 0
+                    and not params.compute_u and not restore_elz_r_only;
+
+            if (not can_fuse) {
+                dcmp = VRUDecomposition(bdry, std::move(dim_first_), std::move(dim_last_), dualize, params.n_threads);
+                dcmp.reduce(params);
+                return dcmp;
+            }
+
+            dcmp.set_dims_(std::move(dim_first_), std::move(dim_last_), dualize, n_cols);
+            params.timings.reset();
+
+            const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+            tf::Executor executor(n_threads);
+            AtomicIdxVector pivots(dcmp.n_rows);
+            init_pivots_(executor, pivots, dcmp.n_rows);
+
+            Timer timer_build;
+            if (params.compute_v) {
+                RVWorkingMatrix rv(n_cols);
+                if (dualize) {
+                    auto cb = antitranspose(bdry, n_cols);
+                    tf::Taskflow tf_build;
+                    tf_build.for_each_index((size_t)0, n_cols, (size_t)1, [&cb, &rv](size_t c) {
+                        rv[c].store(new RVColumn<Int, 2>(std::move(cb[c]), IntSparseColumn{static_cast<Int>(c)}),
+                                std::memory_order_relaxed);
+                    });
+                    executor.run(tf_build).get();
+                } else {
+                    tf::Taskflow tf_build;
+                    tf_build.for_each_index((size_t)0, n_cols, (size_t)1, [&bdry, &rv](size_t c) {
+                        rv[c].store(new RVColumn<Int, 2>(IntSparseColumn(bdry[c]), IntSparseColumn{static_cast<Int>(c)}),
+                                std::memory_order_relaxed);
+                    });
+                    executor.run(tf_build).get();
                 }
+                params.timings.prepare = timer_build.elapsed();
+                dcmp.run_rv_core_dispatch_(params, executor, rv, pivots, n_cols, n_threads, keep_working);
+            } else {
+                RWorkingMatrix ar(n_cols);
+                if (dualize) {
+                    auto cb = antitranspose(bdry, n_cols);
+                    tf::Taskflow tf_build;
+                    tf_build.for_each_index((size_t)0, n_cols, (size_t)1, [&cb, &ar](size_t c) {
+                        ar[c].store(new SparseColumn<Int>(std::move(cb[c])), std::memory_order_relaxed);
+                    });
+                    executor.run(tf_build).get();
+                } else {
+                    tf::Taskflow tf_build;
+                    tf_build.for_each_index((size_t)0, n_cols, (size_t)1, [&bdry, &ar](size_t c) {
+                        ar[c].store(new SparseColumn<Int>(bdry[c]), std::memory_order_relaxed);
+                    });
+                    executor.run(tf_build).get();
+                }
+                params.timings.prepare = timer_build.elapsed();
+                dcmp.run_r_only_core_dispatch_(params, executor, ar, pivots, n_cols, n_threads, /*copy_back_to_r=*/false);
             }
 
             dcmp.sync_elapsed_from_timings_(params);
@@ -854,7 +962,9 @@ namespace oineus {
         { }
 #endif
 
-        [[nodiscard]] size_t size() const { return r_data.size(); }
+        // Column count, valid in both the at-rest and keep-working states (the
+        // latter leaves r_data empty). n_cols_total() is a synonym.
+        [[nodiscard]] size_t size() const { return has_working_rv_ ? working_rv_.size() : r_data.size(); }
 
         bool dualize() const { return dualize_; }
 
@@ -939,11 +1049,12 @@ namespace oineus {
         bool is_positive(size_t simplex) const
         {
             assert(is_reduced);
-            return is_zero(r_data[simplex]);
+            // r_is_zero reads the kept working form when r_data is not materialized.
+            return r_is_zero(simplex);
         }
 
         bool has_matrix_u() const { return u_data_t.size() > 0; }
-        bool has_matrix_v() const { return v_data.size() > 0; }
+        bool has_matrix_v() const { return v_data.size() > 0 or has_working_rv_; }
 
         int is_column_elz(size_t col_idx) const;
 
@@ -1142,8 +1253,8 @@ namespace oineus {
             return dualize() ? size() - matrix_idx - 1 : matrix_idx;
         }
 
-        bool is_R_column_zero(size_t col_idx) const { return r_data[col_idx].empty(); }
-        bool is_V_column_zero(size_t col_idx) const { return v_data[col_idx].empty(); }
+        bool is_R_column_zero(size_t col_idx) const { return r_is_zero(col_idx); }
+        bool is_V_column_zero(size_t col_idx) const { return v_col(col_idx).empty(); }
 
         IntSparseColumn compute_u_column(size_t col_idx) const;
         void compute_u_from_v(dim_type dim, size_t n_threads=1, bool verbose=false);
@@ -3595,8 +3706,11 @@ namespace oineus {
         if (rows.size() != bounds.size())
             throw std::runtime_error("compute_partial_u_rows: rows and bounds must have the same size");
 
-        if (u_data_t.size() != v_data.size()) {
-            u_data_t = MatrixData(v_data.size());
+        // Column count, valid whether V is at-rest (v_data) or in the kept
+        // working form (v_data empty).
+        const size_t nc = has_working_rv_ ? n_cols_total() : v_data.size();
+        if (u_data_t.size() != nc) {
+            u_data_t = MatrixData(nc);
         }
 
         if (rows.empty())
@@ -3625,10 +3739,23 @@ namespace oineus {
         // V is block-diagonal in dim, so transposing only the dim's
         // matrix-column range gives us exactly the rows of V^T that
         // any row solve in dim d will read.
-        auto vt_data = MatrixTraits::col_to_row_format_parallel(
-                v_data, static_cast<int>(n_threads),
-                range_start_(_dim), range_end_(_dim),
-                static_cast<typename MatrixTraits::Int>(v_data.size()));
+        const size_t cs = range_start_(_dim), ce = range_end_(_dim);
+        MatrixData vt_data;
+        if (has_working_rv_) {
+            // Read V from the kept working form. V is block-diagonal in dim, so
+            // only this dim's V columns are copied out; the rest of the
+            // keep-working form stays untouched (no full materialization).
+            MatrixData v_dim(nc);
+            for (size_t c = cs; c < ce; ++c)
+                v_dim[c] = working_rv_[c].load(std::memory_order_relaxed)->v_column;
+            vt_data = MatrixTraits::col_to_row_format_parallel(
+                    v_dim, static_cast<int>(n_threads), cs, ce,
+                    static_cast<typename MatrixTraits::Int>(nc));
+        } else {
+            vt_data = MatrixTraits::col_to_row_format_parallel(
+                    v_data, static_cast<int>(n_threads), cs, ce,
+                    static_cast<typename MatrixTraits::Int>(v_data.size()));
+        }
 
         auto vt_elapsed = timer.elapsed_reset();
 

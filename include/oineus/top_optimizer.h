@@ -318,18 +318,38 @@ public:
     bool is_hom_built() const { return decmp_hom_built_; }
     bool is_coh_built() const { return decmp_coh_built_; }
 
+    // Build + reduce in one shot via the fused path, which builds the working
+    // column array straight from the cached boundary (no d_data, no prepare-copy)
+    // and, for the parallel crit-sets RV case, keeps the reduced RVColumns instead
+    // of copying R/V back (read via r_low/r_is_zero/v_col). The read sites'
+    // accessors fall back to at-rest data, so the serial / diagram-loss / classic
+    // cases (handled inside reduce_from_boundary_fused) work unchanged. If a caller
+    // already built the decomposition classically (ensure_*_built), we reduce that
+    // in place instead, so an externally-modified build is not discarded.
     void ensure_hom_reduced()
     {
-        ensure_hom_built();
-        if (decmp_hom_.is_reduced) return;
-        decmp_hom_.reduce(params_hom_);
+        if (decmp_hom_built_) {
+            if (not decmp_hom_.is_reduced)
+                decmp_hom_.reduce(params_hom_);
+            return;
+        }
+        decmp_hom_ = Decomposition::reduce_from_boundary_fused(
+                boundary_data_, fil_.dims_first(), fil_.dims_last(),
+                /*dualize=*/false, params_hom_, /*keep_working=*/true);
+        decmp_hom_built_ = true;
     }
 
     void ensure_coh_reduced()
     {
-        ensure_coh_built();
-        if (decmp_coh_.is_reduced) return;
-        decmp_coh_.reduce(params_coh_);
+        if (decmp_coh_built_) {
+            if (not decmp_coh_.is_reduced)
+                decmp_coh_.reduce(params_coh_);
+            return;
+        }
+        decmp_coh_ = Decomposition::reduce_from_boundary_fused(
+                boundary_data_, fil_.dims_first(), fil_.dims_last(),
+                /*dualize=*/true, params_coh_, /*keep_working=*/true);
+        decmp_coh_built_ = true;
     }
 
 private:
@@ -970,9 +990,12 @@ public:
 
         Indices result;
 
-        auto& v_col = decmp_coh_.v_data.at(fil_.index_in_matrix(positive_simplex_idx, true));
+        // v_col() reads the V column directly from the kept working form (or
+        // at-rest v_data), so the fused keep-working decomposition needs no
+        // materialization here.
+        const auto& vcol = decmp_coh_.v_col(fil_.index_in_matrix(positive_simplex_idx, true));
 
-        for(auto index_in_matrix = v_col.rbegin() ; index_in_matrix != v_col.rend() ; ++index_in_matrix) {
+        for(auto index_in_matrix = vcol.rbegin() ; index_in_matrix != vcol.rend() ; ++index_in_matrix) {
             auto fil_idx = fil_.index_in_filtration(*index_in_matrix, true);
             if (fil_.cmp(target_birth, fil_.get_cell_value(fil_idx)))
                 break;
@@ -1027,18 +1050,19 @@ public:
         Indices result;
 
         const auto& u_rows = decmp_hom_.u_data_t;
-        const auto& r_cols = decmp_hom_.r_data;
 
-        Int sigma = low(r_cols[negative_simplex_idx]);
+        // r_low()/r_is_zero() read R from the kept working form (or at-rest
+        // r_data), so no materialization is forced here.
+        Int sigma = decmp_hom_.r_low(negative_simplex_idx);
 
-        assert(sigma >= 0 and sigma < static_cast<Int>(r_cols.size()));
+        assert(sigma >= 0 and sigma < static_cast<Int>(decmp_hom_.n_cols_total()));
 
         for(auto tau_idx: u_rows.at(negative_simplex_idx)) {
             if (fil_.cmp(target_death, fil_.get_cell_value(tau_idx))) {
                 break;
             }
 
-            if (low(decmp_hom_.r_data[tau_idx]) <= sigma) {
+            if (decmp_hom_.r_low(tau_idx) <= sigma) {
                 result.push_back(tau_idx);
             }
         }
@@ -1062,21 +1086,20 @@ public:
             throw std::runtime_error("decrease_death requires hom reduced; call ensure_hom_reduced() first");
         Indices result;
 
-        auto& r_cols = decmp_hom_.r_data;
-        Int sigma = low(r_cols[negative_simplex_idx]);
+        Int sigma = decmp_hom_.r_low(negative_simplex_idx);
 
-        assert(sigma >= 0 and sigma < static_cast<Int>(r_cols.size()));
+        assert(sigma >= 0 and sigma < static_cast<Int>(decmp_hom_.n_cols_total()));
 
-        auto& v_col = decmp_hom_.v_data[negative_simplex_idx];
+        const auto& vcol = decmp_hom_.v_col(negative_simplex_idx);
 
-        for(auto tau_idx_it = v_col.rbegin() ; tau_idx_it != v_col.rend() ; ++tau_idx_it) {
+        for(auto tau_idx_it = vcol.rbegin() ; tau_idx_it != vcol.rend() ; ++tau_idx_it) {
             auto tau_idx = *tau_idx_it;
 
             if (fil_.cmp(fil_.get_cell_value(tau_idx), target_death))
                 break;
 
             // explicit check for is_zero is not necessary for signed Int, low returns -1 for empty columns
-            if (low(decmp_hom_.r_data[tau_idx]) < sigma or is_zero(decmp_hom_.r_data[tau_idx]))
+            if (decmp_hom_.r_low(tau_idx) < sigma or decmp_hom_.r_is_zero(tau_idx))
                 continue;
 
             result.push_back(tau_idx);

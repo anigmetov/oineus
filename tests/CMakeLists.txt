@@ -72,6 +72,7 @@ else()
             diff-critical-sets
             diff-cube-fil
             diff-forward-reduces-one-side
+            diff-fused-optimizer
             diff-grad
             diff-inf-points-raises
             diff-partial-u-elz-assert
