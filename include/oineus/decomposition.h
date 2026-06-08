@@ -652,6 +652,15 @@ namespace oineus {
 
         bool dualize() const { return dualize_; }
 
+        // True iff the decomposition is reduced but holds only _pivots, not the
+        // reduced R columns. The fused diagram-only path (parallel R-only
+        // reduce_from_filtration) frees the working matrix after extracting
+        // pivots, so r_data is empty even though there are n_rows > 0 cells.
+        // diagram(fil) still works (it reads _pivots); the R contents are gone
+        // and cannot be recovered without re-reducing. Used to give a clear
+        // error on r_data access rather than silently returning an empty matrix.
+        bool is_pivots_only() const { return is_reduced and r_data.empty() and n_rows > 0; }
+
         bool operator==(const VRUDecomposition& other) const
         {
             return d_data == other.d_data

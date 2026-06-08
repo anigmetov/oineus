@@ -4,6 +4,23 @@
 #include "nanobind/stl/set.h"
 #include "nanobind/stl/list.h"
 
+// Raise a clear error when R was not materialized. The fused diagram-only
+// reduce (oin.reduce with n_threads > 1 and compute_v=False) frees the reduced
+// columns after extracting pivots, so r_data is empty even though the diagram
+// is available; returning an empty matrix silently would look like an empty R.
+template<class Decomposition>
+static void require_r_materialized(const Decomposition& self, const char* what)
+{
+    if (self.is_pivots_only())
+        throw std::runtime_error(
+                std::string(what) + " is not available: this decomposition came from the "
+                "fused diagram-only reduce (oin.reduce with n_threads > 1 and "
+                "compute_v=False), which frees the reduced columns after extracting "
+                "pivots. The persistence diagram is available via diagram(fil); to obtain "
+                "the reduced R matrix, reduce with compute_v=True or use the classic "
+                "Decomposition(fil) + reduce() path.");
+}
+
 Eigen::SparseMatrix<oin_int, Eigen::ColMajor>  z2_col_matrix_to_csc(const oin::VRUDecomposition<oin_int>::MatrixData& col_matrix, size_t num_rows)
 {
     const size_t num_cols = col_matrix.size();
@@ -322,14 +339,19 @@ void init_oineus_common_decomposition(nb::module_& m)
             // pickle-backed copy.deepcopy that round-trips through Python lists.
             .def("clone", [](const Decomposition& self) { return Decomposition(self); },
                     nb::call_guard<nb::gil_scoped_release>())
-            .def_rw("r_data", &Decomposition::r_data)
+            .def_prop_rw("r_data",
+                    [](Decomposition& self) -> const typename Decomposition::MatrixData& {
+                        require_r_materialized(self, "r_data");
+                        return self.r_data;
+                    },
+                    [](Decomposition& self, const typename Decomposition::MatrixData& value) { self.r_data = value; })
             .def_rw("v_data", &Decomposition::v_data)
             .def_rw("u_data_t", &Decomposition::u_data_t)
             .def_ro("d_data", &Decomposition::d_data)
             .def_ro("is_reduced", &Decomposition::is_reduced)
             .def("has_matrix_v", &Decomposition::has_matrix_v)
             .def("has_matrix_u", &Decomposition::has_matrix_u)
-            .def("r_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { return z2_col_matrix_to_csc(self.r_data, self.r_data.size()); })
+            .def("r_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { require_r_materialized(self, "r_as_csc"); return z2_col_matrix_to_csc(self.r_data, self.r_data.size()); })
             .def("v_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { return z2_col_matrix_to_csc(self.v_data, self.v_data.size()); })
             .def("d_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { return z2_col_matrix_to_csc(self.d_data, self.v_data.size()); })
             .def("u_as_csr", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::RowMajor> { return z2_row_matrix_to_csr(self.u_data_t, self.u_data_t.size()); })
