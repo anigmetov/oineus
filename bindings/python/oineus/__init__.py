@@ -14,6 +14,7 @@ from ._oineus import DiagramPlaneDomain, FrechetMeanInit
 from ._oineus import CombinatorialProdSimplex, CombinatorialSimplex,Simplex, ProdSimplex
 from ._oineus import Filtration, ProdFiltration
 from ._oineus import Decomposition, IndexDiagramPoint, DiagramPoint, Diagrams
+from ._oineus import reduce
 from ._oineus import DecompositionManipStats
 from ._oineus import ReductionParams, ReductionTimings, KICRParams, KerImCokReduced, KerImCokReducedProd
 from ._oineus import ColumnRepr

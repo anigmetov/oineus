@@ -428,6 +428,11 @@ namespace oineus {
         MatrixData v_data;
         MatrixData u_data_t;
         bool is_reduced {false};
+        // Whether d_data (the original boundary) is held. The fused
+        // reduce_from_filtration path builds R directly and does not keep D, so
+        // sanity_check() then needs D supplied explicitly. Defaults true for the
+        // ordinary ctor+reduce path.
+        bool has_d_data_ {true};
         bool dualize_ {false};
         // True iff R, V are known to be in ELZ form. Maintained by the
         // reduction drivers and by restore_elz; consulted by
@@ -502,6 +507,57 @@ namespace oineus {
             for(dim_type _dim = 0; _dim < dim_first.size(); ++_dim) {
                 is_elz_in_dim_[_dim] = false;
             }
+        }
+
+        // Fused path: build R directly from the filtration (boundary, or for
+        // dualize the coboundary) WITHOUT keeping the original boundary D, so we
+        // skip the d_data->r_data copy of the ordinary ctor. sanity_check then
+        // needs D supplied explicitly. Used by reduce_from_filtration().
+        template<class C, class R>
+        void init_fused_(const Filtration<C, R>& fil, bool _dualize, int n_threads)
+        {
+            r_data = _dualize ? fil.coboundary_matrix(n_threads) : fil.boundary_matrix(n_threads);
+            d_data.clear();
+            has_d_data_ = false;
+            dualize_ = _dualize;
+            dim_first = fil.dims_first();
+            dim_last = fil.dims_last();
+            _dim_first = dim_first;
+            _dim_last = dim_last;
+            n_rows = r_data.size();
+
+            if (dualize_) {
+                std::reverse(_dim_first.begin(), _dim_first.end());
+                std::reverse(_dim_last.begin(), _dim_last.end());
+                std::vector<Int> new_dim_first, new_dim_last;
+                for(size_t i = 0; i < dim_first.size(); ++i) {
+                    size_t cnt = _dim_last[i] - _dim_first[i];
+                    if (i == 0) {
+                        new_dim_first.push_back(0);
+                        new_dim_last.push_back(cnt);
+                    } else {
+                        new_dim_first.push_back(new_dim_last.back() + 1);
+                        new_dim_last.push_back(new_dim_first.back() + cnt);
+                    }
+                }
+                _dim_first = std::move(new_dim_first);
+                _dim_last = std::move(new_dim_last);
+            }
+            for(dim_type _dim = 0; _dim < static_cast<dim_type>(dim_first.size()); ++_dim)
+                is_elz_in_dim_[_dim] = false;
+        }
+
+        // One-shot fused reduction from a filtration: build R directly (no D, no
+        // d_data->r_data copy), reduce with `params`, return the reduced
+        // decomposition. diagram(fil) works as usual; sanity_check needs D passed
+        // (e.g. fil.boundary_matrix()).
+        template<class C, class R>
+        static VRUDecomposition reduce_from_filtration(const Filtration<C, R>& fil, Params params, bool dualize = false)
+        {
+            VRUDecomposition dcmp;
+            dcmp.init_fused_(fil, dualize, params.n_threads);
+            dcmp.reduce(params);
+            return dcmp;
         }
 
         // Construct from a pre-built boundary matrix plus explicit dim
@@ -686,7 +742,10 @@ namespace oineus {
         template<typename Int>
         friend std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m);
 
-        bool sanity_check();
+        // Verify R = D V (and U V = I if U present). When the decomposition does
+        // not hold D (the fused reduce_from_filtration path), pass it in, e.g.
+        // dcmp.sanity_check(fil.boundary_matrix()).
+        bool sanity_check(const MatrixData& d_provided = {});
 
         // ===== decomposition manipulation (vineyards / moves / warm starts) =====
         // Update a reduced R = DV decomposition when the filtration changes,
@@ -952,9 +1011,16 @@ namespace oineus {
         return e_cols == e_rows;
     }
     template<class Int>
-    bool VRUDecomposition<Int>::sanity_check()
+    bool VRUDecomposition<Int>::sanity_check(const MatrixData& d_provided)
     {
         bool verbose = true;
+        // D comes from the held d_data, or from the caller for the fused path.
+        const MatrixData& d_use = has_d_data_ ? d_data : d_provided;
+        if (not has_d_data_ and d_provided.empty()) {
+            std::cerr << "sanity_check: this decomposition does not hold D; "
+                         "pass it, e.g. dcmp.sanity_check(fil.boundary_matrix())" << std::endl;
+            return false;
+        }
         // R is reduced
         if (not is_matrix_reduced(r_data)) {
             std::cerr << "sanity_check: R not reduced!" << std::endl;
@@ -986,7 +1052,7 @@ namespace oineus {
         size_t n_simplices = r_data.size();
 
         // all matrices are square
-        SparseMatrix<Int> dd(d_data, n_simplices, true);
+        SparseMatrix<Int> dd(d_use, n_simplices, true);
         SparseMatrix<Int> rr(r_data, n_simplices, true);
         SparseMatrix<Int> uu(u_data_t, n_simplices, false);
         SparseMatrix<Int> vv(v_data, n_simplices, true);
@@ -1253,7 +1319,7 @@ namespace oineus {
         invalidate_dynamic_();   // R, V are rebuilt; any row index is now stale
         params.timings.reset();
 
-        if (d_data.empty()) {
+        if (r_data.empty()) {
             is_reduced = true;
             sync_elapsed_from_timings_(params);
             return;
@@ -1346,13 +1412,13 @@ namespace oineus {
         std::unordered_set<Int> cleared_cols;
 
         if (params.compute_v)
-            v_data = MatrixTraits::eye(d_data.size());
+            v_data = MatrixTraits::eye(size());
 
         if (params.compute_u)
-            u_data_t = MatrixTraits::eye(d_data.size());
+            u_data_t = MatrixTraits::eye(size());
 
         // D matrix empty, nothing to do
-        if (d_data.empty()) {
+        if (r_data.empty()) {
             is_reduced = true;
             return;
         }

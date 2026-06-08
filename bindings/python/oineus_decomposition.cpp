@@ -281,6 +281,35 @@ void init_oineus_common_decomposition(nb::module_& m)
     using CubeFiltration_2D = oin::Filtration<oin::Cube<oin_int, 2>, oin_real>;
     using CubeFiltration_3D = oin::Filtration<oin::Cube<oin_int, 3>, oin_real>;
 
+    // Fused one-shot reduction: builds R directly from the filtration (no D, no
+    // d_data->r_data copy), reduces, and returns the reduced decomposition --
+    // dcmp = oin.reduce(fil, params). sanity_check then needs D passed explicitly.
+    {
+        auto reduce_fil = [](const auto& fil, oin::Params params, bool dualize) {
+            return Decomposition::reduce_from_filtration(fil, params, dualize);
+        };
+        m.def("reduce", [reduce_fil](const SimplexFiltration& fil, oin::Params params, bool dualize)
+                { return reduce_fil(fil, params, dualize); },
+                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+        m.def("reduce", [reduce_fil](const ProdSimplexFiltration& fil, oin::Params params, bool dualize)
+                { return reduce_fil(fil, params, dualize); },
+                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+        m.def("reduce", [reduce_fil](const CubeFiltration_1D& fil, oin::Params params, bool dualize)
+                { return reduce_fil(fil, params, dualize); },
+                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+        m.def("reduce", [reduce_fil](const CubeFiltration_2D& fil, oin::Params params, bool dualize)
+                { return reduce_fil(fil, params, dualize); },
+                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+        m.def("reduce", [reduce_fil](const CubeFiltration_3D& fil, oin::Params params, bool dualize)
+                { return reduce_fil(fil, params, dualize); },
+                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+    }
+
     nb::class_<Decomposition>(m, "Decomposition")
             .def(nb::init<const SimplexFiltration&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
             .def(nb::init<const ProdSimplexFiltration&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
@@ -426,7 +455,10 @@ void init_oineus_common_decomposition(nb::module_& m)
                      return densify_v_for_selinv_1(self, fil, rows_to_invert, targets, num_rows);
                  },
                  nb::arg("filtration"), nb::arg("rows_to_invert"), nb::arg("targets"),
-                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())            .def("sanity_check", &Decomposition::sanity_check, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("sanity_check", [](Decomposition& self, const typename Decomposition::MatrixData& d) { return self.sanity_check(d); },
+                    nb::arg("d") = typename Decomposition::MatrixData{},
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("diagram", [](const Decomposition& self, const SimplexFiltration& fil, bool include_inf_points)
                             { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points)); },
                     nb::arg("fil"), nb::arg("include_inf_points") = true)
