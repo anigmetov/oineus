@@ -552,7 +552,7 @@ namespace oineus {
         // decomposition. diagram(fil) works as usual; sanity_check needs D passed
         // (e.g. fil.boundary_matrix()).
         template<class C, class R>
-        static VRUDecomposition reduce_from_filtration(const Filtration<C, R>& fil, Params params, bool dualize = false)
+        static VRUDecomposition reduce_from_filtration(const Filtration<C, R>& fil, Params& params, bool dualize = false)
         {
             VRUDecomposition dcmp;
             dcmp.init_fused_(fil, dualize, params.n_threads);

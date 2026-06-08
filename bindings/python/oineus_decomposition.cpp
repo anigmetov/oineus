@@ -285,26 +285,26 @@ void init_oineus_common_decomposition(nb::module_& m)
     // d_data->r_data copy), reduces, and returns the reduced decomposition --
     // dcmp = oin.reduce(fil, params). sanity_check then needs D passed explicitly.
     {
-        auto reduce_fil = [](const auto& fil, oin::Params params, bool dualize) {
+        auto reduce_fil = [](const auto& fil, oin::Params& params, bool dualize) {
             return Decomposition::reduce_from_filtration(fil, params, dualize);
         };
-        m.def("reduce", [reduce_fil](const SimplexFiltration& fil, oin::Params params, bool dualize)
+        m.def("reduce", [reduce_fil](const SimplexFiltration& fil, oin::Params& params, bool dualize)
                 { return reduce_fil(fil, params, dualize); },
                 nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
-        m.def("reduce", [reduce_fil](const ProdSimplexFiltration& fil, oin::Params params, bool dualize)
+        m.def("reduce", [reduce_fil](const ProdSimplexFiltration& fil, oin::Params& params, bool dualize)
                 { return reduce_fil(fil, params, dualize); },
                 nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
-        m.def("reduce", [reduce_fil](const CubeFiltration_1D& fil, oin::Params params, bool dualize)
+        m.def("reduce", [reduce_fil](const CubeFiltration_1D& fil, oin::Params& params, bool dualize)
                 { return reduce_fil(fil, params, dualize); },
                 nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
-        m.def("reduce", [reduce_fil](const CubeFiltration_2D& fil, oin::Params params, bool dualize)
+        m.def("reduce", [reduce_fil](const CubeFiltration_2D& fil, oin::Params& params, bool dualize)
                 { return reduce_fil(fil, params, dualize); },
                 nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
-        m.def("reduce", [reduce_fil](const CubeFiltration_3D& fil, oin::Params params, bool dualize)
+        m.def("reduce", [reduce_fil](const CubeFiltration_3D& fil, oin::Params& params, bool dualize)
                 { return reduce_fil(fil, params, dualize); },
                 nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
