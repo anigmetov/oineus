@@ -1072,6 +1072,18 @@ namespace oineus {
         // internally use _dim to index, accept dim as parameter
         size_t _dim_from_dim(dim_type dim) const { return dualize() ? n_dims() - dim - 1 : dim; }
 
+        // Emit the persistence point for one reduced column into `out`. Shared by
+        // the serial and parallel diagram extractions so the finite/essential and
+        // homology/cohomology (dualize) emit logic lives in one place. Pass the
+        // precomputed low (col_low_val) and zero-ness (col_zero) of the column;
+        // is_pivot_row is consulted only for essential points (it may be empty
+        // when include_inf_points is false).
+        template<typename Cell, typename Real>
+        void emit_column_(const Filtration<Cell, Real>& fil, size_t col_idx,
+                Int col_low_val, bool col_zero, const std::vector<char>& is_pivot_row,
+                bool include_all, bool include_inf_points, bool only_zero_persistence,
+                Diagrams<Real>& out) const;
+
         // Non-relative general diagram, serial implementation. Also the
         // n_threads <= 1 fast path of the dispatcher and the regression oracle.
         template<typename Cell, typename Real>
@@ -3280,6 +3292,47 @@ namespace oineus {
 
     template<class Int>
     template<class Cell, class Real>
+    void VRUDecomposition<Int>::emit_column_(const Filtration<Cell, Real>& fil, size_t col_idx,
+            Int col_low_val, bool col_zero, const std::vector<char>& is_pivot_row,
+            bool include_all, bool include_inf_points, bool only_zero_persistence,
+            Diagrams<Real>& out) const
+    {
+        if (col_zero) {
+            if (not include_inf_points or is_pivot_row[col_idx])
+                // we don't want infinite points or col_idx is a negative simplex
+                return;
+
+            // point at infinity
+            auto simplex_idx = fil.index_in_filtration(col_idx, dualize());
+            dim_type dim = fil.dim_by_sorted_id(simplex_idx);
+            Real birth = fil.value_by_sorted_id(simplex_idx);
+            auto simplex_idx_us = fil.get_id_by_sorted_id(simplex_idx);
+
+            out.add_point(dim, birth, fil.infinity(), simplex_idx, plus_inf, simplex_idx_us, plus_inf);
+        } else {
+            // finite point
+            Int death_idx = fil.index_in_filtration(col_idx, dualize());
+            Int birth_idx = fil.index_in_filtration(col_low_val, dualize());
+            Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
+
+            bool include_point = include_all or (only_zero_persistence ? birth == death : birth != death);
+
+            if (not include_point)
+                return;
+
+            dim_type dim = fil.dim_by_sorted_id(birth_idx);
+            Int birth_idx_us = fil.get_id_by_sorted_id(birth_idx), death_idx_us = fil.get_id_by_sorted_id(death_idx);
+
+            if (dualize()) {
+                out.add_point(dim - 1, death, birth, death_idx, birth_idx, death_idx_us, birth_idx_us);
+            } else {
+                out.add_point(dim, birth, death, birth_idx, death_idx, birth_idx_us, death_idx_us);
+            }
+        }
+    }
+
+    template<class Int>
+    template<class Cell, class Real>
     Diagrams<Real> VRUDecomposition<Int>::diagram_general_serial(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const
     {
         if (not is_reduced)
@@ -3333,38 +3386,8 @@ namespace oineus {
         // emitted (typically a tiny fraction of the cells) rather than once per
         // cell.
         for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
-            if (col_is_zero(col_idx)) {
-                if (not include_inf_points or is_pivot_row[col_idx])
-                    // we don't want infinite points or col_idx is a negative simplex
-                    continue;
-
-                // point at infinity
-                auto simplex_idx = fil.index_in_filtration(col_idx, dualize());
-                dim_type dim = fil.dim_by_sorted_id(simplex_idx);
-                Real birth = fil.value_by_sorted_id(simplex_idx);
-                auto simplex_idx_us = fil.get_id_by_sorted_id(simplex_idx);
-
-                result.add_point(dim, birth, fil.infinity(), simplex_idx, plus_inf, simplex_idx_us, plus_inf);
-            } else {
-                // finite point
-                Int death_idx = fil.index_in_filtration(col_idx, dualize());
-                Int birth_idx = fil.index_in_filtration(col_low(col_idx), dualize());
-                Real birth = fil.value_by_sorted_id(birth_idx), death = fil.value_by_sorted_id(death_idx);
-
-                bool include_point = include_all or (only_zero_persistence ? birth == death : birth != death);
-
-                if (not include_point)
-                    continue;
-
-                dim_type dim = fil.dim_by_sorted_id(birth_idx);
-                Int birth_idx_us = fil.get_id_by_sorted_id(birth_idx), death_idx_us = fil.get_id_by_sorted_id(death_idx);
-
-                if (dualize()) {
-                    result.add_point(dim - 1, death, birth, death_idx, birth_idx, death_idx_us, birth_idx_us);
-                } else {
-                    result.add_point(dim, birth, death, birth_idx, death_idx, birth_idx_us, death_idx_us);
-                }
-            }
+            emit_column_(fil, col_idx, col_low(col_idx), col_is_zero(col_idx), is_pivot_row,
+                    include_all, include_inf_points, only_zero_persistence, result);
 
             if (col_idx % 100 == 0 && oineus::interrupted())
                 throw oineus::interrupted_exception{};
