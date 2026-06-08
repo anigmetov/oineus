@@ -1072,22 +1072,33 @@ namespace oineus {
         // internally use _dim to index, accept dim as parameter
         size_t _dim_from_dim(dim_type dim) const { return dualize() ? n_dims() - dim - 1 : dim; }
 
+        // Non-relative general diagram, serial implementation. Also the
+        // n_threads <= 1 fast path of the dispatcher and the regression oracle.
         template<typename Cell, typename Real>
-        Diagrams<Real> diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const;
+        Diagrams<Real> diagram_general_serial(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const;
 
+        // Non-relative general diagram, dispatcher: n_threads <= 1 -> serial, else parallel.
+        template<typename Cell, typename Real>
+        Diagrams<Real> diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads = 1) const;
+
+        // Relative general diagram (kernel/image/cokernel): serial, unchanged.
         template<typename Cell, typename Real>
         Diagrams<Real> diagram_general(const Filtration<Cell, Real>& fil,
                 const typename Cell::UidSet& relative,
                 bool include_all, bool include_inf_points, bool only_zero_persistence) const;
 
         template<typename Cell, typename Real>
-        Diagrams<Real> diagram(const Filtration<Cell, Real>& fil, bool include_inf_points) const;
+        Diagrams<Real> diagram(const Filtration<Cell, Real>& fil, bool include_inf_points, int n_threads = 1) const;
+
+        // Serial diagram (regression oracle; mirrors diagram() at n_threads == 1).
+        template<typename Cell, typename Real>
+        Diagrams<Real> diagram_serial(const Filtration<Cell, Real>& fil, bool include_inf_points) const;
 
         template<typename Cell, typename Real>
         Diagrams<Real> diagram(const Filtration<Cell, Real>& fil, const typename Cell::UidSet& relative, bool include_inf_points) const;
 
         template<typename Cell, typename Real>
-        Diagrams<Real> zero_persistence_diagram(const Filtration<Cell, Real>& fil) const;
+        Diagrams<Real> zero_persistence_diagram(const Filtration<Cell, Real>& fil, int n_threads = 1) const;
 
         template<typename Int>
         friend std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m);
@@ -3269,7 +3280,7 @@ namespace oineus {
 
     template<class Int>
     template<class Cell, class Real>
-    Diagrams<Real> VRUDecomposition<Int>::diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const
+    Diagrams<Real> VRUDecomposition<Int>::diagram_general_serial(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const
     {
         if (not is_reduced)
             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
@@ -3362,6 +3373,17 @@ namespace oineus {
         return result;
     }
 
+    // Dispatcher: routes to the serial or parallel implementation by thread
+    // count. The parallel path is added in a subsequent step; for now this
+    // always runs serially.
+    template<class Int>
+    template<class Cell, class Real>
+    Diagrams<Real> VRUDecomposition<Int>::diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const
+    {
+        (void) n_threads;
+        return diagram_general_serial(fil, include_all, include_inf_points, only_zero_persistence);
+    }
+
     template<class Int>
     template<class Cell, class Real>
     Diagrams<Real> VRUDecomposition<Int>::diagram_general(const Filtration<Cell, Real>& fil,
@@ -3452,9 +3474,16 @@ namespace oineus {
 
     template<class Int>
     template<class Cell, class Real>
-    Diagrams<Real> VRUDecomposition<Int>::diagram(const Filtration<Cell, Real>& fil, bool include_inf_points) const
+    Diagrams<Real> VRUDecomposition<Int>::diagram(const Filtration<Cell, Real>& fil, bool include_inf_points, int n_threads) const
     {
-        return diagram_general(fil, false, include_inf_points, false);
+        return diagram_general(fil, false, include_inf_points, false, n_threads);
+    }
+
+    template<class Int>
+    template<class Cell, class Real>
+    Diagrams<Real> VRUDecomposition<Int>::diagram_serial(const Filtration<Cell, Real>& fil, bool include_inf_points) const
+    {
+        return diagram_general_serial(fil, false, include_inf_points, false);
     }
 
     template<class Int>
@@ -3466,9 +3495,9 @@ namespace oineus {
 
     template<class Int>
     template<class Cell, class Real>
-    Diagrams<Real> VRUDecomposition<Int>::zero_persistence_diagram(const Filtration<Cell, Real>& fil) const
+    Diagrams<Real> VRUDecomposition<Int>::zero_persistence_diagram(const Filtration<Cell, Real>& fil, int n_threads) const
     {
-        return diagram_general(fil, false, false, true);
+        return diagram_general(fil, false, false, true, n_threads);
     }
 
     template<typename Int_>
