@@ -13,7 +13,7 @@ Parallel persistent homology and topology-aware optimization for Python and C++.
 </div>
 ```
 
-Oineus is a C++17 library (with first-class Python bindings) for computing
+Oineus is a C++20 library (with first-class Python bindings) for computing
 **persistent homology** on large datasets and for **differentiating through
 the persistence pipeline** so you can train models that care about topology.
 It supports cubical, Vietoris–Rips, and alpha filtrations; kernel / image /

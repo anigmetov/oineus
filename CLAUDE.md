@@ -123,7 +123,7 @@ The previous workflow used a plain `python -m venv venv_build` plus a cmake buil
 ### Dependencies
 
 Required:
-- C++17 compiler
+- C++20 compiler
 - Boost
 - pthreads (via CMake `find_package(Threads)`; standard on Linux/macOS)
 - Python 3.10+ (for Python bindings)

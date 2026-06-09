@@ -65,5 +65,7 @@ include/.DS_Store
 .python-version
 # build / packaging artifacts
 oineus.egg-info/
+# agent/benchmark scratch (kept on disk, not tracked)
+agents_outputs/
 # julia bindings local depot
 .julia_depot/

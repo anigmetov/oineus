@@ -20,7 +20,7 @@ pip install oineus torch   # if you want oineus.diff
 
 ## From source
 
-Oineus builds with CMake. You need a C++17 compiler and **Boost**. All other
+Oineus builds with CMake. You need a C++20 compiler and **Boost**. All other
 dependencies (including the taskflow library used for parallelism) are vendored
 under `extern/`, so there is no system TBB or OpenMP requirement.
 

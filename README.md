@@ -47,7 +47,7 @@ pip install oineus
 
 ## Compilation
 
-Oineus requires a C++17 compiler, Python 3 and Boost. All other
+Oineus requires a C++20 compiler, Python 3 and Boost. All other
 dependencies (nanobind for the Python bindings, the taskflow library
 used for parallelism, Hera, Eigen, etc.) are vendored under `extern/`
 and `bindings/python/`, so there is no system TBB or OpenMP requirement.
