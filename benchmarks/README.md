@@ -47,13 +47,41 @@ export included): 2.59x at 8 threads.
 
 VR of 350 random points, ~7.0M *diagram* points: only 1.65x at 8 threads.
 
+## Per-phase breakdown (8 threads, measured)
+
+The extraction has four phases: A = invert `_pivots -> col_to_low` (serial),
+B = pivot-row bitmap (parallel), C = emit into per-worker diagrams (parallel),
+merge = concatenate per-worker diagrams (serial). Wall-clock ms:
+
+| input (8 threads)              | A invert | B bitmap | C emit | merge | total |
+|--------------------------------|---------:|---------:|-------:|------:|------:|
+| grid, 10.6M cells, 136K points |     10.5 |      2.5 |   12.5 |   0.6 |  26.0 |
+| VR, 7.1M cells, 7.0M points    |      3.0 |      1.5 |   22.0 |  31.0 |  58.0 |
+
+This is the real story behind the speedup, and it differs by input:
+
+- **Per-element work is modest and linear, but not negligible.** Most columns
+  emit nothing (just a `col_is_zero` test + a bitmap read); columns that do
+  emit pay a handful of bounds-checked filtration lookups. So C is real work
+  that parallelizes well (e.g. VR: ~22 ms wall for 7M emitted points).
+
+- **The merge dominates *only* when the diagram is large** (|diagram| ~ n_cols,
+  i.e. low-dim VR). It is effectively a `memmove` of N x sizeof(DgmPoint)
+  (~56 B) -- 7M points is ~400 MB read + 400 MB write, ~31 ms single-threaded
+  (~26 GB/s), which is ~53% of the VR total. So yes: for VR, extraction is
+  cheap-ish linear work and the serial memmove-like merge is the bottleneck.
+
+- **For grids the merge is negligible** (0.6 ms; the diagram is tiny). There the
+  serial limiter is **pass A, the `_pivots` inversion** (~10.5 ms, ~40% of the
+  parallel run) -- a single-threaded scatter over n_cols. The parallel phases
+  B+C are memory-bandwidth-bound.
+
 ## Findings
 
-1. **Parallelism buys ~2-3x at 8 threads** for grid-style inputs (2.94x
-   homology, 2.16x cohomology). It is sublinear because extraction is largely
-   memory-bound (scanning the pivots / bitmap arrays) and two stages stay
-   serial: the `_pivots -> col_to_low` inversion (pass A) and the per-dimension
-   merge.
+1. **Parallelism buys ~2-3x at 8 threads** (2.94x grid homology, 2.16x
+   cohomology, 1.65x large-diagram VR). Sublinear, and the limiter depends on
+   the input: the serial pass-A inversion for small diagrams (grids), the
+   serial merge for large diagrams (VR). Both are serial O(n) passes.
 
 2. **taskflow has no overhead vs raw std::thread here -- it is slightly faster**
    (negative "overhead", -1% to -9%). `diagram_general_par` creates one
@@ -62,11 +90,10 @@ VR of 350 random points, ~7.0M *diagram* points: only 1.65x at 8 threads.
    spawns). Pool reuse wins. So taskflow is the right choice for the default
    path; there is no reason to hand-roll threads.
 
-3. **Very large diagrams are merge-bound.** Low-dimensional VR produces a
-   diagram with millions of points (7M here, comparable to the cell count), so
-   the serial concatenation merge becomes the Amdahl bottleneck and speedup
-   drops to ~1.65x. The obvious follow-up is to parallelize the merge
-   (per-(thread,dim) prefix-sum offsets + parallel copy into a presized result);
-   it was left serial here because for typical inputs |diagram| << n_cols and
-   the merge is negligible. Pass A (the pivot inversion) is a smaller, similar
-   serial-fraction candidate if 8+ thread scaling matters.
+3. **Follow-up to lift 8+ thread scaling:** parallelize the two serial passes.
+   The merge -> per-(thread,dim) prefix-sum offsets + parallel copy into a
+   presized result (helps VR most). Pass A -> a race-free parallel scatter into
+   `col_to_low` (helps grids most). Both were left serial because the plan
+   assumed |diagram| << n_cols and an O(n_cols) inversion was "cheap" -- the
+   measurements above show each becomes the bottleneck for one of the two
+   input regimes.
