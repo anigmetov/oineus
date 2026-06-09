@@ -186,3 +186,33 @@ def test_update_with_edits_dualize_raises():
     with pytest.raises(Exception):
         dcmp_coh.update_with_edits(list(range(n)), [list(c) for c in dcmp_coh.d_data],
                                    list(dcmp_coh.dim_first), list(dcmp_coh.dim_last))
+
+
+@pytest.mark.parametrize("n_threads", [1, 4])
+def test_manip_on_fused_decomposition_raises_not_segfaults(n_threads):
+    # The manipulation API needs the original boundary D, which the fused
+    # oin.reduce path never retains. Feeding a fused decomposition to it used
+    # to index an empty d_data and SIGSEGV; it must now raise a clear error.
+    # Covers serial and parallel, and the lazy-materialized keep-working state.
+    rng = np.random.default_rng(0)
+    fil = oin.freudenthal_filtration(np.ascontiguousarray(rng.random((10, 10))), max_dim=2)
+    p = oin.ReductionParams()
+    p.compute_v = True
+    p.n_threads = n_threads
+    dcmp = oin.reduce(fil, p)
+    i = list(dcmp.dim_first)[1]
+
+    with pytest.raises(RuntimeError, match="boundary matrix D is required"):
+        dcmp.transpose(i)
+
+    # Forcing materialization of R/V does not bring D back; still must raise.
+    _ = dcmp.r_data
+    _ = dcmp.v_data
+    with pytest.raises(RuntimeError, match="boundary matrix D is required"):
+        dcmp.transpose(i)
+
+    # Same guard on the other manip entry points (move and make_dynamic).
+    with pytest.raises(RuntimeError, match="boundary matrix D is required"):
+        dcmp.move(i, i + 1)
+    with pytest.raises(RuntimeError, match="boundary matrix D is required"):
+        dcmp.make_dynamic(n_threads)

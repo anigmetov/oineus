@@ -1891,6 +1891,19 @@ namespace oineus {
         // matrix indices back via index_in_filtration(., dualize()).
         if (not is_reduced)
             throw std::runtime_error(std::string(who) + ": decomposition must be reduced first");
+        // The manipulation API operates on the at-rest R, V, AND the original
+        // boundary D (e.g. transpose reads d_data[i+1]). The fused reduce path
+        // (oin.reduce / the optimizer) builds R directly from the filtration and
+        // never retains D (has_d_data_ == false, set by set_dims_), and its
+        // keep-working state leaves r_data/v_data unmaterialized too. Without this
+        // guard those methods index an empty d_data and crash. has_working_rv_ is
+        // always accompanied by has_d_data_ == false, so this single check covers
+        // every fused state; materializing R/V would not help because D is gone.
+        if (not has_d_data_)
+            throw std::runtime_error(std::string(who) + ": the original boundary matrix D is "
+                    "required, but this decomposition came from the fused reduce path (oin.reduce / "
+                    "TopologyOptimizer), which does not retain D. Rebuild it with the classic "
+                    "Decomposition(fil) + reduce(params) path to use decomposition manipulation.");
         if (not has_matrix_v())
             throw std::runtime_error(std::string(who) + ": V matrix is required (reduce with compute_v = true)");
     }
@@ -1983,6 +1996,11 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::make_dynamic(int n_threads)
     {
+        // Builds row-incidence indices from r_data/v_data/d_data, so it needs the
+        // same at-rest, D-holding state as the rest of the manipulation API.
+        // Without this a fused decomposition would silently build bogus indices
+        // from empty matrices and set is_dynamic_ = true.
+        check_manip_preconditions_("make_dynamic");
         using ST = SimpleSparseMatrixTraits<Int, 2>;
         auto build = [&](const MatrixData& m) -> MatrixData {
             MatrixData ri = ST::col_to_row_format_parallel(m, n_threads, 0, m.size(), static_cast<Int>(n_rows));
