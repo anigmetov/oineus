@@ -68,6 +68,17 @@ cmake.args = [
 
 cmake.build-type = "Release"
 
+# The vendored jemalloc builds from its committed autotools `configure` at
+# cmake-configure time. `configure` and `VERSION` are force-added to git
+# (jemalloc's own .gitignore excludes them), and scikit-build-core's sdist
+# builder is gitignore-aware, so it would otherwise drop them from the sdist --
+# breaking `python -m build` and any `pip install` that falls back to the sdist.
+# Force them back in (the from-scratch build needs only these two).
+sdist.include = [
+    "extern/jemalloc/configure",
+    "extern/jemalloc/VERSION",
+]
+
 [tool.scikit-build.metadata.version]
 provider = "scikit_build_core.metadata.regex"
 input = "bindings/python/oineus/__init__.py"
