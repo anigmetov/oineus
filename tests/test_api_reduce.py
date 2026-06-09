@@ -8,25 +8,30 @@ def _grid_fil(n=24, seed=0):
     return oin.freudenthal_filtration(data=np.ascontiguousarray(rng.random((n, n))))
 
 
-def _classic_dgms(fil, compute_v=True, n_threads=1):
+def _classic_dgms(fil, compute_v=True, n_threads=1, ndims=3):
     dcmp = oin.Decomposition(fil, False)
     p = oin.ReductionParams()
     p.compute_v = compute_v
     p.n_threads = n_threads
     dcmp.reduce(p)
-    return [dcmp.diagram(fil).in_dimension(d) for d in range(3)]
+    return [dcmp.diagram(fil).in_dimension(d) for d in range(ndims)]
 
 
 def _sorted(dgm):
     return dgm[np.lexsort(dgm.T)] if len(dgm) else dgm
 
 
-def _dgms_equal(a, b):
-    for d in range(3):
+def _dgms_equal(a, b, ndims=3):
+    for d in range(ndims):
         x, y = _sorted(a[d]), _sorted(b[d])
         if x.shape != y.shape or not np.allclose(x, y):
             return False
     return True
+
+
+def _finite(dgm):
+    # rows with both coordinates finite (drop essential/infinite-death points)
+    return dgm[np.isfinite(dgm).all(axis=1)] if len(dgm) else dgm.reshape(0, 2)
 
 
 @pytest.mark.parametrize("dualize", [False, True])
@@ -190,3 +195,104 @@ def test_reduce_keep_working_pickle_roundtrip():
     got = [dcmp2.diagram(fil).in_dimension(d) for d in range(3)]
     assert _dgms_equal(got, oracle)
     assert dcmp2.sanity_check(D)
+
+
+@pytest.mark.parametrize("dualize", [False, True])
+@pytest.mark.parametrize("n_threads", [1, 4])
+@pytest.mark.parametrize("compute_v", [False, True])
+def test_reduce_vr_matches_dionysus_oracle(dualize, n_threads, compute_v):
+    # Fused oin.reduce on a Vietoris-Rips (Simplex) filtration, cross-checked
+    # against an INDEPENDENT oracle (dionysus). This exercises the Simplex
+    # reduce overload -- the other fused tests only build grids, which hit the
+    # Cube overloads -- and catches any bug shared by Oineus's fused and classic
+    # paths (which a fused-vs-classic check cannot).
+    dion = pytest.importorskip("dionysus")
+    pts = np.ascontiguousarray(np.random.default_rng(0).random((30, 3)))
+    R = 1.0
+    fil = oin.vr_filtration(pts, max_dim=2, max_diameter=R, n_threads=1)
+
+    p = oin.ReductionParams()
+    p.compute_v = compute_v
+    p.n_threads = n_threads
+    dcmp = oin.reduce(fil, p, dualize)
+
+    f = dion.fill_rips(pts.astype("f4"), 2, float(R))
+    m = dion.homology_persistence(f)
+    dion_dgms = dion.init_diagrams(m, f)
+
+    for d in (0, 1):
+        oin_fin = _finite(dcmp.diagram(fil).in_dimension(d)).astype(np.float32)
+        dion_fin = np.array([[q.birth, q.death] for q in dion_dgms[d] if q.death < np.inf],
+                            dtype=np.float32).reshape(-1, 2)
+        bd = dion.bottleneck_distance(dion.Diagram(oin_fin), dion.Diagram(dion_fin))
+        assert bd < 1e-5, f"dim {d}: bottleneck {bd}"
+
+    # exactly one essential H0 component for a (connected) point cloud
+    h0 = dcmp.diagram(fil).in_dimension(0)
+    assert int(np.isinf(h0).any(axis=1).sum()) == 1
+
+
+@pytest.mark.parametrize("ndim", [1, 3])
+@pytest.mark.parametrize("n_threads", [1, 4])
+@pytest.mark.parametrize("compute_v", [False, True])
+def test_reduce_cube_1d_3d_match_classic(ndim, n_threads, compute_v):
+    # The other fused tests only build 2D grids (the Cube_2D reduce overload);
+    # cover the Cube_1D and Cube_3D overloads too.
+    shape = (40,) if ndim == 1 else (8, 8, 8)
+    data = np.ascontiguousarray(np.random.default_rng(0).random(shape))
+    fil = oin.freudenthal_filtration(data=data)
+    ndims = ndim + 1
+    oracle = _classic_dgms(fil, ndims=ndims)
+
+    p = oin.ReductionParams()
+    p.compute_v = compute_v
+    p.n_threads = n_threads
+    dcmp = oin.reduce(fil, p)
+    fused = [dcmp.diagram(fil).in_dimension(d) for d in range(ndims)]
+    assert _dgms_equal(oracle, fused, ndims=ndims)
+
+
+@pytest.mark.parametrize("n_threads", [1, 4])
+@pytest.mark.parametrize("compute_v", [False, True])
+def test_reduce_dim0_only(n_threads, compute_v):
+    # Vertices-only filtration: every boundary column is empty, so the fused
+    # parallel R-only path is "pivots-only with an empty pairing". The H0
+    # diagram is then all-essential and must match the classic path; nothing
+    # should crash on this degenerate input.
+    pts = np.ascontiguousarray(np.random.default_rng(0).random((10, 2)))
+    fil = oin.vr_filtration(pts, max_dim=0, max_diameter=1.0, n_threads=1)
+
+    p = oin.ReductionParams()
+    p.compute_v = compute_v
+    p.n_threads = n_threads
+    dcmp = oin.reduce(fil, p)
+
+    h0 = dcmp.diagram(fil).in_dimension(0)
+    # one essential point per vertex, all with infinite death, no finite pairs
+    assert len(h0) == fil.size()
+    assert np.isinf(h0[:, 1]).all()
+    assert len(_finite(h0)) == 0
+
+    classic = oin.Decomposition(fil, False)
+    pc = oin.ReductionParams()
+    pc.compute_v = compute_v
+    classic.reduce(pc)
+    assert len(classic.diagram(fil).in_dimension(0)) == len(h0)
+
+
+@pytest.mark.parametrize("n_threads", [1, 4])
+@pytest.mark.parametrize("compute_v", [False, True])
+def test_reduce_empty_filtration_no_crash(n_threads, compute_v):
+    # Size-0 filtration: the fused path must not crash. There are no cells of
+    # any dimension, so a subsequent diagram request raises a clean error
+    # (not a segfault).
+    fil = oin.Filtration([])
+    assert fil.size() == 0
+
+    p = oin.ReductionParams()
+    p.compute_v = compute_v
+    p.n_threads = n_threads
+    dcmp = oin.reduce(fil, p)  # must return without crashing
+
+    with pytest.raises(Exception):
+        dcmp.diagram(fil).in_dimension(0)
