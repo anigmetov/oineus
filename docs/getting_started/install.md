@@ -18,6 +18,15 @@ pip install oineus[vis]    # plotting helpers (matplotlib)
 pip install oineus torch   # if you want oineus.diff
 ```
 
+```{note}
+The pre-built **macOS Intel (x86_64)** wheels are built without the bundled
+jemalloc allocator (a cross-compilation constraint on the CI runners). They
+behave identically; only the allocator-heavy phase of the parallel reduction is
+somewhat slower. For maximum performance on an Intel Mac, install from source
+(below) -- that build links the bundled jemalloc. Apple-silicon (arm64) wheels
+are unaffected.
+```
+
 ## From source
 
 Oineus builds with CMake. You need a C++20 compiler and **Boost**. All other
