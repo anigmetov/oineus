@@ -53,11 +53,32 @@ if (oin_use_jemalloc)
     set(JEMALLOC_STATIC   "${JEMALLOC_PREFIX}/lib/libjemalloc.a")
     if (NOT EXISTS "${JEMALLOC_STATIC}")
         message(STATUS "oineus: building vendored jemalloc (prefixed, static PIC) -- one-time...")
+        # `configure` is a generated autotools script. It IS committed under
+        # extern/jemalloc (force-added past jemalloc's own .gitignore), exactly as
+        # jemalloc's release tarballs ship it. If it is ever missing (e.g. someone
+        # re-vendored from a git checkout, which omits it), fail with an actionable
+        # message -- otherwise execute_process tries to exec a non-existent file and
+        # leaves an empty log, so the user can't tell what went wrong.
+        set(JEMALLOC_CONFIGURE "${CMAKE_SOURCE_DIR}/extern/jemalloc/configure")
+        if (NOT EXISTS "${JEMALLOC_CONFIGURE}")
+            message(FATAL_ERROR
+                    "oineus: ${JEMALLOC_CONFIGURE} is missing. It is a generated autotools "
+                    "script; regenerate it with 'cd extern/jemalloc && autoconf' (needs "
+                    "autoconf installed) or copy it from the jemalloc 5.3.0 release tarball. "
+                    "Alternatively pass -Doin_use_jemalloc=OFF to use the system allocator.")
+        endif()
         file(MAKE_DIRECTORY "${JEMALLOC_BUILDDIR}")
         execute_process(
-                COMMAND "${CMAKE_SOURCE_DIR}/extern/jemalloc/configure"
+                COMMAND "${JEMALLOC_CONFIGURE}"
                         "--prefix=${JEMALLOC_PREFIX}" "--with-jemalloc-prefix=je_"
-                        "--disable-cxx" "--disable-shared" "--enable-static" "EXTRA_CFLAGS=-fPIC"
+                        "--disable-cxx" "--disable-shared" "--enable-static"
+                        # initial-exec TLS needs static-TLS surplus reserved at program
+                        # startup, which a dlopen'd Python extension (_oineus) does not get
+                        # on Linux -- without this the module fails to import with "cannot
+                        # allocate memory in static TLS block". jemalloc INSTALL.md
+                        # recommends this exact flag for the dlopen case; no-op on macOS.
+                        "--disable-initial-exec-tls"
+                        "EXTRA_CFLAGS=-fPIC"
                 WORKING_DIRECTORY "${JEMALLOC_BUILDDIR}"
                 RESULT_VARIABLE jem_cfg
                 OUTPUT_FILE "${JEMALLOC_BUILDDIR}/oin_configure.log"
