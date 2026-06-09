@@ -102,6 +102,17 @@ before-all = "dnf install -y boost-devel || yum install -y boost-devel"
 manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 
+# macOS x86_64 wheels are cross-compiled on the arm64 runner. The vendored
+# jemalloc is built by its own autotools configure/make (execute_process), which
+# ignores CMAKE_OSX_ARCHITECTURES and would emit an arm64 libjemalloc.a -- an
+# arch mismatch against the x86_64 module (undefined je_* at link). Intel Macs
+# are a shrinking base and can build from source for jemalloc's allocator
+# speedup, so the prebuilt Intel wheel uses the system allocator; arm64 keeps
+# jemalloc. (scikit-build-core reads SKBUILD_CMAKE_ARGS.)
+[[tool.cibuildwheel.overrides]]
+select = "*macosx_x86_64"
+environment = { SKBUILD_CMAKE_ARGS = "-Doin_use_jemalloc=OFF" }
+
 # ============================================================
 # Local dev environment
 # ------------------------------------------------------------
