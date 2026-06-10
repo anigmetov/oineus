@@ -1,3 +1,5 @@
+[![CTest](https://github.com/anigmetov/oineus/actions/workflows/python-tests.yml/badge.svg)](https://github.com/anigmetov/oineus/actions/workflows/python-tests.yml) [![Build and Upload Wheels](https://github.com/anigmetov/oineus/actions/workflows/build_wheels.yaml/badge.svg)](https://github.com/anigmetov/oineus/actions/workflows/build_wheels.yaml)
+
 ## About
 Oineus is an implementation of shared-memory parallel
 computation of persistent homology published in
