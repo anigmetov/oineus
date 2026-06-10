@@ -34,6 +34,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
 ]
@@ -85,7 +86,9 @@ input = "bindings/python/oineus/__init__.py"
 regex = '__version__ = "(?P<value>[^"]+)"'
 
 [tool.cibuildwheel]
-build = "cp310-* cp311-* cp312-* cp313-*"
+# cp314 is Linux-only: the macOS override below pins macOS to cp312, so adding
+# cp314 here widens only the Linux (and skipped Windows) matrix.
+build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
 skip = "*-win32 *-manylinux_i686 *-musllinux_*"
 
 # Minimal "did the wheel import?" check. The full test suite runs
