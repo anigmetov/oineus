@@ -24,6 +24,15 @@ struct ReductionTimings {
     double copy_back {0.0};     // move working matrix back into r_data/v_data; parallel only
     double copy_pivots {0.0};   // copy pivots into _pivots; parallel only
 
+    // Diagnostic sub-breakdown of `prepare` (the working-matrix build). These are
+    // COMPONENTS of prepare and are deliberately NOT summed into reduction_total
+    // (that would double-count). boundary_build = raw boundary-matrix build;
+    // antitranspose = boundary->coboundary antitranspose (cohomology only; 0 for
+    // homology). prepare - boundary_build - antitranspose = the working-column
+    // scatter/alloc.
+    double boundary_build {0.0};
+    double antitranspose {0.0};
+
     // Total wall-clock of the reduction across every phase -- comparable across paths.
     double reduction_total() const
     {
@@ -43,7 +52,9 @@ inline std::ostream& operator<<(std::ostream& out, const ReductionTimings& t)
     out << ", reduce = " << t.reduce;
     out << ", restore_elz = " << t.restore_elz;
     out << ", copy_back = " << t.copy_back;
-    out << ", copy_pivots = " << t.copy_pivots << ")";
+    out << ", copy_pivots = " << t.copy_pivots;
+    out << ", boundary_build = " << t.boundary_build;
+    out << ", antitranspose = " << t.antitranspose << ")";
     return out;
 }
 

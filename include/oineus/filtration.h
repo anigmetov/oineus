@@ -15,6 +15,7 @@
 #include <taskflow/algorithm/for_each.hpp>
 
 #include "timer.h"
+#include "reduction_timings.h"
 #include "decomposition.h"
 #include "filtration_kind.h"
 #include "interrupt.h"
@@ -332,9 +333,10 @@ namespace oineus {
         // intermediate at-rest MatrixData, no prepare-copy. Every column is
         // non-null, including dimension-0 cells (empty boundary), because the core
         // dereferences a pointer for every index.
-        RWorkingMatrix boundary_matrix_for_par(int n_threads=1) const
+        RWorkingMatrix boundary_matrix_for_par(int n_threads=1, ReductionTimings* tt=nullptr) const
         {
             CALI_CXX_MARK_FUNCTION;
+            Timer tb;
             RWorkingMatrix result(size());
 
             bool missing_ok = is_subfiltration();
@@ -362,6 +364,9 @@ namespace oineus {
                         result[col_idx].store(col, std::memory_order_relaxed);
                     });
             executor.run(taskflow).get();
+            // homology: the boundary IS built directly into the working matrix, so
+            // boundary_build == prepare and there is no antitranspose.
+            if (tt) { tt->boundary_build = tb.elapsed(); tt->antitranspose = 0.0; }
             return result;
         }
 
@@ -409,10 +414,16 @@ namespace oineus {
         // MatrixData first (reusing the proven scatter), then move each column into
         // a heap working column -- this still eliminates the prepare deep-copy and
         // the temporary is drained by moves.
-        RWorkingMatrix coboundary_matrix_for_par(int n_threads=1) const
+        RWorkingMatrix coboundary_matrix_for_par(int n_threads=1, ReductionTimings* tt=nullptr) const
         {
             CALI_CXX_MARK_FUNCTION;
-            auto cb = antitranspose(boundary_matrix(n_threads), size());
+            Timer t_bm;
+            auto bm = boundary_matrix(n_threads);
+            double t_boundary = t_bm.elapsed();
+            Timer t_at;
+            auto cb = antitranspose(bm, size());
+            double t_antitranspose = t_at.elapsed();
+            if (tt) { tt->boundary_build = t_boundary; tt->antitranspose = t_antitranspose; }
             RWorkingMatrix result(cb.size());
             tf::Executor executor(n_threads);
             tf::Taskflow taskflow;

@@ -85,6 +85,8 @@ void init_oineus_common(nb::module_& m)
             .def_rw("restore_elz", &ReductionTimings::restore_elz, "ELZ-restore phase (only if dims_to_restore_elz set)")
             .def_rw("copy_back", &ReductionTimings::copy_back, "move working matrix back into r_data/v_data (parallel only)")
             .def_rw("copy_pivots", &ReductionTimings::copy_pivots, "copy pivots into the at-rest pivot array (parallel only)")
+            .def_rw("boundary_build", &ReductionTimings::boundary_build, "raw boundary-matrix build (component of prepare)")
+            .def_rw("antitranspose", &ReductionTimings::antitranspose, "boundary->coboundary antitranspose (cohomology only; component of prepare)")
             .def_prop_ro("reduction_total", &ReductionTimings::reduction_total,
                     "Total reduction wall-clock across every phase -- comparable across serial and parallel paths.")
             .def_prop_ro("total", &ReductionTimings::total, "Synonym for reduction_total.")

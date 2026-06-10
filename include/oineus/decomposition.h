@@ -723,9 +723,21 @@ namespace oineus {
         // skip the d_data->r_data copy of the ordinary ctor. sanity_check then
         // needs D supplied explicitly. Used by reduce_from_filtration().
         template<class C, class R>
-        void init_fused_(const Filtration<C, R>& fil, bool _dualize, int n_threads)
+        void init_fused_(const Filtration<C, R>& fil, bool _dualize, int n_threads,
+                         ReductionTimings* tt = nullptr)
         {
-            r_data = _dualize ? fil.coboundary_matrix(n_threads) : fil.boundary_matrix(n_threads);
+            if (_dualize) {
+                Timer tb;
+                auto bm = fil.boundary_matrix(n_threads);
+                double t_boundary = tb.elapsed();
+                Timer ta;
+                r_data = antitranspose(bm, fil.size());
+                if (tt) { tt->boundary_build = t_boundary; tt->antitranspose = ta.elapsed(); }
+            } else {
+                Timer tb;
+                r_data = fil.boundary_matrix(n_threads);
+                if (tt) { tt->boundary_build = tb.elapsed(); tt->antitranspose = 0.0; }
+            }
             d_data.clear();
             set_dims_from_fil_(fil, _dualize);
         }
@@ -763,8 +775,20 @@ namespace oineus {
                     and not params.compute_u and not restore_elz_r_only;
 
             if (not can_fuse) {
-                dcmp.init_fused_(fil, dualize, params.n_threads);
+                // Serial / fallback path: init_fused_ builds the at-rest matrix
+                // (boundary, or coboundary = antitranspose(boundary) for coh),
+                // then reduce() reduces in place. reduce() resets timings and
+                // fills .reduce, so capture the matrix-build breakdown here and
+                // re-stamp prepare/boundary_build/antitranspose AFTER reduce().
+                ReductionTimings prep_t;
+                Timer t_prep;
+                dcmp.init_fused_(fil, dualize, params.n_threads, &prep_t);
+                double prep_total = t_prep.elapsed();
                 dcmp.reduce(params);
+                params.timings.prepare = prep_total;
+                params.timings.boundary_build = prep_t.boundary_build;
+                params.timings.antitranspose = prep_t.antitranspose;
+                params.elapsed = params.timings.reduction_total();
                 return dcmp;
             }
 
@@ -787,8 +811,8 @@ namespace oineus {
                 params.timings.prepare = timer_build.elapsed();
                 dcmp.run_rv_core_dispatch_(params, executor, rv, pivots, n_cols, n_threads, /*keep_working=*/true);
             } else {
-                auto ar = dualize ? fil.coboundary_matrix_for_par(params.n_threads)
-                                  : fil.boundary_matrix_for_par(params.n_threads);
+                auto ar = dualize ? fil.coboundary_matrix_for_par(params.n_threads, &params.timings)
+                                  : fil.boundary_matrix_for_par(params.n_threads, &params.timings);
                 params.timings.prepare = timer_build.elapsed();
                 dcmp.run_r_only_core_dispatch_(params, executor, ar, pivots, n_cols, n_threads, /*copy_back_to_r=*/false);
             }
