@@ -81,8 +81,7 @@ namespace oineus {
             }
         }
 
-        // false in Simplex<Int> ctor: do not set uid immediately
-        return Simp({vertices, false}, crit_value);
+        return Simp({vertices}, crit_value);
     }
 
     template<class Int, class Real, std::size_t D>
@@ -275,7 +274,7 @@ namespace oineus {
         using VertexContainer = typename Simplex<Int>::IdxVector;
         using Simplex = CellWithValue<Simplex<Int>, Real>;
 
-        auto neighbor = [&](size_t u, size_t v) { return dist_matrix.get_distance(u, v) <= max_diameter * max_diameter; };
+        auto neighbor = [&](size_t u, size_t v) { return dist_matrix.get_distance(u, v) <= max_diameter; };
 
         std::vector<Simplex, JeAllocator<Simplex>> simplices;
         std::vector<VREdge<Int>> edges;
@@ -365,7 +364,7 @@ namespace oineus {
         using VertexContainer = typename Simplex<Int>::IdxVector;
         using Simplex = CellWithValue<Simplex<Int>, Real>;
 
-        auto neighbor = [&](size_t u, size_t v) { return dist_matrix.get_distance(u, v) <= max_diameter * max_diameter; };
+        auto neighbor = [&](size_t u, size_t v) { return dist_matrix.get_distance(u, v) <= max_diameter; };
 
         std::vector<Simplex, JeAllocator<Simplex>> simplices;
         bool negate {false};

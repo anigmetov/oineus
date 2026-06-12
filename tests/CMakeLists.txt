@@ -18,6 +18,16 @@ target_link_libraries(tests_parallel_col_to_row PRIVATE Catch2::Catch2WithMain)
 
 add_test(NAME parallel-col-to-row COMMAND tests_parallel_col_to_row)
 
+add_executable(tests_vr_dist_matrix tests_vr_dist_matrix.cpp)
+
+target_include_directories(tests_vr_dist_matrix PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include
+                                                        ${CMAKE_CURRENT_SOURCE_DIR}/../extern)
+
+target_link_libraries(tests_vr_dist_matrix PRIVATE ${libraries})
+target_link_libraries(tests_vr_dist_matrix PRIVATE Catch2::Catch2WithMain)
+
+add_test(NAME vr-dist-matrix COMMAND tests_vr_dist_matrix)
+
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/a_6.txt"
            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
