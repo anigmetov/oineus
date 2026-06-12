@@ -92,6 +92,7 @@ else()
             plot-gradient
             sliced-wass
             sliced-wass-nodiff
+            vr-inorder
             wass-match)
         string(REPLACE "-" "_" STEM "${NAME}")
         add_test(NAME py-${NAME}
