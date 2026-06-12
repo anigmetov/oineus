@@ -1,6 +1,7 @@
 #include "oineus_persistence_bindings.h"
 #include <hera/bottleneck.h>
 #include <hera/wasserstein.h>
+#include <cstdint>
 
 namespace {
 
@@ -247,6 +248,24 @@ hera::WassersteinMatching<oin_real> wasserstein_matching_detailed_impl(
     return hera::wasserstein_matching_detailed(dgm_a, dgm_b, params);
 }
 
+// Diagnostic: bytes currently allocated through jemalloc, or 0 when the build
+// does not link it. Lets tests confirm that allocations (e.g. VR construction's
+// IdxVectors) actually route through jemalloc in an ON build, and that an OFF
+// build uses the system allocator. Not part of the user API.
+size_t je_allocated_bytes()
+{
+#ifdef OINEUS_USE_JEMALLOC
+    std::uint64_t epoch = 1;
+    je_mallctl("epoch", nullptr, nullptr, &epoch, sizeof(epoch));  // refresh stats
+    size_t allocated = 0;
+    size_t sz = sizeof(allocated);
+    je_mallctl("stats.allocated", &allocated, &sz, nullptr, 0);
+    return allocated;
+#else
+    return 0;
+#endif
+}
+
 
 } // namespace
 
@@ -300,6 +319,9 @@ void init_oineus_functions(nb::module_& m)
     m.def(func_name.c_str(), &_get_vr_filtration_naive<oin_int, oin_real>,
             nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
             nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+
+    // Internal diagnostic: jemalloc allocated-bytes (0 if jemalloc OFF).
+    m.def("_je_allocated_bytes", &je_allocated_bytes);
 
     // boundary matrix as vector of columns
     func_name = "get_boundary_matrix";

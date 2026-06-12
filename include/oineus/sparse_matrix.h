@@ -14,12 +14,10 @@
 #include <cstdlib>
 #include <new>
 #include <boost/container/small_vector.hpp>
-#ifdef OINEUS_USE_JEMALLOC
-#include <jemalloc/jemalloc.h>
-#endif
 #include <taskflow/taskflow.hpp>
 #include <taskflow/algorithm/for_each.hpp>
 
+#include "common_defs.h"   // JeAllocator + guarded <jemalloc/jemalloc.h>
 #include "profile.h"
 
 namespace oineus {
@@ -28,39 +26,8 @@ namespace oineus {
 #define OINEUS_COL_INLINE_CAP 4
 #endif
 
-// Allocator for a column's overflow buffer. Routes to jemalloc (je_malloc/je_free)
-// when the build links it, else the system allocator. Stateless, so it adds no size
-// to the column (empty-base optimization in small_vector).
-template<class T>
-struct JeAllocator {
-    using value_type = T;
-    JeAllocator() noexcept = default;
-    template<class U> JeAllocator(const JeAllocator<U>&) noexcept { }
-
-    T* allocate(std::size_t n)
-    {
-#ifdef OINEUS_USE_JEMALLOC
-        void* p = je_malloc(n * sizeof(T));
-#else
-        void* p = std::malloc(n * sizeof(T));
-#endif
-        if (p == nullptr)
-            throw std::bad_alloc();
-        return static_cast<T*>(p);
-    }
-
-    void deallocate(T* p, std::size_t) noexcept
-    {
-#ifdef OINEUS_USE_JEMALLOC
-        je_free(p);
-#else
-        std::free(p);
-#endif
-    }
-
-    template<class U> bool operator==(const JeAllocator<U>&) const noexcept { return true; }
-    template<class U> bool operator!=(const JeAllocator<U>&) const noexcept { return false; }
-};
+// JeAllocator (jemalloc-routed allocator) now lives in common_defs.h so it can
+// be shared by the simplex/cell vertex vectors as well as the reduction columns.
 
 #ifdef OINEUS_COL_USE_STD_VECTOR
 // Benchmark baseline: plain std::vector columns -- no SBO, no jemalloc routing.

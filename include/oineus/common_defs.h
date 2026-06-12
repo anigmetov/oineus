@@ -7,9 +7,15 @@
 #include <string>
 #include <sstream>
 #include <limits>
+#include <cstdlib>
+#include <new>
 
 #include "log_wrapper.h"
 #include "profile.h"
+
+#ifdef OINEUS_USE_JEMALLOC
+#include <jemalloc/jemalloc.h>
+#endif
 
 namespace oineus {
 
@@ -27,6 +33,41 @@ namespace oineus {
 
     constexpr size_t k_invalid_index = std::numeric_limits<size_t>::max();
     constexpr dim_type k_all_dims = std::numeric_limits<dim_type>::max();
+
+    // Stateless allocator routing through jemalloc (je_malloc/je_free) when the
+    // build links it, else the system allocator. Empty, so it adds no size to a
+    // container (empty-base optimization). Used both for reduction columns
+    // (sparse_matrix.h) and for simplex/cell vertex vectors (IdxVector).
+    template<class T>
+    struct JeAllocator {
+        using value_type = T;
+        JeAllocator() noexcept = default;
+        template<class U> JeAllocator(const JeAllocator<U>&) noexcept { }
+
+        T* allocate(std::size_t n)
+        {
+#ifdef OINEUS_USE_JEMALLOC
+            void* p = je_malloc(n * sizeof(T));
+#else
+            void* p = std::malloc(n * sizeof(T));
+#endif
+            if (p == nullptr)
+                throw std::bad_alloc();
+            return static_cast<T*>(p);
+        }
+
+        void deallocate(T* p, std::size_t) noexcept
+        {
+#ifdef OINEUS_USE_JEMALLOC
+            je_free(p);
+#else
+            std::free(p);
+#endif
+        }
+
+        template<class U> bool operator==(const JeAllocator<U>&) const noexcept { return true; }
+        template<class U> bool operator!=(const JeAllocator<U>&) const noexcept { return false; }
+    };
 
 template<typename Real>
     struct RPoint {

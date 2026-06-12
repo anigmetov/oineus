@@ -60,8 +60,8 @@ IntOut comb(IntIn n, IntIn k)
 
 // combinatorial simplex numbering, as in Ripser (see Bauer's paper).
 // Encodes dimension info in the 4 most significant bits of the 128-bit result.
-template<typename IntIn>
-unsigned __int128 simplex_uid(const std::vector<IntIn>& vertices)
+template<typename IntIn, typename Alloc = std::allocator<IntIn>>
+unsigned __int128 simplex_uid(const std::vector<IntIn, Alloc>& vertices)
 {
     using Uid = unsigned __int128;
     Uid dim_info = static_cast<Uid>(vertices.size() + 1) << (8 * sizeof(Uid) - 4);
@@ -95,7 +95,10 @@ inline std::ostream& operator<<(std::ostream& out, const VREdge<Int>& e)
 template<typename Int_>
 struct Simplex {
     using Int = Int_;
-    using IdxVector = std::vector<Int>;
+    // Vertex storage routed through jemalloc when the build links it (see
+    // JeAllocator in common_defs.h); identical type/ABI when it does not, so the
+    // OINEUS_USE_JEMALLOC flag only changes the malloc backend, not the type.
+    using IdxVector = std::vector<Int, JeAllocator<Int>>;
 
     using Uid = unsigned __int128;
     // for Z2 only for now
