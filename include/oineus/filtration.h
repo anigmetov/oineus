@@ -46,7 +46,13 @@ namespace oineus {
         using Cell = CellWithValue<UnderCell_, Real>;
         using UidHasher = typename UnderCell_::UidHasher;
         using Int = typename Cell::Int;
-        using CellVector = std::vector<Cell>;
+        // Cell storage routed through jemalloc when the build links it (see
+        // JeAllocator in common_defs.h). Type/ABI identical whether jemalloc is
+        // ON or OFF -- the flag only changes the malloc backend. This is the
+        // hot allocation in filtration construction (the vector grows by
+        // reallocating a large buffer; jemalloc reuses dirty pages instead of
+        // re-mmap+refaulting on every regrowth).
+        using CellVector = std::vector<Cell, JeAllocator<Cell>>;
         using BoundaryMatrix = typename VRUDecomposition<Int>::MatrixData;
 
         // Working-column arrays consumed directly by the parallel reduction core
@@ -58,6 +64,12 @@ namespace oineus {
         using RVWorkingMatrix = std::vector<std::atomic<RVColumn<Int, 2>*>>;
 
         using CellUid = typename Cell::Uid;
+        // uid -> sorted_id map, built once per filtration with one node per cell
+        // (millions of small allocations). Routing it through jemalloc is the
+        // dominant construction speedup -- the small-node churn is exactly the
+        // pattern jemalloc's thread cache beats the system allocator on.
+        using UidMap = std::unordered_map<CellUid, Int, UidHasher,
+                std::equal_to<CellUid>, JeAllocator<std::pair<const CellUid, Int>>>;
 
         Filtration() = default;
         Filtration(const Filtration&) = default;
@@ -628,7 +640,7 @@ namespace oineus {
         bool is_subfiltration_ {false};
         FiltrationKind kind_ {FiltrationKind::User};
 
-        std::unordered_map<CellUid, Int, UidHasher> uid_to_sorted_id;
+        UidMap uid_to_sorted_id;
         std::vector<Int> id_to_sorted_id_;
         std::vector<Int> sorted_id_to_id_;
 
@@ -843,7 +855,7 @@ namespace oineus {
 
         bool negate = fil_1.negate();
 
-        const std::vector<Cell>& cells = fil_1.cells();
+        const auto& cells = fil_1.cells();
 
         std::vector<std::tuple<Real, dim_type, size_t, size_t>> to_sort;
 
@@ -862,7 +874,7 @@ namespace oineus {
         // lexicographic comparison: first by value, then by dimension
         std::sort(to_sort.begin(), to_sort.end());
 
-        std::vector<Cell> min_cells;
+        typename Filtration<C, R>::CellVector min_cells;
 
         min_cells.reserve(fil_1.size());
 

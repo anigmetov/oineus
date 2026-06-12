@@ -58,6 +58,18 @@ struct type_caster<oineus::OinColumn<Int>>
 }}
 #endif
 
+// jemalloc-backed std::unordered_map (Filtration::uid_to_sorted_id, which is part
+// of the pickle state tuple). nanobind's built-in unordered_map caster is a 4-arg
+// partial specialization that only matches the DEFAULT allocator, so the
+// JeAllocator variant needs its own. Specializing on JeAllocator (rather than a
+// generic 5th allocator param) avoids ambiguity with the built-in caster for
+// default-allocator maps.
+namespace nanobind { namespace detail {
+template <typename Key, typename T, typename Hash, typename Eq, typename A>
+struct type_caster<std::unordered_map<Key, T, Hash, Eq, oineus::JeAllocator<A>>>
+    : dict_caster<std::unordered_map<Key, T, Hash, Eq, oineus::JeAllocator<A>>, Key, T> {};
+}}
+
 #ifndef OINEUS_PYTHON_INT
 #define OINEUS_PYTHON_INT long int
 #endif

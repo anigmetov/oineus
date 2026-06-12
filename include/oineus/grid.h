@@ -37,8 +37,8 @@ public:
     using GridSimplex = CellWithValue<Simplex<Int>, Real>;
     using GridCube = Cube<Int, D>;
     using GridCubeVal = CellWithValue<Cube<Int, D>, Real>;
-    using SimplexVec = std::vector<GridSimplex>;
-    using GridCubeVec = std::vector<GridCubeVal>;
+    using SimplexVec = std::vector<GridSimplex, JeAllocator<GridSimplex>>;
+    using GridCubeVec = std::vector<GridCubeVal, JeAllocator<GridCubeVal>>;
     using CriticalIndices = std::vector<Int>;
     using IdxVector = typename Simplex<Int>::IdxVector;
     using GridFiltration = Filtration<Simplex<Int>, Real>;

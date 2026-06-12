@@ -231,11 +231,14 @@ void vre_build(Int n_points,
                const CompareDistFn& compare_dist,
                const CompareToDiamFn& compare_to_diameter,
                bool collect_edges,
-               std::vector<CellWithValue<Simplex<Int>, Real>>& simplices,
+               typename Filtration<Simplex<Int>, Real>::CellVector& simplices,
                std::vector<VREdge<Int>>& edges,
                int n_threads = 1)
 {
     using Cell = CellWithValue<Simplex<Int>, Real>;
+    // Per-layer frame buffers hold the intermediate-dimension simplices (the
+    // bulk for max_dim >= 3); route their growth through jemalloc too.
+    using FrameVec = std::vector<VreFrame<Int, Real>, JeAllocator<VreFrame<Int, Real>>>;
 
     // VRE always builds vs in ascending order (see generate_cofacets), so
     // we use the presorted Simplex ctor to skip a redundant std::sort and
@@ -271,7 +274,7 @@ void vre_build(Int n_points,
     // No reserve(n*(n-1)/2): for sparse inputs that would force O(n^2)
     // allocation up front even when few edges survive. std::vector's geometric
     // growth is fine.
-    std::vector<VreFrame<Int, Real>> current;
+    FrameVec current;
     {
         struct EdgeData {
             Int u;
@@ -389,7 +392,7 @@ void vre_build(Int n_points,
                 }
                 // Loop terminates next iteration; no need to update `current`.
             } else {
-                std::vector<VreFrame<Int, Real>> next;
+                FrameVec next;
                 auto emit_frame = [&](VreFrame<Int, Real>&& child) {
                     record(child.vertices, child.diameter, child.cached_edge);
                     next.push_back(std::move(child));
@@ -407,9 +410,9 @@ void vre_build(Int n_points,
         } else {
             const int nt = std::min<int>(n_threads,
                     static_cast<int>(std::max<size_t>(size_t(1), current.size())));
-            std::vector<std::vector<Cell>> loc_cells(static_cast<size_t>(nt));
+            std::vector<std::vector<Cell, JeAllocator<Cell>>> loc_cells(static_cast<size_t>(nt));
             std::vector<std::vector<VREdge<Int>>> loc_edges(static_cast<size_t>(nt));
-            std::vector<std::vector<VreFrame<Int, Real>>> loc_next(
+            std::vector<FrameVec> loc_next(
                     is_final ? size_t(0) : static_cast<size_t>(nt));
 
             parallel_chunks<Int>(static_cast<Int>(current.size()), nt,
@@ -458,7 +461,7 @@ void vre_build(Int n_points,
             }
             simplices.reserve(simplices.size() + tot_cells);
             if (collect_edges) edges.reserve(edges.size() + tot_cells);
-            std::vector<VreFrame<Int, Real>> next;
+            FrameVec next;
             next.reserve(tot_next);
             for (int t = 0; t < nt; ++t) {
                 auto& cells = loc_cells[static_cast<size_t>(t)];
@@ -521,7 +524,7 @@ auto get_vr_filtration_inorder(const std::vector<Point<Real, D>>& points,
         ? std::numeric_limits<Real>::max()
         : max_diameter * max_diameter;
 
-    std::vector<Cell> simplices;
+    std::vector<Cell, JeAllocator<Cell>> simplices;
     std::vector<VREdge<Int>> edges;  // unused
     detail::vre_build<Int, Real>(static_cast<Int>(points.size()), max_dim,
                                  max_compare, compare_dist, compare_to_diameter,
@@ -545,7 +548,7 @@ auto get_vr_filtration_inorder(const DistMatrix<Real>& dm,
     };
     auto compare_to_diameter = [](Real cv) -> Real { return cv; };
 
-    std::vector<Cell> simplices;
+    std::vector<Cell, JeAllocator<Cell>> simplices;
     std::vector<VREdge<Int>> edges;  // unused
     detail::vre_build<Int, Real>(static_cast<Int>(dm.n_points), max_dim,
                                  max_diameter, compare_dist, compare_to_diameter,
@@ -575,7 +578,7 @@ auto get_vr_filtration_and_critical_edges_inorder(
         ? std::numeric_limits<Real>::max()
         : max_diameter * max_diameter;
 
-    std::vector<Cell> simplices;
+    std::vector<Cell, JeAllocator<Cell>> simplices;
     std::vector<VREdge<Int>> edges;
     detail::vre_build<Int, Real>(static_cast<Int>(points.size()), max_dim,
                                  max_compare, compare_dist, compare_to_diameter,
@@ -601,7 +604,7 @@ auto get_vr_filtration_and_critical_edges_inorder(
     };
     auto compare_to_diameter = [](Real cv) -> Real { return cv; };
 
-    std::vector<Cell> simplices;
+    std::vector<Cell, JeAllocator<Cell>> simplices;
     std::vector<VREdge<Int>> edges;
     detail::vre_build<Int, Real>(static_cast<Int>(dm.n_points), max_dim,
                                  max_diameter, compare_dist, compare_to_diameter,

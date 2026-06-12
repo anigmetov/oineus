@@ -127,12 +127,14 @@ std::vector<size_t> get_inclusion_mapping(const Filtration<Cell, Real>& fil_doma
 // Filtration::neg_infinity()) to have the product inherit cell.value
 // unchanged -- useful for mapping cylinders where the auxiliary vertex
 // must not perturb the filtration order.
-template<class CWV>
-void append_products(const std::vector<CWV>& cells,
+// AllocIn/AllocOut are deduced so the input (a Filtration's jemalloc-backed
+// CellVector) and the output buffer can carry any allocator.
+template<class CWV, class AllocIn, class AllocOut>
+void append_products(const std::vector<CWV, AllocIn>& cells,
         const Simplex<typename CWV::Int>& sigma,
         typename CWV::Real sigma_value,
         bool negate,
-        std::vector<CellWithValue<ProductCell<typename CWV::Cell, Simplex<typename CWV::Int>>, typename CWV::Real>>& result)
+        std::vector<CellWithValue<ProductCell<typename CWV::Cell, Simplex<typename CWV::Int>>, typename CWV::Real>, AllocOut>& result)
 {
     CALI_CXX_MARK_FUNCTION;
     using ProdCell = ProductCell<typename CWV::Cell, Simplex<typename CWV::Int>>;
@@ -154,7 +156,7 @@ multiply_filtration(const Filtration<Cell, Real>& fil,
     CALI_CXX_MARK_FUNCTION;
     using ProdCWV = CellWithValue<ProductCell<Cell, Simplex<typename Cell::Int>>, Real>;
 
-    std::vector<ProdCWV> result_simplices;
+    std::vector<ProdCWV, JeAllocator<ProdCWV>> result_simplices;
     result_simplices.reserve(fil.size());
     append_products(fil.cells(), sigma, sigma_value, fil.negate(), result_simplices);
 
@@ -216,7 +218,7 @@ build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain,
     // earlier than either endpoint.
     Real edge_value = fil_domain.fil_max(v_domain_value, v_codomain_value);
 
-    std::vector<ResultCell> cyl_simplices;
+    std::vector<ResultCell, JeAllocator<ResultCell>> cyl_simplices;
     cyl_simplices.reserve(2 * fil_domain.size() + fil_codomain.size());
 
     bool negate = fil_domain.negate();
