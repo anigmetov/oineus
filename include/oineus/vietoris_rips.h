@@ -409,7 +409,7 @@ namespace oineus {
         std::vector<VREdge<Int>> edges;
 
         for(size_t v_idx = 0; v_idx < points.size(); ++v_idx) {
-            std::vector<Int> vertices {static_cast<Int>(v_idx)};
+            typename Simplex<Int>::IdxVector vertices {static_cast<Int>(v_idx)};
             auto [simplex, edge] = vr_simplex_with_edge<Int, Real, D>(points, vertices);
             simplices.emplace_back(simplex);
             edges.emplace_back(edge);

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "common_defs.h"   // JeAllocator for IdxVector
 
 namespace oineus {
 
@@ -15,7 +16,8 @@ namespace oineus {
         // User-defined cell
         using Int = Int_;
         using Real = Real_;
-        using IdxVector = std::vector<Int>;
+        // see Simplex::IdxVector -- jemalloc-routed vertex storage (common_defs.h)
+        using IdxVector = std::vector<Int, JeAllocator<Int>>;
         using Boundary = std::vector<IdxVector>;
 
         static constexpr Int k_invalid_id = Int(-1);
