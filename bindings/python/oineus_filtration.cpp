@@ -73,7 +73,7 @@ void init_oineus_filtration(nb::module_& m)
                     )
             // this ctor accepts the output of Diode directly, list of (vertices, value)
             .def("__init__", [](Filtration* pfil, const std::vector<std::tuple<std::vector<unsigned>, oin_real>>& diode_simplices, int n_threads, bool duplicates_possible) {
-                std::vector<Filtration::Cell> oin_simplices;
+                Filtration::CellVector oin_simplices;
                 oin_simplices.reserve(diode_simplices.size());
 
                 if (duplicates_possible) {

@@ -226,7 +226,7 @@ namespace oineus {
 
         auto neighbor = [&](size_t u, size_t v) { return sq_dist(points[u], points[v]) <= max_diameter * max_diameter; };
 
-        std::vector<Simplex> simplices;
+        std::vector<Simplex, JeAllocator<Simplex>> simplices;
         Edges edges;
         bool negate {false};
 
@@ -277,7 +277,7 @@ namespace oineus {
 
         auto neighbor = [&](size_t u, size_t v) { return dist_matrix.get_distance(u, v) <= max_diameter * max_diameter; };
 
-        std::vector<Simplex> simplices;
+        std::vector<Simplex, JeAllocator<Simplex>> simplices;
         std::vector<VREdge<Int>> edges;
         bool negate {false};
 
@@ -329,7 +329,7 @@ namespace oineus {
 
         auto neighbor = [&](size_t u, size_t v) { return sq_dist(points[u], points[v]) <= max_diameter * max_diameter; };
 
-        std::vector<CellWithValue<Simplex<Int>, Real>> simplices;
+        std::vector<CellWithValue<Simplex<Int>, Real>, JeAllocator<CellWithValue<Simplex<Int>, Real>>> simplices;
         bool negate {false};
 
         // vertices are added manually to preserve order (id == index)
@@ -367,7 +367,7 @@ namespace oineus {
 
         auto neighbor = [&](size_t u, size_t v) { return dist_matrix.get_distance(u, v) <= max_diameter * max_diameter; };
 
-        std::vector<Simplex> simplices;
+        std::vector<Simplex, JeAllocator<Simplex>> simplices;
         bool negate {false};
 
         Int n_points = dist_matrix.n_points;
@@ -405,7 +405,7 @@ namespace oineus {
         using VRFiltration = Filtration<Simplex<Int>, Real>;
         using VRSimplex = typename VRFiltration::Cell;
 
-        std::vector<VRSimplex> simplices;
+        std::vector<VRSimplex, JeAllocator<VRSimplex>> simplices;
         std::vector<VREdge<Int>> edges;
 
         for(size_t v_idx = 0; v_idx < points.size(); ++v_idx) {
