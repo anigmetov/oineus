@@ -190,6 +190,48 @@ def test_vr_persistence_diagram_matches_naive():
             f"VRE has {len(pts_vre)} points, naive has {len(pts_naive)}")
 
 
+def _cell_list(fil, ndigits: int = 12):
+    """Ordered (uid, value) sequence -- captures the (dim, value) order the
+    presorted Filtration relies on, not just the multiset."""
+    return [(c.uid, round(c.value, ndigits)) for c in fil.cells()]
+
+
+@pytest.mark.parametrize("n_points,dim,max_dim,thr", [
+    (40, 2, 2, 0.5),
+    (40, 3, 3, 0.6),
+    (60, 2, 2, 0.35),
+    (30, 2, 2, 1e9),   # dense / effectively unbounded
+])
+def test_vr_threads_match_serial(n_points, dim, max_dim, thr):
+    """The n_threads > 1 chunked path must reproduce the serial path exactly --
+    same ordered cell sequence and same critical edges -- for both the
+    point-cloud and pairwise-distance entry points. Order (not just the cell
+    multiset) matters: the presorted Filtration ctor trusts it."""
+    rng = np.random.default_rng(7)
+    pts = rng.random((n_points, dim)).astype(np.float64)
+    pwd = np.linalg.norm(pts[:, None] - pts[None, :], axis=-1)
+
+    f1 = oin.vr_filtration(pts, max_dim=max_dim, max_diameter=thr, n_threads=1)
+    f4 = oin.vr_filtration(pts, max_dim=max_dim, max_diameter=thr, n_threads=4)
+    assert f1.size() == f4.size()
+    assert _cell_list(f1) == _cell_list(f4)
+
+    g1 = oin.vr_filtration(pwd, from_pwdists=True, max_dim=max_dim,
+                           max_diameter=thr, n_threads=1)
+    g4 = oin.vr_filtration(pwd, from_pwdists=True, max_dim=max_dim,
+                           max_diameter=thr, n_threads=4)
+    assert g1.size() == g4.size()
+    assert _cell_list(g1) == _cell_list(g4)
+
+    # critical edges are returned parallel to the (sorted) cells; the chunked
+    # path must preserve that position-by-position pairing
+    _, e1 = oin.vr_filtration(pts, max_dim=max_dim, max_diameter=thr,
+                              with_critical_edges=True, n_threads=1)
+    _, e4 = oin.vr_filtration(pts, max_dim=max_dim, max_diameter=thr,
+                              with_critical_edges=True, n_threads=4)
+    assert np.array_equal(np.asarray(e1), np.asarray(e4))
+
+
 # ----------------------------------------------------------------------------
 # Heavier test: opt-in via -m slow. Bound: n=80 in 2D, max_dim=2 (naive
 # permits this), no cutoff. Worst-case simplex count
