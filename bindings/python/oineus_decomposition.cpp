@@ -190,6 +190,7 @@ Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv(
     const std::set<oin_int>& rows_to_invert,
     int num_rows_, int n_threads=1, bool print_time=false)
 {
+    (void)n_threads;
     Timer timer;
     if (not dcmp.has_matrix_v())
         throw std::runtime_error("densify_v_for_selinv called on matrix without V");

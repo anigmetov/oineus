@@ -987,10 +987,10 @@ Matrix transpose(const Matrix& col_format, int num_rows = -1, int n_threads = 1)
 
     if (n_threads <= 1 or col_format.size() < 20 * n_threads) {
         // Iterate through each column
-        for (int col_idx = 0; col_idx < col_format.size(); ++col_idx) {
+        for (size_t col_idx = 0; col_idx < col_format.size(); ++col_idx) {
             // For each non-zero entry in this column
-            for (int row_idx : col_format[col_idx]) {
-                row_format[row_idx].push_back(col_idx);
+            for (Int row_idx : col_format[col_idx]) {
+                row_format[static_cast<size_t>(row_idx)].push_back(static_cast<Int>(col_idx));
             }
         }
     } else {
@@ -998,7 +998,7 @@ Matrix transpose(const Matrix& col_format, int num_rows = -1, int n_threads = 1)
 
         // Create a temporary structure: for each thread, store data for each row
         // This avoids race conditions during parallel insertion
-        std::vector<std::vector<std::vector<int>>> temp_storage(n_threads);
+        std::vector<std::vector<std::vector<Int>>> temp_storage(n_threads);
         for (auto& storage : temp_storage) {
             storage.resize(num_rows);
         }
@@ -1014,8 +1014,8 @@ Matrix transpose(const Matrix& col_format, int num_rows = -1, int n_threads = 1)
                 if (worker_id < 0) worker_id = 0; // fallback
 
                 // Add column index to appropriate rows in this thread's local storage
-                for (int row_idx : col_format[col_idx]) {
-                    temp_storage[worker_id][row_idx].push_back(col_idx);
+                for (Int row_idx : col_format[col_idx]) {
+                    temp_storage[worker_id][static_cast<size_t>(row_idx)].push_back(static_cast<Int>(col_idx));
                 }
             }
         );
@@ -1023,29 +1023,27 @@ Matrix transpose(const Matrix& col_format, int num_rows = -1, int n_threads = 1)
         executor.run(taskflow).wait();
 
         // Merge phase: combine results from all threads
-        std::vector<std::vector<int>> row_format(num_rows);
-
         tf::Taskflow merge_taskflow;
         merge_taskflow.for_each_index(0, num_rows, 1,
             [&](int row_idx) {
                 // Calculate total size for this row
                 size_t total_size = 0;
                 for (const auto& storage : temp_storage) {
-                    total_size += storage[row_idx].size();
+                    total_size += storage[static_cast<size_t>(row_idx)].size();
                 }
 
                 // Reserve space and merge
-                row_format[row_idx].reserve(total_size);
+                row_format[static_cast<size_t>(row_idx)].reserve(total_size);
                 for (const auto& storage : temp_storage) {
-                    row_format[row_idx].insert(
-                        row_format[row_idx].end(),
-                        storage[row_idx].begin(),
-                        storage[row_idx].end()
+                    row_format[static_cast<size_t>(row_idx)].insert(
+                        row_format[static_cast<size_t>(row_idx)].end(),
+                        storage[static_cast<size_t>(row_idx)].begin(),
+                        storage[static_cast<size_t>(row_idx)].end()
                     );
                 }
 
                 // Sort to maintain sorted order
-                std::sort(row_format[row_idx].begin(), row_format[row_idx].end());
+                std::sort(row_format[static_cast<size_t>(row_idx)].begin(), row_format[static_cast<size_t>(row_idx)].end());
             }
         );
         executor.run(merge_taskflow).wait();
@@ -1082,7 +1080,7 @@ std::vector<std::vector<std::pair<Int, Int>>> transpose_and_densify_for_targets(
 
     size_t avg_size = 3 * ceil(_avg_size) / 2;
 
-    for(size_t row_idx = 0; row_idx < num_rows; ++row_idx) {
+    for(Int row_idx = 0; row_idx < static_cast<Int>(num_rows); ++row_idx) {
         if (row_indices.find(row_idx) == row_indices.end()) {
             row_format[row_idx].reserve(avg_size);
         } else {

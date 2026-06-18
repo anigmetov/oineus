@@ -288,7 +288,7 @@ decltype(auto) numpy_to_point_vector(nb::ndarray<Real, nb::c_contig, nb::device:
 
     const Real* pdata {static_cast<const Real*>(data.data())};
 
-    for(ssize_t i = 0 ; i < data.size() ; ++i)
+    for(size_t i = 0 ; i < data.size() ; ++i)
         points[i / D][i % D] = pdata[i];
 
     return points;

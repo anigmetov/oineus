@@ -835,8 +835,6 @@ namespace oineus {
     template<class C, class R>
     std::tuple<Filtration<C, R>, std::vector<size_t>, std::vector<size_t>> min_filtration_with_indices(const Filtration<C, R>& fil_1, const Filtration<C, R>& fil_2)
     {
-        using Fil = Filtration<C, R>;
-        using Cell = typename Fil::Cell;
         using Real = R;
 
         assert(fil_1.size() == fil_2.size());

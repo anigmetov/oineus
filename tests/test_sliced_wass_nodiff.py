@@ -97,6 +97,20 @@ def test_deterministic_with_seed():
     assert a == pytest.approx(b, abs=0.0)
 
 
+def test_rejects_zero_directions():
+    dgm1 = np.array([[0.0, 1.0]])
+    dgm2 = np.array([[0.0, 2.0]])
+
+    with pytest.raises(ValueError, match="n_directions"):
+        oin.sliced_wasserstein_distance(dgm1, dgm2, n_directions=0)
+
+    with pytest.raises(ValueError, match="n_directions"):
+        oin.sliced_wasserstein_distance_diag_corrected(dgm1, dgm2, n_directions=0)
+
+    with pytest.raises(ValueError, match="directions"):
+        oin.sliced_wasserstein_distance(dgm1, dgm2, directions=np.empty((0, 2)))
+
+
 def test_matches_reference_standard():
     dgm1 = np.array([[0.0, 1.0], [0.5, 2.0], [0.3, 0.7]])
     dgm2 = np.array([[0.2, 1.2], [0.6, 2.1]])

@@ -50,10 +50,10 @@ IntOut comb(IntIn n, IntIn k)
         return static_cast<IntOut>(1);
 
     IntOut result = 1;
-    for(IntOut i = 1; i <= k; i++) {
+    for(IntIn i = 1; i <= k; i++) {
         result *= (n - i + 1);
-        assert(result % i == 0);
-        result /= i;
+        assert(result % static_cast<IntOut>(i) == 0);
+        result /= static_cast<IntOut>(i);
     }
     return result;
 }

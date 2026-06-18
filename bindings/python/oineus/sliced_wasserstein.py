@@ -16,6 +16,8 @@ Inputs are single-dimension diagrams in the same forms accepted by
 from a multi-dimensional ``oineus.Diagrams`` object.
 """
 
+import operator
+
 import numpy as np
 
 _ESSENTIAL_NAMES = ("(finite, +inf)", "(finite, -inf)", "(+inf, finite)", "(-inf, finite)")
@@ -75,6 +77,29 @@ def _match_essential_1d(ess1, ess2, q=1.0):
 def _sample_unit_directions(n_directions, rng):
     angles = rng.random(n_directions) * np.pi
     return np.stack([np.cos(angles), np.sin(angles)], axis=1)
+
+
+def _validate_n_directions(n_directions):
+    try:
+        n = operator.index(n_directions)
+    except TypeError as exc:
+        raise TypeError("n_directions must be an integer") from exc
+    if n <= 0:
+        raise ValueError("n_directions must be positive")
+    return n
+
+
+def _prepare_directions(n_directions, seed, directions):
+    if directions is None:
+        return _sample_unit_directions(
+            _validate_n_directions(n_directions),
+            np.random.default_rng(seed),
+        )
+
+    U = np.asarray(directions, dtype=np.float64).reshape(-1, 2)
+    if U.shape[0] == 0:
+        raise ValueError("directions must contain at least one direction")
+    return U
 
 
 def _slice_costs_standard(fin1, fin2, U):
@@ -160,10 +185,7 @@ def _sliced_wasserstein(dgm_1, dgm_2, slice_fn, n_directions, ignore_inf_points,
     if fin1.shape[0] == 0 and fin2.shape[0] == 0:
         return float(total)
 
-    if directions is None:
-        U = _sample_unit_directions(n_directions, np.random.default_rng(seed))
-    else:
-        U = np.asarray(directions, dtype=np.float64).reshape(-1, 2)
+    U = _prepare_directions(n_directions, seed, directions)
 
     total += float(slice_fn(fin1, fin2, U).mean())
     return float(total)

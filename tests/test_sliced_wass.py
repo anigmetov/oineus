@@ -53,6 +53,18 @@ def test_sliced_wasserstein_empty():
     assert dist_empty_dgm.item() > 0
 
 
+def test_sliced_wasserstein_rejects_zero_directions():
+    """Zero sampled directions would otherwise produce NaN through an empty mean."""
+    dgm1 = torch.tensor([[0.0, 1.0]], dtype=TORCH_DTYPE)
+    dgm2 = torch.tensor([[0.0, 2.0]], dtype=TORCH_DTYPE)
+
+    with pytest.raises(ValueError, match="n_directions"):
+        oin_diff.sliced_wasserstein_distance(dgm1, dgm2, n_directions=0)
+
+    with pytest.raises(ValueError, match="n_directions"):
+        oin_diff.sliced_wasserstein_distance_diag_corrected(dgm1, dgm2, n_directions=0)
+
+
 def test_sliced_wasserstein_symmetry():
     """Test that distance is symmetric."""
     dgm1 = torch.tensor([[0.0, 1.0], [0.5, 2.0], [1.0, 1.5]], dtype=TORCH_DTYPE)

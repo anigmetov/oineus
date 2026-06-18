@@ -1597,7 +1597,7 @@ namespace oineus {
         size_t chunk_size = (n_cols_to_check + n_threads - 1) / n_threads;
 
         for (int tid = 0; tid < n_threads; ++tid) {
-            taskflow.emplace([this, tid, start_idx, end_idx, chunk_size, n_cols_to_check, &thread_counts]() {
+            taskflow.emplace([this, tid, start_idx, end_idx, chunk_size, &thread_counts]() {
                 size_t thread_start = start_idx + tid * chunk_size;
                 size_t thread_end = std::min(thread_start + chunk_size, end_idx);
 
@@ -1671,6 +1671,7 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads)
     {
+        (void)n_threads;
         if (not has_matrix_v()) {
             throw std::runtime_error("VRUDecomposition: cannot restore ELZ without V matrix");
         }
@@ -3854,11 +3855,11 @@ namespace oineus {
         for(auto& worker: workers)
             worker.join();
 
-        auto col_inv_elapsed = timer.elapsed_reset();
+        [[maybe_unused]] auto col_inv_elapsed = timer.elapsed_reset();
 
         u_data_t = MatrixTraits::col_to_row_format_parallel(u_data, n_threads, col_start, col_end, v_data.size());
 
-        auto col_to_row_elapsed = timer.elapsed_reset();
+        [[maybe_unused]] auto col_to_row_elapsed = timer.elapsed_reset();
 
         if (verbose) IC(col_inv_elapsed, col_to_row_elapsed);
     }
@@ -3894,11 +3895,11 @@ namespace oineus {
         for(auto& worker: workers)
             worker.join();
 
-        auto col_inv_elapsed = timer.elapsed_reset();
+        [[maybe_unused]] auto col_inv_elapsed = timer.elapsed_reset();
 
         u_data_t = MatrixTraits::col_to_row_format_parallel(u_data, n_threads, col_start, col_end, v_data.size());
 
-        auto col_to_row_elapsed = timer.elapsed_reset();
+        [[maybe_unused]] auto col_to_row_elapsed = timer.elapsed_reset();
 
         if (verbose) IC(col_inv_elapsed, col_to_row_elapsed);
     }
@@ -4036,7 +4037,7 @@ namespace oineus {
                     static_cast<typename MatrixTraits::Int>(v_data.size()));
         }
 
-        auto vt_elapsed = timer.elapsed_reset();
+        [[maybe_unused]] auto vt_elapsed = timer.elapsed_reset();
 
         // Stage B: parallel row solves. Each row writes to its own
         // u_data_t[r] slot; no shared writes.
@@ -4058,7 +4059,7 @@ namespace oineus {
 
         for (auto& w : workers) w.join();
 
-        auto solve_elapsed = timer.elapsed_reset();
+        [[maybe_unused]] auto solve_elapsed = timer.elapsed_reset();
 
         if (verbose) IC(vt_elapsed, solve_elapsed);
     }

@@ -738,7 +738,7 @@ public:
         Timer timer;
         timer.reset();
         auto hera_res = hera::wasserstein_cost_detailed<Diagram>(template_dgm, current_dgm, hera_params);
-        auto hera_elapsed = timer.elapsed();
+        [[maybe_unused]] auto hera_elapsed = timer.elapsed();
         // IC(hera_elapsed);
 
         for(auto curr_template: hera_res.matching_b_to_a_) {

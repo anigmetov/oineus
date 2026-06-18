@@ -1,3 +1,5 @@
+import operator
+
 import torch
 import numpy as np
 
@@ -10,6 +12,16 @@ def _sample_unit_directions(n_directions, device, dtype):
     angles = torch.rand(n_directions, device=device, dtype=dtype) * np.pi
     # Convert to unit vectors
     return torch.stack([torch.cos(angles), torch.sin(angles)], dim=1)
+
+
+def _validate_n_directions(n_directions):
+    try:
+        n = operator.index(n_directions)
+    except TypeError as exc:
+        raise TypeError("n_directions must be an integer") from exc
+    if n <= 0:
+        raise ValueError("n_directions must be positive")
+    return n
 
 
 def _compute_slice_cost_standard(fin1, fin2, u):
@@ -200,6 +212,7 @@ def sliced_wasserstein_distance(dgm1, dgm2, n_directions=100, ignore_inf_points=
         return total_cost
 
     # Sample random directions
+    n_directions = _validate_n_directions(n_directions)
     directions = _sample_unit_directions(n_directions, dgm1.device, dgm1.dtype)
 
     # Vectorized computation over directions using vmap
@@ -263,6 +276,7 @@ def sliced_wasserstein_distance_diag_corrected(dgm1, dgm2, n_directions=100, ign
         return total_cost
 
     # Sample random directions
+    n_directions = _validate_n_directions(n_directions)
     directions = _sample_unit_directions(n_directions, dgm1.device, dgm1.dtype)
 
     # Vectorized computation over directions using vmap

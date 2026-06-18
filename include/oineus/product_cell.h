@@ -216,7 +216,7 @@ build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain,
     Simplex<Int> edge {std::max(v_domain.get_id(), v_codomain.get_id()) + 1, {v_domain.vertices_[0], v_codomain.vertices_[0]}};
     // Edge spans both auxiliary vertices, so it must enter the filtration no
     // earlier than either endpoint.
-    Real edge_value = fil_domain.fil_max(v_domain_value, v_codomain_value);
+    [[maybe_unused]] Real edge_value = fil_domain.fil_max(v_domain_value, v_codomain_value);
 
     std::vector<ResultCell, JeAllocator<ResultCell>> cyl_simplices;
     cyl_simplices.reserve(2 * fil_domain.size() + fil_codomain.size());
@@ -277,7 +277,7 @@ build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain,
     auto fil = build_mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain,
             v_domain_value, v_codomain_value);
 
-    Real edge_value = fil_domain.fil_max(v_domain_value, v_codomain_value);
+    [[maybe_unused]] Real edge_value = fil_domain.fil_max(v_domain_value, v_codomain_value);
 
     std::vector<Int> crit_val_indices;
     crit_val_indices.reserve(fil.size());
