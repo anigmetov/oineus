@@ -83,6 +83,7 @@ class TopologyOptimizer:
     def match(self, template_dgm, dim: int, wasserstein_q: float = 1.0,
               wasserstein_delta: float = 0.01,
               return_wasserstein_distance: bool = False):
+        self.ensure_hom_reduced()
         return self.under_opt.match(
             template_dgm=template_dgm,
             dim=dim,

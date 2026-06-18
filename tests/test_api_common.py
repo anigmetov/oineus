@@ -4,13 +4,15 @@ import oineus as oin
 
 
 def test_vredge_api():
-    edge = oin.VREdge(1)
-    edge.x = 2
-    edge.y = 3
+    edge = oin.VREdge(2, 3)
 
     assert edge[0] == 2
     assert edge[1] == 3
     _ = repr(edge)
+
+    default_y = oin.VREdge(4)
+    assert default_y.x == 4
+    assert default_y.y == 0
 
 
 def test_reduction_params_api():

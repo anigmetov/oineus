@@ -66,6 +66,7 @@ else()
 
     # Pytest-driven tests.
     foreach(NAME IN ITEMS
+            alpha-diff
             api-cells
             api-common
             api-dcmp
@@ -86,6 +87,7 @@ else()
             diff-grad
             diff-inf-points-raises
             diff-partial-u-elz-assert
+            diff-review-bugfixes
             diff-update-is-lazy
             diff-wass
             fr-dgm-random
@@ -114,6 +116,7 @@ else()
     foreach(NAME IN ITEMS
             example-diff-cube
             example-diff-cyl
+            example-kernel
             example-kicr-cyl
             example-opt-fr
             example-opt-vr
@@ -128,11 +131,6 @@ else()
     # add_test(NAME py-example-cone-diff
     #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_cone_diff.py")
     # set_tests_properties(py-example-cone-diff PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-
-    # TODO: enable after updating to the current kernel/cokernel API.
-    # add_test(NAME py-example-kernel
-    #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_kernel.py")
-    # set_tests_properties(py-example-kernel PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_custom_target(py-tests
             COMMAND ${CMAKE_CTEST_COMMAND} --test-dir "${CMAKE_BINARY_DIR}" --output-on-failure -R "^py-")

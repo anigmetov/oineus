@@ -51,9 +51,7 @@ def test_filtrations():
 
 
 def test_common_types():
-    edge = oin.VREdge(0)
-    edge.x = 1
-    edge.y = 2
+    edge = oin.VREdge(1, 2)
     _assert_roundtrip(edge)
 
     params = oin.ReductionParams()

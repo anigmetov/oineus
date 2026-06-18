@@ -18,7 +18,9 @@ void init_oineus_common(nb::module_& m)
     // nb::bind_vector<Z2_Matrix>(m, "Z2_Matrix");
 
     nb::class_<VREdge>(m, vr_edge_name.c_str())
-            .def(nb::init<oin_int>())
+            .def("__init__", [](VREdge* p, oin_int x, oin_int y) {
+                new (p) VREdge{x, y};
+            }, nb::arg("x")=0, nb::arg("y")=0)
             .def_rw("x", &VREdge::x)
             .def_rw("y", &VREdge::y)
             .def("__getitem__", [](const VREdge& p, int i) {
