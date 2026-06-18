@@ -18,6 +18,10 @@ import torch
 import oineus
 import oineus.diff as oin_diff
 from oineus.diff import _combine
+from oineus.diff._reduction_policy import (
+    COHOMOLOGY_PREFERRED_KINDS,
+    default_dualize_for_filtration,
+)
 
 
 def _seeded_circle(n=20, noise=0.1, seed=42):
@@ -293,6 +297,28 @@ def test_phase2_dualize_default_picks_cohomology_for_vr():
     # default to cohomology.
     dgms = oin_diff.persistence_diagram(fil, gradient_method="dgm-loss")
     assert dgms._dualize is True
+
+
+def test_phase2_dualize_policy_is_kind_based():
+    FK = oineus.FiltrationKind
+    assert FK.Vr in COHOMOLOGY_PREFERRED_KINDS
+    # Lower-star Freudenthal and cubical should join this set once their
+    # apparent-pair path makes cohomology the faster default.
+    assert FK.Freudenthal not in COHOMOLOGY_PREFERRED_KINDS
+    assert FK.Cubical not in COHOMOLOGY_PREFERRED_KINDS
+
+    pts = _seeded_circle()
+    assert default_dualize_for_filtration(
+        oin_diff.vr_filtration(pts, max_dim=2).under_fil
+    ) is True
+
+    data = torch.arange(9, dtype=torch.float64).reshape(3, 3).requires_grad_(True)
+    assert default_dualize_for_filtration(
+        oin_diff.freudenthal_filtration(data, max_dim=2).under_fil
+    ) is False
+    assert default_dualize_for_filtration(
+        oin_diff.cube_filtration(data, max_dim=2).under_fil
+    ) is False
 
 
 def test_phase2_dualize_default_picks_homology_for_alpha_like():

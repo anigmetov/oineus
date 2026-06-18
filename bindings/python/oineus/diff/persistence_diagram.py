@@ -29,6 +29,7 @@ import torch
 import numpy as np
 
 from .diff_filtration import DiffFiltration
+from ._reduction_policy import default_dualize_for_filtration
 from .top_optimizer import TopologyOptimizer
 
 
@@ -260,7 +261,7 @@ class PersistenceDiagrams:
                 "validity masks). For now, request finite points only.")
 
         if dualize is None:
-            dualize = (fil.under_fil.kind == _oineus.FiltrationKind.Vr)
+            dualize = default_dualize_for_filtration(fil.under_fil)
 
         if dims_to_backprop is None:
             # Cover all simplex dims so partial-U is admissible
@@ -348,8 +349,10 @@ def persistence_diagram(
     Args:
         fil: DiffFiltration with differentiable `values` tensor.
         dualize: cohomology if True, homology if False. None (default)
-            picks cohomology for VR filtrations (where coh+clearing
-            wins decisively) and homology otherwise.
+            uses the FiltrationKind reduction policy. Currently this picks
+            cohomology for VR and homology otherwise; when apparent pairs land
+            for Freudenthal/Cubical filtrations, the shared policy can switch
+            those kinds too.
         include_inf_points: Phase 1 only supports False. Setting True
             raises NotImplementedError.
         gradient_method: "dgm-loss" or "crit-sets".

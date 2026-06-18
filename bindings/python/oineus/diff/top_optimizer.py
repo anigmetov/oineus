@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from .. import _oineus
 from .diff_filtration import DiffFiltration
+from ._reduction_policy import default_dualize_for_filtration
 
 
 _OPT_CLASS_BY_FIL_TYPE = {
@@ -85,7 +86,7 @@ class TopologyOptimizer:
               return_wasserstein_distance: bool = False,
               dualize=None):
         if dualize is None:
-            dualize = self.under_fil.kind == _oineus.FiltrationKind.Vr
+            dualize = default_dualize_for_filtration(self.under_fil)
         if dualize:
             self.ensure_coh_reduced()
         else:
