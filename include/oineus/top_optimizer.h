@@ -704,7 +704,7 @@ public:
 
     std::pair<IndicesValues, Real> match_and_distance(typename
         Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q,
-        Real delta)
+        Real delta, bool dualize = false)
     {
         // set ids in template diagram
         for(size_t i = 0 ; i < template_dgm.size() ; ++i) {
@@ -724,10 +724,15 @@ public:
         hera_params.wasserstein_power = wasserstein_q;
         hera_params.delta = delta;
 
-        if (not decmp_hom_.is_reduced)
-            throw std::runtime_error("match_and_distance requires hom reduced; call ensure_hom_reduced() first");
+        auto& decmp = dualize ? decmp_coh_ : decmp_hom_;
+        if (not decmp.is_reduced) {
+            if (dualize)
+                throw std::runtime_error("match_and_distance requires coh reduced; call ensure_coh_reduced() first");
+            else
+                throw std::runtime_error("match_and_distance requires hom reduced; call ensure_hom_reduced() first");
+        }
 
-        Diagram current_dgm = decmp_hom_.diagram(fil_, false).get_diagram_in_dimension(d);
+        Diagram current_dgm = decmp.diagram(fil_, false).get_diagram_in_dimension(d);
 
         for(size_t i = 0 ; i < current_dgm.size() ; ++i) {
             current_dgm[i].id = i;
@@ -774,9 +779,9 @@ public:
     }
 
     IndicesValues match(typename Diagrams<Real>::Dgm& template_dgm, dim_type
-        d, Real wasserstein_q, Real delta)
+        d, Real wasserstein_q, Real delta, bool dualize = false)
     {
-        return match_and_distance(template_dgm, d, wasserstein_q, delta).first;
+        return match_and_distance(template_dgm, d, wasserstein_q, delta, dualize).first;
     }
 
     IndicesValues combine_loss(const CriticalSets& critical_sets, ConflictStrategy strategy)

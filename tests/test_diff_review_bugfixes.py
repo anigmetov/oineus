@@ -156,7 +156,8 @@ def test_dgm_loss_backward_with_inf_points():
 
 
 # ---------------------------------------------------------------------------
-# Fix #6 -- TopologyOptimizer.match forwards wasserstein_delta
+# Fix #6 -- TopologyOptimizer.match forwards wasserstein_delta and respects
+# filtration-kind dualize defaults
 # ---------------------------------------------------------------------------
 
 def test_topology_optimizer_match_accepts_wasserstein_delta():
@@ -169,6 +170,8 @@ def test_topology_optimizer_match_accepts_wasserstein_delta():
     iv = opt.match(template_dgm=template, dim=0, wasserstein_q=1.0,
                    wasserstein_delta=0.05)
     assert iv is not None
+    assert opt.is_coh_built
+    assert not opt.is_hom_built
 
 
 # ---------------------------------------------------------------------------
