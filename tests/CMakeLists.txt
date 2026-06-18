@@ -114,6 +114,7 @@ else()
 
     # Script-style example tests (no pytest discovery, just run the file).
     foreach(NAME IN ITEMS
+            example-cone-diff
             example-diff-cube
             example-diff-cyl
             example-kernel
@@ -126,11 +127,6 @@ else()
                 COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_${STEM}.py")
         set_tests_properties(py-${NAME} PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     endforeach()
-
-    # TODO: enable after fixing API issues in this example script.
-    # add_test(NAME py-example-cone-diff
-    #         COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/test_example_cone_diff.py")
-    # set_tests_properties(py-example-cone-diff PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
     add_custom_target(py-tests
             COMMAND ${CMAKE_CTEST_COMMAND} --test-dir "${CMAKE_BINARY_DIR}" --output-on-failure -R "^py-")

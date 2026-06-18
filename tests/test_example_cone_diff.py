@@ -1,6 +1,5 @@
 #!python3
 
-from icecream import ic
 import numpy as np
 import oineus as oin
 import oineus.diff
@@ -26,31 +25,44 @@ fil_2 = oin.diff.vr_filtration(pts_2, max_dim=2, max_diameter=1e9, eps=1e-0)
 
 fil_min = oin.diff.min_filtration(fil_1, fil_2)
 
-# we will append coned simplices later
-min_and_coned_simplices = fil_min.cells()
+# We append coned simplices manually. Keep differentiable values in a
+# uid-indexed side table, because C++ cell.value stores only the static
+# filtration value from the underlying non-diff filtration.
+min_and_coned_simplices = []
+values_by_uid = {}
+for i, sigma in enumerate(fil_min.cells()):
+    min_and_coned_simplices.append(sigma)
+    values_by_uid[sigma.uid] = fil_min.values[i]
 
 cone_v = fil_min.n_vertices()
 
 # append cone vertex
-# TODO: how to ensure that cone_vertex appears first?
-# for now we can ignore it
-min_and_coned_simplices.append(oin.Simplex(cone_v, [cone_v], -0.0))
+cone_vertex = oin.Simplex(cone_v, [cone_v], -0.0)
+min_and_coned_simplices.append(cone_vertex)
+values_by_uid[cone_vertex.uid] = torch.zeros(
+    (), dtype=pts_1.dtype, device=pts_1.device
+)
 
 # take cones over simplices from fil_1
-for sigma in fil_1:
+for i, sigma in enumerate(fil_1):
     coned_sigma = sigma.join(new_vertex=cone_v, value=sigma.value)
     min_and_coned_simplices.append(coned_sigma)
+    values_by_uid[coned_sigma.uid] = fil_1.values[i]
 
 fil_min_and_coned = oin.Filtration(min_and_coned_simplices)
+values = torch.stack([values_by_uid[fil_min_and_coned.cell(i).uid]
+                      for i in range(fil_min_and_coned.size())])
+diff_fil_min_and_coned = oin.diff.DiffFiltration(fil_min_and_coned, values)
 
 # in filtration order
 min_and_coned_simplices = fil_min_and_coned.simplices()
 
 lengths_1 = fil_1.values.detach().cpu().numpy()
 lengths_2 = fil_2.values.detach().cpu().numpy()
+lengths_cone = diff_fil_min_and_coned.values.detach().cpu().numpy()
 
-for sigma in min_and_coned_simplices:
-    if sigma.dim == 0:
+for sorted_id, sigma in enumerate(min_and_coned_simplices):
+    if sigma.uid == cone_vertex.uid:
         continue
     # get cone base, we only need it's uid, so value does not matter
     base_vertices = [v for v in sigma if v != cone_v]
@@ -62,6 +74,15 @@ for sigma in min_and_coned_simplices:
     fil_2_sigma_id = fil_2.sorted_id_by_uid(sigma_base.uid)
     if sigma_base.dim == sigma.dim:
         min_value = np.min((lengths_1[fil_1_sigma_id], lengths_2[fil_2_sigma_id]))
-        assert(np.abs(min_value - sigma.value) < 0.001)
+        assert(np.abs(min_value - lengths_cone[sorted_id]) < 0.001)
     else:
-        assert(np.abs(lengths_1[fil_1_sigma_id] - sigma.value) < 0.001)
+        assert(np.abs(lengths_1[fil_1_sigma_id] - lengths_cone[sorted_id]) < 0.001)
+
+loss = diff_fil_min_and_coned.values.sum()
+loss.backward()
+assert pts_1.grad is not None
+assert pts_2.grad is not None
+assert torch.isfinite(pts_1.grad).all()
+assert torch.isfinite(pts_2.grad).all()
+total_grad = pts_1.grad.abs().sum() + pts_2.grad.abs().sum()
+assert total_grad.item() > 0.0
