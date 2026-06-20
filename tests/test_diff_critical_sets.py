@@ -346,3 +346,22 @@ def test_match_then_singletons_self_materializes_hom_on_vr():
     loss.backward()
     assert pts.grad is not None
     assert torch.isfinite(pts.grad).all()
+
+
+def test_compute_diagram_reuses_reduced_cohomology_side():
+    """compute_diagram is pairing-only; after only the cohomology side is
+    reduced it should reuse it, not force a redundant homology
+    reduction."""
+    pts = _seeded_circle()
+    fil = oin_diff.vr_filtration(pts, max_dim=2)
+    opt = oin_diff.TopologyOptimizer(fil)
+
+    opt.ensure_coh_reduced()
+    assert opt.is_coh_built
+    assert not opt.is_hom_built
+
+    dgms = opt.compute_diagram(include_inf_points=False)
+    # No redundant homology reduction was forced.
+    assert not opt.is_hom_built
+    arr = dgms.index_diagram_in_dimension(1, as_numpy=True)
+    assert arr.shape[0] >= 1

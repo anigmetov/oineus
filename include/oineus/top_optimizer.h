@@ -352,6 +352,22 @@ public:
         decmp_coh_built_ = true;
     }
 
+    // Return a reduced decomposition that yields the persistence pairing.
+    // The diagram is identical from either side, so reuse whichever side is
+    // already reduced; if neither is, fall back to homology. The
+    // performance choice of which side to reduce first for the pairing is
+    // the caller's (e.g. the Python kind policy reduces cohomology for VR
+    // before calling); this only guarantees that some reduced side exists.
+    Decomposition& ensure_pairing_reduced()
+    {
+        if (decmp_hom_.is_reduced)
+            return decmp_hom_;
+        if (decmp_coh_.is_reduced)
+            return decmp_coh_;
+        ensure_hom_reduced();
+        return decmp_hom_;
+    }
+
 private:
     // Find the geometric dim block that owns the given filtration
     // index by walking dim_first / dim_last (filtration layout).
@@ -727,12 +743,11 @@ public:
 
     IndicesValues simplify(Real epsilon, DenoiseStrategy strategy, dim_type dim)
     {
-        if (not decmp_hom_.is_reduced)
-            throw std::runtime_error("simplify requires hom reduced; call ensure_hom_reduced() first");
+        auto& decmp = ensure_pairing_reduced();
 
         IndicesValues result;
 
-        auto dgm = decmp_hom_.diagram(fil_, false)[dim];
+        auto dgm = decmp.diagram(fil_, false)[dim];
 
 //        causes bugs: spurious points in diagram, need to materialize the diagram
 //        for(auto p: decmp_hom_.diagram(fil_, false)[dim]) {
@@ -756,10 +771,8 @@ public:
 
     Real get_nth_persistence(dim_type d, int n)
     {
-        if (not decmp_hom_.is_reduced)
-            throw std::runtime_error("get_nth_persistence requires hom reduced; call ensure_hom_reduced() first");
-
-        return oineus::get_nth_persistence(fil_, decmp_hom_, d, n);
+        auto& decmp = ensure_pairing_reduced();
+        return oineus::get_nth_persistence(fil_, decmp, d, n);
     }
 
     std::pair<IndicesValues, Real> match_and_distance(typename
@@ -784,13 +797,15 @@ public:
         hera_params.wasserstein_power = wasserstein_q;
         hera_params.delta = delta;
 
+        // Reduce the requested side if the caller didn't already. The
+        // diagram/pairing is identical either way; dualize is the caller's
+        // explicit side choice (homology by default), so honor it rather
+        // than reusing an unrelated already-reduced side.
+        if (dualize)
+            ensure_coh_reduced();
+        else
+            ensure_hom_reduced();
         auto& decmp = dualize ? decmp_coh_ : decmp_hom_;
-        if (not decmp.is_reduced) {
-            if (dualize)
-                throw std::runtime_error("match_and_distance requires coh reduced; call ensure_coh_reduced() first");
-            else
-                throw std::runtime_error("match_and_distance requires hom reduced; call ensure_hom_reduced() first");
-        }
 
         Diagram current_dgm = decmp.diagram(fil_, false).get_diagram_in_dimension(d);
 
@@ -1019,10 +1034,8 @@ public:
 
     Dgms compute_diagram(bool include_inf_points)
     {
-        if (not decmp_hom_.is_reduced)
-            throw std::runtime_error("compute_diagram requires hom reduced; call ensure_hom_reduced() first");
-
-        return decmp_hom_.diagram(fil_, include_inf_points);
+        auto& decmp = ensure_pairing_reduced();
+        return decmp.diagram(fil_, include_inf_points);
     }
 
     void reduce_all()
