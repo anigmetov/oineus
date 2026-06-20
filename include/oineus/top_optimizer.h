@@ -572,16 +572,78 @@ public:
             return 0;
     }
 
+    // Lazily materialize the decompositions and U rows the crit-set
+    // walker will read for these (index -> target) moves. Follows the
+    // economical recipe: hom is reduced unconditionally (the
+    // positive/negative dispatch and the death-side V/U reads need it),
+    // coh is reduced only when some move is birth-side, and U rows are
+    // solved only for the U-needing directions (increase-death on hom,
+    // decrease-birth on coh), grouped by geometric dim because
+    // ensure_has_u_* infers a single dim block from its first row.
+    // Clearing stays on; ELZ is restored lazily inside ensure_has_u_*.
+    void prepare_targets_(const Indices& indices, const Values& values)
+    {
+        if (not with_crit_sets_)
+            throw std::runtime_error(
+                "critical sets require with_crit_sets=true at construction "
+                "(the optimizer was built dgm-loss only, without V/U)");
+
+        ensure_hom_reduced();
+
+        auto flags = get_flags(indices, values);
+        if (flags.compute_cohomology)
+            ensure_coh_reduced();
+
+        if (flags.compute_homology_u)
+            ensure_u_rows_(indices, values, /*death_side=*/true);
+        if (flags.compute_cohomology_u)
+            ensure_u_rows_(indices, values, /*death_side=*/false);
+    }
+
+    // Select the U-needing moves on one side and solve their U rows,
+    // grouped by geometric dim. death_side=true picks increase-death moves
+    // (negative simplex moving filtration-forward) -> rows of U_hom.
+    // death_side=false picks decrease-birth moves (positive simplex moving
+    // filtration-backward) -> rows of U_coh. Positivity is read from the
+    // (already reduced) hom pairing.
+    void ensure_u_rows_(const Indices& indices, const Values& values, bool death_side)
+    {
+        std::unordered_map<dim_type, std::pair<Indices, Values>> by_dim;
+        for(size_t i = 0 ; i < indices.size() ; ++i) {
+            size_t idx = static_cast<size_t>(indices[i]);
+            Real target = values[i];
+            Real current = fil_.get_cell_value(idx);
+            bool selected = death_side
+                ? (decmp_hom_.is_negative(idx) and cmp(current, target))
+                : (decmp_hom_.is_positive(idx) and cmp(target, current));
+            if (not selected)
+                continue;
+            auto d = fil_.dim_by_sorted_id(indices[i]);
+            by_dim[d].first.push_back(indices[i]);
+            by_dim[d].second.push_back(target);
+        }
+        for(auto&& [d, rows_bounds] : by_dim) {
+            if (death_side)
+                ensure_has_u_hom(d, rows_bounds.first, rows_bounds.second);
+            else
+                ensure_has_u_coh(d, rows_bounds.first, rows_bounds.second);
+        }
+    }
+
+    // Dispatch one (index -> value) move. Assumes prepare_targets_ has
+    // already reduced the needed side(s) and solved the needed U rows.
+    CriticalSet singleton_prepared_(size_t index, Real value)
+    {
+        if (decmp_hom_.is_negative(index))
+            return {value, change_death(index, value)};
+        else
+            return {value, change_birth(index, value)};
+    }
+
     CriticalSet singleton(size_t index, Real value)
     {
-        if (not decmp_hom_.is_reduced)
-            throw std::runtime_error("singleton requires hom reduced; call ensure_hom_reduced() first");
-
-        if (decmp_hom_.is_negative(index)) {
-            return {value, change_death(index, value)};
-        } else {
-            return {value, change_birth(index, value)};
-        }
+        prepare_targets_({static_cast<Int>(index)}, {value});
+        return singleton_prepared_(index, value);
     }
 
     CriticalSets singletons(const Indices& indices, const Values& values)
@@ -589,15 +651,13 @@ public:
         if (indices.size() != values.size())
             throw std::runtime_error("indices and values must have the same size");
 
-        auto flags = get_flags(indices, values);
-        params_coh_.compute_u = flags.compute_cohomology_u;
-        params_hom_.compute_u = flags.compute_homology_u;
+        prepare_targets_(indices, values);
 
         CriticalSets result;
         result.reserve(indices.size());
 
         for(size_t i = 0 ; i < indices.size() ; ++i) {
-            result.emplace_back(singleton(indices[i], values[i]));
+            result.emplace_back(singleton_prepared_(static_cast<size_t>(indices[i]), values[i]));
         }
 
         return result;
@@ -896,8 +956,7 @@ public:
                 else
                     crit = decrease_death(idx, target);
             } else {
-                if (not decmp_coh_.is_reduced)
-                    throw std::runtime_error("crit_sets_apply with birth-side moves requires coh reduced; call ensure_coh_reduced() first");
+                ensure_coh_reduced();
                 if (cmp(current, target))
                     crit = increase_birth(idx, target);
                 else

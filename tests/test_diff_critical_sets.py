@@ -301,3 +301,48 @@ def test_phase2_explicit_dualize_overrides_kind_default():
     dgms = oin_diff.persistence_diagram(fil, gradient_method="dgm-loss",
                                         dualize=False)
     assert dgms._dualize is False
+
+
+def test_phase2_dualize_default_picks_homology_for_alpha_like():
+    """For non-VR filtrations the dgm-loss default stays at homology."""
+    pts = _seeded_circle()[:, :2]  # weak_alpha needs 2D or 3D
+    fil = oin_diff.weak_alpha_filtration(pts.detach().requires_grad_(True))
+    dgms = oin_diff.persistence_diagram(fil, gradient_method="dgm-loss")
+    assert dgms._dualize is False
+
+
+def test_match_then_singletons_self_materializes_hom_on_vr():
+    """Manual crit-set flow on a VR diff optimizer. match() reduces only
+    the cohomology side (the VR default); singletons() must then
+    self-materialize the homology side it needs (positive/negative
+    dispatch + death-side V/U) instead of throwing. Regression for the
+    match -> singletons -> combine_loss path."""
+    pts = _seeded_circle()
+    fil = oin_diff.vr_filtration(pts, max_dim=2)
+    opt = oin_diff.TopologyOptimizer(fil)
+
+    template = [oineus.DiagramPoint(0.0, 1.0)]
+    indices, values = opt.match(template_dgm=template, dim=1)
+
+    # match picked cohomology (VR default) and left homology untouched.
+    assert opt.is_coh_built
+    assert not opt.is_hom_built
+
+    # The crit-set step must not require the caller to pre-reduce hom.
+    crit_sets = opt.singletons(indices, values)
+    assert opt.is_hom_built
+
+    indvals = opt.combine_loss(crit_sets, oineus.ConflictStrategy.Max)
+    crit_idx = list(indvals[0])
+    crit_tgt = list(indvals[1])
+    assert len(crit_idx) == len(crit_tgt)
+    if not crit_idx:
+        pytest.skip("matching produced no moves for this seed")
+
+    # Gradient flows back to the points through the selected simplices.
+    idx_t = torch.tensor(crit_idx, dtype=torch.long)
+    tgt_t = torch.tensor(crit_tgt, dtype=torch.float64)
+    loss = 0.5 * ((fil.values[idx_t] - tgt_t) ** 2).sum()
+    loss.backward()
+    assert pts.grad is not None
+    assert torch.isfinite(pts.grad).all()
