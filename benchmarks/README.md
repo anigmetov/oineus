@@ -4,7 +4,7 @@ Off by default. Enable with `-Doin_build_benchmarks=ON`:
 
 ```
 cmake -S . -B build -Doin_build_benchmarks=ON
-cmake --build build --target bench_diagram -j8
+cmake --build build --target bench_diagram bench_boundary -j8
 ./build/benchmarks/bench_diagram             # flags are documented at the top of bench_diagram.cpp
 ```
 
@@ -97,3 +97,101 @@ This is the real story behind the speedup, and it differs by input:
    assumed |diagram| << n_cols and an O(n_cols) inversion was "cheap" -- the
    measurements above show each becomes the bottleneck for one of the two
    input regimes.
+
+---
+
+# `bench_boundary` -- packed-uid boundary / coboundary construction
+
+Prototype + measurement for a compact simplex representation. Instead of a
+filtration holding a vector of standalone simplices (each an explicit
+`std::vector<vertex>` on the heap), each cell is a single packed integer (the
+uid); the per-type domain info lives once in the filtration; and a policy
+computes boundary/coboundary directly from the packed uid -- with no per-face
+vector allocation, and, for Freudenthal/cubical, a **direct coboundary that
+skips the antitranspose**.
+
+This benchmark builds real filtrations with the current ("master") code, then
+times master's `boundary_matrix` / `coboundary_matrix` against the packed
+schemes, producing the identical `MatrixData`. Every packed result is verified
+equal to the master ground truth (boundary) / the plain boundary transpose
+(coboundary) before its timing is reported. Single-threaded, to isolate
+per-column cost (all of these builds parallelize the same way -- except the
+antitranspose, which is a global scatter that does not).
+
+Encodings:
+- **VR** -- (a) Bauer combinatorial uid, unranked on demand (Ripser-style);
+  (b) simple bit packing, k bits per vertex id. master = `Simplex<Int>` (sorted
+  vertex vector). VR has no direct coboundary (cofacets need the neighbor
+  graph), so coboundary stays antitranspose.
+- **Freudenthal** -- packed `(anchor_vertex_id << type_bits | simplex_type)`; a
+  precomputed table maps `(type, facet)` and `(type, cofacet)` to id-offsets, so
+  boundary and coboundary are pure integer arithmetic. master = `Simplex<Int>`.
+- **Cubical** -- packed cube uid (`anchor << 3 | face-bits`) + shared domain;
+  direct coboundary from `Cube`'s own math. master = `Cube<Int,D>` carrying a
+  per-cell `GridDomain` copy + antitranspose coboundary.
+
+For Freudenthal/cubical the geometric uid is a small dense integer, so the
+`uid -> sorted_id` map can be a flat direct-address array; hash vs flat is timed
+as an ablation. Maps are prebuilt (untimed) in all cases, matching master (whose
+map is built during filtration construction).
+
+```
+./build/benchmarks/bench_boundary --only vr   --n-points 150 --vr-max-dim 3
+./build/benchmarks/bench_boundary --only grid --grid-side 72
+./build/benchmarks/bench_boundary --only cube --grid-side 96 --reps 7
+```
+
+## Results (16 cores, AppleClang, macOS arm64, jemalloc on, single-thread, ms)
+
+**VR**, complete 3-skeleton of random points in R^3 (boundary build only):
+
+| size            | master | bit-packed   | Bauer (unrank) |
+|-----------------|-------:|-------------:|---------------:|
+| 8.5M (120 pts)  | 2963   | 769  (3.85x) | 2078  (1.43x)  |
+| 20.8M (150 pts) | 8419   | 2439 (3.45x) | 6625  (1.27x)  |
+
+**Freudenthal** 3D grid, side 72 (9.40M cells):
+
+| op         | master (antitr. for cob) | new + hash   | new + flat    |
+|------------|-------------------------:|-------------:|--------------:|
+| boundary   | 2928                     | 365 (8.0x)   | 226 (12.9x)   |
+| coboundary | 3106                     | 585 (5.3x)   | 324 ( 9.6x)   |
+
+**Cubical** 3D grid, side 96 (6.97M cells):
+
+| op         | master (antitr. for cob) | new + hash   | new + flat   |
+|------------|-------------------------:|-------------:|-------------:|
+| boundary   | 1275                     | 470 (2.7x)   | 195 (6.6x)   |
+| coboundary | 1422                     | 557 (2.6x)   | 198 (7.2x)   |
+
+Per-cell footprint: VR/Freudenthal master cell = 80 B **plus a separate heap
+vertex array per cell**; cubical master cell = 48 B (carries a `GridDomain`
+copy). Packed cells: VR 16 B, Freudenthal 8 B, cubical 4 B -- all heap-free.
+
+## Findings
+
+1. **The compact representation wins decisively everywhere, and the win grows
+   with size** (cache effects): VR boundary 3.5-3.9x, Freudenthal boundary up to
+   12.9x and direct coboundary up to 9.6x, cubical 6.6x / 7.2x.
+
+2. **Master's bottleneck is allocation, not arithmetic.** For VR/Freudenthal the
+   cost is the per-face `std::vector` allocation in `Simplex::boundary()` plus
+   the pointer-chase to each cell's heap vertex array -- on top of jemalloc.
+   Even Bauer-as-storage (which *adds* unranking) beats master by removing the
+   allocation; bit-packing removes both and wins outright.
+
+3. **Of the two VR encodings, bit-packing is the clear winner** (~3.5x vs
+   ~1.3x). Reserve the Bauer combinatorial numbering for when its
+   dimension-independent global index is actually needed; for plain storage,
+   bit-pack the vertex ids.
+
+4. **Direct coboundary is both faster and structurally better than
+   antitranspose.** It is per-column independent (lock-free parallel), whereas
+   the antitranspose is a global scatter that needs the whole boundary matrix
+   materialized first and cannot be built lock-free (filtration.h says as much).
+   The single-thread numbers understate this; the gap widens in parallel.
+
+5. **The dense "flat" map is a representation-enabled win** (a further 1.6-2.8x
+   over a hash map for Freudenthal/cubical), available precisely because the
+   domain lives in the filtration and the geometric uid is a small dense
+   integer. VR uids are not dense, so VR keeps a hash map.
