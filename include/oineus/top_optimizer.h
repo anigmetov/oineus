@@ -650,6 +650,13 @@ public:
     // already reduced the needed side(s) and solved the needed U rows.
     CriticalSet singleton_prepared_(size_t index, Real value)
     {
+        // A no-op move (target == current) has an empty critical set and
+        // needs neither side reduced. Short-circuit so a positive no-op never
+        // reaches change_birth's coh-reduced guard: prepare_targets_ (driven
+        // by get_flags) only reduces cohomology for real birth moves, so for a
+        // no-op birth the coh side is legitimately still unreduced.
+        if (fil_.get_cell_value(index) == value)
+            return {value, Indices{}};
         if (decmp_hom_.is_negative(index))
             return {value, change_death(index, value)};
         else
@@ -683,11 +690,17 @@ public:
     // The next ensure_*_built / ensure_*_reduced call rebuilds whichever
     // side it needs; no eager reduction here.
     //
-    // TODO(revisit): update() is suspected to be broken (sketchy state
-    // invariants around boundary_data_ + params_* reset). The lazy-world
-    // wiring below preserves the pre-laziness observable behavior for
-    // test_diff_update_is_lazy.py; a proper audit is planned separately.
-    // Do not extend until that audit lands.
+    // The per-side reduction recipe (compute_v/compute_u, clearing, ELZ dims,
+    // thread count) is decided at construction and stays valid across a value
+    // change, so it is preserved here; only the stale timing outputs are
+    // zeroed. Resetting params to a default Params() instead would silently
+    // drop the crit-sets recipe and make the next ensure_*_reduced rebuild a
+    // V-less decomposition, crashing the change_*/crit-set walkers.
+    //
+    // TODO(revisit): update() is still suspected to be broken (sketchy state
+    // invariants around boundary_data_); the lazy-world wiring below preserves
+    // the observable behavior for test_diff_update_is_lazy.py. A proper audit
+    // is planned separately; do not extend until that audit lands.
     void update(const Values& new_values, int n_threads = 1)
     {
         (void) n_threads;
@@ -697,8 +710,8 @@ public:
         decmp_coh_ = Decomposition();
         decmp_hom_built_ = false;
         decmp_coh_built_ = false;
-        params_hom_ = Params();
-        params_coh_ = Params();
+        params_hom_.reset_timings();
+        params_coh_.reset_timings();
     }
 
     decltype(auto) convert_critical_sets(const CriticalSets& critical_sets) const

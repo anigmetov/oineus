@@ -365,3 +365,38 @@ def test_compute_diagram_reuses_reduced_cohomology_side():
     assert not opt.is_hom_built
     arr = dgms.index_diagram_in_dimension(1, as_numpy=True)
     assert arr.shape[0] >= 1
+
+
+def test_singletons_noop_birth_does_not_require_cohomology():
+    """A no-op birth move (target == current birth) must not force a
+    cohomology reduction. Regression: singleton_prepared_ routed every
+    positive simplex through change_birth, whose coh-reduced guard fired
+    before the no-op short-circuit, so a no-op birth raised when cohomology
+    was not (and need not be) reduced."""
+    pts = _seeded_circle()
+    fil = oin_diff.vr_filtration(pts, max_dim=2)
+    opt = oin_diff.TopologyOptimizer(fil)
+
+    # Reduce only the pairing side (homology); leave cohomology untouched.
+    opt.ensure_hom_reduced()
+    assert opt.is_hom_built
+    assert not opt.is_coh_built
+
+    dgms = opt.compute_diagram(include_inf_points=False)
+    idx = dgms.index_diagram_in_dimension(1, as_numpy=True)
+    val = dgms.in_dimension(1, as_numpy=True)
+    assert idx.shape[0] >= 1
+    birth_idx = int(idx[0, 0])
+    # Birth value from the C++ diagram == get_cell_value(birth_idx), so this
+    # is an exact (bit-identical) no-op target, not an approximate one.
+    birth_val = float(val[0, 0])
+
+    # Must not raise even though cohomology is unreduced.
+    crit_sets = opt.singletons([birth_idx], [birth_val])
+
+    # A no-op birth needs nothing from the cohomology side.
+    assert not opt.is_coh_built
+
+    # And it contributes no simplices to move.
+    indvals = opt.combine_loss(crit_sets, oineus.ConflictStrategy.Max)
+    assert len(list(indvals[0])) == 0

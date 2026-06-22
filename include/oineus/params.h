@@ -64,6 +64,21 @@ namespace oineus {
         // Per-phase wall-clock breakdown of the last reduce(); transient output,
         // not part of operator== or pickling.
         ReductionTimings timings;
+
+        // Zero only the transient timing outputs (the scalar elapsed* mirrors
+        // and the detailed `timings` breakdown), preserving the reduction
+        // recipe. Use when reusing a Params for a fresh reduction so stale
+        // measurements don't linger. Not a full reset: a copy ctor that zeroed
+        // these would break copy semantics (operator== / pickling include the
+        // scalar elapsed* fields).
+        void reset_timings()
+        {
+            elapsed = 0.0;
+            elapsed_restore_elz = 0.0;
+            elapsed_copy_back = 0.0;
+            elapsed_copy_pivots = 0.0;
+            timings.reset();
+        }
     };
 
     inline std::ostream& operator<<(std::ostream& out, const Params& p)

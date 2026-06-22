@@ -350,9 +350,7 @@ def persistence_diagram(
         fil: DiffFiltration with differentiable `values` tensor.
         dualize: cohomology if True, homology if False. None (default)
             uses the FiltrationKind reduction policy. Currently this picks
-            cohomology for VR and homology otherwise; when apparent pairs land
-            for Freudenthal/Cubical filtrations, the shared policy can switch
-            those kinds too.
+            cohomology for VR and homology otherwise.
         include_inf_points: Phase 1 only supports False. Setting True
             raises NotImplementedError.
         gradient_method: "dgm-loss" or "crit-sets".
