@@ -38,6 +38,8 @@
 #include "mem_reclamation.h"
 #include "sparse_matrix.h"
 #include "column_repr.h"
+#include "apparent.h"
+#include "filtration_kind.h"
 #include "timer.h"
 #include "dcmp_stats.h"
 
@@ -106,7 +108,8 @@ namespace oineus {
     template<class MatrixTraits, class Int, class MemoryReclaimC>
     void parallel_reduction(typename MatrixTraits::AMatrix& rv, AtomicIdxVector& pivots, std::atomic<int>& next_free_chunk,
             const Params params, int thread_idx, MemoryReclaimC* mm, ThreadStats& stats,
-            std::vector<std::atomic<int>>& next_free_chunks, std::vector<Int>& dim_first, std::vector<Int>& dim_last)
+            std::vector<std::atomic<int>>& next_free_chunks, std::vector<Int>& dim_first, std::vector<Int>& dim_last,
+            const ApparentResolver<Int>* resolver = nullptr)
     {
         // set logger
         bool log_each_thread_to_file = true;
@@ -137,6 +140,13 @@ namespace oineus {
         // once here instead of being reallocated for every column.
         typename MatrixTraits::CachedColumn cached_reduced_col;
         MatrixTraits::reserve(cached_reduced_col, pivots.size());
+
+        // Per-thread cache of regenerated apparent (decorated-matrix) columns. Stays
+        // empty unless an apparent pivot is actually used as a left-reducer (homology);
+        // in cohomology Ripser's theorem keeps it empty, so this costs nothing there.
+        // Node-based map => element addresses are stable across inserts.
+        using ResolvedColumn = typename MatrixTraits::Column;   // RVColumn<Int, 2>
+        std::unordered_map<Int, ResolvedColumn> apparent_cache;
 
         int my_chunk, chunk_begin, chunk_end;
         Int current_dim = params.clearing_opt ? dim_first.size() - 1 : 0;
@@ -240,6 +250,29 @@ namespace oineus {
                     } while(pivot_idx >= 0 && pivot_col != nullptr && MatrixTraits::low(pivot_col) != current_low);
 
                     logger->debug("thread {}, column = {}, loaded pivot column, pivot_idx = {}", thread_idx, current_column_idx, pivot_idx);
+
+                    // Apparent (decorated-matrix) resolver hook: pivots[current_low]
+                    // points at an apparent column whose working slot was left null
+                    // (so pivot_col loaded as nullptr above). Regenerate it on demand
+                    // (cached per thread) and use it as a LEFT-reducer. An apparent
+                    // column is already fully reduced, so adding it cancels current_low
+                    // and is always valid; we never switch to reducing it (no
+                    // right-pivot swap into a null slot). Default path (resolver ==
+                    // nullptr) skips this branch entirely -- byte-for-byte unchanged.
+                    if constexpr (IsRVColumn<typename MatrixTraits::Column>::value) {
+                        if (resolver != nullptr && pivot_col == nullptr && pivot_idx >= 0
+                                && resolver->is_apparent(pivot_idx)) {
+                            auto cache_it = apparent_cache.find(pivot_idx);
+                            if (cache_it == apparent_cache.end()) {
+                                cache_it = apparent_cache.emplace(static_cast<Int>(pivot_idx),
+                                        ResolvedColumn(resolver->resolve_r(pivot_idx),
+                                                typename ResolvedColumn::Column{static_cast<Int>(pivot_idx)})).first;
+                            }
+                            MatrixTraits::add_to_cached(&cache_it->second, cached_reduced_col);
+                            needs_update = true;
+                            continue;
+                        }
+                    }
 
                     if (pivot_idx == -1) {
 
@@ -477,6 +510,18 @@ namespace oineus {
         std::vector<std::atomic<RVColumn<Int, 2>*>> working_rv_;
         bool has_working_rv_ {false};
 
+        // Apparent-pairs (decorated-matrix) state, present only on the lean fused path
+        // built with params.apparent_opt. `apparent_` records which working_rv_ slots
+        // were left null (the apparent columns) and their pre-seeded pivots;
+        // `apparent_resolve_fn_` regenerates an apparent column's R on demand (it
+        // closes over the source filtration, so that filtration must outlive any
+        // deferred matrix access / materialize). Both are cleared by
+        // materialize_from_working_ once the at-rest R, V are reconstructed, and never
+        // set on the default (apparent_opt OFF) path. diagram(fil) reads _pivots and
+        // needs neither.
+        std::unique_ptr<ApparentMatching<Int>> apparent_;
+        std::function<SparseColumn<Int>(Int)> apparent_resolve_fn_;
+
         // methods
         VRUDecomposition() = default;
         // working_rv_ holds heap-owned, non-copyable atomic pointers, so the
@@ -505,6 +550,8 @@ namespace oineus {
                 working_rv_.clear();
                 has_working_rv_ = false;
             }
+            apparent_.reset();
+            apparent_resolve_fn_ = nullptr;
         }
 
         void copy_from_(const VRUDecomposition& other)
@@ -529,6 +576,10 @@ namespace oineus {
             _dim_last = other._dim_last;
             n_rows = other.n_rows;
             has_working_rv_ = false;
+            // other was just materialized, so it carries no apparent lean state;
+            // a copy is always a self-contained at-rest decomposition.
+            apparent_.reset();
+            apparent_resolve_fn_ = nullptr;
         }
 
         void move_from_(VRUDecomposition&& other) noexcept
@@ -555,6 +606,10 @@ namespace oineus {
             has_working_rv_ = other.has_working_rv_;
             other.has_working_rv_ = false;
             other.working_rv_.clear();
+            apparent_ = std::move(other.apparent_);
+            apparent_resolve_fn_ = std::move(other.apparent_resolve_fn_);
+            other.apparent_.reset();
+            other.apparent_resolve_fn_ = nullptr;
         }
 
         // Materialize r_data/v_data from the kept working RV columns, then drop the
@@ -574,10 +629,15 @@ namespace oineus {
 
         // Per-column reads that work directly on the kept working form (no
         // materialization), falling back to at-rest r_data/v_data otherwise. The
-        // topology optimizer's hot read sites use these. v_col assumes a non-null
-        // column (true in keep-working thanks to the Bauer fill).
+        // topology optimizer's hot read sites use these. On the ordinary keep-working
+        // form every column is non-null (Bauer fill), so v_col may dereference
+        // directly. The apparent (decorated-matrix) lean form instead leaves null
+        // slots whose R/V only the resolver knows, so it cannot answer per-column
+        // here: force a one-time materialize first (cheap insurance -- the optimizer
+        // never builds an apparent form today, but this keeps the accessors honest).
         Int r_low(size_t col) const
         {
+            if (apparent_) ensure_materialized_();
             if (has_working_rv_) {
                 auto* p = working_rv_[col].load(std::memory_order_relaxed);
                 return p ? p->low() : Int(-1);
@@ -586,6 +646,7 @@ namespace oineus {
         }
         bool r_is_zero(size_t col) const
         {
+            if (apparent_) ensure_materialized_();
             if (has_working_rv_) {
                 auto* p = working_rv_[col].load(std::memory_order_relaxed);
                 return p == nullptr or p->is_zero();
@@ -594,6 +655,7 @@ namespace oineus {
         }
         const IntSparseColumn& v_col(size_t col) const
         {
+            if (apparent_) ensure_materialized_();
             if (has_working_rv_)
                 return working_rv_[col].load(std::memory_order_relaxed)->v_column;
             return v_data[col];
@@ -779,8 +841,64 @@ namespace oineus {
 
             Timer timer_build;
             if (params.compute_v) {
-                auto rv = dualize ? fil.coboundary_matrix_for_par_with_v(params.n_threads)
-                                  : fil.boundary_matrix_for_par_with_v(params.n_threads);
+                RVWorkingMatrix rv;
+                bool used_apparent = false;
+
+                // Apparent-pairs (decorated-matrix) path. Gated by if constexpr so it
+                // is only instantiated for cell types with cofacets (Cube); VR/Simplex
+                // filtrations never compile it. Restricted at runtime to a complete
+                // cubical complex. Leaves the apparent columns null, pre-seeds their
+                // pivots, and installs the on-demand R resolver.
+                if constexpr (SupportsApparent<C>::value) {
+                    // The apparent lean form skips the eager Bauer fill, which also
+                    // hosts the ELZ-restore pass; refuse the combination so a
+                    // requested ELZ restore is never silently dropped.
+                    const bool apparent_active = params.apparent_opt
+                            and params.dims_to_restore_elz.empty()
+                            and fil.kind() == FiltrationKind::Cubical
+                            and not fil.is_subfiltration();
+                    if (apparent_active) {
+                        used_apparent = true;
+                        dcmp.apparent_ = std::make_unique<ApparentMatching<Int>>();
+                        rv = dualize
+                            ? fil.coboundary_matrix_for_par_with_v_apparent(params.n_threads, *dcmp.apparent_)
+                            : fil.boundary_matrix_for_par_with_v_apparent(params.n_threads, *dcmp.apparent_);
+
+                        // Resolver: regenerate an apparent column's R in matrix-index
+                        // space via the cell's direct (co)boundary. Closes over the
+                        // filtration, which must outlive any deferred materialize.
+                        const auto* fil_ptr = &fil;
+                        const bool dual = dualize;
+                        const size_t N = n_cols;
+                        dcmp.apparent_resolve_fn_ = [fil_ptr, dual, N](Int mc) -> SparseColumn<Int> {
+                            SparseColumn<Int> r;
+                            if (not dual) {
+                                const auto& cell = fil_ptr->cells()[static_cast<size_t>(mc)];
+                                for(const auto& fuid : cell.get_cell().boundary())
+                                    r.push_back(static_cast<Int>(fil_ptr->get_sorted_id_by_uid(fuid)));
+                            } else {
+                                const size_t s = N - 1 - static_cast<size_t>(mc);
+                                const auto& cell = fil_ptr->cells()[s];
+                                for(const auto& cuid : cell.get_cell().coboundary())
+                                    r.push_back(static_cast<Int>(N - 1 - static_cast<size_t>(fil_ptr->get_sorted_id_by_uid(cuid))));
+                            }
+                            std::sort(r.begin(), r.end());
+                            return r;
+                        };
+
+                        // Pre-seed apparent pivots so clearing + diagram extraction
+                        // treat them exactly like genuine pivots (no reduction needed).
+                        const auto& apr = dcmp.apparent_->apparent_pivot_of_row;
+                        for(size_t r = 0; r < apr.size(); ++r)
+                            if (apr[r] >= 0)
+                                pivots[r].store(apr[r], std::memory_order_relaxed);
+                    }
+                }
+
+                if (not used_apparent) {
+                    rv = dualize ? fil.coboundary_matrix_for_par_with_v(params.n_threads)
+                                 : fil.boundary_matrix_for_par_with_v(params.n_threads);
+                }
                 // Keep the working RV columns: r_data/v_data stay empty and are
                 // reconstructed lazily on first matrix/pickle access. diagram(fil)
                 // reads _pivots, so diagram-only callers never pay the copy-back.
@@ -3106,10 +3224,14 @@ namespace oineus {
             mms.emplace_back(new MemoryReclaimC(n_threads, counter, thread_idx));
             stats.emplace_back(thread_idx);
 
+            // R-only path never uses the apparent decorated matrix (built only on the
+            // compute_v fused path); pass a null resolver explicitly (std::thread
+            // invokes through a function pointer, which does not apply default args).
+            const ApparentResolver<Int>* no_resolver = nullptr;
             ts.emplace_back(parallel_reduction<MatrixTraits, Int, MemoryReclaimC>,
                     std::ref(ar_matrix), std::ref(pivots), std::ref(next_free_chunk),
                     params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]),
-                    std::ref(next_free_chunks), std::ref(_dim_first), std::ref(_dim_last));
+                    std::ref(next_free_chunks), std::ref(_dim_first), std::ref(_dim_last), no_resolver);
 
 #ifdef __linux__
             cpu_set_t cpuset;
@@ -3289,6 +3411,12 @@ namespace oineus {
         mms.reserve(n_threads);
         stats.reserve(n_threads);
 
+        // Apparent-pairs resolver (decorated matrix): non-null only on the lean fused
+        // path built with apparent_opt. The local view outlives the worker threads
+        // (they join below). nullptr => the reducer's hook is a no-op branch.
+        ApparentResolver<Int> resolver_view{ apparent_.get(), &apparent_resolve_fn_ };
+        const ApparentResolver<Int>* resolver = resolver_view.active() ? &resolver_view : nullptr;
+
         Timer timer_reduction;
 
         for(int thread_idx = 0; thread_idx < n_threads; ++thread_idx) {
@@ -3300,7 +3428,7 @@ namespace oineus {
                     std::ref(r_v_matrix), std::ref(pivots), std::ref(next_free_chunk),
                     params, thread_idx, mms[thread_idx].get(), std::ref(stats[thread_idx]),
                     std::ref(next_free_chunks), std::ref(_dim_first),
-                    std::ref(_dim_last));
+                    std::ref(_dim_last), resolver);
 
 #ifdef __linux__
             cpu_set_t cpuset;
@@ -3392,7 +3520,12 @@ namespace oineus {
         // Keep-working hands the live RV columns to the decomposition, so every
         // column must be non-null (the optimizer and materialize read V on cleared
         // columns); run the Bauer fill for keep_working as well as for restore_elz.
-        const bool need_bauer = do_restore or keep_working;
+        // The apparent (decorated-matrix) lean form deliberately keeps null slots
+        // (apparent columns, and cleared births whose death partner is apparent), so
+        // the eager Bauer fill is skipped -- diagram reads _pivots, and the lazy
+        // materialize_from_working_ reconstructs R, V on demand via the resolver.
+        const bool apparent_lean = (resolver != nullptr);
+        const bool need_bauer = (do_restore or keep_working) and not apparent_lean;
 
         // Snapshot of pre-restore pointers, populated only when restoring ELZ so
         // the pointers restore_elz replaces can be freed without a double-free.
@@ -3567,9 +3700,17 @@ namespace oineus {
     }
 
     // Deferred copy-back: build at-rest r_data/v_data from the kept working RV
-    // columns, then drop the working form. The keep-working core always Bauer-fills
-    // (every column non-null), so this is a flat move -- no dim walk, no Bauer
-    // reconstruction here.
+    // columns, then drop the working form. The non-apparent keep-working core always
+    // Bauer-fills (every column non-null), so that is a flat move.
+    //
+    // The apparent (decorated-matrix) lean form skips the eager Bauer fill and leaves
+    // two kinds of null slots, reconstructed here on demand:
+    //   - apparent columns: R = the cell's direct (co)boundary (via the resolver),
+    //     V = identity {col} (an apparent column is already reduced).
+    //   - cleared births whose death partner was apparent: R = empty, V = R[death]
+    //     (Bauer's trick), where R[death] is now materialized (pass 2).
+    // After this runs the decomposition is a self-contained at-rest R = D V, so the
+    // apparent state is dropped.
     template<class Int>
     void VRUDecomposition<Int>::materialize_from_working_()
     {
@@ -3578,14 +3719,45 @@ namespace oineus {
         const size_t nc = working_rv_.size();
         r_data = MatrixData(nc);
         v_data = MatrixData(nc);
-        for(size_t col = 0; col < nc; ++col) {
-            auto* p = working_rv_[col].load(std::memory_order_relaxed);
-            r_data[col] = std::move(p->r_column);
-            v_data[col] = std::move(p->v_column);
-            delete p;
+
+        const bool apparent = (apparent_ and not apparent_->empty());
+
+        if (not apparent) {
+            for(size_t col = 0; col < nc; ++col) {
+                auto* p = working_rv_[col].load(std::memory_order_relaxed);
+                r_data[col] = std::move(p->r_column);
+                v_data[col] = std::move(p->v_column);
+                delete p;
+            }
+        } else {
+            // Pass 1: move the genuine columns, resolve the apparent ones, and record
+            // the cleared births (null, non-apparent) to Bauer-fill in pass 2.
+            std::vector<size_t> cleared_births;
+            for(size_t col = 0; col < nc; ++col) {
+                auto* p = working_rv_[col].load(std::memory_order_relaxed);
+                if (p != nullptr) {
+                    r_data[col] = std::move(p->r_column);
+                    v_data[col] = std::move(p->v_column);
+                    delete p;
+                } else if (apparent_->is_apparent(static_cast<Int>(col))) {
+                    r_data[col] = apparent_resolve_fn_(static_cast<Int>(col));
+                    v_data[col] = IntSparseColumn{static_cast<Int>(col)};
+                } else {
+                    // cleared birth: V filled by Bauer's trick in pass 2
+                    if (col >= _pivots.size() or _pivots[col] < 0)
+                        throw std::runtime_error("materialize_from_working_: null column is neither apparent nor a cleared birth");
+                    cleared_births.push_back(col);
+                }
+            }
+            // Pass 2: V[birth] = R[death], with R[death] now fully materialized.
+            for(size_t col : cleared_births)
+                v_data[col] = r_data.at(static_cast<size_t>(_pivots[col]));
         }
+
         working_rv_.clear();
         has_working_rv_ = false;
+        apparent_.reset();
+        apparent_resolve_fn_ = nullptr;
     }
 
     template<class Int>
@@ -4255,6 +4427,10 @@ namespace oineus {
     {
         if (rows.size() != bounds.size())
             throw std::runtime_error("compute_partial_u_rows: rows and bounds must have the same size");
+
+        // The apparent lean working form has null slots the resolver alone can fill;
+        // reading V per-column here would deref null, so materialize first.
+        if (apparent_) ensure_materialized_();
 
         // Column count, valid whether V is at-rest (v_data) or in the kept
         // working form (v_data empty).

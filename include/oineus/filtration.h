@@ -17,6 +17,7 @@
 #include "timer.h"
 #include "decomposition.h"
 #include "filtration_kind.h"
+#include "apparent.h"
 #include "interrupt.h"
 namespace oineus {
 
@@ -484,6 +485,52 @@ namespace oineus {
             return result;
         }
 
+        // Apparent (decorated-matrix) homology variant of boundary_matrix_for_par_with_v:
+        // detect the apparent pairs (Bauer) and LEAVE THEIR COLUMNS NULL instead of
+        // building them. `out` receives the matching in matrix-index space (here ==
+        // sorted_id space) so the caller can pre-seed _pivots. Only the non-apparent
+        // (typically the minority of) columns are materialized. Requires a complete
+        // complex (all cofacets present): callers gate on !is_subfiltration().
+        RVWorkingMatrix boundary_matrix_for_par_with_v_apparent(int n_threads, ApparentMatching<Int>& out) const
+        {
+            CALI_CXX_MARK_FUNCTION;
+            out = detect_apparent_matrix(*this, /*dualize=*/false);
+
+            RVWorkingMatrix result(size());
+            bool missing_ok = is_subfiltration();
+
+            tf::Executor executor(n_threads);
+            tf::Taskflow taskflow;
+            taskflow.for_each_index((size_t)0, size(), (size_t)1,
+                    [this, missing_ok, &result, &out](size_t col_idx) {
+                        if (out.is_apparent_col[col_idx]) {
+                            result[col_idx].store(nullptr, std::memory_order_relaxed);
+                            return;
+                        }
+                        SparseColumn<Int> col;
+                        if (col_idx > static_cast<size_t>(dim_last(0))) {
+                            const auto& sigma = cells_[col_idx];
+                            col.reserve(sigma.dim() + 1);
+                            for(const auto& tau_vertices: sigma.boundary()) {
+                                if (missing_ok) {
+                                    auto iter = uid_to_sorted_id.find(tau_vertices);
+                                    if (iter != uid_to_sorted_id.end())
+                                        col.push_back(iter->second);
+                                } else {
+                                    col.push_back(uid_to_sorted_id.at(tau_vertices));
+                                }
+                            }
+                            std::sort(col.begin(), col.end());
+                        }
+                        SparseColumn<Int> v_column = {static_cast<Int>(col_idx)};
+                        result[col_idx].store(
+                                new RVColumn<Int, 2>(std::move(col), std::move(v_column)),
+                                std::memory_order_relaxed);
+                    });
+            executor.run(taskflow).get();
+            return result;
+        }
+
         // Coboundary variants. antitranspose is a global scatter (an output column
         // gathers from many input rows), so it is not per-output-column independent
         // and cannot be built lock-free directly. Build the antitransposed
@@ -516,6 +563,38 @@ namespace oineus {
             tf::Taskflow taskflow;
             taskflow.for_each_index((size_t)0, cb.size(), (size_t)1,
                     [&cb, &result](size_t col_idx) {
+                        SparseColumn<Int> v_column = {static_cast<Int>(col_idx)};
+                        result[col_idx].store(
+                                new RVColumn<Int, 2>(std::move(cb[col_idx]), std::move(v_column)),
+                                std::memory_order_relaxed);
+                    });
+            executor.run(taskflow).get();
+            return result;
+        }
+
+        // Apparent (decorated-matrix) cohomology variant of
+        // coboundary_matrix_for_par_with_v. The antitranspose is a global scatter, so
+        // (for v1) we still build the full coboundary cb and then leave the apparent
+        // columns null rather than skipping their build -- the reduction-time and
+        // peak-working-memory win is preserved (apparent columns are never reduced and
+        // never enter working_rv_); the build-time win awaits the direct coboundary.
+        // `out` is in cohomology matrix-index space (birth/death swapped), ready for a
+        // _pivots pre-seed.
+        RVWorkingMatrix coboundary_matrix_for_par_with_v_apparent(int n_threads, ApparentMatching<Int>& out) const
+        {
+            CALI_CXX_MARK_FUNCTION;
+            out = detect_apparent_matrix(*this, /*dualize=*/true);
+
+            auto cb = antitranspose(boundary_matrix(n_threads), size());
+            RVWorkingMatrix result(cb.size());
+            tf::Executor executor(n_threads);
+            tf::Taskflow taskflow;
+            taskflow.for_each_index((size_t)0, cb.size(), (size_t)1,
+                    [&cb, &result, &out](size_t col_idx) {
+                        if (out.is_apparent_col[col_idx]) {
+                            result[col_idx].store(nullptr, std::memory_order_relaxed);
+                            return;
+                        }
                         SparseColumn<Int> v_column = {static_cast<Int>(col_idx)};
                         result[col_idx].store(
                                 new RVColumn<Int, 2>(std::move(cb[col_idx]), std::move(v_column)),

@@ -315,18 +315,24 @@ void init_oineus_common_decomposition(nb::module_& m)
                 { return reduce_fil(fil, params, dualize); },
                 nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+        // keep_alive<0, 1>: the apparent (decorated-matrix) lean form holds a resolver
+        // that closes over this filtration and is invoked on a deferred matrix access /
+        // clone / pickle, so the returned decomposition must keep the filtration alive.
         m.def("reduce", [reduce_fil](const CubeFiltration_1D& fil, oin::Params& params, bool dualize)
                 { return reduce_fil(fil, params, dualize); },
                 nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                nb::keep_alive<0, 1>());
         m.def("reduce", [reduce_fil](const CubeFiltration_2D& fil, oin::Params& params, bool dualize)
                 { return reduce_fil(fil, params, dualize); },
                 nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                nb::keep_alive<0, 1>());
         m.def("reduce", [reduce_fil](const CubeFiltration_3D& fil, oin::Params& params, bool dualize)
                 { return reduce_fil(fil, params, dualize); },
                 nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                nb::keep_alive<0, 1>());
     }
 
     nb::class_<Decomposition>(m, "Decomposition")

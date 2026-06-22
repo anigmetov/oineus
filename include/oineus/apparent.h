@@ -19,8 +19,35 @@
 #include <limits>
 #include <algorithm>
 #include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <ostream>
+
+#include "sparse_matrix.h"
 
 namespace oineus {
+
+// Apparent detection is column-centric and needs BOTH facets and cofacets of a
+// cell, i.e. a cell type exposing coboundary() (Cube does; Simplex does not).
+// The fused factory uses this to `if constexpr`-gate the apparent build path so it
+// is never instantiated for unsupported cell types (e.g. VR / Simplex).
+template<class Cell, class = void>
+struct SupportsApparent : std::false_type {};
+
+template<class Cell>
+struct SupportsApparent<Cell, std::void_t<decltype(std::declval<const Cell&>().coboundary())>>
+        : std::true_type {};
+
+// Detects the fused RV working-column type (RVColumn<Int,2>, which carries both an
+// r_column and a v_column) so the reducer's apparent-resolver hook is compiled only
+// for the RV path -- the R-only reduction never builds a decorated matrix, and its
+// column type has no nested ::Column.
+template<class T, class = void>
+struct IsRVColumn : std::false_type {};
+
+template<class T>
+struct IsRVColumn<T, std::void_t<decltype(std::declval<T&>().r_column),
+                                 decltype(std::declval<T&>().v_column)>> : std::true_type {};
 
 // partner record for an index-space [0,N). Index space is the matrix's own
 // order: sorted_id for the homology boundary, the antitransposed/reversed order
@@ -58,6 +85,40 @@ struct ApparentMatching {
         ++n_apparent;
     }
 };
+
+template<class Int>
+std::ostream& operator<<(std::ostream& os, const ApparentMatching<Int>& am)
+{
+    os << "ApparentMatching(n_apparent=" << am.n_apparent
+       << ", size=" << am.is_apparent_col.size() << ")";
+    return os;
+}
+
+// Regenerates the working R column of an apparent (null) matrix column on demand,
+// in the matrix's own index space, via a caller-supplied closure (which knows the
+// filtration, the homology/cohomology direction, and the cell's direct
+// (co)boundary). Const + no shared mutable state => thread-safe; the caller owns
+// the returned column. A null `matching`/`resolve` (the default) means "no
+// apparent optimization", so the reduction's resolver hook is a no-op branch.
+template<class Int>
+struct ApparentResolver {
+    const ApparentMatching<Int>*               matching {nullptr};
+    const std::function<SparseColumn<Int>(Int)>* resolve {nullptr};
+
+    bool active() const { return matching != nullptr && resolve != nullptr && not matching->empty(); }
+    bool is_apparent(Int c) const { return matching != nullptr && matching->is_apparent(c); }
+    SparseColumn<Int> resolve_r(Int c) const { return (*resolve)(c); }
+};
+
+template<class Int>
+std::ostream& operator<<(std::ostream& os, const ApparentResolver<Int>& r)
+{
+    os << "ApparentResolver(active=" << (r.active() ? "true" : "false");
+    if (r.matching != nullptr)
+        os << ", n_apparent=" << r.matching->n_apparent;
+    os << ")";
+    return os;
+}
 
 // Generic O(nnz) detector on a column-major matrix (each column sorted
 // ascending). One left-to-right pass with a per-row "first column seen" flag:
@@ -164,6 +225,42 @@ detect_apparent_local(const Fil& fil)
             am.add(fstar, static_cast<Int>(c));
     }
 
+    return am;
+}
+
+// Apparent matching in the REDUCTION's matrix-index space, dualize-aware. The
+// detector itself (detect_apparent_local) is field- and direction-independent and
+// works in sorted_id (homology) space, identifying each apparent pair as
+// (b = youngest facet / birth, d = death cell). This wrapper maps those pairs into
+// whichever matrix the reduction will actually reduce:
+//   - homology   (dualize=false): the matrix index IS the sorted_id, so the null
+//     column is the death d and the pivot row is the birth b -- returned as-is.
+//   - cohomology (dualize=true): the boundary is antitransposed, so cell sorted_id
+//     s sits at matrix index N-1-s, and birth/death swap: the null column is the
+//     BIRTH cell (matrix index N-1-b) and the pivot row is the DEATH cell (N-1-d).
+// This matches emit_column_'s convention exactly, so a _pivots pre-seed built from
+// the result drives diagram extraction with no further change.
+template<class Fil>
+ApparentMatching<typename Fil::Int>
+detect_apparent_matrix(const Fil& fil, bool dualize)
+{
+    using Int = typename Fil::Int;
+
+    ApparentMatching<Int> hom = detect_apparent_local(fil);
+    if (not dualize)
+        return hom;
+
+    const std::size_t n = fil.size();
+    ApparentMatching<Int> am;
+    am.init(n);
+    for(std::size_t b = 0; b < n; ++b) {
+        Int d = hom.apparent_pivot_of_row[b];
+        if (d < 0)
+            continue;
+        Int null_col  = static_cast<Int>(fil.index_in_matrix(b, true));                       // N-1-b
+        Int pivot_row = static_cast<Int>(fil.index_in_matrix(static_cast<std::size_t>(d), true)); // N-1-d
+        am.add(pivot_row, null_col);
+    }
     return am;
 }
 

@@ -67,6 +67,7 @@ else()
     # Pytest-driven tests.
     foreach(NAME IN ITEMS
             alpha-diff
+            apparent
             api-cells
             api-common
             api-dcmp
