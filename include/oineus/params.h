@@ -48,6 +48,12 @@ namespace oineus {
         bool print_time{false};
         bool compute_v{false};
         bool compute_u{false};
+        // Apparent-pairs optimization (Bauer/Ripser): skip building + storing the
+        // apparent columns; pre-seed their pivots. Default OFF -> existing paths
+        // unchanged. Honored only on the fused path for supported, complete
+        // filtrations (Cubical/Freudenthal, not subfiltrations); silently ignored
+        // otherwise. See include/oineus/apparent.h.
+        bool apparent_opt{false};
         ColumnRepr col_repr{ColumnRepr::BitTree};
         DimVec dims_to_restore_elz;
         bool do_sanity_check{false};
@@ -92,6 +98,7 @@ namespace oineus {
         out << ", print_time = " << p.print_time;
         out << ", compute_v = " << p.compute_v;
         out << ", compute_u = " << p.compute_u;
+        out << ", apparent_opt = " << p.apparent_opt;
         out << ", col_repr = " << p.col_repr;
         // out << ", dims_to_restore_elz = " << p.dims_to_restore_elz;
         out << ", do_sanity_check = " << p.do_sanity_check;
@@ -113,6 +120,7 @@ namespace oineus {
             && a.print_time == b.print_time
             && a.compute_v == b.compute_v
             && a.compute_u == b.compute_u
+            && a.apparent_opt == b.apparent_opt
             && a.col_repr == b.col_repr
             && a.dims_to_restore_elz == b.dims_to_restore_elz
             && a.do_sanity_check == b.do_sanity_check

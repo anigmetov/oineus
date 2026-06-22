@@ -64,7 +64,8 @@ void init_oineus_common(nb::module_& m)
                                       double, //elapsed_copy_pivots
                                       bool,   // verbose
                                       int,    // spdlog_level
-                                      int     // col_repr
+                                      int,    // col_repr
+                                      bool    // apparent_opt
                                     >;
 
     nb::enum_<oin::ColumnRepr>(m, "ColumnRepr", "Working-column data structure used during reduction")
@@ -107,7 +108,7 @@ void init_oineus_common(nb::module_& m)
     nb::class_<ReductionParams>(m, "ReductionParams")
             .def(nb::init<>())
             .def("__init__",
-                [](ReductionParams* p, int n_threads, int chunk_size, bool clearing_opt, bool compute_v, bool compute_u, std::vector<dim_type> dims_to_restore_elz, oin::ColumnRepr col_repr, bool verbose) {
+                [](ReductionParams* p, int n_threads, int chunk_size, bool clearing_opt, bool compute_v, bool compute_u, std::vector<dim_type> dims_to_restore_elz, oin::ColumnRepr col_repr, bool verbose, bool apparent_opt) {
                     new (p) ReductionParams();
                     p->n_threads = n_threads;
                     p->chunk_size = chunk_size;
@@ -117,7 +118,8 @@ void init_oineus_common(nb::module_& m)
                     p->dims_to_restore_elz = dims_to_restore_elz;
                     p->col_repr = col_repr;
                     p->verbose = verbose;
-                }, nb::arg("n_threads")=8, nb::arg("chunk_size")=256, nb::arg("clearing_opt")=true, nb::arg("compute_v")=false, nb::arg("compute_u")=false, nb::arg("dims_to_restore_elz")=std::vector<dim_type>{}, nb::arg("col_repr")=oin::ColumnRepr::BitTree, nb::arg("verbose")=false)
+                    p->apparent_opt = apparent_opt;
+                }, nb::arg("n_threads")=8, nb::arg("chunk_size")=256, nb::arg("clearing_opt")=true, nb::arg("compute_v")=false, nb::arg("compute_u")=false, nb::arg("dims_to_restore_elz")=std::vector<dim_type>{}, nb::arg("col_repr")=oin::ColumnRepr::BitTree, nb::arg("verbose")=false, nb::arg("apparent_opt")=false)
             .def_rw("n_threads", &ReductionParams::n_threads)
             .def_rw("chunk_size", &ReductionParams::chunk_size)
             .def_rw("write_dgms", &ReductionParams::write_dgms)
@@ -128,6 +130,7 @@ void init_oineus_common(nb::module_& m)
             .def_rw("elapsed", &ReductionParams::elapsed)
             .def_rw("compute_v", &ReductionParams::compute_v)
             .def_rw("compute_u", &ReductionParams::compute_u)
+            .def_rw("apparent_opt", &ReductionParams::apparent_opt)
             .def_rw("col_repr", &ReductionParams::col_repr)
             .def_rw("dims_to_restore_elz", &ReductionParams::dims_to_restore_elz)
             .def_rw("do_sanity_check", &ReductionParams::do_sanity_check)
@@ -146,7 +149,7 @@ void init_oineus_common(nb::module_& m)
                               p.dims_to_restore_elz, p.do_sanity_check, p.elapsed, p
                               .elapsed_restore_elz,
                               p.elapsed_copy_back, p.elapsed_copy_pivots, p.verbose, static_cast<int>(p.spdlog_level),
-                              static_cast<int>(p.col_repr));
+                              static_cast<int>(p.col_repr), p.apparent_opt);
                     })
             .def("__setstate__", [](ReductionParams& p, const RedParamsTuple& t) {
                     new (&p) ReductionParams();
@@ -168,6 +171,7 @@ void init_oineus_common(nb::module_& m)
                       p.verbose         = std::get<15>(t);
                       p.spdlog_level    = static_cast<spd::level::level_enum>(std::get<16>(t));
                       p.col_repr        = static_cast<oin::ColumnRepr>(std::get<17>(t));
+                      p.apparent_opt    = std::get<18>(t);
                     })
     ;
 
