@@ -188,9 +188,18 @@ detect_apparent_bruteforce(const Matrix& M)
 // (homology) space; the cohomology index relabeling is layered on by the fused
 // builder. Requires a complete complex (all cofacets present) -- caller must
 // ensure not is_subfiltration().
+//
+// Parallel over cells. The writes are conflict-free without any synchronization:
+// is_apparent_col[c] is written only by task c, and apparent_pivot_of_row[fstar]
+// is written only by the unique apparent cell whose youngest facet is fstar (a
+// facet has at most one apparent cofacet -- its oldest one -- so two distinct
+// apparent tasks never target the same fstar slot). n_apparent is tallied after
+// the parallel pass. This matters for performance: detection touches every cell
+// (boundary + coboundary), so a serial pass would dominate (and erase) the
+// build-time win of skipping the apparent columns.
 template<class Fil>
 ApparentMatching<typename Fil::Int>
-detect_apparent_local(const Fil& fil)
+detect_apparent_local(const Fil& fil, int n_threads = 1)
 {
     using Int = typename Fil::Int;
     const std::size_t n = fil.size();
@@ -200,30 +209,41 @@ detect_apparent_local(const Fil& fil)
 
     const auto& cells = fil.cells();
 
-    for(std::size_t c = 0; c < n; ++c) {
-        const auto& cell = cells[c];
-        if (cell.dim() == 0)
-            continue;
+    tf::Executor executor(std::max(1, n_threads));
+    tf::Taskflow taskflow;
+    taskflow.for_each_index((std::size_t)0, n, (std::size_t)1,
+            [&am, &cells, &fil](std::size_t c) {
+                const auto& cell = cells[c];
+                if (cell.dim() == 0)
+                    return;
 
-        // youngest facet f* = max sorted_id over facets of cell
-        Int fstar = Int(-1);
-        for(const auto& fuid : cell.get_cell().boundary()) {
-            Int sid = fil.get_sorted_id_by_uid(fuid);
-            if (sid > fstar)
-                fstar = sid;
-        }
+                // youngest facet f* = max sorted_id over facets of cell
+                Int fstar = Int(-1);
+                for(const auto& fuid : cell.get_cell().boundary()) {
+                    Int sid = fil.get_sorted_id_by_uid(fuid);
+                    if (sid > fstar)
+                        fstar = sid;
+                }
 
-        // oldest cofacet of f* = min sorted_id over cofacets of f*
-        Int oldest = std::numeric_limits<Int>::max();
-        for(const auto& cuid : cells[fstar].get_cell().coboundary()) {
-            Int sid = fil.get_sorted_id_by_uid(cuid);
-            if (sid < oldest)
-                oldest = sid;
-        }
+                // oldest cofacet of f* = min sorted_id over cofacets of f*
+                Int oldest = std::numeric_limits<Int>::max();
+                for(const auto& cuid : cells[fstar].get_cell().coboundary()) {
+                    Int sid = fil.get_sorted_id_by_uid(cuid);
+                    if (sid < oldest)
+                        oldest = sid;
+                }
 
-        if (oldest == static_cast<Int>(c))
-            am.add(fstar, static_cast<Int>(c));
-    }
+                if (oldest == static_cast<Int>(c)) {
+                    am.is_apparent_col[c] = 1;
+                    am.apparent_pivot_of_row[fstar] = static_cast<Int>(c);
+                }
+            });
+    executor.run(taskflow).get();
+
+    std::size_t cnt = 0;
+    for(char v : am.is_apparent_col)
+        cnt += static_cast<std::size_t>(v);
+    am.n_apparent = cnt;
 
     return am;
 }
@@ -242,11 +262,11 @@ detect_apparent_local(const Fil& fil)
 // the result drives diagram extraction with no further change.
 template<class Fil>
 ApparentMatching<typename Fil::Int>
-detect_apparent_matrix(const Fil& fil, bool dualize)
+detect_apparent_matrix(const Fil& fil, bool dualize, int n_threads = 1)
 {
     using Int = typename Fil::Int;
 
-    ApparentMatching<Int> hom = detect_apparent_local(fil);
+    ApparentMatching<Int> hom = detect_apparent_local(fil, n_threads);
     if (not dualize)
         return hom;
 

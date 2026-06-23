@@ -494,7 +494,7 @@ namespace oineus {
         RVWorkingMatrix boundary_matrix_for_par_with_v_apparent(int n_threads, ApparentMatching<Int>& out) const
         {
             CALI_CXX_MARK_FUNCTION;
-            out = detect_apparent_matrix(*this, /*dualize=*/false);
+            out = detect_apparent_matrix(*this, /*dualize=*/false, n_threads);
 
             RVWorkingMatrix result(size());
             bool missing_ok = is_subfiltration();
@@ -573,31 +573,49 @@ namespace oineus {
         }
 
         // Apparent (decorated-matrix) cohomology variant of
-        // coboundary_matrix_for_par_with_v. The antitranspose is a global scatter, so
-        // (for v1) we still build the full coboundary cb and then leave the apparent
-        // columns null rather than skipping their build -- the reduction-time and
-        // peak-working-memory win is preserved (apparent columns are never reduced and
-        // never enter working_rv_); the build-time win awaits the direct coboundary.
-        // `out` is in cohomology matrix-index space (birth/death swapped), ready for a
-        // _pivots pre-seed.
+        // coboundary_matrix_for_par_with_v. Builds the cohomology (antitransposed)
+        // matrix DIRECTLY, one column at a time, from each cell's coboundary() -- no
+        // antitranspose of the full boundary -- and LEAVES THE APPARENT COLUMNS NULL
+        // instead of building them. This is the cohomology build-time + peak-memory
+        // win: only the non-apparent (typically a small minority of) columns are ever
+        // allocated, and the full antitransposed matrix is never formed.
+        //
+        // Matrix column col_idx corresponds to the cell with sorted_id s = N-1-col_idx;
+        // its rows are {N-1-sorted_id(cofacet)} over that cell's cofacets. Because the
+        // coboundary is the adjoint of the boundary, this is column-for-column
+        // identical to antitranspose(boundary_matrix(...)). It uses the same direct-
+        // coboundary mapping as apparent_resolve_fn_ (decomposition.h), so the
+        // materialize/diagram paths see a consistent matrix. `out` is in cohomology
+        // matrix-index space (birth/death swapped), ready for a _pivots pre-seed.
+        // Requires a complete complex (all cofacets present): callers gate on
+        // !is_subfiltration(), so every cofacet uid is in uid_to_sorted_id.
         RVWorkingMatrix coboundary_matrix_for_par_with_v_apparent(int n_threads, ApparentMatching<Int>& out) const
         {
             CALI_CXX_MARK_FUNCTION;
-            out = detect_apparent_matrix(*this, /*dualize=*/true);
+            out = detect_apparent_matrix(*this, /*dualize=*/true, n_threads);
 
-            auto cb = antitranspose(boundary_matrix(n_threads), size());
-            RVWorkingMatrix result(cb.size());
+            const size_t n = size();
+            RVWorkingMatrix result(n);
             tf::Executor executor(n_threads);
             tf::Taskflow taskflow;
-            taskflow.for_each_index((size_t)0, cb.size(), (size_t)1,
-                    [&cb, &result, &out](size_t col_idx) {
+            taskflow.for_each_index((size_t)0, n, (size_t)1,
+                    [this, n, &result, &out](size_t col_idx) {
                         if (out.is_apparent_col[col_idx]) {
                             result[col_idx].store(nullptr, std::memory_order_relaxed);
                             return;
                         }
+                        // matrix column col_idx == cell with sorted_id N-1-col_idx;
+                        // emit its coboundary, reindexed into antitranspose row space
+                        const auto& sigma = cells_[n - 1 - col_idx];
+                        auto cob = sigma.get_cell().coboundary();
+                        SparseColumn<Int> col;
+                        col.reserve(cob.size());
+                        for(const auto& cuid : cob)
+                            col.push_back(static_cast<Int>(n - 1 - static_cast<size_t>(get_sorted_id_by_uid(cuid))));
+                        std::sort(col.begin(), col.end());
                         SparseColumn<Int> v_column = {static_cast<Int>(col_idx)};
                         result[col_idx].store(
-                                new RVColumn<Int, 2>(std::move(cb[col_idx]), std::move(v_column)),
+                                new RVColumn<Int, 2>(std::move(col), std::move(v_column)),
                                 std::memory_order_relaxed);
                     });
             executor.run(taskflow).get();
