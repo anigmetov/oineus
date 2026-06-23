@@ -1,4 +1,4 @@
-foreach(name bench_diagram bench_boundary)
+foreach(name bench_diagram bench_boundary bench_freudenthal_cell)
     add_executable(${name} "${name}.cpp")
 
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include

@@ -4,6 +4,7 @@
 #include "params.h"
 #include "simplex.h"
 #include "cube.h"
+#include "freudenthal_cell.h"
 #include "cell_with_value.h"
 #include "filtration.h"
 #include "inclusion_filtration.h"
