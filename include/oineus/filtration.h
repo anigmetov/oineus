@@ -555,6 +555,25 @@ namespace oineus {
         RWorkingMatrix coboundary_matrix_for_par(int n_threads=1) const
         {
             CALI_CXX_MARK_FUNCTION;
+            // Packed cells: emit each working column straight from the cell's
+            // coboundary in a single pass -- no at-rest coboundary matrix held and
+            // no second move pass (the homology builder's direct shape, mirrored).
+            if constexpr (HasPackedBoundary<UnderCell_>::value) {
+                if (not is_subfiltration()) {
+                    const size_t n = size();
+                    RWorkingMatrix result(n);
+                    tf::Executor executor(n_threads);
+                    tf::Taskflow taskflow;
+                    taskflow.for_each_index((size_t)0, n, (size_t)1,
+                            [this, &result](size_t col_idx) {
+                                auto* col = new SparseColumn<Int>();
+                                emit_cohomology_col_(col_idx, *col);
+                                result[col_idx].store(col, std::memory_order_relaxed);
+                            });
+                    executor.run(taskflow).get();
+                    return result;
+                }
+            }
             auto cb = coboundary_matrix(n_threads);
             RWorkingMatrix result(cb.size());
             tf::Executor executor(n_threads);
@@ -572,6 +591,26 @@ namespace oineus {
         RVWorkingMatrix coboundary_matrix_for_par_with_v(int n_threads=1) const
         {
             CALI_CXX_MARK_FUNCTION;
+            // Packed cells: fused single-pass direct build (see coboundary_matrix_for_par).
+            if constexpr (HasPackedBoundary<UnderCell_>::value) {
+                if (not is_subfiltration()) {
+                    const size_t n = size();
+                    RVWorkingMatrix result(n);
+                    tf::Executor executor(n_threads);
+                    tf::Taskflow taskflow;
+                    taskflow.for_each_index((size_t)0, n, (size_t)1,
+                            [this, &result](size_t col_idx) {
+                                SparseColumn<Int> col;
+                                emit_cohomology_col_(col_idx, col);
+                                SparseColumn<Int> v_column = {static_cast<Int>(col_idx)};
+                                result[col_idx].store(
+                                        new RVColumn<Int, 2>(std::move(col), std::move(v_column)),
+                                        std::memory_order_relaxed);
+                            });
+                    executor.run(taskflow).get();
+                    return result;
+                }
+            }
             auto cb = coboundary_matrix(n_threads);
             RVWorkingMatrix result(cb.size());
             tf::Executor executor(n_threads);
