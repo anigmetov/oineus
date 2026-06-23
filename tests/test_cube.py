@@ -264,3 +264,20 @@ def test_coboundary_matrix_partial_cube_complex():
         h = sorted((pt.birth, pt.death) for pt in dgm_hom.in_dimension(d, as_numpy=False))
         c = sorted((pt.birth, pt.death) for pt in dgm_coh.in_dimension(d, as_numpy=False))
         assert h == c
+
+
+def test_boundary_matrix_raises_on_non_face_closed_cube():
+    """A malformed (not face-closed) cube filtration must fail loudly.
+
+    Here e01's boundary needs v1, which is absent. The boundary build must raise
+    (a missing facet's uid is not in the index) rather than silently emit a -1 row
+    -- the flat uid index is bounds- and sentinel-checked on the lookup.
+    """
+    import pytest
+
+    dom = oin.GridDomain_1D(3)
+    v0 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[], domain=dom, value=0.0)
+    e01 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[0], domain=dom, value=1.0)
+    fil = oin.CubeFiltration_1D([v0, e01], negate=False, n_threads=1)
+    with pytest.raises((IndexError, KeyError, RuntimeError)):
+        fil.boundary_matrix(n_threads=1)

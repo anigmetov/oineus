@@ -336,7 +336,11 @@ namespace oineus {
     // The slim Cube provides boundary_into/coboundary_into (packed direct
     // (co)boundary against the shared GridDomain); advertise it so the Filtration
     // builders take the alloc-elided path. FatCube is never a Filtration UnderCell,
-    // so it is intentionally left at the default (false).
+    // so it is intentionally left at the default (false). The cube uid is a dense
+    // small integer (anchor_vertex_id << OINEUS_MAX_CUBE_DIM | face-bits), so the
+    // Filtration also uses it as a direct-address index into a flat
+    // uid->sorted_id array instead of a hash map (faster, and far smaller than the
+    // hash node overhead).
     template<typename Int, unsigned D>
     struct HasPackedBoundary<Cube<Int, D>> : std::true_type {};
 

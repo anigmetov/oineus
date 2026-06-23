@@ -474,6 +474,9 @@ void init_oineus_filtration(nb::module_& m)
                 fil.dim_last_ = std::get<7>(t); \
                 fil.kind_ = std::get<8>(t); \
                 fil.geometry_ = std::get<9>(t); \
+                /* cube uses the flat uid index, not the (empty) hash above; */ \
+                /* rebuild it from the restored cells (setstate bypasses the ctor) */ \
+                fil.rebuild_uid_index_(); \
             }) \
 
 

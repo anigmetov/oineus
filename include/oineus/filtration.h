@@ -126,16 +126,14 @@ namespace oineus {
         {
             CALI_CXX_MARK_FUNCTION;
 
-            uid_to_sorted_id.clear();
-            uid_to_sorted_id.reserve(cells_.size());
             for (size_t i = 0; i < cells_.size(); ++i) {
                 auto& sigma = cells_[i];
                 sigma.set_id(static_cast<Int>(i));
                 sigma.set_sorted_id(static_cast<Int>(i));
                 id_to_sorted_id_[i] = static_cast<Int>(i);
                 sorted_id_to_id_[i] = static_cast<Int>(i);
-                uid_to_sorted_id[sigma.get_uid()] = static_cast<Int>(i);
             }
+            rebuild_uid_index_();
             set_dim_info();
 
             assert(std::all_of(cells_.begin(), cells_.end(),
@@ -195,6 +193,64 @@ namespace oineus {
 
         dim_type max_dim() const { return dim_last_.size() - 1; }
 
+        // Populate the uid -> sorted_id index from the (already ordered) cells_:
+        // the dense flat array for packed cells (Cube), the hash map otherwise.
+        // Call after cells_ are in their final order; rerun whenever the order
+        // changes (set_values re-sort). Independent of geometry_ (sized from the
+        // cell uids), so it is safe to run in the constructor before the cube
+        // filtration's geometry is set. Sequential -- the flat array writes are to
+        // distinct slots but the hash map is not thread-safe.
+        void rebuild_uid_index_()
+        {
+            if constexpr (HasPackedBoundary<UnderCell_>::value) {
+                // Dense integer uid: size the flat array to (max uid + 1), derived
+                // from the cells themselves -- independent of the (possibly not-yet-
+                // set) geometry, and tighter than the geometry's full uid space. Every
+                // (co)facet looked up on the hot path is a present cell, so its uid is
+                // <= max uid and in range.
+                size_t flat_size = 0;
+                for (size_t s = 0; s < size(); ++s)
+                    flat_size = std::max(flat_size, static_cast<size_t>(cells_[s].get_uid()) + 1);
+                flat_uid_to_sorted_id_.assign(flat_size, Int(-1));
+                for (size_t s = 0; s < size(); ++s)
+                    flat_uid_to_sorted_id_[static_cast<size_t>(cells_[s].get_uid())] = static_cast<Int>(s);
+            } else {
+                uid_to_sorted_id.clear();
+                uid_to_sorted_id.reserve(size());
+                for (size_t s = 0; s < size(); ++s)
+                    uid_to_sorted_id[cells_[s].get_uid()] = static_cast<Int>(s);
+            }
+        }
+
+        // sorted_id for a uid, or -1 if absent. The bounds-checked primitive: dense
+        // flat index for packed cells (Cube), hash lookup otherwise. Used directly by
+        // missing_ok (subfiltration) builds, the robust cohomology emit, and
+        // contains_cell_with_uid; sorted_id_by_uid_at_ wraps it with a throw.
+        Int sorted_id_by_uid_or_neg_(const CellUid& uid) const
+        {
+            if constexpr (HasPackedBoundary<UnderCell_>::value) {
+                size_t idx = static_cast<size_t>(uid);
+                return idx < flat_uid_to_sorted_id_.size() ? flat_uid_to_sorted_id_[idx] : Int(-1);
+            } else {
+                auto iter = uid_to_sorted_id.find(uid);
+                return iter != uid_to_sorted_id.end() ? iter->second : Int(-1);
+            }
+        }
+
+        // sorted_id for a uid required to be present; throws std::out_of_range if not
+        // (the historical uid_to_sorted_id.at semantics). Used on the boundary hot
+        // path -- every facet of a valid, face-closed filtration is present -- and by
+        // the public uid accessors. The flat array still gives the O(1) lookup; the
+        // bounds + sentinel checks are predictable branches that also turn a malformed
+        // (non-closed) filtration into a clean throw instead of a silent -1 / OOB read.
+        Int sorted_id_by_uid_at_(const CellUid& uid) const
+        {
+            Int s = sorted_id_by_uid_or_neg_(uid);
+            if (s < 0)
+                throw std::out_of_range("Filtration: uid not present in filtration");
+            return s;
+        }
+
         // Fill `col` with the sorted boundary of `sigma` in sorted_id space. Two
         // compile-time paths: for cells advertising a packed buffer (co)boundary
         // (HasPackedBoundary, e.g. Cube) the facet uids are emitted straight into
@@ -206,30 +262,24 @@ namespace oineus {
         template<class Col>
         void emit_boundary_col_(const Cell& sigma, bool missing_ok, Col& col) const
         {
+            // missing_ok is loop-invariant (predictable branch); the lookups go
+            // through the flat array for packed cells, the hash map otherwise.
+            auto emit = [this, missing_ok, &col](const CellUid& fuid) {
+                if (missing_ok) {
+                    Int s = sorted_id_by_uid_or_neg_(fuid);
+                    if (s >= 0)
+                        col.push_back(s);
+                } else {
+                    col.push_back(sorted_id_by_uid_at_(fuid));
+                }
+            };
             if constexpr (HasPackedBoundary<UnderCell_>::value) {
                 col.reserve(2 * sigma.dim());
-                if (missing_ok) {
-                    sigma.get_cell().boundary_into(geometry_, [this, &col](CellUid fuid) {
-                        auto iter = uid_to_sorted_id.find(fuid);
-                        if (iter != uid_to_sorted_id.end())
-                            col.push_back(iter->second);
-                    });
-                } else {
-                    sigma.get_cell().boundary_into(geometry_, [this, &col](CellUid fuid) {
-                        col.push_back(uid_to_sorted_id.at(fuid));
-                    });
-                }
+                sigma.get_cell().boundary_into(geometry_, emit);
             } else {
                 col.reserve(sigma.dim() + 1);
-                for(const auto& fuid: sigma.boundary(geometry_)) {
-                    if (missing_ok) {
-                        auto iter = uid_to_sorted_id.find(fuid);
-                        if (iter != uid_to_sorted_id.end())
-                            col.push_back(iter->second);
-                    } else {
-                        col.push_back(uid_to_sorted_id.at(fuid));
-                    }
-                }
+                for(const auto& fuid: sigma.boundary(geometry_))
+                    emit(fuid);
             }
             std::sort(col.begin(), col.end());
         }
@@ -249,10 +299,10 @@ namespace oineus {
         {
             const size_t n = size();
             const auto& sigma = cells_[n - 1 - m];
-            sigma.get_cell().coboundary_into(geometry_, [this, n, &col](CellUid cuid) {
-                auto iter = uid_to_sorted_id.find(cuid);
-                if (iter != uid_to_sorted_id.end())
-                    col.push_back(static_cast<Int>(n - 1 - static_cast<size_t>(iter->second)));
+            sigma.get_cell().coboundary_into(geometry_, [this, n, &col](const CellUid& cuid) {
+                Int s = sorted_id_by_uid_or_neg_(cuid);
+                if (s >= 0)
+                    col.push_back(static_cast<Int>(n - 1 - static_cast<size_t>(s)));
             });
             std::sort(col.begin(), col.end());
         }
@@ -340,7 +390,7 @@ namespace oineus {
 
                     for(const auto& tau_vertices: sigma.boundary(geometry_)) {
                         if (relative.find(tau_vertices) == relative.end())
-                            col.push_back(uid_to_sorted_id.at(tau_vertices));
+                            col.push_back(sorted_id_by_uid_at_(tau_vertices));
                     }
 
                     if (col_idx % 100 == 0 && oineus::interrupted())
@@ -693,22 +743,22 @@ namespace oineus {
 
         Real value_by_uid(const CellUid& vs) const
         {
-            return cells_.at(uid_to_sorted_id.at(vs)).get_value();
+            return cells_.at(get_sorted_id_by_uid(vs)).get_value();
         }
 
-        auto get_sorted_id_by_uid(const CellUid& uid) const
+        Int get_sorted_id_by_uid(const CellUid& uid) const
         {
-            return uid_to_sorted_id.at(uid);
+            return sorted_id_by_uid_at_(uid);
         }
 
         Cell get_cell_by_uid(const CellUid& uid) const
         {
-            return cells_[uid_to_sorted_id.at(uid)];
+            return cells_[get_sorted_id_by_uid(uid)];
         }
 
         bool contains_cell_with_uid(const CellUid& uid) const
         {
-            return uid_to_sorted_id.count(uid) == 1;
+            return sorted_id_by_uid_or_neg_(uid) >= 0;
         }
 
         Real min_value() const
@@ -841,13 +891,13 @@ namespace oineus {
                 if (pred(cell)) {
                     dims.insert(cell.dim());
                     result.cells_.push_back(cell);
-                    result.uid_to_sorted_id[cell.get_uid()] = sorted_id;
                     result.id_to_sorted_id_[cell.get_id()] = sorted_id;
                     result.sorted_id_to_id_.push_back(cell.get_id());
                     result.cells_.back().sorted_id_ = sorted_id;
                     sorted_id++;
                 }
             }
+            result.rebuild_uid_index_();
 
             if (result.size() == 0)
                 return result;
@@ -870,7 +920,16 @@ namespace oineus {
         FiltrationKind kind_ {FiltrationKind::User};
         Geometry geometry_ {};
 
+        // uid -> sorted_id index. Two representations, chosen at compile time by
+        // HasPackedBoundary<UnderCell_>: dense-uid cells (Cube) use the flat
+        // direct-address array flat_uid_to_sorted_id_ (entry uid -> sorted_id, -1 if
+        // absent), which is both faster and far smaller than a hash map; all other
+        // cells use the uid_to_sorted_id hash map. Exactly one is populated per
+        // instantiation; the other stays empty (zero cost). Go through
+        // rebuild_uid_index_ to populate and the sorted_id_by_uid_* accessors to
+        // read, so the choice lives in one place.
         UidMap uid_to_sorted_id;
+        std::vector<Int> flat_uid_to_sorted_id_;
         std::vector<Int> id_to_sorted_id_;
         std::vector<Int> sorted_id_to_id_;
 
@@ -939,9 +998,6 @@ namespace oineus {
                 dim_to_cells[cell.dim()].push_back(cell);
             }
 
-            uid_to_sorted_id.clear();
-            uid_to_sorted_id.reserve(cells_.size());
-
             size_t sorted_id = 0;
 
             cells_.clear();
@@ -951,22 +1007,19 @@ namespace oineus {
                     id_to_sorted_id_[cell.get_id()] = sorted_id;
                     sorted_id_to_id_.at(sorted_id) = cell.get_id();
                     cell.sorted_id_ = sorted_id;
-                    uid_to_sorted_id[cell.get_uid()] = sorted_id;
 
                     cells_.push_back(cell);
 
                     sorted_id++;
                 }
             }
+            rebuild_uid_index_();
         }
 
         // sort cells and assign sorted_ids
         void sort_and_set(int n_threads)
         {
             CALI_CXX_MARK_FUNCTION;
-
-            uid_to_sorted_id.clear();
-            uid_to_sorted_id.reserve(cells_.size());
 
             auto cmp = [this](const Cell& sigma, const Cell& tau)
                 {
@@ -998,22 +1051,24 @@ namespace oineus {
             executor.run(taskflow).get();
             CALI_MARK_END("TF_SORT_AND_SET");
 
-            // unordered_set is not thread-safe, cannot do in parallel
+            // build the uid -> sorted_id index (flat array for Cube, hash otherwise)
             CALI_MARK_BEGIN("filtration_init_housekeeping-uid");
-            for(size_t sorted_id = 0; sorted_id < size(); ++sorted_id) {
-                auto& sigma = cells_[sorted_id];
-                uid_to_sorted_id[sigma.get_uid()] = sorted_id;
-            }
+            rebuild_uid_index_();
             CALI_MARK_END("filtration_init_housekeeping-uid");
         }
 
         bool operator==(const Filtration& other) const
         {
             // ignore id_ ?
+            // only one of uid_to_sorted_id / flat_uid_to_sorted_id_ is populated per
+            // cell type; comparing both covers either representation (the other is
+            // empty on both sides)
             return negate_ == other.negate_ and is_subfiltration_ == other.is_subfiltration_
                    and kind_ == other.kind_ and geometry_ == other.geometry_
                    and dim_first_ == other.dim_first_ and dim_last_ == other.dim_last_
-                   and uid_to_sorted_id == other.uid_to_sorted_id and id_to_sorted_id_ == other.id_to_sorted_id_
+                   and uid_to_sorted_id == other.uid_to_sorted_id
+                   and flat_uid_to_sorted_id_ == other.flat_uid_to_sorted_id_
+                   and id_to_sorted_id_ == other.id_to_sorted_id_
                    and sorted_id_to_id_ == other.sorted_id_to_id_
                    and cells_ == other.cells_;
         }
