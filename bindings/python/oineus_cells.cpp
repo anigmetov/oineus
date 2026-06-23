@@ -108,7 +108,7 @@ void init_oineus_cells(nb::module_& m)
             .def_prop_ro("uid", &SimplexValue::get_uid)
             .def_rw("value", &SimplexValue::value_)
             .def_prop_ro("dim", &SimplexValue::dim)
-            .def("boundary", &SimplexValue::boundary)
+            .def("boundary", [](const SimplexValue& s) { return s.boundary(); })
             .def_prop_ro("combinatorial_simplex", &SimplexValue::get_cell)
             .def_prop_ro("combinatorial_cell", &SimplexValue::get_cell)
             .def("join", [](const SimplexValue& sigma, oin_int new_vertex, oin_real value, oin_int new_id) {
@@ -161,7 +161,7 @@ void init_oineus_cells(nb::module_& m)
             .def_prop_ro("uid", &ProdSimplexValue::get_uid)
             .def_rw("value", &ProdSimplexValue::value_)
             .def_prop_ro("dim", &ProdSimplexValue::dim)
-            .def("boundary", &ProdSimplexValue::boundary)
+            .def("boundary", [](const ProdSimplexValue& s) { return s.boundary(); })
             .def_prop_ro("combinatorial_cell", &ProdSimplexValue::get_cell)
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
@@ -187,14 +187,16 @@ void init_oineus_cells(nb::module_& m)
     using Grid_2D = oin::Grid<oin_int, oin_real, 2>;
     using Grid_3D = oin::Grid<oin_int, oin_real, 3>;
 
-    using Cube_1D = oin::Cube<oin_int, 1>;
-    using Cube_2D = oin::Cube<oin_int, 2>;
-    using Cube_3D = oin::Cube<oin_int, 3>;
+    // Python sees the FAT cube (carries its domain, self-contained API). The
+    // filtration stores the slim oin::Cube; Python accessors materialize FatCube.
+    using Cube_1D = oin::FatCube<oin_int, 1>;
+    using Cube_2D = oin::FatCube<oin_int, 2>;
+    using Cube_3D = oin::FatCube<oin_int, 3>;
 
 
-    using CubeValue_1D = oin::CellWithValue<oin::Cube<oin_int, 1>, oin_real>;
-    using CubeValue_2D = oin::CellWithValue<oin::Cube<oin_int, 2>, oin_real>;
-    using CubeValue_3D = oin::CellWithValue<oin::Cube<oin_int, 3>, oin_real>;
+    using CubeValue_1D = oin::CellWithValue<oin::FatCube<oin_int, 1>, oin_real>;
+    using CubeValue_2D = oin::CellWithValue<oin::FatCube<oin_int, 2>, oin_real>;
+    using CubeValue_3D = oin::CellWithValue<oin::FatCube<oin_int, 3>, oin_real>;
 
     // ============ GridDomain bindings ============
     #define BIND_GRID_DOMAIN(DIM) \
@@ -271,10 +273,7 @@ void init_oineus_cells(nb::module_& m)
 
     // ============ Cube bindings ============
     #define BIND_CUBE(DIM) \
-        using Cube_##DIM##DStateTuple = std::tuple<decltype(Cube_##DIM##D::id_), \
-                                                   decltype(Cube_##DIM##D::user_id_), \
-                                                   decltype(Cube_##DIM##D::global_domain_) \
-                                                  >; \
+        using Cube_##DIM##DStateTuple = std::tuple<oin_int, oin_int, GridDomain_##DIM##D>; \
         nb::class_<Cube_##DIM##D>(m, "CombinatorialCube_" #DIM "D") \
             .def("__init__", [](Cube_##DIM##D * p, const GridDomain_##DIM##D& g, oin_int x) { \
                     new (p) Cube_##DIM##D(x, g); \
@@ -295,12 +294,10 @@ void init_oineus_cells(nb::module_& m)
             .def(nb::self == nb::self) \
             .def(nb::self != nb::self) \
             .def(nb::hash(nb::self)) \
-            .def("__getstate__", [](const Cube_##DIM##D& c) -> Cube_##DIM##DStateTuple { return std::make_tuple(c.id_, c.user_id_, c.global_domain_); }) \
+            .def("__getstate__", [](const Cube_##DIM##D& c) -> Cube_##DIM##DStateTuple { return std::make_tuple(c.get_uid(), c.get_id(), c.global_domain()); }) \
             .def("__setstate__", [](Cube_##DIM##D& c, const Cube_##DIM##DStateTuple& state) { \
-                    new (&c) Cube_##DIM##D(); \
-                    c.id_ = std::get<0>(state); \
-                    c.user_id_ = std::get<1>(state); \
-                    c.global_domain_ = std::get<2>(state); \
+                    new (&c) Cube_##DIM##D(std::get<0>(state), std::get<2>(state)); \
+                    c.set_id(std::get<1>(state)); \
                 }) \
 
     BIND_CUBE(1);
@@ -325,7 +322,7 @@ void init_oineus_cells(nb::module_& m)
             .def_prop_ro("uid", &CubeValue_##DIM##D::get_uid, "Get UID of a cube") \
             .def_rw("value", &CubeValue_##DIM##D::value_) \
             .def_prop_ro("vertices", &CubeValue_##DIM##D::get_vertices<Cube_##DIM##D>, "Get all vertices of a cube") \
-            .def("boundary", &CubeValue_##DIM##D::boundary, "boundary of a cube") \
+            .def("boundary", [](const CubeValue_##DIM##D& c) { return c.boundary(); }, "boundary of a cube") \
             .def("coboundary", &CubeValue_##DIM##D::coboundary_cubes<Cube_##DIM##D>, "coboundary of a cube") \
             .def("top_cofaces", &CubeValue_##DIM##D::top_cofaces<Cube_##DIM##D>, "top-dim cofaces of a cube") \
             .def("__repr__", &CubeValue_##DIM##D::pretty_print) \

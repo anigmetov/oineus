@@ -34,8 +34,11 @@ namespace oineus {
 template<class Cell, class = void>
 struct SupportsApparent : std::false_type {};
 
+// The slim Cube's coboundary takes the shared geometry (the GridDomain owned by
+// the filtration), so probe coboundary(geometry) rather than a no-argument
+// coboundary(). Cube matches; Simplex (no coboundary at all) does not.
 template<class Cell>
-struct SupportsApparent<Cell, std::void_t<decltype(std::declval<const Cell&>().coboundary())>>
+struct SupportsApparent<Cell, std::void_t<decltype(std::declval<const Cell&>().coboundary(std::declval<const typename Cell::Geometry&>()))>>
         : std::true_type {};
 
 // Detects the fused RV working-column type (RVColumn<Int,2>, which carries both an
@@ -219,7 +222,7 @@ detect_apparent_local(const Fil& fil, int n_threads = 1)
 
                 // youngest facet f* = max sorted_id over facets of cell
                 Int fstar = Int(-1);
-                for(const auto& fuid : cell.get_cell().boundary()) {
+                for(const auto& fuid : cell.get_cell().boundary(fil.geometry())) {
                     Int sid = fil.get_sorted_id_by_uid(fuid);
                     if (sid > fstar)
                         fstar = sid;
@@ -227,7 +230,7 @@ detect_apparent_local(const Fil& fil, int n_threads = 1)
 
                 // oldest cofacet of f* = min sorted_id over cofacets of f*
                 Int oldest = std::numeric_limits<Int>::max();
-                for(const auto& cuid : cells[fstar].get_cell().coboundary()) {
+                for(const auto& cuid : cells[fstar].get_cell().coboundary(fil.geometry())) {
                     Int sid = fil.get_sorted_id_by_uid(cuid);
                     if (sid < oldest)
                         oldest = sid;

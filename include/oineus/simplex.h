@@ -103,6 +103,9 @@ struct Simplex {
     using Uid = unsigned __int128;
     // for Z2 only for now
     using Boundary = std::vector<Uid>;
+    // self-contained: a simplex stores its vertices, so its boundary needs no
+    // external geometry (see common_defs.h NoGeometry).
+    using Geometry = NoGeometry;
 
     static constexpr Int k_invalid_id = Int(-1);
 

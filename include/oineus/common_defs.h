@@ -29,6 +29,18 @@ namespace oineus {
     struct presorted_t {};
     inline constexpr presorted_t presorted{};
 
+    // Empty geometry for cells that are self-contained -- they carry all the
+    // information their (co)boundary needs (e.g. Simplex stores its vertices).
+    // Cube, by contrast, needs the shared GridDomain, which the Filtration owns.
+    // Every cell exposes `using Geometry = ...`; the Filtration stores one
+    // Geometry and threads it into the (co)boundary policy. NoGeometry makes that
+    // uniform: cells that ignore geometry declare `using Geometry = NoGeometry`
+    // and accept an unused argument.
+    struct NoGeometry {
+        bool operator==(const NoGeometry&) const { return true; }
+        bool operator!=(const NoGeometry&) const { return false; }
+    };
+
     constexpr size_t plus_inf = std::numeric_limits<size_t>::max();
 
     constexpr size_t k_invalid_index = std::numeric_limits<size_t>::max();

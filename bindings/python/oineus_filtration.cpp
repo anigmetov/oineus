@@ -358,31 +358,43 @@ void init_oineus_filtration(nb::module_& m)
     ;
 
     // ============ CubeFiltration bindings ============
+    // The filtration stores slim cubes (oin::Cube) + one shared GridDomain;
+    // every cube-returning accessor materializes the fat Python cube
+    // (CellWithValue<FatCube>) via fatten_cube + the filtration's geometry(), and
+    // the constructor/unpickle slim them back (slim_cube), recovering the shared
+    // domain from the cells.
     #define BIND_CUBE_FILTRATION(DIM) \
         using CubeFiltration_##DIM##D = oin::Filtration<oin::Cube<oin_int, DIM>, oin_real>; \
+        using FatCubeValue_##DIM##D = oin::CellWithValue<oin::FatCube<oin_int, DIM>, oin_real>; \
         using CubeFiltration_##DIM##DStateTuple = std::tuple<decltype(CubeFiltration_##DIM##D::negate_), \
-                                                decltype(CubeFiltration_##DIM##D::cells_), \
+                                                std::vector<FatCubeValue_##DIM##D>, \
                                                 decltype(CubeFiltration_##DIM##D::is_subfiltration_), \
                                                 decltype(CubeFiltration_##DIM##D::uid_to_sorted_id), \
                                                 decltype(CubeFiltration_##DIM##D::id_to_sorted_id_), \
                                                 decltype(CubeFiltration_##DIM##D::sorted_id_to_id_), \
                                                 decltype(CubeFiltration_##DIM##D::dim_first_), \
                                                 decltype(CubeFiltration_##DIM##D::dim_last_), \
-                                                decltype(CubeFiltration_##DIM##D::kind_) \
+                                                decltype(CubeFiltration_##DIM##D::kind_), \
+                                                decltype(CubeFiltration_##DIM##D::geometry_) \
                                                >; \
         nb::class_<CubeFiltration_##DIM##D>(m, "CubeFiltration_" #DIM "D") \
-            .def(nb::init<CubeFiltration_##DIM##D::CellVector, bool, int>(), \
-                    nb::arg("cells"), \
-                    nb::arg("negate") = false, \
-                    nb::arg("n_threads") = 1 \
-                    ) \
+            .def("__init__", [](CubeFiltration_##DIM##D* p, const std::vector<FatCubeValue_##DIM##D>& fat_cells, bool negate, int n_threads) { \
+                    oin::GridDomain<oin_int, DIM> dom; \
+                    if (not fat_cells.empty()) dom = fat_cells[0].get_cell().global_domain(); \
+                    typename CubeFiltration_##DIM##D::CellVector slim; \
+                    slim.reserve(fat_cells.size()); \
+                    for (const auto& fc : fat_cells) slim.push_back(slim_cube<oin_int, DIM, oin_real>(fc)); \
+                    new (p) CubeFiltration_##DIM##D(std::move(slim), negate, n_threads); \
+                    p->set_geometry(dom); \
+                }, nb::arg("cells"), nb::arg("negate") = false, nb::arg("n_threads") = 1) \
             .def("__len__", &CubeFiltration_##DIM##D::size) \
-            .def("__iter__", [](CubeFiltration_##DIM##D& fil) { \
-                    return nb::make_iterator(nb::type<CubeFiltration_##DIM##D>(), "cube_iterator", fil.begin(), fil.end()); \
-                }, nb::keep_alive<0, 1>()) \
-            .def("__getitem__", [](CubeFiltration_##DIM##D& fil, int i) { \
+            .def("__iter__", [](const CubeFiltration_##DIM##D& fil) -> nb::object { \
+                    nb::object lst = nb::cast(fatten_all<oin_int, DIM, oin_real>(fil)); \
+                    return lst.attr("__iter__")(); \
+                }) \
+            .def("__getitem__", [](const CubeFiltration_##DIM##D& fil, int i) { \
                     if (i < 0) i = fil.size() + i; \
-                    return fil.get_cell(i); \
+                    return fatten_cube<oin_int, DIM, oin_real>(fil.get_cell(i), fil.geometry()); \
                 }) \
             .def_prop_ro("negate", &CubeFiltration_##DIM##D::negate) \
             .def("infinity", &CubeFiltration_##DIM##D::infinity, "filtration-order +inf") \
@@ -390,8 +402,10 @@ void init_oineus_filtration(nb::module_& m)
             .def("fil_min", &CubeFiltration_##DIM##D::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min") \
             .def("fil_max", &CubeFiltration_##DIM##D::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max") \
             .def_prop_ro("max_dim", &CubeFiltration_##DIM##D::max_dim, "maximal dimension of a cell in filtration") \
-            .def("cells", &CubeFiltration_##DIM##D::cells_copy, "copy of all cells in filtration order") \
-            .def("cubes", &CubeFiltration_##DIM##D::cells_copy, "copy of all cells in filtration order") \
+            .def("cells", [](const CubeFiltration_##DIM##D& fil) { return fatten_all<oin_int, DIM, oin_real>(fil); }, \
+                    "copy of all cells in filtration order") \
+            .def("cubes", [](const CubeFiltration_##DIM##D& fil) { return fatten_all<oin_int, DIM, oin_real>(fil); }, \
+                    "copy of all cells in filtration order") \
             .def("size", &CubeFiltration_##DIM##D::size, "number of cells in filtration") \
             .def("size_in_dimension", &CubeFiltration_##DIM##D::size_in_dimension, nb::arg("dim"), "number of cells of dimension dim") \
             .def("n_vertices", &CubeFiltration_##DIM##D::n_vertices) \
@@ -399,15 +413,21 @@ void init_oineus_filtration(nb::module_& m)
             .def("cell_value_by_sorted_id", &CubeFiltration_##DIM##D::value_by_sorted_id, nb::arg("sorted_id")) \
             .def("id_by_sorted_id", &CubeFiltration_##DIM##D::get_id_by_sorted_id, nb::arg("sorted_id")) \
             .def("sorted_id_by_id", &CubeFiltration_##DIM##D::get_sorted_id, nb::arg("id")) \
-            .def("cell", &CubeFiltration_##DIM##D::get_cell, nb::arg("i")) \
-            .def("cube", &CubeFiltration_##DIM##D::get_cell, nb::arg("i")) \
+            .def("cell", [](const CubeFiltration_##DIM##D& fil, size_t i) { \
+                    return fatten_cube<oin_int, DIM, oin_real>(fil.get_cell(i), fil.geometry()); \
+                }, nb::arg("i")) \
+            .def("cube", [](const CubeFiltration_##DIM##D& fil, size_t i) { \
+                    return fatten_cube<oin_int, DIM, oin_real>(fil.get_cell(i), fil.geometry()); \
+                }, nb::arg("i")) \
             .def_prop_ro("dim_first", &CubeFiltration_##DIM##D::dims_first) \
             .def_prop_ro("dim_last", &CubeFiltration_##DIM##D::dims_last) \
             .def("sorting_permutation", &CubeFiltration_##DIM##D::get_sorting_permutation) \
             .def("inv_sorting_permutation", &CubeFiltration_##DIM##D::get_inv_sorting_permutation) \
             .def("value_by_uid", &CubeFiltration_##DIM##D::value_by_uid, nb::arg("uid")) \
             .def("sorted_id_by_uid", &CubeFiltration_##DIM##D::get_sorted_id_by_uid, nb::arg("uid")) \
-            .def("cell_by_uid", &CubeFiltration_##DIM##D::get_cell_by_uid, nb::arg("uid")) \
+            .def("cell_by_uid", [](const CubeFiltration_##DIM##D& fil, oin_int uid) { \
+                    return fatten_cube<oin_int, DIM, oin_real>(fil.get_cell_by_uid(uid), fil.geometry()); \
+                }, nb::arg("uid")) \
             .def("boundary_matrix", &CubeFiltration_##DIM##D::boundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
             .def("boundary_matrix_in_dimension", &CubeFiltration_##DIM##D::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
             .def("coboundary_matrix", &CubeFiltration_##DIM##D::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
@@ -433,14 +453,19 @@ void init_oineus_filtration(nb::module_& m)
                 "FiltrationKind tag set by the constructor that built this filtration " \
                 "(or User for hand-built ones).") \
             .def("__getstate__", [](const CubeFiltration_##DIM##D& fil) -> CubeFiltration_##DIM##DStateTuple { \
-                      return std::make_tuple(fil.negate_, fil.cells_, fil.is_subfiltration_, \
+                      auto fat = fatten_all<oin_int, DIM, oin_real>(fil); \
+                      return std::make_tuple(fil.negate_, std::move(fat), fil.is_subfiltration_, \
                           fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_, \
-                          fil.kind_); \
+                          fil.kind_, fil.geometry_); \
                     }) \
             .def("__setstate__", [](CubeFiltration_##DIM##D& fil, const CubeFiltration_##DIM##DStateTuple& t) { \
                 new (&fil) CubeFiltration_##DIM##D(); \
                 fil.negate_ = std::get<0>(t); \
-                fil.cells_ = std::get<1>(t); \
+                const auto& fat = std::get<1>(t); \
+                typename CubeFiltration_##DIM##D::CellVector slim; \
+                slim.reserve(fat.size()); \
+                for (const auto& fc : fat) slim.push_back(slim_cube<oin_int, DIM, oin_real>(fc)); \
+                fil.cells_ = std::move(slim); \
                 fil.is_subfiltration_ = std::get<2>(t); \
                 fil.uid_to_sorted_id = std::get<3>(t); \
                 fil.id_to_sorted_id_ = std::get<4>(t); \
@@ -448,6 +473,7 @@ void init_oineus_filtration(nb::module_& m)
                 fil.dim_first_ = std::get<6>(t); \
                 fil.dim_last_ = std::get<7>(t); \
                 fil.kind_ = std::get<8>(t); \
+                fil.geometry_ = std::get<9>(t); \
             }) \
 
 

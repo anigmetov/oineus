@@ -199,7 +199,7 @@ public:
                 Int v_part = v << OINEUS_MAX_CUBE_DIM;
                 for(Int face_part = 0; face_part < (1 << dim); ++face_part) {
                     Int cube_id = v_part | face_part;
-                    GridCube cube = GridCube(cube_id, computational_domain_);
+                    GridCube cube = GridCube(cube_id);
 
                     auto [is_valid, cube_value] = get_cube_validity_and_value(cube, negate);
 
@@ -241,7 +241,7 @@ public:
                         Int v_part = v << OINEUS_MAX_CUBE_DIM;
                         for(Int face_part = 0; face_part < (1 << dim); ++face_part) {
                             Int cube_id = v_part | face_part;
-                            GridCube cube = GridCube(cube_id, computational_domain_);
+                            GridCube cube = GridCube(cube_id);
                             auto [is_valid, cube_value] = get_cube_validity_and_value(cube, negate);
                             if (is_valid) {
                                 local_cubes.emplace_back(std::move(cube), cube_value);
@@ -281,6 +281,7 @@ public:
         timer.reset();
         auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads);
         fil.set_kind(FiltrationKind::Cubical);
+        fil.set_geometry(computational_domain_);
         auto fil_elapsed = timer.elapsed_reset();
         if (verbose)
             std::cerr << "fil_elapsed : " << fil_elapsed << "\n";
@@ -312,7 +313,7 @@ public:
                 Int v_part = v << OINEUS_MAX_CUBE_DIM;
                 for(Int face_part = 0; face_part < (1 << dim); ++face_part) {
                     Int cube_id = v_part | face_part;
-                    GridCube cube = GridCube(cube_id, computational_domain_);
+                    GridCube cube = GridCube(cube_id);
 
                     auto [is_valid, cube_value, critical_index] = get_cube_validity_value_and_crit_index(cube, negate);
 
@@ -360,7 +361,7 @@ public:
                         Int v_part = v << OINEUS_MAX_CUBE_DIM;
                         for(Int face_part = 0; face_part < (1 << dim); ++face_part) {
                             Int cube_id = v_part | face_part;
-                            GridCube cube = GridCube(cube_id, computational_domain_);
+                            GridCube cube = GridCube(cube_id);
                             auto [is_valid, cube_value, crit_index] = get_cube_validity_value_and_crit_index(cube, negate);
                             if (is_valid) {
                                 local_cubes.emplace_back(std::move(cube), cube_value);
@@ -406,6 +407,7 @@ public:
         timer.reset();
         auto fil = GridCubeFiltration(std::move(cubes), negate, n_threads);
         fil.set_kind(FiltrationKind::Cubical);
+        fil.set_geometry(computational_domain_);
         auto fil_elapsed = timer.elapsed_reset();
         if (verbose)
             std::cerr << "fil_elapsed : " << fil_elapsed << "\n";
@@ -505,7 +507,7 @@ private:
     bool is_cube_valid(const GridCube& cube) const
     {
         if (not computational_domain_.wrap()) {
-            for(auto v : cube.get_vertices()) {
+            for(auto v : cube.get_vertices(computational_domain_)) {
                 if (not computational_domain_.contains(v)) {
                     return false;
                 }
@@ -526,9 +528,9 @@ private:
 
         if (is_valid) {
             if (is_cell_centric()) {
-                for(auto top_cube_uid: cube.top_cofaces()) {
-                    GridCube top_cube(top_cube_uid, computational_domain_);
-                    auto anchor_index = data_domain_.point_to_id(top_cube.anchor_vertex());
+                for(auto top_cube_uid: cube.top_cofaces(computational_domain_)) {
+                    GridCube top_cube(top_cube_uid);
+                    auto anchor_index = data_domain_.point_to_id(top_cube.anchor_vertex(computational_domain_));
                     Real top_value = value_at_vertex(anchor_index);
 
                     if (cmp(top_value, value)) {
@@ -537,7 +539,7 @@ private:
                     }
                 }
             } else {
-                for(auto u_local : cube.get_vertices()) {
+                for(auto u_local : cube.get_vertices(computational_domain_)) {
                     Real u_value = value_at_vertex(u_local);
 
                     if (cmp(value, u_value)) {
@@ -560,15 +562,15 @@ private:
 
         if (is_valid) {
             if (is_cell_centric()) {
-                for(auto top_cube_uid: cube.top_cofaces()) {
-                    GridCube top_cube(top_cube_uid, computational_domain_);
-                    Real top_value = value_at_vertex(top_cube.anchor_vertex());
+                for(auto top_cube_uid: cube.top_cofaces(computational_domain_)) {
+                    GridCube top_cube(top_cube_uid);
+                    Real top_value = value_at_vertex(top_cube.anchor_vertex(computational_domain_));
                     if (cmp(top_value, value)) {
                         value = top_value;
                     }
                 }
             } else {
-                for(auto u_local : cube.get_vertices()) {
+                for(auto u_local : cube.get_vertices(computational_domain_)) {
                     Real u_value = value_at_vertex(u_local);
                     if (cmp(value, u_value))
                         value = u_value;

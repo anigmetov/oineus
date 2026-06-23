@@ -100,7 +100,7 @@ public:
                 auto& col = result[codomain_idx];
                 col.reserve(d + 1);
 
-                for(const auto& tau_vertices: sigma.boundary()) {
+                for(const auto& tau_vertices: sigma.boundary(fil_codomain_.geometry())) {
                     col.push_back(fil_domain_.get_sorted_id_by_uid(tau_vertices));
                 }
 

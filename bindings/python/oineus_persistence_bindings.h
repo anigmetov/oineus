@@ -102,6 +102,48 @@ static_assert(std::is_same<oin_real, float>::value ||
 namespace oin = oineus;
 using dim_type = oin::dim_type;
 
+// The cube filtration stores slim cubes (uid + user_id only); the shared
+// GridDomain is owned once by the filtration. Python, however, expects a
+// self-contained "fat" cube (carrying its domain) so it can call boundary(),
+// vertices, etc. without a filtration in hand. These helpers convert between the
+// stored slim form and the materialized fat form at the binding boundary: the
+// filtration accessors return fat cubes (fatten_cube + the filtration's
+// geometry()), and the filtration constructor-from-cells slims them back
+// (slim_cube), recovering the shared domain from the cells.
+template<class Int, unsigned D, class Real>
+oin::CellWithValue<oin::FatCube<Int, D>, Real>
+fatten_cube(const oin::CellWithValue<oin::Cube<Int, D>, Real>& slim, const oin::GridDomain<Int, D>& dom)
+{
+    oin::CellWithValue<oin::FatCube<Int, D>, Real> fat(oin::FatCube<Int, D>(slim.get_cell(), dom), slim.get_value());
+    fat.set_sorted_id(slim.get_sorted_id());
+    return fat;
+}
+
+template<class Int, unsigned D, class Real>
+oin::CellWithValue<oin::Cube<Int, D>, Real>
+slim_cube(const oin::CellWithValue<oin::FatCube<Int, D>, Real>& fat)
+{
+    oin::Cube<Int, D> c(fat.get_cell().get_uid());
+    c.set_id(fat.get_cell().get_id());
+    oin::CellWithValue<oin::Cube<Int, D>, Real> slim(c, fat.get_value());
+    slim.set_sorted_id(fat.get_sorted_id());
+    return slim;
+}
+
+// Materialize every stored slim cube into its fat Python form (one shared
+// geometry copy per cell). Used by the cube-filtration accessors that hand the
+// whole cell sequence to Python (cells/cubes/__iter__/__getstate__).
+template<class Int, unsigned D, class Real>
+std::vector<oin::CellWithValue<oin::FatCube<Int, D>, Real>>
+fatten_all(const oin::Filtration<oin::Cube<Int, D>, Real>& fil)
+{
+    std::vector<oin::CellWithValue<oin::FatCube<Int, D>, Real>> fat;
+    fat.reserve(fil.size());
+    for (const auto& cv : fil.cells())
+        fat.push_back(fatten_cube<Int, D, Real>(cv, fil.geometry()));
+    return fat;
+}
+
 template<class Real>
 class PyOineusDiagrams {
 public:

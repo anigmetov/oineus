@@ -17,6 +17,10 @@ struct CellWithValue {
     using Uid = typename Cell::Uid;
     using UidSet = typename Cell::UidSet;
     using Boundary = typename Cell::Boundary;
+    // shared geometry the underlying cell needs for its (co)boundary (NoGeometry
+    // for self-contained cells like Simplex; GridDomain for the slim Cube). The
+    // Filtration owns one Geometry and threads it through boundary(geom).
+    using Geometry = typename Cell::Geometry;
 
     static constexpr Int k_invalid_id = Int(-1);
 
@@ -56,7 +60,23 @@ struct CellWithValue {
 
     const Cell& get_cell() const { return cell_; }
 
+    // No-argument boundary, enabled only for self-contained cells (NoGeometry):
+    // Simplex, ProductCell, FatCube. The slim Cube has no no-argument boundary --
+    // it needs the shared geometry -- so this is SFINAE-disabled for it, turning a
+    // stray no-arg call into a compile error rather than a silent empty-domain bug.
+    template<class G = Geometry, std::enable_if_t<std::is_same_v<G, NoGeometry>, int> = 0>
     Boundary boundary() const { return cell_.boundary(); }
+
+    // Geometry-aware boundary used by the Filtration builders for every cell type.
+    // For self-contained cells the geometry is empty and ignored; for the slim Cube
+    // it is the shared GridDomain.
+    Boundary boundary(const Geometry& geom) const
+    {
+        if constexpr (std::is_same_v<Geometry, NoGeometry>)
+            return cell_.boundary();
+        else
+            return cell_.boundary(geom);
+    }
 
     // create a new simplex by joining with vertex and assign value to it
     // will not compile, if Cell has no join method

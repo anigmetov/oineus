@@ -19,6 +19,9 @@ struct ProductCell {
     using Uid = std::pair<typename CellA::Uid, typename CellB::Uid>;
     using Boundary = std::vector<Uid>;
     using Int = typename CellA::Int;
+    // products in the codebase are built from self-contained factors (Simplex),
+    // so the product is self-contained too.
+    using Geometry = NoGeometry;
 
     static_assert(std::is_integral_v<typename CellA::Int>);
 

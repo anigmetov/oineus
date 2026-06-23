@@ -64,6 +64,12 @@ namespace oineus {
         using RVWorkingMatrix = std::vector<std::atomic<RVColumn<Int, 2>*>>;
 
         using CellUid = typename Cell::Uid;
+        // Shared geometry the cells need to compute their (co)boundary. Owned once
+        // by the filtration instead of being copied into every cell: NoGeometry for
+        // self-contained cells (Simplex), the GridDomain for the slim Cube. Set by
+        // the builder that knows it (Grid::cube_filtration) via set_geometry; the
+        // (co)boundary builders below thread it into boundary(geometry_).
+        using Geometry = typename Cell::Geometry;
         // uid -> sorted_id map, built once per filtration with one node per cell
         // (millions of small allocations). Routing it through jemalloc is the
         // dominant construction speedup -- the small-node churn is exactly the
@@ -164,6 +170,9 @@ namespace oineus {
         FiltrationKind kind() const { return kind_; }
         void set_kind(FiltrationKind k) { kind_ = k; }
 
+        const Geometry& geometry() const { return geometry_; }
+        void set_geometry(const Geometry& geom) { geometry_ = geom; }
+
         auto dim_first(dim_type d) const { return dim_first_.at(d); }
         auto dim_last(dim_type d) const { return dim_last_.at(d); }
 
@@ -205,7 +214,7 @@ namespace oineus {
                         auto& col = result[col_idx];
                         col.reserve(sigma.dim() + 1);
 
-                        for(const auto& tau_vertices: sigma.boundary()) {
+                        for(const auto& tau_vertices: sigma.boundary(geometry_)) {
                             if (missing_ok) {
                                 auto iter = uid_to_sorted_id.find(tau_vertices);
                                 if (iter != uid_to_sorted_id.end()) {
@@ -240,7 +249,7 @@ namespace oineus {
                                 auto& col = result[col_idx];
                                 col.reserve(d + 1);
 
-                                for(const auto& tau_vertices: sigma.boundary()) {
+                                for(const auto& tau_vertices: sigma.boundary(geometry_)) {
                                     if (missing_ok) {
                                         auto iter = uid_to_sorted_id.find(tau_vertices);
                                         if (iter != uid_to_sorted_id.end()) {
@@ -259,7 +268,7 @@ namespace oineus {
                         auto& col = result[col_idx];
                         col.reserve(d + 1);
 
-                        for(const auto& tau_vertices: sigma.boundary()) {
+                        for(const auto& tau_vertices: sigma.boundary(geometry_)) {
                             if (missing_ok) {
                                 auto iter = uid_to_sorted_id.find(tau_vertices);
                                 if (iter != uid_to_sorted_id.end()) {
@@ -310,7 +319,7 @@ namespace oineus {
                     auto& col = result[col_idx];
                     col.reserve(d + 1);
 
-                    for(const auto& tau_vertices: sigma.boundary()) {
+                    for(const auto& tau_vertices: sigma.boundary(geometry_)) {
                         if (relative.find(tau_vertices) == relative.end())
                             col.push_back(uid_to_sorted_id.at(tau_vertices));
                     }
@@ -430,7 +439,7 @@ namespace oineus {
                         if (col_idx > static_cast<size_t>(dim_last(0))) {
                             const auto& sigma = cells_[col_idx];
                             col->reserve(sigma.dim() + 1);
-                            for(const auto& tau_vertices: sigma.boundary()) {
+                            for(const auto& tau_vertices: sigma.boundary(geometry_)) {
                                 if (missing_ok) {
                                     auto iter = uid_to_sorted_id.find(tau_vertices);
                                     if (iter != uid_to_sorted_id.end())
@@ -465,7 +474,7 @@ namespace oineus {
                         if (col_idx > static_cast<size_t>(dim_last(0))) {
                             const auto& sigma = cells_[col_idx];
                             col.reserve(sigma.dim() + 1);
-                            for(const auto& tau_vertices: sigma.boundary()) {
+                            for(const auto& tau_vertices: sigma.boundary(geometry_)) {
                                 if (missing_ok) {
                                     auto iter = uid_to_sorted_id.find(tau_vertices);
                                     if (iter != uid_to_sorted_id.end())
@@ -511,7 +520,7 @@ namespace oineus {
                         if (col_idx > static_cast<size_t>(dim_last(0))) {
                             const auto& sigma = cells_[col_idx];
                             col.reserve(sigma.dim() + 1);
-                            for(const auto& tau_vertices: sigma.boundary()) {
+                            for(const auto& tau_vertices: sigma.boundary(geometry_)) {
                                 if (missing_ok) {
                                     auto iter = uid_to_sorted_id.find(tau_vertices);
                                     if (iter != uid_to_sorted_id.end())
@@ -607,7 +616,7 @@ namespace oineus {
                         // matrix column col_idx == cell with sorted_id N-1-col_idx;
                         // emit its coboundary, reindexed into antitranspose row space
                         const auto& sigma = cells_[n - 1 - col_idx];
-                        auto cob = sigma.get_cell().coboundary();
+                        auto cob = sigma.get_cell().coboundary(geometry_);
                         SparseColumn<Int> col;
                         col.reserve(cob.size());
                         for(const auto& cuid : cob)
@@ -782,6 +791,7 @@ namespace oineus {
             // death values -- get an indeterminate sign). kind_ is inherited too.
             result.negate_ = negate_;
             result.kind_ = kind_;
+            result.geometry_ = geometry_;
             result.id_to_sorted_id_ = decltype(result.id_to_sorted_id_)(id_to_sorted_id_.size(), -1);
 
             std::set<dim_type> dims;
@@ -818,6 +828,7 @@ namespace oineus {
         CellVector cells_;
         bool is_subfiltration_ {false};
         FiltrationKind kind_ {FiltrationKind::User};
+        Geometry geometry_ {};
 
         UidMap uid_to_sorted_id;
         std::vector<Int> id_to_sorted_id_;
@@ -960,7 +971,7 @@ namespace oineus {
         {
             // ignore id_ ?
             return negate_ == other.negate_ and is_subfiltration_ == other.is_subfiltration_
-                   and kind_ == other.kind_
+                   and kind_ == other.kind_ and geometry_ == other.geometry_
                    and dim_first_ == other.dim_first_ and dim_last_ == other.dim_last_
                    and uid_to_sorted_id == other.uid_to_sorted_id and id_to_sorted_id_ == other.id_to_sorted_id_
                    and sorted_id_to_id_ == other.sorted_id_to_id_
@@ -1018,7 +1029,9 @@ namespace oineus {
         }
 
         // retain ids from fil_1
-        return Filtration<C, R>(cells, fil_1.negate(), 1);
+        Filtration<C, R> result(cells, fil_1.negate(), 1);
+        result.set_geometry(fil_1.geometry());
+        return result;
     }
 
 
@@ -1066,6 +1079,7 @@ namespace oineus {
         }
 
         Filtration<C, R> new_fil(std::move(min_cells), negate);
+        new_fil.set_geometry(fil_1.geometry());
 
         return { new_fil, perm_1, perm_2 };
     }

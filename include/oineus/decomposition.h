@@ -874,12 +874,12 @@ namespace oineus {
                             SparseColumn<Int> r;
                             if (not dual) {
                                 const auto& cell = fil_ptr->cells()[static_cast<size_t>(mc)];
-                                for(const auto& fuid : cell.get_cell().boundary())
+                                for(const auto& fuid : cell.get_cell().boundary(fil_ptr->geometry()))
                                     r.push_back(static_cast<Int>(fil_ptr->get_sorted_id_by_uid(fuid)));
                             } else {
                                 const size_t s = N - 1 - static_cast<size_t>(mc);
                                 const auto& cell = fil_ptr->cells()[s];
-                                for(const auto& cuid : cell.get_cell().coboundary())
+                                for(const auto& cuid : cell.get_cell().coboundary(fil_ptr->geometry()))
                                     r.push_back(static_cast<Int>(N - 1 - static_cast<size_t>(fil_ptr->get_sorted_id_by_uid(cuid))));
                             }
                             std::sort(r.begin(), r.end());
