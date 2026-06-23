@@ -192,6 +192,93 @@ void init_oineus_filtration(nb::module_& m)
             })
     ;
 
+    // Build a Filtration directly from diode's per-dimension array exporters
+    // (fill_delaunay_arrays / fill_alpha_shapes_arrays), bypassing the slow
+    // list-of-(vertices, value) path. verts_by_dim[d] is an (n_d, d+1) integer
+    // array of vertex ids; vals_by_dim, if given, is a list of (n_d,) value
+    // arrays (0 is used when omitted, e.g. for combinatorics-only Delaunay whose
+    // consumer recomputes the values). No deduplication -- intended for
+    // non-periodic input, which has no duplicate simplices.
+    m.def("_filtration_from_arrays",
+        [](nb::list verts_by_dim, nb::object vals_by_dim, int n_threads) -> Filtration {
+            using VertArr = nb::ndarray<oin_int,  nb::ndim<2>, nb::c_contig, nb::device::cpu, nb::ro>;
+            using ValArr  = nb::ndarray<oin_real, nb::ndim<1>, nb::c_contig, nb::device::cpu, nb::ro>;
+
+            const bool have_vals = !vals_by_dim.is_none();
+            const size_t n_dims = nb::len(verts_by_dim);
+
+            nb::list vals_list;
+            if (have_vals) {
+                vals_list = nb::cast<nb::list>(vals_by_dim);
+                if (nb::len(vals_list) != n_dims)
+                    throw std::runtime_error("_filtration_from_arrays: vals_by_dim must have the same length as verts_by_dim");
+            }
+
+            // Capture the numpy views (keeps them alive) and validate shapes while
+            // the GIL is held; the heavy build + sort below runs with it released.
+            std::vector<VertArr> vert_arrs;
+            std::vector<ValArr> val_arrs;
+            vert_arrs.reserve(n_dims);
+            if (have_vals) val_arrs.reserve(n_dims);
+
+            for (size_t d = 0; d < n_dims; ++d) {
+                VertArr va = nb::cast<VertArr>(verts_by_dim[d]);
+                if (static_cast<size_t>(va.shape(1)) != d + 1)
+                    throw std::runtime_error("_filtration_from_arrays: verts_by_dim[" + std::to_string(d)
+                        + "] must have " + std::to_string(d + 1) + " columns");
+                vert_arrs.push_back(va);
+                if (have_vals) {
+                    ValArr vala = nb::cast<ValArr>(vals_list[d]);
+                    if (vala.shape(0) != va.shape(0))
+                        throw std::runtime_error("_filtration_from_arrays: vals_by_dim[" + std::to_string(d)
+                            + "] length does not match verts_by_dim");
+                    val_arrs.push_back(vala);
+                }
+            }
+
+            // SignalGuard + manual GIL release (matches oineus_functions.cpp): the
+            // build and the Filtration ctor's parallel sort run with the GIL
+            // released, and the ctor's interrupt-polling site stays responsive to
+            // Ctrl-C. SignalGuard is declared first so it is destroyed last, after
+            // the GIL has been reacquired by release's destructor.
+            Filtration result;
+            {
+                oineus_python::SignalGuard guard;
+                nb::gil_scoped_release release;
+
+                Filtration::CellVector cells;
+                size_t total = 0;
+                for (const auto& va : vert_arrs)
+                    total += va.shape(0);
+                cells.reserve(total);
+
+                for (size_t d = 0; d < vert_arrs.size(); ++d) {
+                    const oin_int* vp = vert_arrs[d].data();
+                    const oin_real* valp = have_vals ? val_arrs[d].data() : nullptr;
+                    const size_t n = vert_arrs[d].shape(0);
+                    const size_t w = vert_arrs[d].shape(1);
+                    for (size_t i = 0; i < n; ++i) {
+                        Simplex::IdxVector vs;
+                        vs.reserve(w);
+                        for (size_t j = 0; j < w; ++j)
+                            vs.push_back(vp[i * w + j]);
+                        if (w > 1)
+                            std::sort(vs.begin(), vs.end());
+                        // move the sorted vector into the Simplex's storage instead of
+                        // letting Simplex(const IdxVector&) copy and re-sort it
+                        cells.emplace_back(Simplex(oin::presorted_t{}, std::move(vs)), valp ? valp[i] : oin_real(0));
+                    }
+                }
+
+                result = Filtration(std::move(cells), false, std::max(1, n_threads));
+            }
+            return result;
+        },
+        nb::arg("verts_by_dim"), nb::arg("vals_by_dim") = nb::none(), nb::arg("n_threads") = 1,
+        "Build a Filtration from diode's per-dimension array exporters. "
+        "verts_by_dim[d] is an (n_d, d+1) integer array of vertex ids; optional "
+        "vals_by_dim[d] is an (n_d,) array of filtration values (0 when omitted).");
+
     nb::class_<ProdFiltration>(m, prod_filtration_class_name.c_str())
             .def(nb::init<ProdFiltration::CellVector, bool, int>(),
                     nb::arg("cells"),

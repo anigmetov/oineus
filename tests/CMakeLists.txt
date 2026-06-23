@@ -82,6 +82,7 @@ else()
             dgm-dist
             diff-critical-sets
             diff-cube-fil
+            diff-delaunay-arrays
             diff-forward-reduces-one-side
             diff-fused-optimizer
             diff-grad

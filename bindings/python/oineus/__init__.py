@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-__version__ = "0.9.30"
+__version__ = "0.9.31"
 
 import typing
 from concurrent.futures import ThreadPoolExecutor
@@ -112,6 +112,12 @@ try:
     _HAS_DIODE = True
 except:
     _HAS_DIODE = False
+
+# Newer diode builds add the structured-array exporters (combinatorics/values as
+# NumPy arrays instead of one Python tuple per simplex). Probed once at import;
+# when False, the code falls back to the list-of-(vertices, value) API.
+_HAS_DIODE_ARRAYS = _HAS_DIODE and hasattr(diode, "fill_delaunay_arrays") \
+    and hasattr(diode, "fill_alpha_shapes_arrays")
 
 
 def _check_numpy_diagram_shape(dgm):
@@ -1100,6 +1106,14 @@ def alpha_filtration(points: np.ndarray,
     else:
         if periodic:
             fil_diode = diode.fill_periodic_alpha_shapes(points, exact, bbox_min, bbox_max)
+        elif _HAS_DIODE_ARRAYS:
+            # Fast array path: simplices and alpha values come back as NumPy
+            # arrays, avoiding one Python tuple per simplex. Same combinatorics
+            # and values as fill_alpha_shapes.
+            verts_by_dim, vals_by_dim = diode.fill_alpha_shapes_arrays(points, exact=exact)
+            fil = _oineus._filtration_from_arrays(verts_by_dim, vals_by_dim, n_threads=n_threads)
+            fil.kind = _oineus.FiltrationKind.Alpha
+            return fil
         else:
             fil_diode = diode.fill_alpha_shapes(points, exact=exact)
 
@@ -1110,6 +1124,32 @@ def alpha_filtration(points: np.ndarray,
     )
     fil.kind = _oineus.FiltrationKind.Alpha
     return fil
+
+
+def _delaunay_combinatorics(points: np.ndarray, exact: bool=False, n_threads: int=1):
+    """Build the Delaunay complex as a Filtration, for its combinatorics only.
+
+    For callers that recompute and set their own values (the differentiable
+    Cech-Delaunay and weak-alpha filtrations), so the filtration values here are
+    not meaningful and must be overwritten via set_values. The fast path
+    (diode's fill_delaunay_arrays) leaves them at 0; the fallback
+    (alpha_filtration, used when the array exporters are absent) carries alpha
+    values instead. Either way the simplex set is identical for full-dimensional
+    input.
+
+    Args:
+        points: NumPy array of shape (n, 2) or (n, 3).
+        exact: Use CGAL's exact kernel.
+        n_threads: Threads used inside the Filtration constructor.
+
+    Returns:
+        A Filtration over the Delaunay simplices; its values are not meaningful
+        and are expected to be overwritten by the caller.
+    """
+    if _HAS_DIODE_ARRAYS:
+        verts_by_dim = diode.fill_delaunay_arrays(points, exact=exact)
+        return _oineus._filtration_from_arrays(verts_by_dim, None, n_threads=n_threads)
+    return alpha_filtration(points, exact=exact, n_threads=n_threads)
 
 
 def compute_diagrams_alpha(points: np.ndarray,
