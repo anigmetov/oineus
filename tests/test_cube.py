@@ -220,3 +220,47 @@ def test_cube_value_wraps_combinatorial_methods_1d():
     assert e01_val.boundary() == [c.uid for c in e01_comb.boundary()]
     assert set(e01_val.coboundary()) == set(e01_comb.coboundary()) == set()
     assert set(e01_val.top_cofaces()) == set(e01_comb.top_cofaces()) == {e01_comb}
+
+
+def _antitranspose(boundary_cols, n):
+    """Reference antitranspose: matches the old coboundary_matrix construction."""
+    cob = [[] for _ in range(n)]
+    for c in range(n):
+        for r in boundary_cols[c]:
+            cob[n - 1 - r].append(n - 1 - c)
+    for col in cob:
+        col.sort()
+    return cob
+
+
+def test_coboundary_matrix_partial_cube_complex():
+    """coboundary_matrix on a face-closed but not coface-closed cube subcomplex.
+
+    The complex contains v1 but not its right cofacet e12 (which still exists in
+    the grid domain). The direct cohomology build must skip the absent cofacet --
+    matching the old antitranspose -- rather than throw on a geometrically-present
+    but filtration-absent cell.
+    """
+    dom = oin.GridDomain_1D(3)
+    v0 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[], domain=dom, value=0.0)
+    v1 = oin.Cube_1D(anchor_vertex=[1], spanning_dims=[], domain=dom, value=0.0)
+    v2 = oin.Cube_1D(anchor_vertex=[2], spanning_dims=[], domain=dom, value=0.0)
+    e01 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[0], domain=dom, value=1.0)
+    fil = oin.CubeFiltration_1D([v0, v1, v2, e01], negate=False, n_threads=1)
+    n = fil.size()
+
+    bm = [list(c) for c in fil.boundary_matrix(n_threads=1)]
+    cob = [list(c) for c in fil.coboundary_matrix(n_threads=1)]
+
+    assert cob == _antitranspose(bm, n)
+
+    # the cohomology (dualize) reduction must also complete; its diagram matches
+    # the homology one
+    p = oin.ReductionParams()
+    p.n_threads = 1
+    dgm_hom = oin.reduce(fil, p, False).diagram(fil)
+    dgm_coh = oin.reduce(fil, p, True).diagram(fil)
+    for d in range(fil.max_dim + 1):
+        h = sorted((pt.birth, pt.death) for pt in dgm_hom.in_dimension(d, as_numpy=False))
+        c = sorted((pt.birth, pt.death) for pt in dgm_coh.in_dimension(d, as_numpy=False))
+        assert h == c

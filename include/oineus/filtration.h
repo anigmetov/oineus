@@ -195,6 +195,68 @@ namespace oineus {
 
         dim_type max_dim() const { return dim_last_.size() - 1; }
 
+        // Fill `col` with the sorted boundary of `sigma` in sorted_id space. Two
+        // compile-time paths: for cells advertising a packed buffer (co)boundary
+        // (HasPackedBoundary, e.g. Cube) the facet uids are emitted straight into
+        // the column with the sorted_id lookup applied inline -- no per-cell
+        // std::vector<Int> allocation (the Stage 1b win); other cells (Simplex) use
+        // the vector-returning boundary(). `missing_ok` (subfiltration) drops facets
+        // absent from this filtration. The discarded `if constexpr` branch is never
+        // instantiated, so non-packed cells never need boundary_into.
+        template<class Col>
+        void emit_boundary_col_(const Cell& sigma, bool missing_ok, Col& col) const
+        {
+            if constexpr (HasPackedBoundary<UnderCell_>::value) {
+                col.reserve(2 * sigma.dim());
+                if (missing_ok) {
+                    sigma.get_cell().boundary_into(geometry_, [this, &col](CellUid fuid) {
+                        auto iter = uid_to_sorted_id.find(fuid);
+                        if (iter != uid_to_sorted_id.end())
+                            col.push_back(iter->second);
+                    });
+                } else {
+                    sigma.get_cell().boundary_into(geometry_, [this, &col](CellUid fuid) {
+                        col.push_back(uid_to_sorted_id.at(fuid));
+                    });
+                }
+            } else {
+                col.reserve(sigma.dim() + 1);
+                for(const auto& fuid: sigma.boundary(geometry_)) {
+                    if (missing_ok) {
+                        auto iter = uid_to_sorted_id.find(fuid);
+                        if (iter != uid_to_sorted_id.end())
+                            col.push_back(iter->second);
+                    } else {
+                        col.push_back(uid_to_sorted_id.at(fuid));
+                    }
+                }
+            }
+            std::sort(col.begin(), col.end());
+        }
+
+        // Fill `col` with the direct cohomology coboundary column for matrix index
+        // `m`: the cell with sorted_id N-1-m, its cofacets reindexed into the
+        // antitransposed row space {N-1-sorted_id(cofacet)}, sorted. This is the
+        // single source of the direct cohomology build (regular + apparent),
+        // column-for-column identical to antitranspose(boundary_matrix(...)). Packed
+        // cells only (calls coboundary_into). coboundary_into emits every cofacet
+        // present in the GEOMETRY; cofacets absent from this filtration are skipped,
+        // so the result matches antitranspose even on a face-closed-but-not-
+        // coface-closed complex (a hand-built cube subcomplex) -- the find is the
+        // same cost as .at() on a complete complex, where nothing is ever skipped.
+        template<class Col>
+        void emit_cohomology_col_(size_t m, Col& col) const
+        {
+            const size_t n = size();
+            const auto& sigma = cells_[n - 1 - m];
+            sigma.get_cell().coboundary_into(geometry_, [this, n, &col](CellUid cuid) {
+                auto iter = uid_to_sorted_id.find(cuid);
+                if (iter != uid_to_sorted_id.end())
+                    col.push_back(static_cast<Int>(n - 1 - static_cast<size_t>(iter->second)));
+            });
+            std::sort(col.begin(), col.end());
+        }
+
         BoundaryMatrix boundary_matrix(int n_threads=1) const
         {
             CALI_CXX_MARK_FUNCTION;
@@ -210,21 +272,7 @@ namespace oineus {
                         // skip 0-dim simplices
                         if (col_idx <= static_cast<size_t>(dim_last(0)))
                             return;
-                        const auto& sigma = cells_[col_idx];
-                        auto& col = result[col_idx];
-                        col.reserve(sigma.dim() + 1);
-
-                        for(const auto& tau_vertices: sigma.boundary(geometry_)) {
-                            if (missing_ok) {
-                                auto iter = uid_to_sorted_id.find(tau_vertices);
-                                if (iter != uid_to_sorted_id.end()) {
-                                    col.push_back(iter->second);
-                                }
-                            } else {
-                                col.push_back(uid_to_sorted_id.at(tau_vertices));
-                            }
-                        }
-                        std::sort(col.begin(), col.end());
+                        emit_boundary_col_(cells_[col_idx], missing_ok, result[col_idx]);
                     });
             executor.run(taskflow).get();
             return result;
@@ -245,41 +293,12 @@ namespace oineus {
                     tf::Taskflow taskflow;
                     taskflow.for_each_index((size_t)0, size_in_dimension(d), (size_t)1,
                             [this, d, missing_ok, &result](size_t col_idx) {
-                                auto& sigma = cells_[col_idx + dim_first(d)];
-                                auto& col = result[col_idx];
-                                col.reserve(d + 1);
-
-                                for(const auto& tau_vertices: sigma.boundary(geometry_)) {
-                                    if (missing_ok) {
-                                        auto iter = uid_to_sorted_id.find(tau_vertices);
-                                        if (iter != uid_to_sorted_id.end()) {
-                                            col.push_back(iter->second);
-                                        }
-                                    } else {
-                                        col.push_back(uid_to_sorted_id.at(tau_vertices));
-                                    }
-                                }
-                                std::sort(col.begin(), col.end());
+                                emit_boundary_col_(cells_[col_idx + dim_first(d)], missing_ok, result[col_idx]);
                             });
                     executor.run(taskflow).get();
                 } else {
                     for(size_t col_idx = 0; col_idx < size_in_dimension(d); ++col_idx) {
-                        auto& sigma = cells_[col_idx + dim_first(d)];
-                        auto& col = result[col_idx];
-                        col.reserve(d + 1);
-
-                        for(const auto& tau_vertices: sigma.boundary(geometry_)) {
-                            if (missing_ok) {
-                                auto iter = uid_to_sorted_id.find(tau_vertices);
-                                if (iter != uid_to_sorted_id.end()) {
-                                    col.push_back(iter->second);
-                                }
-                            } else {
-                                col.push_back(uid_to_sorted_id.at(tau_vertices));
-                            }
-                        }
-
-                        std::sort(col.begin(), col.end());
+                        emit_boundary_col_(cells_[col_idx + dim_first(d)], missing_ok, result[col_idx]);
                     }
                 }
             }
@@ -344,6 +363,29 @@ namespace oineus {
         BoundaryMatrix coboundary_matrix(int n_threads=1) const
         {
             CALI_CXX_MARK_FUNCTION;
+            // For packed cells, build the cohomology matrix DIRECTLY from each cell's
+            // coboundary (no global antitranspose scatter): column m holds
+            // {N-1-sorted_id(cofacet)} of the cell at sorted_id N-1-m, column-for-
+            // column identical to antitranspose(boundary_matrix(...)) but per-column
+            // independent (lock-free) and alloc-elided. emit_cohomology_col_ skips
+            // cofacets absent from the filtration, so this is robust to incomplete
+            // complexes. Subfiltrations keep the proven antitranspose (conservative;
+            // that path is exercised by kernel/image/cokernel); non-packed cells
+            // (Simplex) have no direct coboundary and also fall back.
+            if constexpr (HasPackedBoundary<UnderCell_>::value) {
+                if (not is_subfiltration()) {
+                    const size_t n = size();
+                    BoundaryMatrix result(n);
+                    tf::Executor executor(n_threads);
+                    tf::Taskflow taskflow;
+                    taskflow.for_each_index((size_t)0, n, (size_t)1,
+                            [this, &result](size_t col_idx) {
+                                emit_cohomology_col_(col_idx, result[col_idx]);
+                            });
+                    executor.run(taskflow).get();
+                    return result;
+                }
+            }
             return antitranspose(boundary_matrix(n_threads), size());
         }
 
@@ -436,20 +478,8 @@ namespace oineus {
                     [this, missing_ok, &result](size_t col_idx) {
                         auto* col = new SparseColumn<Int>();
                         // boundary of a vertex is empty; only positive dim needs work
-                        if (col_idx > static_cast<size_t>(dim_last(0))) {
-                            const auto& sigma = cells_[col_idx];
-                            col->reserve(sigma.dim() + 1);
-                            for(const auto& tau_vertices: sigma.boundary(geometry_)) {
-                                if (missing_ok) {
-                                    auto iter = uid_to_sorted_id.find(tau_vertices);
-                                    if (iter != uid_to_sorted_id.end())
-                                        col->push_back(iter->second);
-                                } else {
-                                    col->push_back(uid_to_sorted_id.at(tau_vertices));
-                                }
-                            }
-                            std::sort(col->begin(), col->end());
-                        }
+                        if (col_idx > static_cast<size_t>(dim_last(0)))
+                            emit_boundary_col_(cells_[col_idx], missing_ok, *col);
                         result[col_idx].store(col, std::memory_order_relaxed);
                     });
             executor.run(taskflow).get();
@@ -471,20 +501,8 @@ namespace oineus {
             taskflow.for_each_index((size_t)0, size(), (size_t)1,
                     [this, missing_ok, &result](size_t col_idx) {
                         SparseColumn<Int> col;
-                        if (col_idx > static_cast<size_t>(dim_last(0))) {
-                            const auto& sigma = cells_[col_idx];
-                            col.reserve(sigma.dim() + 1);
-                            for(const auto& tau_vertices: sigma.boundary(geometry_)) {
-                                if (missing_ok) {
-                                    auto iter = uid_to_sorted_id.find(tau_vertices);
-                                    if (iter != uid_to_sorted_id.end())
-                                        col.push_back(iter->second);
-                                } else {
-                                    col.push_back(uid_to_sorted_id.at(tau_vertices));
-                                }
-                            }
-                            std::sort(col.begin(), col.end());
-                        }
+                        if (col_idx > static_cast<size_t>(dim_last(0)))
+                            emit_boundary_col_(cells_[col_idx], missing_ok, col);
                         SparseColumn<Int> v_column = {static_cast<Int>(col_idx)};
                         result[col_idx].store(
                                 new RVColumn<Int, 2>(std::move(col), std::move(v_column)),
@@ -517,20 +535,8 @@ namespace oineus {
                             return;
                         }
                         SparseColumn<Int> col;
-                        if (col_idx > static_cast<size_t>(dim_last(0))) {
-                            const auto& sigma = cells_[col_idx];
-                            col.reserve(sigma.dim() + 1);
-                            for(const auto& tau_vertices: sigma.boundary(geometry_)) {
-                                if (missing_ok) {
-                                    auto iter = uid_to_sorted_id.find(tau_vertices);
-                                    if (iter != uid_to_sorted_id.end())
-                                        col.push_back(iter->second);
-                                } else {
-                                    col.push_back(uid_to_sorted_id.at(tau_vertices));
-                                }
-                            }
-                            std::sort(col.begin(), col.end());
-                        }
+                        if (col_idx > static_cast<size_t>(dim_last(0)))
+                            emit_boundary_col_(cells_[col_idx], missing_ok, col);
                         SparseColumn<Int> v_column = {static_cast<Int>(col_idx)};
                         result[col_idx].store(
                                 new RVColumn<Int, 2>(std::move(col), std::move(v_column)),
@@ -540,16 +546,16 @@ namespace oineus {
             return result;
         }
 
-        // Coboundary variants. antitranspose is a global scatter (an output column
-        // gathers from many input rows), so it is not per-output-column independent
-        // and cannot be built lock-free directly. Build the antitransposed
-        // MatrixData first (reusing the proven scatter), then move each column into
-        // a heap working column -- this still eliminates the prepare deep-copy and
-        // the temporary is drained by moves.
+        // Coboundary variants. coboundary_matrix() builds the at-rest cohomology
+        // matrix -- directly for packed cells on a complete complex, else via the
+        // antitranspose scatter -- and we then move each column into a heap working
+        // column (eliminating the prepare deep-copy; the temporary is drained by
+        // moves). The fused apparent variant below avoids the at-rest temporary
+        // entirely by skipping the apparent columns.
         RWorkingMatrix coboundary_matrix_for_par(int n_threads=1) const
         {
             CALI_CXX_MARK_FUNCTION;
-            auto cb = antitranspose(boundary_matrix(n_threads), size());
+            auto cb = coboundary_matrix(n_threads);
             RWorkingMatrix result(cb.size());
             tf::Executor executor(n_threads);
             tf::Taskflow taskflow;
@@ -566,7 +572,7 @@ namespace oineus {
         RVWorkingMatrix coboundary_matrix_for_par_with_v(int n_threads=1) const
         {
             CALI_CXX_MARK_FUNCTION;
-            auto cb = antitranspose(boundary_matrix(n_threads), size());
+            auto cb = coboundary_matrix(n_threads);
             RVWorkingMatrix result(cb.size());
             tf::Executor executor(n_threads);
             tf::Taskflow taskflow;
@@ -608,20 +614,15 @@ namespace oineus {
             tf::Executor executor(n_threads);
             tf::Taskflow taskflow;
             taskflow.for_each_index((size_t)0, n, (size_t)1,
-                    [this, n, &result, &out](size_t col_idx) {
+                    [this, &result, &out](size_t col_idx) {
                         if (out.is_apparent_col[col_idx]) {
                             result[col_idx].store(nullptr, std::memory_order_relaxed);
                             return;
                         }
                         // matrix column col_idx == cell with sorted_id N-1-col_idx;
                         // emit its coboundary, reindexed into antitranspose row space
-                        const auto& sigma = cells_[n - 1 - col_idx];
-                        auto cob = sigma.get_cell().coboundary(geometry_);
                         SparseColumn<Int> col;
-                        col.reserve(cob.size());
-                        for(const auto& cuid : cob)
-                            col.push_back(static_cast<Int>(n - 1 - static_cast<size_t>(get_sorted_id_by_uid(cuid))));
-                        std::sort(col.begin(), col.end());
+                        emit_cohomology_col_(col_idx, col);
                         SparseColumn<Int> v_column = {static_cast<Int>(col_idx)};
                         result[col_idx].store(
                                 new RVColumn<Int, 2>(std::move(col), std::move(v_column)),

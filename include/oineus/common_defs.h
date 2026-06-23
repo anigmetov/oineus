@@ -9,6 +9,7 @@
 #include <limits>
 #include <cstdlib>
 #include <new>
+#include <type_traits>
 
 #include "log_wrapper.h"
 #include "profile.h"
@@ -40,6 +41,17 @@ namespace oineus {
         bool operator==(const NoGeometry&) const { return true; }
         bool operator!=(const NoGeometry&) const { return false; }
     };
+
+    // Cell-policy trait: does this cell type provide a direct, buffer-based
+    // (co)boundary -- boundary_into(geometry, emit) / coboundary_into(geometry,
+    // emit) that invoke emit(face_uid) for each (co)face with no intermediate
+    // std::vector allocation? The Filtration builders `if constexpr`-dispatch on
+    // this to write looked-up sorted_ids straight into the working column (the
+    // Stage 1b alloc-elision win). Default false (e.g. Simplex, which keeps the
+    // vector-returning boundary()); specialized true for the packed cells (Cube,
+    // see cube.h). Keyed on the underlying cell type, not CellWithValue.
+    template<class Cell>
+    struct HasPackedBoundary : std::false_type {};
 
     constexpr size_t plus_inf = std::numeric_limits<size_t>::max();
 

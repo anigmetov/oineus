@@ -7,6 +7,7 @@
 #include <vector>
 #include <unordered_set>
 #include <functional>
+#include <utility>
 
 #define OINEUS_MAX_CUBE_DIM 3
 
@@ -82,46 +83,65 @@ namespace oineus {
         // produced by the construction below; callers that need them sorted (the
         // filtration boundary matrix) sort afterwards.
 
-        template<typename Int, unsigned D>
-        std::vector<Int> cube_boundary(Int uid, const GridDomain<Int, D>& dom)
+        // Visitor (buffer) form of the boundary: invoke visit(face_uid) for each
+        // facet, with no intermediate allocation. The displacement list is a stack
+        // array (not a std::vector) and the anchor point is computed once -- this is
+        // the alloc-elided body the Filtration builders call to write looked-up
+        // sorted_ids straight into the working column. cube_boundary() below is the
+        // self-contained vector-returning wrapper over this.
+        template<typename Int, unsigned D, typename Visitor>
+        void for_each_boundary(Int uid, const GridDomain<Int, D>& dom, Visitor&& visit)
         {
             using Point = typename GridDomain<Int, D>::GridPoint;
-            std::vector<Int> result;
-            std::vector<int> disps;
+            constexpr int MC = OINEUS_MAX_CUBE_DIM;
 
-            for (int d = 0; d < OINEUS_MAX_CUBE_DIM; ++d)
+            int bits[MC];
+            int nb = 0;
+            for (int d = 0; d < MC; ++d)
                 if (uid & (1 << d))
-                    disps.push_back(d);
+                    bits[nb++] = d;
+            if (nb == 0)
+                return;
 
             // faces obtained by dropping one displacement from the current vertex
-            for (size_t k = 0; k < disps.size(); ++k) {
-                Int face_id = uid & ~(Int(1) << disps[k]);
-                result.push_back(face_id);
-            }
+            for (int k = 0; k < nb; ++k)
+                visit(uid & ~(Int(1) << bits[k]));
 
             // faces obtained by moving the vertex along one displacement and
             // dropping that displacement
-            for (size_t k = 0; k < disps.size(); ++k) {
-                Point p = dom.id_to_point(get_vertex_part(uid));
-                p[disps[k]] += 1;
-                Int face_id = dom.point_to_id(p) << OINEUS_MAX_CUBE_DIM;
-                for (size_t j = 0; j < disps.size(); ++j)
+            Point anchor = dom.id_to_point(get_vertex_part(uid));
+            for (int k = 0; k < nb; ++k) {
+                Point p = anchor;
+                p[bits[k]] += 1;
+                Int face_id = dom.point_to_id(p) << MC;
+                for (int j = 0; j < nb; ++j)
                     if (j != k)
-                        face_id |= (Int(1) << disps[j]);
-                result.push_back(face_id);
+                        face_id |= (Int(1) << bits[j]);
+                visit(face_id);
             }
-
-            return result;
         }
 
         template<typename Int, unsigned D>
-        std::vector<Int> cube_coboundary(Int uid, const GridDomain<Int, D>& dom)
+        std::vector<Int> cube_boundary(Int uid, const GridDomain<Int, D>& dom)
+        {
+            std::vector<Int> result;
+            for_each_boundary<Int, D>(uid, dom, [&result](Int face_id) { result.push_back(face_id); });
+            return result;
+        }
+
+        // Visitor (buffer) form of the coboundary: invoke visit(cofacet_uid) for
+        // each cofacet, with no intermediate allocation. The direct cohomology
+        // builder + apparent resolver call this to write reindexed sorted_ids
+        // straight into the column. cube_coboundary() below is the self-contained
+        // vector-returning wrapper over this.
+        template<typename Int, unsigned D, typename Visitor>
+        void for_each_coboundary(Int uid, const GridDomain<Int, D>& dom, Visitor&& visit)
         {
             using Point = typename GridDomain<Int, D>::GridPoint;
-            std::vector<Int> result;
+            constexpr int MC = OINEUS_MAX_CUBE_DIM;
             Int vertex_id = get_vertex_part(uid);
             Point vertex = dom.id_to_point(vertex_id);
-            Int cube_bits = uid & ((1 << OINEUS_MAX_CUBE_DIM) - 1);
+            Int cube_bits = uid & ((1 << MC) - 1);
 
             // Case 1: add a basis vector without moving the vertex
             for (unsigned d = 0; d < D; ++d) {
@@ -131,7 +151,7 @@ namespace oineus {
                         if ((cube_bits & (1 << dd)) || dd == d)
                             opposite_corner[dd] += 1;
                     if (dom.contains(opposite_corner))
-                        result.push_back((vertex_id << OINEUS_MAX_CUBE_DIM) | cube_bits | (1 << d));
+                        visit((vertex_id << MC) | cube_bits | (1 << d));
                 }
             }
 
@@ -148,12 +168,18 @@ namespace oineus {
                                 opposite_corner[dd] += 1;
                         if (dom.contains(opposite_corner)) {
                             Int shifted_vertex_id = dom.point_to_id(shifted_vertex);
-                            result.push_back((shifted_vertex_id << OINEUS_MAX_CUBE_DIM) | cube_bits | (1 << d));
+                            visit((shifted_vertex_id << MC) | cube_bits | (1 << d));
                         }
                     }
                 }
             }
+        }
 
+        template<typename Int, unsigned D>
+        std::vector<Int> cube_coboundary(Int uid, const GridDomain<Int, D>& dom)
+        {
+            std::vector<Int> result;
+            for_each_coboundary<Int, D>(uid, dom, [&result](Int cof_id) { result.push_back(cof_id); });
             return result;
         }
 
@@ -257,6 +283,15 @@ namespace oineus {
         std::vector<Int> coboundary(const Domain& dom) const { return cube_private::cube_coboundary<Int, D>(id_, dom); }
         std::vector<Int> top_cofaces(const Domain& dom) const { return cube_private::cube_top_cofaces<Int, D>(id_, dom); }
 
+        // Buffer (co)boundary: invoke emit(face_uid) for each (co)face, no
+        // intermediate vector. HasPackedBoundary<Cube> advertises these so the
+        // Filtration builders can write looked-up sorted_ids straight into the
+        // working column (Stage 1b alloc-elision).
+        template<typename Visitor>
+        void boundary_into(const Domain& dom, Visitor&& visit) const { cube_private::for_each_boundary<Int, D>(id_, dom, std::forward<Visitor>(visit)); }
+        template<typename Visitor>
+        void coboundary_into(const Domain& dom, Visitor&& visit) const { cube_private::for_each_coboundary<Int, D>(id_, dom, std::forward<Visitor>(visit)); }
+
         Point anchor_vertex(const Domain& dom) const
         {
             return dom.id_to_point(cube_private::get_vertex_part(id_));
@@ -297,6 +332,13 @@ namespace oineus {
         out << cube.pretty_print();
         return out;
     }
+
+    // The slim Cube provides boundary_into/coboundary_into (packed direct
+    // (co)boundary against the shared GridDomain); advertise it so the Filtration
+    // builders take the alloc-elided path. FatCube is never a Filtration UnderCell,
+    // so it is intentionally left at the default (false).
+    template<typename Int, unsigned D>
+    struct HasPackedBoundary<Cube<Int, D>> : std::true_type {};
 
     // Fat, self-contained cube: a slim Cube bundled with a copy of its GridDomain.
     // This is the "materialized" form handed to Python (and usable standalone),
