@@ -190,6 +190,76 @@ TEST_CASE("freudenthal cell: slim (co)boundary matches materialized fat simplex,
     check_freudenthal_materialization<3>({6, 5, 7});
 }
 
+// Grid builder oracle: the slim Freudenthal filtration built DIRECTLY from the grid
+// (freudenthal_filtration_*_slim) must match the established fat freudenthal_filtration
+// cell-for-cell -- same size, same (co)boundary matrices, same per-cell value/dim, same
+// critical-vertex array -- and each slim cell must materialize back to the fat cell's
+// vertex set. This validates the one-pass (anchor,type) encoding and the in-pass
+// critical-vertex array against the fat path, for both lower- and upper-star.
+template<size_t D>
+static void check_freudenthal_grid_builder(const std::array<int, D>& dims)
+{
+    using Int = int;
+    using Real = double;
+    using Grid = oineus::Grid<Int, Real, D>;
+
+    typename Grid::GridPoint gp;
+    size_t total = 1;
+    for (size_t d = 0; d < D; ++d) { gp[d] = dims[d]; total *= dims[d]; }
+
+    std::mt19937_64 gen(2024);
+    std::uniform_real_distribution<Real> dist(0.0, 1.0);
+    std::vector<Real> data(total);
+    for (auto& x : data) x = dist(gen);
+
+    Grid grid(gp, /*wrap=*/false, data.data(), Grid::DataLocation::VERTEX);
+
+    for (bool negate : {false, true}) {
+        auto [fat, fat_crit] = grid.freudenthal_filtration_and_critical_vertices(D, negate, 1);
+        auto [slim, slim_crit] = grid.freudenthal_filtration_and_critical_vertices_slim(D, negate, 1);
+
+        REQUIRE(slim.size() == fat.size());
+        REQUIRE(slim_crit == fat_crit);
+
+        // built in the same emission order with identical (dim, value, id) keys, so the
+        // sorted orders coincide and the boundary matrices are column-for-column equal
+        REQUIRE(slim.boundary_matrix(1) == fat.boundary_matrix(1));
+        REQUIRE(slim.coboundary_matrix(1) == fat.coboundary_matrix(1));
+
+        const auto& frgeom = slim.geometry();
+        for (size_t c = 0; c < slim.size(); ++c) {
+            REQUIRE(slim.cells()[c].get_value() == fat.cells()[c].get_value());
+            REQUIRE(slim.cells()[c].dim() == fat.cells()[c].dim());
+            auto slim_vs = slim.cells()[c].get_cell().vertices(frgeom);
+            std::vector<Int> fat_vs(fat.cells()[c].get_cell().get_vertices().begin(),
+                                    fat.cells()[c].get_cell().get_vertices().end());
+            REQUIRE(slim_vs == fat_vs);
+        }
+
+        // the slim filtration reduces to a valid R = D V
+        oineus::VRUDecomposition<Int> dcmp(slim, /*dualize=*/false);
+        oineus::Params p;
+        p.compute_v = true;
+        p.n_threads = 1;
+        dcmp.reduce(p);
+        REQUIRE(dcmp.sanity_check());
+
+        // the no-critical-vertices builder produces the same filtration
+        auto slim_plain = grid.freudenthal_filtration_slim(D, negate, 1);
+        REQUIRE(slim_plain == slim);
+    }
+}
+
+TEST_CASE("freudenthal grid builder: slim filtration matches fat, 2D")
+{
+    check_freudenthal_grid_builder<2>({9, 7});
+}
+
+TEST_CASE("freudenthal grid builder: slim filtration matches fat, 3D")
+{
+    check_freudenthal_grid_builder<3>({6, 5, 7});
+}
+
 // Hand-worked smallest case: one unit square Kuhn-split into two triangles. The
 // counts and the diagonal edge's (co)boundary are derived by hand and asserted on
 // the materialized slim cells, independent of which diagonal the triangulation picks.

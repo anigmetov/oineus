@@ -12,6 +12,7 @@
 #include "filtration.h"
 #include "simplex.h"
 #include "cube.h"
+#include "freudenthal_cell.h"
 #include "timer.h"
 #include "interrupt.h"
 
@@ -43,6 +44,18 @@ public:
     using IdxVector = typename Simplex<Int>::IdxVector;
     using GridFiltration = Filtration<Simplex<Int>, Real>;
     using GridCubeFiltration = Filtration<Cube<Int, D>, Real>;
+
+    // Slim Freudenthal cell family: a Simplex whose encoding is the compact
+    // (anchor << type_bits | type) uid, sharing one FrGeometry owned by the
+    // filtration. Materializes to the same fat Simplex on access. This is the
+    // production Freudenthal filtration; the fat GridFiltration path above is kept
+    // as a construction oracle during the transition.
+    using FrEnc = FreudenthalAnchorType<Int, D>;
+    using FrCell = Simplex<Int, FrEnc>;
+    using FrGeom = FrGeometry<Int, D>;
+    using GridFrSimplex = CellWithValue<FrCell, Real>;
+    using FrSimplexVec = std::vector<GridFrSimplex, JeAllocator<GridFrSimplex>>;
+    using GridFrFiltration = Filtration<FrCell, Real>;
 
     static constexpr std::size_t dim {D};
 
@@ -155,6 +168,71 @@ public:
 
         auto fil = GridFiltration(simplices, negate, n_threads);
         fil.set_kind(FiltrationKind::Freudenthal);
+        return fil;
+    }
+
+    // Slim Freudenthal filtration built directly from the grid: each simplex is
+    // encoded as a compact (anchor << type_bits | type) uid against a shared
+    // FrGeometry, in the SAME emission order (dim, then vertex, then displacement
+    // pattern) as the fat freudenthal_filtration above -- so id assignment and the
+    // resulting diagrams are identical. The critical-vertex array (the lower-star
+    // max-value vertex of each simplex) is filled in the SAME enumeration pass, with
+    // no second materialization. Non-wrap grids only (the FrGeometry ctor throws on
+    // wrap); use the fat freudenthal_filtration for wrap grids.
+    std::pair<GridFrFiltration, CriticalIndices> freudenthal_filtration_and_critical_vertices_slim(size_t top_d, bool negate, int n_threads = 1) const
+    {
+        if (top_d > dim)
+            throw std::runtime_error("bad dimension, top_d = " + std::to_string(top_d) + ", dim = " + std::to_string(dim));
+
+        FrGeom frgeom(computational_domain_);
+
+        FrSimplexVec cells;
+        CriticalIndices vertices;
+
+        size_t total_size = 0;
+        for(dim_type d = 0 ; d <= top_d ; ++d)
+            total_size += get_fr_displacements(d).size() * size();
+
+        cells.reserve(total_size);
+        vertices.reserve(total_size);
+
+        for(dim_type d = 0 ; d <= top_d ; ++d)
+            add_freudenthal_cells_slim(d, negate, frgeom, cells, vertices, true);
+
+        auto fil = GridFrFiltration(std::move(cells), negate, n_threads);
+        fil.set_kind(FiltrationKind::Freudenthal);
+        fil.set_geometry(frgeom);
+
+        CriticalIndices sorted_vertices;
+        sorted_vertices.reserve(vertices.size());
+        for(const auto& cell: fil.cells())
+            sorted_vertices.push_back(vertices[cell.get_id()]);
+
+        return {fil, sorted_vertices};
+    }
+
+    GridFrFiltration freudenthal_filtration_slim(size_t top_d, bool negate, int n_threads = 1) const
+    {
+        if (top_d > dim)
+            throw std::runtime_error("bad dimension, top_d = " + std::to_string(top_d) + ", dim = " + std::to_string(dim));
+
+        FrGeom frgeom(computational_domain_);
+
+        FrSimplexVec cells;
+        CriticalIndices dummy_vertices;
+
+        size_t total_size = 0;
+        for(dim_type d = 0 ; d <= top_d ; ++d)
+            total_size += get_fr_displacements(d).size() * size();
+
+        cells.reserve(total_size);
+
+        for(dim_type d = 0 ; d <= top_d ; ++d)
+            add_freudenthal_cells_slim(d, negate, frgeom, cells, dummy_vertices, false);
+
+        auto fil = GridFrFiltration(std::move(cells), negate, n_threads);
+        fil.set_kind(FiltrationKind::Freudenthal);
+        fil.set_geometry(frgeom);
         return fil;
     }
 
@@ -479,6 +557,76 @@ private:
         for(Int i = 0 ; i < size() ; ++i) {
             GridPoint v = id_to_point(i);
             add_freudenthal_simplices_from_vertex(v, d, negate, disps, simplices, critical_vertices, return_critical_vertices);
+
+            if (i % 100 == 0 && oineus::interrupted())
+                throw oineus::interrupted_exception{};
+        }
+    }
+
+    // Slim analogue of add_freudenthal_simplices_from_vertex: emit compact (anchor,type)
+    // cells instead of fat vertex-list simplices. pattern_types[j] is the precomputed
+    // FrGeometry type of displacement pattern disps[j]; the anchor is the min-id vertex
+    // (== min-corner under C-order indexing for a Kuhn simplex), so the uid built here
+    // equals frgeom.uid_of_vertices(v_ids) without the per-cell normalize + map lookup.
+    void add_freudenthal_cells_slim_from_vertex(const GridPoint& v,
+            size_t d,
+            bool negate,
+            const FrGeom& frgeom,
+            const GridPointVecVec& disps,
+            const std::vector<int>& pattern_types,
+            FrSimplexVec& cells,
+            CriticalIndices& critical_vertices,
+            bool return_critical_vertices) const
+    {
+        IdxVector v_ids(d + 1, 0);
+
+        for(size_t j = 0 ; j < disps.size() ; ++j) {
+            const auto& deltas = disps[j];
+            assert(deltas.size() == d + 1);
+
+            bool is_valid_simplex = true;
+
+            for(size_t i = 0 ; i < d + 1 ; ++i) {
+                GridPoint u = add_points(v, deltas[i]);
+                // wrap is rejected up front by the FrGeometry ctor; non-wrap only here
+                if (not contains(u)) {
+                    is_valid_simplex = false;
+                    break;
+                } else
+                    v_ids[i] = point_to_id(u);
+            }
+
+            if (is_valid_simplex) {
+                ValueVertex vv = simplex_value_and_vertex(v_ids, negate);
+                Int anchor_id = *std::min_element(v_ids.begin(), v_ids.end());
+                Int uid = (anchor_id << frgeom.type_bits) | static_cast<Int>(pattern_types[j]);
+                cells.emplace_back(FrCell(FrEnc(uid, static_cast<dim_type>(d))), vv.value);
+                if (return_critical_vertices) {
+                    critical_vertices.emplace_back(vv.vertex);
+                }
+            }
+        }
+    }
+
+    void add_freudenthal_cells_slim(dim_type d,
+                                    bool negate,
+                                    const FrGeom& frgeom,
+                                    FrSimplexVec& cells,
+                                    CriticalIndices& critical_vertices,
+                                    bool return_critical_vertices) const
+    {
+        auto disps = get_fr_displacements(d);
+
+        // type of each displacement pattern, computed once per dimension instead of
+        // once per cell
+        std::vector<int> pattern_types;
+        pattern_types.reserve(disps.size());
+        for(const auto& pattern : disps)
+            pattern_types.push_back(frgeom.type_of_pattern(pattern));
+
+        for(Int i = 0 ; i < size() ; ++i) {
+            GridPoint v = id_to_point(i);
+            add_freudenthal_cells_slim_from_vertex(v, d, negate, frgeom, disps, pattern_types, cells, critical_vertices, return_critical_vertices);
 
             if (i % 100 == 0 && oineus::interrupted())
                 throw oineus::interrupted_exception{};

@@ -128,6 +128,20 @@ namespace oineus {
             return make_uid(anchor_id, it->second);
         }
 
+        // type id for a displacement pattern (the d+1 offset vectors of a Freudenthal
+        // simplex, relative to any base point). The pattern is normalized (min-corner to
+        // origin, sorted) before lookup, so it is independent of the base point. The grid
+        // builder precomputes this once per (dim, pattern) and then encodes every simplex
+        // of that pattern as (min-id vertex << type_bits | type) in one pass, without the
+        // per-cell normalize + map lookup that uid_of_vertices would do.
+        int type_of_pattern(const std::vector<Point>& pattern) const
+        {
+            auto it = set2type.find(fr_private::normalize<Int, D>(pattern));
+            if (it == set2type.end())
+                throw std::runtime_error("type_of_pattern: not a Freudenthal simplex type of this grid");
+            return it->second;
+        }
+
         // Materialize the grid vertex ids of the cell with this uid: anchor point +
         // each of the type's displacements, mapped back to ids, sorted (the canonical
         // fat Simplex vertex order). Inverse of uid_of_vertices. This is the slim->fat
