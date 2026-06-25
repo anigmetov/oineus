@@ -69,6 +69,7 @@ else()
             alpha-diff
             apparent
             api-cells
+            api-col-repr
             api-common
             api-dcmp
             api-dgm
