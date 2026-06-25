@@ -42,16 +42,26 @@ namespace oineus {
         bool operator!=(const NoGeometry&) const { return false; }
     };
 
-    // Cell-policy trait: does this cell type provide a direct, buffer-based
-    // (co)boundary -- boundary_into(geometry, emit) / coboundary_into(geometry,
-    // emit) that invoke emit(face_uid) for each (co)face with no intermediate
-    // std::vector allocation? The Filtration builders `if constexpr`-dispatch on
-    // this to write looked-up sorted_ids straight into the working column (the
-    // Stage 1b alloc-elision win). Default false (e.g. Simplex, which keeps the
-    // vector-returning boundary()); specialized true for the packed cells (Cube,
-    // see cube.h). Keyed on the underlying cell type, not CellWithValue.
+    // Cell-policy traits the Filtration `if constexpr`-dispatches on. All default
+    // false (e.g. the fat Simplex); a packed cell specializes the ones it supports.
+    // Keyed on the underlying cell type, not CellWithValue. They are three ORTHOGONAL
+    // concerns -- a bit-packed VR simplex, for example, will want the first (fast
+    // buffer boundary) but not the others (its uid is sparse -> hash index; it has no
+    // cheap direct coboundary -> antitranspose). Cube and the Freudenthal cell
+    // specialize all three true.
+    //
+    // HasPackedBoundary: provides boundary_into(geometry, emit) -- emit(face_uid) per
+    //   facet, no intermediate std::vector (the Stage 1b alloc-elision win).
     template<class Cell>
     struct HasPackedBoundary : std::false_type {};
+    // HasDirectCoboundary: provides coboundary_into(geometry, emit), so the filtration
+    //   builds the cohomology matrix directly instead of via a global antitranspose.
+    template<class Cell>
+    struct HasDirectCoboundary : std::false_type {};
+    // UsesDenseUidIndex: the uid is a small dense integer, so uid->sorted_id is a flat
+    //   direct-address array instead of a hash map (faster, smaller).
+    template<class Cell>
+    struct UsesDenseUidIndex : std::false_type {};
 
     constexpr size_t plus_inf = std::numeric_limits<size_t>::max();
 

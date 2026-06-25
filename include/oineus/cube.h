@@ -343,6 +343,10 @@ namespace oineus {
     // hash node overhead).
     template<typename Int, unsigned D>
     struct HasPackedBoundary<Cube<Int, D>> : std::true_type {};
+    template<typename Int, unsigned D>
+    struct HasDirectCoboundary<Cube<Int, D>> : std::true_type {};
+    template<typename Int, unsigned D>
+    struct UsesDenseUidIndex<Cube<Int, D>> : std::true_type {};
 
     // Fat, self-contained cube: a slim Cube bundled with a copy of its GridDomain.
     // This is the "materialized" form handed to Python (and usable standalone),

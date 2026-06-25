@@ -202,7 +202,7 @@ namespace oineus {
         // distinct slots but the hash map is not thread-safe.
         void rebuild_uid_index_()
         {
-            if constexpr (HasPackedBoundary<UnderCell_>::value) {
+            if constexpr (UsesDenseUidIndex<UnderCell_>::value) {
                 // Dense integer uid: size the flat array to (max uid + 1), derived
                 // from the cells themselves -- independent of the (possibly not-yet-
                 // set) geometry, and tighter than the geometry's full uid space. Every
@@ -228,7 +228,7 @@ namespace oineus {
         // contains_cell_with_uid; sorted_id_by_uid_at_ wraps it with a throw.
         Int sorted_id_by_uid_or_neg_(const CellUid& uid) const
         {
-            if constexpr (HasPackedBoundary<UnderCell_>::value) {
+            if constexpr (UsesDenseUidIndex<UnderCell_>::value) {
                 size_t idx = static_cast<size_t>(uid);
                 return idx < flat_uid_to_sorted_id_.size() ? flat_uid_to_sorted_id_[idx] : Int(-1);
             } else {
@@ -422,7 +422,7 @@ namespace oineus {
             // complexes. Subfiltrations keep the proven antitranspose (conservative;
             // that path is exercised by kernel/image/cokernel); non-packed cells
             // (Simplex) have no direct coboundary and also fall back.
-            if constexpr (HasPackedBoundary<UnderCell_>::value) {
+            if constexpr (HasDirectCoboundary<UnderCell_>::value) {
                 if (not is_subfiltration()) {
                     const size_t n = size();
                     BoundaryMatrix result(n);
@@ -608,7 +608,7 @@ namespace oineus {
             // Packed cells: emit each working column straight from the cell's
             // coboundary in a single pass -- no at-rest coboundary matrix held and
             // no second move pass (the homology builder's direct shape, mirrored).
-            if constexpr (HasPackedBoundary<UnderCell_>::value) {
+            if constexpr (HasDirectCoboundary<UnderCell_>::value) {
                 if (not is_subfiltration()) {
                     const size_t n = size();
                     RWorkingMatrix result(n);
@@ -642,7 +642,7 @@ namespace oineus {
         {
             CALI_CXX_MARK_FUNCTION;
             // Packed cells: fused single-pass direct build (see coboundary_matrix_for_par).
-            if constexpr (HasPackedBoundary<UnderCell_>::value) {
+            if constexpr (HasDirectCoboundary<UnderCell_>::value) {
                 if (not is_subfiltration()) {
                     const size_t n = size();
                     RVWorkingMatrix result(n);
@@ -921,8 +921,8 @@ namespace oineus {
         Geometry geometry_ {};
 
         // uid -> sorted_id index. Two representations, chosen at compile time by
-        // HasPackedBoundary<UnderCell_>: dense-uid cells (Cube) use the flat
-        // direct-address array flat_uid_to_sorted_id_ (entry uid -> sorted_id, -1 if
+        // UsesDenseUidIndex<UnderCell_>: dense-uid cells (Cube, Freudenthal) use the
+        // flat direct-address array flat_uid_to_sorted_id_ (entry uid -> sorted_id, -1 if
         // absent), which is both faster and far smaller than a hash map; all other
         // cells use the uid_to_sorted_id hash map. Exactly one is populated per
         // instantiation; the other stays empty (zero cost). Go through

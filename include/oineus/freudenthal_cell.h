@@ -307,6 +307,10 @@ namespace oineus {
     // builders and the flat uid->sorted_id index, exactly like Cube.
     template<typename Int, unsigned D>
     struct HasPackedBoundary<FreudenthalCell<Int, D>> : std::true_type {};
+    template<typename Int, unsigned D>
+    struct HasDirectCoboundary<FreudenthalCell<Int, D>> : std::true_type {};
+    template<typename Int, unsigned D>
+    struct UsesDenseUidIndex<FreudenthalCell<Int, D>> : std::true_type {};
 
 } // namespace oineus
 
