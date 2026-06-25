@@ -1198,6 +1198,25 @@ namespace oineus {
                                const std::vector<Int>& new_dim_last,
                                DecompositionManipStats* stats = nullptr);
 
+        // SiRUP (Giunti-Lazovskis, "Pruning vineyards: updating barcodes and
+        // representative cycles by removing simplices", Algorithm 2): update the
+        // reduced R = D V decomposition when a coface-closed set of cells (a
+        // union of stars) is removed, instead of recomputing from scratch.
+        //   cells_to_remove = matrix-space indices (sorted_ids) to drop. The set
+        //     must be up-closed under the coface relation so that F \ L is again
+        //     a filtration; build it with Filtration::star_closure. It is
+        //     validated here when D is available.
+        // Unlike the other manipulation methods, SiRUP reads only R and V (never
+        // D), so it does NOT require has_d_data_; d_data is compacted in lockstep
+        // only if present, keeping sanity_check() a valid oracle. The result is a
+        // reduced decomposition of F \ L with updated representative cycles in V;
+        // column indices stay in filtration order, matching
+        // Filtration::subfiltration over the survivors. Homology only (throws on
+        // dualize). Provably minimal in column additions.
+        void remove_simplices(const std::vector<size_t>& cells_to_remove,
+                              DecompositionManipStats* stats = nullptr,
+                              int n_threads = 1);
+
         // --- manipulation helpers ---
         // Throw std::runtime_error if a manipulation cannot be applied
         // (not reduced, no V, or cohomology).
@@ -1229,6 +1248,11 @@ namespace oineus {
 
         // --- dynamic-mode (row-index) helpers ---
         void ensure_dynamic_(int n_threads = 1);
+        // Build only the V row-incidence index (ri_v_). SiRUP needs row access
+        // to V but never to R or D, so this is lighter than make_dynamic and
+        // works even without d_data. Leaves is_dynamic_ false (ri_r_, ri_d_ are
+        // not built), so a later make_dynamic() still rebuilds the full triple.
+        void ensure_ri_v_(int n_threads = 1);
         void invalidate_dynamic_();
         // a row's incidence list is a sorted std::vector<Int> of column indices
         static bool ri_contains_(const IntSparseColumn& lst, Int c);
@@ -2741,6 +2765,252 @@ namespace oineus {
             stats->n_column_additions_v += inner.n_column_additions_v + av;
             // inner Alg-2 reorder + rebuild materialization (nR, nV, nD) + reduce-R
             stats->n_columns_scanned += inner.n_columns_scanned + 4 * static_cast<long long>(n_new);
+            stats->nnz_r_after = matrix_nnz_(r_data);
+            stats->nnz_v_after = matrix_nnz_(v_data);
+            stats->elapsed_total += t_total.elapsed();
+        }
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::ensure_ri_v_(int n_threads)
+    {
+        using ST = SimpleSparseMatrixTraits<Int, 2>;
+        MatrixData ri = ST::col_to_row_format_parallel(v_data, n_threads, 0, v_data.size(), static_cast<Int>(n_rows));
+        ri.resize(n_rows);              // one list per row, including trailing empty rows
+        for(auto& lst : ri)
+            std::sort(lst.begin(), lst.end());
+        ri_v_ = std::move(ri);
+        // ri_r_, ri_d_ intentionally left empty; is_dynamic_ stays false.
+    }
+
+    // SiRUP (Giunti-Lazovskis, Algorithm 2). For each removed cell sigma_j,
+    // processed in decreasing index order, A = row j of V is the set of columns
+    // whose representative cycle uses sigma_j; B is the prefix run of strict
+    // pivot-minima over (j, A...). Each column i in A then gets a single column
+    // B_k added (in R and V) -- the net of all the additions Naive removal would
+    // do -- which restores reducedness and clears row j from the survivors.
+    // Finally the removed rows/columns are dropped and the survivors compacted.
+    // Pivot convention: a column's pivot is the row of its lowest 1, or -1 for a
+    // zero column; comparisons use plain integer order, so a zero column (-1) is
+    // the smallest pivot.
+    template<class Int>
+    void VRUDecomposition<Int>::remove_simplices(const std::vector<size_t>& cells_to_remove,
+                                                 DecompositionManipStats* stats, int n_threads)
+    {
+        using ST = SimpleSparseMatrixTraits<Int, 2>;
+
+        // Lighter preconditions than check_manip_preconditions_: SiRUP reads
+        // only R and V, never D, so d_data is not required.
+        if (not is_reduced)
+            throw std::runtime_error("remove_simplices: decomposition must be reduced first");
+        ensure_materialized_();        // SiRUP works on the at-rest r_data/v_data
+        if (not has_matrix_v())
+            throw std::runtime_error("remove_simplices: V matrix is required (reduce with compute_v = true)");
+        if (dualize_)
+            throw std::runtime_error("remove_simplices: cohomology (dualize) is not supported "
+                    "(the paper does not adapt removal to cohomology)");
+
+        const size_t n_old = r_data.size();
+
+        Timer t_total;
+        long long n_add_r = 0, n_add_v = 0;
+        if (stats) {
+            stats->nnz_r_before = matrix_nnz_(r_data);
+            stats->nnz_v_before = matrix_nnz_(v_data);
+        }
+
+        // mark removed set (dedup + range check)
+        std::vector<char> dead(n_old, 0);
+        std::vector<size_t> L;
+        L.reserve(cells_to_remove.size());
+        for(size_t c : cells_to_remove) {
+            if (c >= n_old)
+                throw std::runtime_error("remove_simplices: index out of range");
+            if (not dead[c]) {
+                dead[c] = 1;
+                L.push_back(c);
+            }
+        }
+
+        // coface-closedness check (only possible with D): no surviving cell may
+        // have a removed face, i.e. no survivor boundary column references a
+        // removed row.
+        if (has_d_data_) {
+            for(size_t c = 0; c < n_old; ++c) {
+                if (dead[c])
+                    continue;
+                for(Int r : d_data[c])
+                    if (dead[static_cast<size_t>(r)])
+                        throw std::runtime_error("remove_simplices: the removal set is not coface-closed "
+                                "(a surviving cell has a removed face); pass a union of stars "
+                                "(see Filtration::star_closure)");
+            }
+        }
+
+        // process in decreasing index order: each removed cell is then maximal
+        // among the not-yet-removed cells (its cofaces, of higher index, are
+        // already gone), and lower-index columns are still untouched.
+        std::sort(L.begin(), L.end(), std::greater<size_t>());
+
+        // SiRUP needs row access to V only.
+        invalidate_dynamic_();
+        ensure_ri_v_(n_threads);
+
+        // pivot of column c: row of its lowest 1, or -1 for a zero column. The
+        // SiRUP comparisons use plain integer order, so a zero column (-1) is the
+        // smallest pivot. Read live, because columns are modified in place.
+        auto pkey = [&](size_t c) -> Int {
+            return r_data[c].empty() ? Int(-1) : r_data[c].back();
+        };
+
+        for(size_t j : L) {
+            // A = { i : V[j,i] != 0, i != j }, increasing. Dead cofaces have
+            // already been cleared and pulled out of ri_v_, so they do not show
+            // up here.
+            std::vector<size_t> A;
+            A.reserve(ri_v_[j].size());
+            for(Int ci : ri_v_[j]) {
+                size_t i = static_cast<size_t>(ci);
+                if (i != j and not dead[i])
+                    A.push_back(i);
+            }
+
+            // B = j followed by the A columns whose pivot is a new strict
+            // minimum. Built from the pre-update pivots: nothing in this j-step
+            // has been modified yet, so pkey is the original value here.
+            std::vector<size_t> B{j};
+            Int run_min = pkey(j);
+            for(size_t i : A) {
+                Int ki = pkey(i);
+                if (ki < run_min) {
+                    B.push_back(i);
+                    run_min = ki;
+                }
+            }
+
+            // for each i in A, decreasing: add the right B column to R[i], V[i].
+            // The k-lookup uses LIVE pivots (columns mutate in place), so it is a
+            // linear scan -- B is small (bounded by the cells in dim(sigma_j)).
+            for(auto it = A.rbegin(); it != A.rend(); ++it) {
+                size_t i = *it;
+                Int ki = pkey(i);
+                // smallest index k in B with pkey(B[k]) <= ki
+                size_t k = B.size();
+                for(size_t idx = 0; idx < B.size(); ++idx)
+                    if (pkey(B[idx]) <= ki) { k = idx; break; }
+                if (k == B.size())
+                    throw std::runtime_error("remove_simplices: internal error -- no B column found");
+                if (B[k] == i)             // i is itself in B; step one earlier
+                    --k;                   // k >= 1 here, since B[0] = j != i
+                size_t bk = B[k];
+                // add column bk to column i in R (a zero bk leaves R unchanged --
+                // skip it, paper Prop 3.5) and in V (keeping the V row index).
+                if (not r_data[bk].empty()) {
+                    ST::add_to_column(r_data[i], r_data[bk]);
+                    ++n_add_r;
+                }
+                col_add_indexed_(v_data, ri_v_, i, v_data[bk]);
+                ++n_add_v;
+            }
+
+            // remove column/row j: after the loop row j is clear in every
+            // surviving column, so drop column j and pull it from the V row index
+            // so later A's never see it.
+            for(Int r : v_data[j])
+                ri_remove_(ri_v_[static_cast<size_t>(r)], static_cast<Int>(j));
+            v_data[j].clear();
+            r_data[j].clear();
+        }
+
+        // -------- compaction: drop removed rows/columns, renumber survivors ----
+        const size_t n_new = n_old - L.size();
+        std::vector<size_t> old_to_new(n_old, n_old);   // n_old = "removed" sentinel
+        {
+            size_t p = 0;
+            for(size_t c = 0; c < n_old; ++c)
+                if (not dead[c])
+                    old_to_new[c] = p++;
+        }
+
+        // old per-column dimension (to rebuild the dimension blocks)
+        std::vector<dim_type> old_dim(n_old, 0);
+        for(dim_type d = 0; d < dim_first.size(); ++d)
+            for(Int c = dim_first[d]; c <= dim_last[d]; ++c)
+                old_dim[static_cast<size_t>(c)] = d;
+
+        MatrixData nR(n_new), nV(n_new), nD;
+        if (has_d_data_)
+            nD.resize(n_new);
+        std::vector<dim_type> new_dim(n_new, 0);
+
+        auto renumber = [&](const IntSparseColumn& src, const char* what) {
+            IntSparseColumn out;
+            out.reserve(src.size());
+            for(Int r : src) {
+                size_t nr = old_to_new[static_cast<size_t>(r)];
+                if (nr == n_old)
+                    throw std::runtime_error(std::string("remove_simplices: internal error -- ")
+                            + what + " column of a survivor references a removed row");
+                out.push_back(static_cast<Int>(nr));
+            }
+            return out;               // order-preserving relabel keeps it sorted
+        };
+
+        for(size_t c = 0; c < n_old; ++c) {
+            if (dead[c])
+                continue;
+            size_t p = old_to_new[c];
+            new_dim[p] = old_dim[c];
+            nR[p] = renumber(r_data[c], "R");
+            nV[p] = renumber(v_data[c], "V");
+            if (has_d_data_)
+                nD[p] = renumber(d_data[c], "D");
+        }
+
+        r_data = std::move(nR);
+        v_data = std::move(nV);
+        if (has_d_data_)
+            d_data = std::move(nD);
+
+        // rebuild dimension blocks from new_dim (non-decreasing); missing dims
+        // get an empty range (dim_last < dim_first) so dim loops skip them.
+        dim_type max_dim = 0;
+        for(size_t p = 0; p < n_new; ++p)
+            max_dim = std::max(max_dim, new_dim[p]);
+        dim_first.assign(max_dim + 1, 0);
+        dim_last.assign(max_dim + 1, -1);
+        {
+            std::vector<char> seen(max_dim + 1, 0);
+            for(size_t p = 0; p < n_new; ++p) {
+                dim_type d = new_dim[p];
+                if (not seen[d]) {
+                    dim_first[d] = static_cast<Int>(p);
+                    seen[d] = 1;
+                }
+                dim_last[d] = static_cast<Int>(p);
+            }
+        }
+        _dim_first = dim_first;        // homology: matrix dims == filtration dims
+        _dim_last = dim_last;
+
+        // rebuild pivots over the compacted R
+        _pivots.assign(n_new, Int(-1));
+        for(size_t p = 0; p < n_new; ++p)
+            if (not r_data[p].empty())
+                _pivots[r_data[p].back()] = static_cast<Int>(p);
+
+        n_rows = n_new;
+        if (not u_data_t.empty())
+            u_data_t.clear();
+        is_elz_in_dim_.clear();
+        for(dim_type d = 0; d < dim_first.size(); ++d)
+            is_elz_in_dim_[d] = false;
+        invalidate_dynamic_();         // ri_v_ is now stale / wrong-sized
+        is_reduced = true;
+
+        if (stats) {
+            stats->n_column_additions_r += n_add_r;
+            stats->n_column_additions_v += n_add_v;
             stats->nnz_r_after = matrix_nnz_(r_data);
             stats->nnz_v_after = matrix_nnz_(v_data);
             stats->elapsed_total += t_total.elapsed();

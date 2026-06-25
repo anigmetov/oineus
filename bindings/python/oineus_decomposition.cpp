@@ -410,6 +410,14 @@ void init_oineus_common_decomposition(nb::module_& m)
                     nb::arg("stats").none() = nullptr,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Luo-Nelson Alg 3: warm-start update with cell insertion/deletion + reorder.")
+            .def("remove_simplices", &Decomposition::remove_simplices,
+                    nb::arg("cells_to_remove"), nb::arg("stats").none() = nullptr, nb::arg("n_threads") = 1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "SiRUP (Giunti-Lazovskis): update the reduced R = D V decomposition in place "
+                    "after removing a coface-closed set of cells (sorted_ids; a union of stars, "
+                    "e.g. from Filtration.star_closure). Updates the barcode and representative "
+                    "cycles minimally; survivors keep filtration order, matching "
+                    "Filtration.without_cells. Homology only.")
             .def("is_reduced_consistent", &Decomposition::is_reduced_consistent,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "True if R is reduced and D V == R (does not require V upper-triangular).")

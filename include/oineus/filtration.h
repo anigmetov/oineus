@@ -337,6 +337,75 @@ namespace oineus {
             return antitranspose(boundary_matrix(n_threads), size());
         }
 
+        // SiRUP support (Giunti-Lazovskis). Coface up-closure ("union of stars")
+        // of a set of cells given by sorted_id, in sorted_id (matrix-index)
+        // space: the smallest superset that is closed under taking cofaces. Pass
+        // the result to VRUDecomposition::remove_simplices, so that F minus the
+        // result is again a filtration. Cost is O(nnz of the boundary) to build
+        // the cofacet adjacency, plus the BFS. Returns indices in increasing
+        // order.
+        std::vector<size_t> star_closure(const std::vector<size_t>& seed_sorted_ids, int n_threads=1) const
+        {
+            const size_t n = size();
+            // cofacet adjacency: cofacets[c] lists the cells having c as a facet
+            auto bm = boundary_matrix(n_threads);
+            std::vector<std::vector<Int>> cofacets(n);
+            for(size_t col = 0; col < n; ++col)
+                for(Int f: bm[col])
+                    cofacets[static_cast<size_t>(f)].push_back(static_cast<Int>(col));
+
+            std::vector<char> in_closure(n, 0);
+            std::vector<size_t> stack;
+            for(size_t s: seed_sorted_ids) {
+                if (s >= n)
+                    throw std::runtime_error("star_closure: seed index out of range");
+                if (not in_closure[s]) {
+                    in_closure[s] = 1;
+                    stack.push_back(s);
+                }
+            }
+            while(not stack.empty()) {
+                size_t c = stack.back();
+                stack.pop_back();
+                for(Int cof: cofacets[c]) {
+                    size_t u = static_cast<size_t>(cof);
+                    if (not in_closure[u]) {
+                        in_closure[u] = 1;
+                        stack.push_back(u);
+                    }
+                }
+            }
+
+            std::vector<size_t> result;
+            for(size_t c = 0; c < n; ++c)
+                if (in_closure[c])
+                    result.push_back(c);
+            return result;
+        }
+
+        // True iff the given set of cells (sorted_ids) is closed under cofaces,
+        // i.e. removing it leaves a valid filtration. Equivalent to: no cell
+        // outside the set has a facet inside it. O(nnz of the boundary).
+        bool is_up_closed(const std::vector<size_t>& cells, int n_threads=1) const
+        {
+            const size_t n = size();
+            std::vector<char> in_set(n, 0);
+            for(size_t c: cells) {
+                if (c >= n)
+                    throw std::runtime_error("is_up_closed: index out of range");
+                in_set[c] = 1;
+            }
+            auto bm = boundary_matrix(n_threads);
+            for(size_t col = 0; col < n; ++col) {
+                if (in_set[col])
+                    continue;
+                for(Int f: bm[col])
+                    if (in_set[static_cast<size_t>(f)])
+                        return false;       // a survivor has a removed face
+            }
+            return true;
+        }
+
         // Build the R-only working-column array straight from the boundary, ready
         // for the parallel reduction core: each column is a heap-allocated sorted
         // SparseColumn (the same form the classic prepare produces via
@@ -586,12 +655,36 @@ namespace oineus {
         // if so, the
         bool is_subfiltration() const { return is_subfiltration_; }
 
+        // SiRUP support: the subfiltration with the given cells (by sorted_id)
+        // removed. The removed set should be coface-closed (use star_closure) so
+        // the result is a valid filtration; survivors keep their relative order,
+        // so the i-th survivor here is the i-th surviving column of a
+        // VRUDecomposition::remove_simplices update -- the two stay in lockstep
+        // for diagram extraction.
+        Filtration without_cells(const std::vector<size_t>& cells_to_remove)
+        {
+            std::vector<char> dead(size(), 0);
+            for(size_t c: cells_to_remove) {
+                if (c >= size())
+                    throw std::runtime_error("without_cells: index out of range");
+                dead[c] = 1;
+            }
+            return subfiltration([&](const Cell& cell) {
+                return not dead[static_cast<size_t>(cell.get_sorted_id())];
+            });
+        }
+
         template<class P>
         Filtration subfiltration(const P& pred)
         {
             Filtration result;
 
             result.is_subfiltration_ = true;
+            // negate_ has no default initializer, so it must be copied explicitly
+            // (otherwise infinity()/neg_infinity() -- used for essential-point
+            // death values -- get an indeterminate sign). kind_ is inherited too.
+            result.negate_ = negate_;
+            result.kind_ = kind_;
             result.id_to_sorted_id_ = decltype(result.id_to_sorted_id_)(id_to_sorted_id_.size(), -1);
 
             std::set<dim_type> dims;

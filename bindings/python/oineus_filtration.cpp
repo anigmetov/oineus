@@ -142,6 +142,15 @@ void init_oineus_filtration(nb::module_& m)
             .def("boundary_matrix_in_dimension", &Filtration::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("coboundary_matrix", &Filtration::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("boundary_matrix_rel", &Filtration::boundary_matrix_rel)
+            .def("star_closure", &Filtration::star_closure, nb::arg("seed_sorted_ids"), nb::arg("n_threads")=1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Coface up-closure (union of stars) of the given cells (sorted_ids); pass to "
+                    "Decomposition.remove_simplices / Filtration.without_cells.")
+            .def("is_up_closed", &Filtration::is_up_closed, nb::arg("cells"), nb::arg("n_threads")=1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "True if the cells (sorted_ids) are closed under cofaces (removable as a filtration).")
+            .def("without_cells", &Filtration::without_cells, nb::arg("cells_to_remove"), nb::rv_policy::move,
+                    "Subfiltration with the given cells (sorted_ids) removed; survivors keep order.")
             .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids)
             .def("set_values", &Filtration::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("subfiltration", [](Filtration& self, const
@@ -309,6 +318,14 @@ void init_oineus_filtration(nb::module_& m)
             .def("boundary_matrix", &ProdFiltration::boundary_matrix, nb::arg("n_threads"), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("boundary_matrix_in_dimension", &ProdFiltration::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads"), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("coboundary_matrix", &ProdFiltration::coboundary_matrix, nb::arg("n_threads"), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("star_closure", &ProdFiltration::star_closure, nb::arg("seed_sorted_ids"), nb::arg("n_threads")=1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Coface up-closure (union of stars) of the given cells (sorted_ids).")
+            .def("is_up_closed", &ProdFiltration::is_up_closed, nb::arg("cells"), nb::arg("n_threads")=1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "True if the cells (sorted_ids) are closed under cofaces.")
+            .def("without_cells", &ProdFiltration::without_cells, nb::arg("cells_to_remove"), nb::rv_policy::move,
+                    "Subfiltration with the given cells (sorted_ids) removed; survivors keep order.")
             .def("reset_ids_to_sorted_ids", &ProdFiltration::reset_ids_to_sorted_ids)
             .def("set_values", &ProdFiltration::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("__repr__", [](const ProdFiltration& fil) {
@@ -395,6 +412,14 @@ void init_oineus_filtration(nb::module_& m)
             .def("boundary_matrix_in_dimension", &CubeFiltration_##DIM##D::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
             .def("coboundary_matrix", &CubeFiltration_##DIM##D::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
             .def("boundary_matrix_rel", &CubeFiltration_##DIM##D::boundary_matrix_rel) \
+            .def("star_closure", &CubeFiltration_##DIM##D::star_closure, nb::arg("seed_sorted_ids"), nb::arg("n_threads")=1, \
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
+                    "Coface up-closure (union of stars) of the given cells (sorted_ids).") \
+            .def("is_up_closed", &CubeFiltration_##DIM##D::is_up_closed, nb::arg("cells"), nb::arg("n_threads")=1, \
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
+                    "True if the cells (sorted_ids) are closed under cofaces.") \
+            .def("without_cells", &CubeFiltration_##DIM##D::without_cells, nb::arg("cells_to_remove"), nb::rv_policy::move, \
+                    "Subfiltration with the given cells (sorted_ids) removed; survivors keep order.") \
             .def("reset_ids_to_sorted_ids", &CubeFiltration_##DIM##D::reset_ids_to_sorted_ids) \
             .def("set_values", &CubeFiltration_##DIM##D::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
             .def(nb::self == nb::self) \

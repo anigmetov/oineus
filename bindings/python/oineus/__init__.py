@@ -1007,6 +1007,45 @@ def min_filtration(fil_1, fil_2, with_indices=False):
     else:
         return _oineus._min_filtration(fil_1, fil_2)
 
+def remove_simplices(fil, dcmp, seeds, *, close_star=True, stats=None, n_threads=1):
+    """SiRUP: remove a coface-closed set of cells from a reduced decomposition.
+
+    Updates ``dcmp`` in place to the reduced R = D V decomposition of the
+    filtration with the requested cells removed, updating both the barcode and
+    the representative cycles, instead of recomputing from scratch (Giunti and
+    Lazovskis, "Pruning vineyards: updating barcodes and representative cycles
+    by removing simplices").
+
+    Parameters
+    ----------
+    fil
+        The filtration ``dcmp`` was reduced from.
+    dcmp
+        A reduced Decomposition with V (reduce with compute_v = True), from the
+        classic ``oin.Decomposition(fil); dcmp.reduce(params)`` path. Homology
+        only. Mutated in place.
+    seeds
+        sorted_ids of the cells to remove. By default their coface up-closure
+        (union of stars) is taken so that the result is a valid filtration; set
+        ``close_star=False`` if ``seeds`` is already coface-closed.
+    close_star
+        Whether to expand ``seeds`` to ``fil.star_closure(seeds)`` first.
+    stats
+        Optional DecompositionManipStats collecting column-op counts and timings.
+    n_threads
+        Threads for the internal row-index / closure build.
+
+    Returns
+    -------
+    A new filtration on the surviving cells, in the same order as the updated
+    decomposition's columns, so ``dcmp.diagram(new_fil)`` gives the updated
+    diagram.
+    """
+    seeds = [int(s) for s in seeds]
+    cells = fil.star_closure(seeds, n_threads) if close_star else seeds
+    dcmp.remove_simplices(cells, stats, n_threads)
+    return fil.without_cells(cells)
+
 def compute_diagrams_ls(data: np.ndarray, negate: bool=False, wrap: bool=False,
                         max_dim: typing.Optional[int]=None, params: typing.Optional[ReductionParams]=None,
                         include_inf_points: bool=True, dualize: bool=False):
