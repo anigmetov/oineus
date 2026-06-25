@@ -1,9 +1,9 @@
 // Benchmark: Freudenthal grid filtration boundary/coboundary MATRIX CONSTRUCTION,
-// the current Simplex-based filtration vs a real Filtration<FreudenthalCell> (the
-// compact (anchor,type) cell + shared (co)boundary tables, Stage 2).
+// the current fat-Simplex filtration vs a real Filtration<Simplex<FreudenthalAnchorType>>
+// (the compact (anchor,type) cell + shared (co)boundary tables, Stage 2).
 //
 // Unlike bench_boundary.cpp -- which times a free-function prototype against the
-// master -- this builds an ACTUAL Filtration<FreudenthalCell> and times its
+// master -- this builds an ACTUAL Filtration<Simplex<FreudenthalAnchorType>> and times its
 // fil.boundary_matrix() / fil.coboundary_matrix(), so the measured speedup is the
 // one the live reduction path sees. The compact filtration is built from the
 // master's cells in the SAME order (presorted ctor), so the two boundary matrices
@@ -71,7 +71,8 @@ static void bench(size_t side, int reps)
     std::cout << "grid side=" << side << " top_d=" << D << "\n";
 
     using Grid = oineus::Grid<Int, Real, D>;
-    using FrCell = oineus::FreudenthalCell<Int, D>;
+    using FrEnc = oineus::FreudenthalAnchorType<Int, D>;
+    using FrCell = oineus::Simplex<Int, FrEnc>;
     using FrFiltration = oineus::Filtration<FrCell, Real>;
     using FrCellValue = oineus::CellWithValue<FrCell, Real>;
 
@@ -98,7 +99,7 @@ static void bench(size_t side, int reps)
     using MasterCell = std::decay_t<decltype(master.cells()[0])>;
     std::cout << "per-cell footprint: master sizeof(cell)=" << sizeof(MasterCell)
               << " B + heap (dim+1)*" << sizeof(Int) << " B vertex array;"
-              << " FreudenthalCell sizeof=" << sizeof(FrCellValue) << " B, no heap\n";
+              << " Freudenthal Simplex sizeof=" << sizeof(FrCellValue) << " B, no heap\n";
 
     // build the shared (anchor,type) tables once from the domain
     oineus::FrGeometry<Int, D> frgeom(grid.domain());
@@ -113,7 +114,7 @@ static void bench(size_t side, int reps)
         const auto& vs = mc.get_cell().get_vertices();
         std::vector<Int> vids(vs.begin(), vs.end());
         Int uid = frgeom.uid_of_vertices(vids);
-        cells.emplace_back(FrCell(uid, frgeom.dim_of_uid(uid)), mc.get_value());
+        cells.emplace_back(FrCell(FrEnc(uid, frgeom.dim_of_uid(uid))), mc.get_value());
     }
     FrFiltration fr(oineus::presorted, std::move(cells), /*negate=*/false);
     fr.set_geometry(frgeom);
@@ -134,12 +135,12 @@ static void bench(size_t side, int reps)
 
     std::cout << "\nBOUNDARY build (ms, median of " << reps << "):\n";
     std::printf("  %-34s %9.2f\n", "master (vector<vertex> Simplex)", t_master_bd);
-    std::printf("  %-34s %9.2f   speedup %5.2fx   %s\n", "Filtration<FreudenthalCell>", t_fr_bd,
+    std::printf("  %-34s %9.2f   speedup %5.2fx   %s\n", "Filtration<Simplex,Freudenthal>", t_fr_bd,
             t_fr_bd > 0 ? t_master_bd / t_fr_bd : 0.0, ok_bd ? "OK" : "MISMATCH");
 
     std::cout << "\nCOBOUNDARY build (ms, median of " << reps << "):\n";
     std::printf("  %-34s %9.2f\n", "master (antitranspose)", t_master_cob);
-    std::printf("  %-34s %9.2f   speedup %5.2fx   %s\n", "Filtration<FreudenthalCell> direct", t_fr_cob,
+    std::printf("  %-34s %9.2f   speedup %5.2fx   %s\n", "Filtration<Simplex,Freudenthal> direct", t_fr_cob,
             t_fr_cob > 0 ? t_master_cob / t_fr_cob : 0.0, ok_cob ? "OK" : "MISMATCH");
 }
 

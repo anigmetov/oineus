@@ -11,17 +11,37 @@
 
 using namespace oineus;
 
-// Build a Filtration<FreudenthalCell> from a grid's Simplex Freudenthal filtration,
-// in the SAME order (presorted ctor), so the two boundary matrices must be
-// column-for-column identical -- a tight oracle for the compact (anchor,type) cell
-// and its table-driven (co)boundary.
+// The Simplex<Int,Enc> wrapper exposes the alloc-elided boundary_into / coboundary_into
+// (the forms the Filtration's packed builders use); collect them into a vector for the
+// per-cell geometric checks below.
+template<class Cell, class Geom>
+static std::vector<typename Cell::Int> bd_uids(const Cell& c, const Geom& g)
+{
+    std::vector<typename Cell::Int> r;
+    c.boundary_into(g, [&r](typename Cell::Int u) { r.push_back(u); });
+    return r;
+}
+
+template<class Cell, class Geom>
+static std::vector<typename Cell::Int> cob_uids(const Cell& c, const Geom& g)
+{
+    std::vector<typename Cell::Int> r;
+    c.coboundary_into(g, [&r](typename Cell::Int u) { r.push_back(u); });
+    return r;
+}
+
+// Build a Filtration<Simplex<...,FreudenthalAnchorType>> from a grid's Simplex
+// Freudenthal filtration, in the SAME order (presorted ctor), so the two boundary
+// matrices must be column-for-column identical -- a tight oracle for the compact
+// (anchor,type) cell and its table-driven (co)boundary.
 template<size_t D>
 static void check_freudenthal_cell(const std::array<int, D>& dims)
 {
     using Int = int;
     using Real = double;
     using Grid = oineus::Grid<Int, Real, D>;
-    using FrCell = oineus::FreudenthalCell<Int, D>;
+    using FrEnc = oineus::FreudenthalAnchorType<Int, D>;
+    using FrCell = oineus::Simplex<Int, FrEnc>;
     using FrFiltration = oineus::Filtration<FrCell, Real>;
 
     typename Grid::GridPoint gp;
@@ -47,7 +67,7 @@ static void check_freudenthal_cell(const std::array<int, D>& dims)
         const auto& vs = mc.get_cell().get_vertices();
         std::vector<Int> vids(vs.begin(), vs.end());
         Int uid = frgeom.uid_of_vertices(vids);
-        cells.emplace_back(FrCell(uid, frgeom.dim_of_uid(uid)), mc.get_value());
+        cells.emplace_back(FrCell(FrEnc(uid, frgeom.dim_of_uid(uid))), mc.get_value());
     }
     FrFiltration fr(oineus::presorted, std::move(cells), /*negate=*/false);
     fr.set_geometry(frgeom);
@@ -92,7 +112,8 @@ static void check_freudenthal_materialization(const std::array<int, D>& dims)
     using Int = int;
     using Real = double;
     using Grid = oineus::Grid<Int, Real, D>;
-    using FrCell = oineus::FreudenthalCell<Int, D>;
+    using FrEnc = oineus::FreudenthalAnchorType<Int, D>;
+    using FrCell = oineus::Simplex<Int, FrEnc>;
     using Simplex = oineus::Simplex<Int>;
     using Uid128 = typename Simplex::Uid;
 
@@ -134,7 +155,7 @@ static void check_freudenthal_materialization(const std::array<int, D>& dims)
         std::sort(vids.begin(), vids.end());
 
         Int uid = frgeom.uid_of_vertices(vids);
-        FrCell cell(uid, frgeom.dim_of_uid(uid));
+        FrCell cell(FrEnc(uid, frgeom.dim_of_uid(uid)));
 
         // (1) materializer round-trips the encoding
         REQUIRE(frgeom.vertices_of(uid) == vids);
@@ -142,7 +163,7 @@ static void check_freudenthal_materialization(const std::array<int, D>& dims)
 
         // (2) slim boundary == fat boundary, as multisets of fat uids
         std::vector<Uid128> b_slim;
-        for (Int fu : cell.boundary(frgeom))
+        for (Int fu : bd_uids(cell, frgeom))
             b_slim.push_back(fat_uid(frgeom.vertices_of(fu)));
         std::vector<Uid128> b_fat = sigma.boundary();
         std::sort(b_slim.begin(), b_slim.end());
@@ -151,7 +172,7 @@ static void check_freudenthal_materialization(const std::array<int, D>& dims)
 
         // (3) slim coboundary == inverted-triangulation coboundary
         std::set<Uid128> c_slim;
-        for (Int cu : cell.coboundary(frgeom))
+        for (Int cu : cob_uids(cell, frgeom))
             c_slim.insert(fat_uid(frgeom.vertices_of(cu)));
         auto it = cob_oracle.find(sigma.get_uid());
         std::set<Uid128> c_oracle = (it == cob_oracle.end()) ? std::set<Uid128>{} : it->second;
@@ -177,7 +198,8 @@ TEST_CASE("freudenthal cell: 2x2 hand-checked triangulation, 2D")
     using Int = int;
     using Real = double;
     using Grid = oineus::Grid<Int, Real, 2>;
-    using FrCell = oineus::FreudenthalCell<Int, 2>;
+    using FrEnc = oineus::FreudenthalAnchorType<Int, 2>;
+    using FrCell = oineus::Simplex<Int, FrEnc>;
 
     typename Grid::GridPoint gp{2, 2};
     std::vector<Real> data(4, 0.0);
@@ -189,7 +211,7 @@ TEST_CASE("freudenthal cell: 2x2 hand-checked triangulation, 2D")
         std::vector<Int> vs(master.cells()[c].get_cell().get_vertices().begin(),
                             master.cells()[c].get_cell().get_vertices().end());
         Int uid = frgeom.uid_of_vertices(vs);
-        return std::make_pair(FrCell(uid, frgeom.dim_of_uid(uid)), vs);
+        return std::make_pair(FrCell(FrEnc(uid, frgeom.dim_of_uid(uid))), vs);
     };
     auto point_of = [&](Int id) { return grid.domain().id_to_point(id); };
 
@@ -212,14 +234,14 @@ TEST_CASE("freudenthal cell: 2x2 hand-checked triangulation, 2D")
 
         if (not diagonal) {
             // an axis-aligned edge bounds exactly one of the two triangles
-            REQUIRE(cell.coboundary(frgeom).size() == 1);
+            REQUIRE(cob_uids(cell, frgeom).size() == 1);
             continue;
         }
         ++n_diag;
 
         // the diagonal's boundary is exactly its two endpoints
         std::set<Int> got_b;
-        for (Int fu : cell.boundary(frgeom)) {
+        for (Int fu : bd_uids(cell, frgeom)) {
             auto fv = frgeom.vertices_of(fu);
             REQUIRE(fv.size() == 1);
             got_b.insert(fv[0]);
@@ -227,7 +249,7 @@ TEST_CASE("freudenthal cell: 2x2 hand-checked triangulation, 2D")
         REQUIRE(got_b == std::set<Int>(vs.begin(), vs.end()));
 
         // the diagonal is shared by both triangles, each containing both its endpoints
-        auto cob = cell.coboundary(frgeom);
+        auto cob = cob_uids(cell, frgeom);
         REQUIRE(cob.size() == 2);
         for (Int cu : cob) {
             auto cv = frgeom.vertices_of(cu);

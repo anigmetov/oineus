@@ -51,7 +51,7 @@ namespace oineus {
     // displacement set. Unlike the cube's compile-time OINEUS_MAX_CUBE_DIM, the number
     // of simplex types is data-dependent, so type_bits (how many low bits of a uid
     // hold the type) is a runtime value living here, not on the cell. This struct is
-    // the FreudenthalCell's Geometry: the Filtration owns one and threads it into the
+    // the Freudenthal cell's Geometry: the Filtration owns one and threads it into the
     // cell's (co)boundary. Restricted to non-wrap grids -- the id-offset arithmetic
     // (facet_anchor_id = anchor_id + id_off) relies on point_to_id being linear.
     template<typename Int_, unsigned D>
@@ -86,7 +86,7 @@ namespace oineus {
             // (no modular wrap-around), so the packed (anchor,type) form is only valid
             // on non-wrap grids. Wrap grids must use the Simplex filtration.
             if (dom.wrap())
-                throw std::runtime_error("FreudenthalCell does not support wrap grids; use the Simplex filtration");
+                throw std::runtime_error("Freudenthal cells do not support wrap grids; use the fat Simplex filtration");
             build_tables();
         }
 
@@ -219,9 +219,14 @@ namespace oineus {
         }
     };
 
+    // Freudenthal (Kuhn-triangulation) simplex ENCODING: a dense uid = anchor_id <<
+    // type_bits | type, plus the stored dimension (the cell concept needs dim() without
+    // geometry). Used as the Enc of Simplex<Int, FreudenthalAnchorType<Int,D>>: the
+    // wrapper carries the user id, this carries the geometry-relative encoding and its
+    // table-driven (co)boundary against the shared FrGeometry. Every face materializes,
+    // via vertices(geom), to the same fat Simplex.
     template<typename Int_, unsigned D>
-    class FreudenthalCell {
-    public:
+    struct FreudenthalAnchorType {
         using Int = Int_;
         using Uid = Int_;
         using Geometry = FrGeometry<Int, D>;
@@ -229,37 +234,43 @@ namespace oineus {
         using UidHasher = std::hash<Int>;
         using UidSet = std::unordered_set<Uid, UidHasher>;
         using Boundary = std::vector<Uid>;
+        // materialized fat vertex ids (see vertices(geom)); the wrapper exposes this as
+        // its IdxVector typedef, though a slim cell stores no vertices
+        using IdxVector = std::vector<Int>;
 
-        FreudenthalCell() = default;
-        FreudenthalCell(const FreudenthalCell&) = default;
-        FreudenthalCell(FreudenthalCell&&) noexcept = default;
-        FreudenthalCell& operator=(const FreudenthalCell&) = default;
-        FreudenthalCell& operator=(FreudenthalCell&&) noexcept = default;
+        static constexpr Int k_invalid_uid = Int(-1);
+
+        Int uid_ {k_invalid_uid};
+        dim_type dim_ {0};
+
+        FreudenthalAnchorType() = default;
+        FreudenthalAnchorType(const FreudenthalAnchorType&) = default;
+        FreudenthalAnchorType(FreudenthalAnchorType&&) noexcept = default;
+        FreudenthalAnchorType& operator=(const FreudenthalAnchorType&) = default;
+        FreudenthalAnchorType& operator=(FreudenthalAnchorType&&) noexcept = default;
 
         // uid = anchor_id << type_bits | type; dim is stored because the cell concept
         // needs dim() without the geometry (sorting, dim ranges). The caller MUST pass
-        // d == geometry.dim_of_uid(uid) -- prefer FrGeometry::dim_of_uid to derive it
-        // so the stored dim cannot desync from the uid. The uid space is
+        // d == geometry.dim_of_uid(uid) -- prefer FrGeometry::dim_of_uid to derive it so
+        // the stored dim cannot desync from the uid. The uid space is
         // (num_vertices << type_bits); Int must be wide enough to hold it (long int in
         // the Python build; int suffices only for small grids).
-        FreudenthalCell(Int uid, dim_type d) : id_(uid), dim_(d) {}
+        FreudenthalAnchorType(Int uid, dim_type d) : uid_(uid), dim_(d) {}
 
         dim_type dim() const { return dim_; }
 
-        Int get_uid() const { return id_; }
-        void set_uid() { throw std::runtime_error("Changing UID of a FreudenthalCell is prohibited."); }
-        Int get_id() const { return user_id_; }
-        void set_id(Int user_id) { user_id_ = user_id; }
+        Int get_uid() const { return uid_; }
+        void set_uid() { throw std::runtime_error("Changing UID of a Freudenthal cell is prohibited."); }
 
-        // Buffer (co)boundary against the shared tables: invoke emit(face_uid) for
-        // each (co)face, no intermediate vector. These are the alloc-elided bodies the
-        // Filtration builders call; the vector-returning boundary() wraps the first.
+        // Buffer (co)boundary against the shared tables: invoke emit(face_uid) for each
+        // (co)face, no intermediate vector. These are the alloc-elided bodies the
+        // Filtration builders call; the vector-returning boundary()/coboundary() wrap them.
         template<typename Visitor>
         void boundary_into(const Geometry& g, Visitor&& visit) const
         {
-            assert(id_ != k_invalid_id);
-            Int anchor_id = g.anchor_of(id_);
-            int t = g.type_of(id_);
+            assert(uid_ != k_invalid_uid);
+            Int anchor_id = g.anchor_of(uid_);
+            int t = g.type_of(uid_);
             for (const auto& e : g.bd_table[t])
                 visit(((anchor_id + e.id_off) << g.type_bits) | static_cast<Int>(e.ft));
         }
@@ -267,9 +278,9 @@ namespace oineus {
         template<typename Visitor>
         void coboundary_into(const Geometry& g, Visitor&& visit) const
         {
-            assert(id_ != k_invalid_id);
-            Int anchor_id = g.anchor_of(id_);
-            int t = g.type_of(id_);
+            assert(uid_ != k_invalid_uid);
+            Int anchor_id = g.anchor_of(uid_);
+            int t = g.type_of(uid_);
             Point ap = g.domain.id_to_point(anchor_id);
             Point shape = g.domain.shape();
             for (const auto& e : g.cob_table[t]) {
@@ -304,52 +315,29 @@ namespace oineus {
         // The grid vertex ids of this cell (slim->fat materialization), delegating to
         // the geometry's per-type displacement patterns. The fat Simplex on these
         // vertices is the honest cell this slim (anchor,type) form stands in for.
-        std::vector<Int> vertices(const Geometry& g) const { return g.vertices_of(id_); }
+        std::vector<Int> vertices(const Geometry& g) const { return g.vertices_of(uid_); }
 
-        bool operator==(const FreudenthalCell& other) const { return id_ == other.id_; }
-        bool operator!=(const FreudenthalCell& other) const { return !(*this == other); }
-
-        // A slim cell carries no geometry, so it can only print its uid and dim.
-        std::string pretty_print() const
-        {
-            std::stringstream ss;
-            ss << "FreudenthalCell(uid=" << id_ << ", user_id=" << user_id_ << ", dim=" << dim_ << ")";
-            return ss.str();
-        }
-
-    private:
-        static constexpr Int k_invalid_id = Int(-1);
-
-        Int id_ {k_invalid_id};
-        Int user_id_ {k_invalid_id};
-        dim_type dim_ {0};
+        bool operator==(const FreudenthalAnchorType& other) const { return uid_ == other.uid_; }
+        bool operator!=(const FreudenthalAnchorType& other) const { return !(*this == other); }
     };
 
+    // A slim Freudenthal cell carries no geometry, so it prints only its uid and dim.
     template<typename Int, unsigned D>
-    std::ostream& operator<<(std::ostream& out, const FreudenthalCell<Int, D>& c)
+    std::ostream& operator<<(std::ostream& out, const FreudenthalAnchorType<Int, D>& c)
     {
-        out << c.pretty_print();
+        out << "FreudenthalAnchorType(uid=" << c.uid_ << ", dim=" << c.dim_ << ")";
         return out;
     }
 
     // Dense integer uid (anchor << type_bits | type), with a table-driven buffer
-    // (co)boundary: advertise the packed path so the Filtration uses the alloc-elided
-    // builders and the flat uid->sorted_id index, exactly like Cube.
+    // (co)boundary: advertise the packed path so a Simplex<Int,FreudenthalAnchorType>
+    // filtration uses the alloc-elided builders and the flat uid->sorted_id index,
+    // exactly like Cube. The wrapper's traits (simplex.h) delegate to these.
     template<typename Int, unsigned D>
-    struct HasPackedBoundary<FreudenthalCell<Int, D>> : std::true_type {};
+    struct HasPackedBoundary<FreudenthalAnchorType<Int, D>> : std::true_type {};
     template<typename Int, unsigned D>
-    struct HasDirectCoboundary<FreudenthalCell<Int, D>> : std::true_type {};
+    struct HasDirectCoboundary<FreudenthalAnchorType<Int, D>> : std::true_type {};
     template<typename Int, unsigned D>
-    struct UsesDenseUidIndex<FreudenthalCell<Int, D>> : std::true_type {};
+    struct UsesDenseUidIndex<FreudenthalAnchorType<Int, D>> : std::true_type {};
 
 } // namespace oineus
-
-namespace std {
-    template<typename Int, unsigned D>
-    struct hash<oineus::FreudenthalCell<Int, D>> {
-        size_t operator()(const oineus::FreudenthalCell<Int, D>& c) const
-        {
-            return std::hash<Int>{}(c.get_uid());
-        }
-    };
-}
