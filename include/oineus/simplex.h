@@ -255,6 +255,14 @@ struct Simplex {
     {
     }
 
+    // Construct directly from an already-built encoding -- used by packed encodings
+    // (Freudenthal anchor+type, bit-packed) whose payload is a uid + dim rather than a
+    // vertex list. The user id defaults to invalid until the filtration assigns one.
+    explicit Simplex(Enc _enc, Int _id = k_invalid_id)
+            :id_(_id), enc_(std::move(_enc))
+    {
+    }
+
     dim_type dim() const { return enc_.dim(); }
 
     Int get_id() const { return id_; }
@@ -274,6 +282,30 @@ struct Simplex {
         static_assert(std::is_same_v<Geometry, NoGeometry>,
                       "no-argument boundary() is only available for self-contained (NoGeometry) encodings");
         return enc_.boundary();
+    }
+
+    // Geometry-bearing encodings (Freudenthal anchor+type, bit-packed) expose
+    // alloc-elided buffer (co)boundary and on-the-fly vertex materialization that need
+    // the shared geometry; these forward to the encoding. They are member templates,
+    // so each is instantiated only for an encoding that actually provides it -- the
+    // Filtration's packed builders call boundary_into / coboundary_into, and the
+    // fat-cell materialization (Fattener / tests) calls vertices.
+    template<class Visitor>
+    void boundary_into(const Geometry& geom, Visitor&& visit) const
+    {
+        enc_.boundary_into(geom, std::forward<Visitor>(visit));
+    }
+
+    template<class Visitor>
+    void coboundary_into(const Geometry& geom, Visitor&& visit) const
+    {
+        enc_.coboundary_into(geom, std::forward<Visitor>(visit));
+    }
+
+    template<class E = Enc>
+    auto vertices(const Geometry& geom) const -> decltype(std::declval<const E&>().vertices(geom))
+    {
+        return enc_.vertices(geom);
     }
 
     // create a new simplex by joining with vertex and assign id to it
@@ -328,6 +360,14 @@ std::ostream& operator<<(std::ostream& out, const Simplex<I, E>& s)
     out << s.enc_;
     return out;
 }
+
+// A Simplex's cell-policy traits delegate to its encoding's: a Simplex is
+// packed-boundary / direct-coboundary / dense-uid-indexed exactly when its encoding
+// is. Fat leaves all three at the default false (the historical fat Simplex); packed
+// encodings (Freudenthal anchor+type, bit-packed) specialize their own.
+template<class Int, class Enc> struct HasPackedBoundary<Simplex<Int, Enc>> : HasPackedBoundary<Enc> {};
+template<class Int, class Enc> struct HasDirectCoboundary<Simplex<Int, Enc>> : HasDirectCoboundary<Enc> {};
+template<class Int, class Enc> struct UsesDenseUidIndex<Simplex<Int, Enc>> : UsesDenseUidIndex<Enc> {};
 }
 
 namespace std {
