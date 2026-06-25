@@ -70,6 +70,10 @@ namespace oineus {
         std::vector<std::vector<BdEntry>> bd_table;   // indexed by type
         std::vector<std::vector<CobEntry>> cob_table; // indexed by type
         std::vector<int> type_dim;                    // dimension of each type
+        // normalized displacement pattern of each type, relative to the cell's anchor
+        // (= min-corner = min-id vertex of a Kuhn simplex). The inverse of set2type;
+        // kept so a (anchor,type) uid can be materialized back to its grid vertex ids.
+        std::vector<std::vector<Point>> type_disps;
         std::map<std::vector<Point>, int> set2type;   // normalized pattern -> type
         int type_bits {1};
         Int type_mask {1};
@@ -124,11 +128,32 @@ namespace oineus {
             return make_uid(anchor_id, it->second);
         }
 
+        // Materialize the grid vertex ids of the cell with this uid: anchor point +
+        // each of the type's displacements, mapped back to ids, sorted (the canonical
+        // fat Simplex vertex order). Inverse of uid_of_vertices. This is the slim->fat
+        // materialization the filtration's fat-cell accessors / the Fattener use; for
+        // a Kuhn simplex the anchor is the min-corner, so the normalized type pattern
+        // sits at the anchor and these additions land exactly on the vertices.
+        std::vector<Int> vertices_of(Int uid) const
+        {
+            Point ap = domain.id_to_point(anchor_of(uid));
+            const std::vector<Point>& disps = type_disps[type_of(uid)];
+            std::vector<Int> vids;
+            vids.reserve(disps.size());
+            for (const Point& d : disps) {
+                Point p;
+                for (unsigned k = 0; k < D; ++k)
+                    p[k] = ap[k] + d[k];
+                vids.push_back(domain.point_to_id(p));
+            }
+            std::sort(vids.begin(), vids.end());
+            return vids;
+        }
+
     private:
         void build_tables()
         {
             using Point = typename Domain::GridPoint;
-            std::vector<std::vector<Point>> type_disps;
             std::vector<Point> type_maxoff;
 
             auto register_type = [&](const std::vector<Point>& norm, int d) {
@@ -275,6 +300,11 @@ namespace oineus {
             coboundary_into(g, [&result](Int u) { result.push_back(u); });
             return result;
         }
+
+        // The grid vertex ids of this cell (slim->fat materialization), delegating to
+        // the geometry's per-type displacement patterns. The fat Simplex on these
+        // vertices is the honest cell this slim (anchor,type) form stands in for.
+        std::vector<Int> vertices(const Geometry& g) const { return g.vertices_of(id_); }
 
         bool operator==(const FreudenthalCell& other) const { return id_ == other.id_; }
         bool operator!=(const FreudenthalCell& other) const { return !(*this == other); }
