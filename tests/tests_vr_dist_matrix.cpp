@@ -87,7 +87,7 @@ oineus::DistMatrix<Real> dist_matrix()
 
 VKey cell_key(const oineus::CellWithValue<oineus::Simplex<Int>, Real>& c)
 {
-    VKey vs(c.get_cell().vertices_.begin(), c.get_cell().vertices_.end());
+    VKey vs(c.get_cell().get_vertices().begin(), c.get_cell().get_vertices().end());
     std::sort(vs.begin(), vs.end());
     return vs;
 }

@@ -10,6 +10,7 @@
 #include <unordered_set>
 #include <string>
 #include <sstream>
+#include <type_traits>
 
 #include "common_defs.h"
 
@@ -92,8 +93,21 @@ inline std::ostream& operator<<(std::ostream& out, const VREdge<Int>& e)
     return out;
 }
 
+// A simplicial cell is Simplex<Int, Enc>: a thin wrapper that carries the user id
+// and delegates storage + (co)boundary to an encoding policy Enc. The default Fat
+// encoding (below) stores the explicit, sorted vertex list -- the universal fat
+// form used by user-defined, Vietoris-Rips and alpha filtrations -- so that
+// Simplex<Int> means Simplex<Int, Fat<Int>> and the historical behavior is
+// preserved exactly. Other encodings (bit-packed VR ids, Freudenthal anchor+type)
+// are added as further Enc policies; each materializes to the same fat vertex list
+// on access. This (Stage C of the slim-cell refactor) is the no-behavior-change
+// wrapper introduction with Enc = Fat.
+
+// Fat encoding: an explicit sorted vertex list plus the cached combinatorial uid.
+// Self-contained -- its (co)boundary needs no shared geometry, so Geometry =
+// NoGeometry and it provides a no-argument boundary().
 template<typename Int_>
-struct Simplex {
+struct Fat {
     using Int = Int_;
     // Vertex storage routed through jemalloc when the build links it (see
     // JeAllocator in common_defs.h); identical type/ABI when it does not, so the
@@ -103,68 +117,21 @@ struct Simplex {
     using Uid = unsigned __int128;
     // for Z2 only for now
     using Boundary = std::vector<Uid>;
-    // self-contained: a simplex stores its vertices, so its boundary needs no
-    // external geometry (see common_defs.h NoGeometry).
     using Geometry = NoGeometry;
+    using UidHasher = std::hash<Uid>;
+    using UidSet = std::unordered_set<Uid, UidHasher>;
 
-    static constexpr Int k_invalid_id = Int(-1);
-
-    Int id_ {k_invalid_id};
     Uid uid_ {};
     IdxVector vertices_;
 
-    Simplex() = default;
-    Simplex(const Simplex&) = default;
-    Simplex(Simplex&&) noexcept = default;
-    Simplex& operator=(const Simplex&) = default;
-    Simplex& operator=(Simplex&&) noexcept = default;
+    Fat() = default;
+    Fat(const Fat&) = default;
+    Fat(Fat&&) noexcept = default;
+    Fat& operator=(const Fat&) = default;
+    Fat& operator=(Fat&&) noexcept = default;
 
-    Simplex(const IdxVector& _vertices)
+    explicit Fat(const IdxVector& _vertices)
             :vertices_(_vertices)
-    {
-        if (vertices_.empty())
-            throw std::runtime_error("Empty simplex not allowed");
-
-        if (vertices_.size() == 1)
-            id_ = vertices_[0];
-        else
-            std::sort(vertices_.begin(), vertices_.end());
-
-        set_uid();
-    }
-
-    // Caller promises _vertices is already in ascending order, so we skip
-    // the std::sort step. Used by the in-order (VRE) Vietoris-Rips
-    // construction, which builds vertex lists pre-sorted by construction
-    // (see generate_cofacets in vietoris_rips_inorder.h). Takes by rvalue
-    // reference because the typical caller has already moved its working
-    // IdxVector into the call.
-    Simplex(presorted_t, IdxVector&& _vertices)
-            :vertices_(std::move(_vertices))
-    {
-        if (vertices_.empty())
-            throw std::runtime_error("Empty simplex not allowed");
-
-        assert(std::is_sorted(vertices_.begin(), vertices_.end()));
-
-        if (vertices_.size() == 1)
-            id_ = vertices_[0];
-
-        set_uid();
-    }
-
-    // uids are set in parallel
-    void set_uid() { uid_ = simplex_uid<Int>(vertices_); }
-
-    dim_type dim() const { return static_cast<Int>(vertices_.size()) - 1; }
-
-    Int get_id() const { return id_; }
-    void set_id(Int new_id) { id_ = new_id; }
-
-    const IdxVector& get_vertices() const { return vertices_; }
-
-    Simplex(const Int _id, const IdxVector& _vertices)
-            :id_(_id), vertices_(_vertices)
     {
         if (vertices_.empty())
             throw std::runtime_error("Empty simplex not allowed");
@@ -174,6 +141,30 @@ struct Simplex {
 
         set_uid();
     }
+
+    // Caller promises _vertices is already in ascending order, so we skip the
+    // std::sort step. Used by the in-order (VRE) Vietoris-Rips construction, which
+    // builds vertex lists pre-sorted by construction (see generate_cofacets in
+    // vietoris_rips_inorder.h). Takes by rvalue reference because the typical
+    // caller has already moved its working IdxVector into the call.
+    Fat(presorted_t, IdxVector&& _vertices)
+            :vertices_(std::move(_vertices))
+    {
+        if (vertices_.empty())
+            throw std::runtime_error("Empty simplex not allowed");
+
+        assert(std::is_sorted(vertices_.begin(), vertices_.end()));
+
+        set_uid();
+    }
+
+    dim_type dim() const { return static_cast<Int>(vertices_.size()) - 1; }
+
+    Uid get_uid() const { return uid_; }
+    // uids are set in parallel
+    void set_uid() { uid_ = simplex_uid<Int>(vertices_); }
+
+    const IdxVector& get_vertices() const { return vertices_; }
 
     Boundary boundary() const
     {
@@ -200,15 +191,101 @@ struct Simplex {
         return boundary;
     }
 
-    // create a new simplex by joining with vertex and assign value to it
+    bool operator==(const Fat& other) const { return vertices_ == other.vertices_; }
+    bool operator!=(const Fat& other) const { return !(*this == other); }
+};
+
+template<typename Int>
+std::ostream& operator<<(std::ostream& out, const Fat<Int>& f)
+{
+    out << "[";
+
+    for(size_t i = 0 ; i + 1 < f.vertices_.size() ; ++i)
+        out << f.vertices_[i] << ", ";
+
+    out << f.vertices_[f.vertices_.size() - 1] << "]";
+
+    return out;
+}
+
+template<typename Int_, typename Enc_ = Fat<Int_>>
+struct Simplex {
+    using Int = Int_;
+    using Enc = Enc_;
+
+    // The cell-concept typedefs come from the encoding; for Fat these are the
+    // historical Simplex types (IdxVector / unsigned __int128 uid / NoGeometry).
+    using IdxVector = typename Enc::IdxVector;
+    using Uid = typename Enc::Uid;
+    using Boundary = typename Enc::Boundary;
+    using Geometry = typename Enc::Geometry;
+    using UidHasher = typename Enc::UidHasher;
+    using UidSet = typename Enc::UidSet;
+
+    static constexpr Int k_invalid_id = Int(-1);
+
+    Int id_ {k_invalid_id};
+    Enc enc_;
+
+    Simplex() = default;
+    Simplex(const Simplex&) = default;
+    Simplex(Simplex&&) noexcept = default;
+    Simplex& operator=(const Simplex&) = default;
+    Simplex& operator=(Simplex&&) noexcept = default;
+
+    Simplex(const IdxVector& _vertices)
+            :enc_(_vertices)
+    {
+        // a vertex (0-simplex) takes its single vertex as its user id, matching
+        // the historical Simplex(vertices) behavior; higher-dimensional cells keep
+        // k_invalid_id until the filtration assigns one.
+        if (enc_.dim() == 0)
+            id_ = enc_.get_vertices()[0];
+    }
+
+    Simplex(presorted_t, IdxVector&& _vertices)
+            :enc_(presorted, std::move(_vertices))
+    {
+        if (enc_.dim() == 0)
+            id_ = enc_.get_vertices()[0];
+    }
+
+    Simplex(const Int _id, const IdxVector& _vertices)
+            :id_(_id), enc_(_vertices)
+    {
+    }
+
+    dim_type dim() const { return enc_.dim(); }
+
+    Int get_id() const { return id_; }
+    void set_id(Int new_id) { id_ = new_id; }
+
+    Uid get_uid() const { return enc_.get_uid(); }
+    void set_uid() { enc_.set_uid(); }
+
+    const IdxVector& get_vertices() const { return enc_.get_vertices(); }
+
+    // No-argument boundary, for self-contained encodings (NoGeometry, e.g. Fat).
+    // Encodings that need the shared geometry to compute their boundary do not
+    // expose a no-argument form; the static_assert turns a stray call into a clear
+    // compile error rather than a silent empty result.
+    Boundary boundary() const
+    {
+        static_assert(std::is_same_v<Geometry, NoGeometry>,
+                      "no-argument boundary() is only available for self-contained (NoGeometry) encodings");
+        return enc_.boundary();
+    }
+
+    // create a new simplex by joining with vertex and assign id to it
     Simplex join(Int new_id, Int vertex) const
     {
+        const IdxVector& vs = enc_.get_vertices();
         // new vertex must not be present in this->vertices
-        assert(std::find(vertices_.begin(), vertices_.end(), vertex) == vertices_.end());
+        assert(std::find(vs.begin(), vs.end(), vertex) == vs.end());
 
-        IdxVector vs = vertices_;
-        vs.push_back(vertex);
-        return Simplex(new_id, vs);
+        IdxVector new_vertices = vs;
+        new_vertices.push_back(vertex);
+        return Simplex(new_id, new_vertices);
     }
 
     Simplex join(Int vertex)
@@ -219,7 +296,7 @@ struct Simplex {
     bool operator==(const Simplex& other) const
     {
         // ignore id_ ?
-        return get_id() == other.get_id() and vertices_ == other.vertices_;
+        return get_id() == other.get_id() and enc_ == other.enc_;
     }
 
     bool operator!=(const Simplex& other) const
@@ -227,38 +304,28 @@ struct Simplex {
         return !(*this == other);
     }
 
-    template<typename I>
-    friend std::ostream& operator<<(std::ostream&, const Simplex<I>&);
-
-    Uid get_uid() const { return uid_; }
+    template<typename I, typename E>
+    friend std::ostream& operator<<(std::ostream&, const Simplex<I, E>&);
 
     std::string repr() const
     {
         std::stringstream out;
+        const IdxVector& vs = enc_.get_vertices();
         out << "Simplex(id_=" << id_ << ", vertices_=[";
 
-        for(size_t i = 0 ; i < vertices_.size() - 1 ; ++i)
-            out << vertices_[i] << ", ";
+        for(size_t i = 0 ; i + 1 < vs.size() ; ++i)
+            out << vs[i] << ", ";
 
-        out << vertices_[vertices_.size() - 1] << "])";
+        out << vs[vs.size() - 1] << "])";
 
         return out.str();
     }
-
-    using UidHasher = std::hash<Uid>;
-    using UidSet = std::unordered_set<Uid, UidHasher>;
 };
 
-template<typename I>
-std::ostream& operator<<(std::ostream& out, const Simplex<I>& s)
+template<typename I, typename E>
+std::ostream& operator<<(std::ostream& out, const Simplex<I, E>& s)
 {
-    out << "[";
-
-    for(size_t i = 0 ; i < s.vertices_.size() - 1 ; ++i)
-        out << s.vertices_[i] << ", ";
-
-    out << s.vertices_[s.vertices_.size() - 1] << "]";
-
+    out << s.enc_;
     return out;
 }
 }
@@ -301,9 +368,9 @@ struct hash<oineus::VREdge<Int>> {
     }
 };
 
-template<class Int>
-struct hash<oineus::Simplex<Int>> {
-    std::size_t operator()(const oineus::Simplex<Int>& sigma) const
+template<class Int, class Enc>
+struct hash<oineus::Simplex<Int, Enc>> {
+    std::size_t operator()(const oineus::Simplex<Int, Enc>& sigma) const
     {
         std::size_t seed = 0;
         oineus::hash_combine(seed, sigma.get_id());

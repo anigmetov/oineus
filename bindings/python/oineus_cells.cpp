@@ -19,8 +19,8 @@ void init_oineus_cells(nb::module_& m)
     const std::string cube_class_name = "CubeValue";
 
     using SimplexStateTuple = std::tuple<decltype(Simplex::id_),
-                                         decltype(Simplex::uid_),
-                                         decltype(Simplex::vertices_)
+                                         Simplex::Uid,
+                                         Simplex::IdxVector
                                          >;
 
     using SimplexValueStateTuple = std::tuple<decltype(SimplexValue::value_),
@@ -41,8 +41,8 @@ void init_oineus_cells(nb::module_& m)
     nb::class_<Simplex>(m, pure_simplex_class_name.c_str())
         .def(nb::init<const Simplex::IdxVector&>(), nb::arg("vertices"))
         .def(nb::init<oin_int, const Simplex::IdxVector&>(), nb::arg("id"), nb::arg("vertices"))
-        .def("__iter__", [](Simplex& sigma) { return nb::make_iterator(nb::type<Simplex>(), "vertices_iterator", sigma.vertices_.begin(), sigma.vertices_.end()); }, nb::keep_alive<0, 1>())
-        .def("__getitem__", [](Simplex& sigma, size_t i) { return sigma.vertices_[i]; })
+        .def("__iter__", [](Simplex& sigma) { return nb::make_iterator(nb::type<Simplex>(), "vertices_iterator", sigma.get_vertices().begin(), sigma.get_vertices().end()); }, nb::keep_alive<0, 1>())
+        .def("__getitem__", [](Simplex& sigma, size_t i) { return sigma.get_vertices()[i]; })
         .def_prop_rw("id", &Simplex::get_id, &Simplex::set_id)
         .def_prop_ro("vertices", &Simplex::get_vertices)
         .def_prop_ro("uid", &Simplex::get_uid)
@@ -56,12 +56,11 @@ void init_oineus_cells(nb::module_& m)
         .def(nb::self == nb::self)
         .def(nb::self != nb::self)
         .def(nb::hash(nb::self))
-        .def("__getstate__", [](const Simplex& sigma) { return std::make_tuple(sigma.id_, sigma.uid_, sigma.vertices_); })
+        .def("__getstate__", [](const Simplex& sigma) { return std::make_tuple(sigma.get_id(), sigma.get_uid(), sigma.get_vertices()); })
         .def("__setstate__", [](Simplex& sigma, const SimplexStateTuple& state) {
-            new (&sigma) Simplex();
-            sigma.id_ = std::get<0>(state);
-            sigma.uid_ = std::get<1>(state);
-            sigma.vertices_ = std::get<2>(state);
+            // reconstruct from id + vertices; the cached uid (element 1) is recomputed
+            // deterministically by the ctor, so it does not need to be restored
+            new (&sigma) Simplex(std::get<0>(state), std::get<2>(state));
          })
         .def("__repr__", [](const Simplex& sigma) {
           std::stringstream ss;
@@ -100,8 +99,8 @@ void init_oineus_cells(nb::module_& m)
             .def("__init__", [](SimplexValue * p, oin_int id, const Simplex::IdxVector& vs, oin_real value) {
                     new (p) SimplexValue(Simplex(id, vs), value);
                 }, nb::arg("id"), nb::arg("vertices"), nb::arg("value"))
-            .def("__iter__", [](SimplexValue& sigma) { return nb::make_iterator(nb::type<SimplexValue>(), "vertex_iterator", sigma.cell_.vertices_.begin(), sigma.cell_.vertices_.end()); }, nb::keep_alive<0, 1>())
-            .def("__getitem__", [](SimplexValue& sigma, size_t i) { return sigma.cell_.vertices_[i]; })
+            .def("__iter__", [](SimplexValue& sigma) { return nb::make_iterator(nb::type<SimplexValue>(), "vertex_iterator", sigma.cell_.get_vertices().begin(), sigma.cell_.get_vertices().end()); }, nb::keep_alive<0, 1>())
+            .def("__getitem__", [](SimplexValue& sigma, size_t i) { return sigma.cell_.get_vertices()[i]; })
             .def_prop_rw("id", &SimplexValue::get_id, &SimplexValue::set_id)
             .def_rw("sorted_id", &SimplexValue::sorted_id_)
             .def_prop_ro("vertices", &SimplexValue::get_vertices<Simplex>, "simplex vertices")

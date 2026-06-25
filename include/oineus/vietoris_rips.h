@@ -58,7 +58,7 @@ namespace oineus {
             }
         }
 
-        return {SimplexWithValue(Simplex(vertices), crit_value), crit_edge};
+        return {SimplexWithValue(Simplex<Int>(vertices), crit_value), crit_edge};
     }
 
     template<class Int, class Real>

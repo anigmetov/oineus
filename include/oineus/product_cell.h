@@ -216,7 +216,7 @@ build_mapping_cylinder(const Filtration<Cell, Real>& fil_domain,
 
     auto f = get_inclusion_mapping<Cell, Real>(fil_domain, fil_codomain);
 
-    Simplex<Int> edge {std::max(v_domain.get_id(), v_codomain.get_id()) + 1, {v_domain.vertices_[0], v_codomain.vertices_[0]}};
+    Simplex<Int> edge {std::max(v_domain.get_id(), v_codomain.get_id()) + 1, {v_domain.get_vertices()[0], v_codomain.get_vertices()[0]}};
     // Edge spans both auxiliary vertices, so it must enter the filtration no
     // earlier than either endpoint.
     [[maybe_unused]] Real edge_value = fil_domain.fil_max(v_domain_value, v_codomain_value);
@@ -288,20 +288,20 @@ build_mapping_cylinder_with_indices(const Filtration<Cell, Real>& fil_domain,
         Int cell_id = cell.get_id();
         if (cell_id < static_cast<Int>(fil_domain.size())) {
             // domain simplex x v_domain, critical value comes from domain
-            assert(cell.get_factor_2().vertices_ == decltype(cell.get_factor_2().vertices_)({v_domain.get_id()}));
+            assert(cell.get_factor_2().get_vertices() == Simplex<Int>::IdxVector({v_domain.get_id()}));
             assert(cell.get_value() == fil_domain.fil_max(fil_domain.get_cell_value(cell_id), v_domain_value));
 
             crit_val_indices.push_back(cell_id);
         } else if (cell_id < static_cast<Int>(fil_domain.size() + fil_codomain.size())) {
             // codomain simplex x v_codomain, critical value comes from codomain
             // in the concatenated tensor, it's still cell_id
-            assert(cell.get_factor_2().vertices_ == decltype(cell.get_factor_2().vertices_)({v_codomain.get_id()}));
+            assert(cell.get_factor_2().get_vertices() == Simplex<Int>::IdxVector({v_codomain.get_id()}));
             assert(cell.get_value() == fil_codomain.fil_max(fil_codomain.get_cell_value(cell_id-fil_domain.size()), v_codomain_value));
 
             crit_val_indices.push_back(cell_id);
         } else {
             // domain simplex x [v_domain, v_codomain] critical value comes from domain
-            assert(cell.get_factor_2().vertices_ == decltype(cell.get_factor_2().vertices_)({v_domain.get_id(), v_codomain.get_id()}) or cell.get_factor_2().vertices_ == decltype(cell.get_factor_2().vertices_)({v_codomain.get_id(), v_domain.get_id()}) );
+            assert(cell.get_factor_2().get_vertices() == Simplex<Int>::IdxVector({v_domain.get_id(), v_codomain.get_id()}) or cell.get_factor_2().get_vertices() == Simplex<Int>::IdxVector({v_codomain.get_id(), v_domain.get_id()}) );
             assert(cell_id >= static_cast<Int>(fil_domain.size() + fil_codomain.size()));
 
             Int domain_id = cell_id - fil_domain.size() - fil_codomain.size();
