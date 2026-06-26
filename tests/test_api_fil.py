@@ -27,6 +27,47 @@ def _make_simplex_filtration():
     return oin.Filtration(simplices, negate=False, n_threads=1)
 
 
+def test_filtration_dispatches_on_cell_type():
+    # oin.Filtration(cells) is a facade that dispatches on the fat cell type: a list of
+    # Simplex builds the simplicial filtration, a list of Cube_ND builds the cubical one,
+    # ProdSimplex the product one. isinstance(x, oin.Filtration) is true for any filtration
+    # the library produces (incl. factory-built ones whose concrete type is internal).
+    import numpy as np
+
+    fs = oin.Filtration([oin.Simplex([0], 0.0), oin.Simplex([1], 0.0), oin.Simplex([0, 1], 1.0)])
+    assert type(fs).__name__ == "Filtration"
+    assert isinstance(fs, oin.Filtration)
+
+    dom = oin.GridDomain_2D(2, 2)
+    cubes = [oin.Cube_2D(anchor_vertex=[0, 0], spanning_dims=[], domain=dom, value=0.0),
+             oin.Cube_2D(anchor_vertex=[0, 0], spanning_dims=[0], domain=dom, value=0.5)]
+    fc = oin.Filtration(cubes)
+    assert type(fc).__name__ == "CubeFiltration_2D"
+    assert isinstance(fc, oin.Filtration)
+
+    fp = oin.Filtration([oin.ProdSimplex(oin.Simplex([0], 0.0), oin.Simplex([1], 0.1), 0.2)])
+    assert type(fp).__name__ == "ProdFiltration"
+    assert isinstance(fp, oin.Filtration)
+
+    # factory-built filtrations are recognized as Filtrations even though their concrete
+    # C++ type is an internal (possibly slim/packed) detail
+    vr = oin.vr_filtration(np.ascontiguousarray(np.random.default_rng(0).random((8, 3))),
+                           max_dim=2, max_diameter=1.0)
+    assert isinstance(vr, oin.Filtration)
+
+    # the (vertices, value)-tuple constructor of the universal simplicial filtration still works
+    ft = oin.Filtration([([0], 0.0), ([1], 0.0), ([0, 1], 1.0)])
+    assert type(ft).__name__ == "Filtration" and ft.size() == 3
+
+    # empty -> the universal (fat Simplex) filtration; a non-cell list -> clear error
+    assert oin.Filtration([]).size() == 0
+    try:
+        oin.Filtration([42])
+        assert False, "expected TypeError"
+    except TypeError:
+        pass
+
+
 def _make_prod_filtration():
     v0 = oin.Simplex([0], 0.0)
     v1 = oin.Simplex([1], 0.1)

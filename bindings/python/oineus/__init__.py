@@ -12,7 +12,7 @@ from . import _oineus
 from ._oineus import ConflictStrategy, DenoiseStrategy, VREdge, FiltrationKind
 from ._oineus import DiagramPlaneDomain, FrechetMeanInit
 from ._oineus import CombinatorialProdSimplex, CombinatorialSimplex,Simplex, ProdSimplex
-from ._oineus import Filtration, ProdFiltration
+from ._oineus import ProdFiltration  # noqa: F401  (oin.Filtration below dispatches to it)
 from ._oineus import Decomposition, IndexDiagramPoint, DiagramPoint, Diagrams
 from ._oineus import reduce
 from ._oineus import DecompositionManipStats
@@ -34,6 +34,80 @@ from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, Cube
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
 from ._oineus import FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D
 from ._oineus import PackedSimplexFiltration_64, PackedSimplexFiltration_128
+
+
+# Maps the fat cell-with-value type a user hands to Filtration(...) to the concrete C++
+# filtration class that consumes it. The per-encoding internal filtrations are distinct C++
+# types (cube vs simplex vs product), but the user sees one Filtration.
+_FIL_CLASS_BY_CELL_TYPE = {
+    _oineus.Simplex:      _oineus.Filtration,        # fat Simplex (VR / alpha / user-built)
+    _oineus.ProdSimplex:  _oineus.ProdFiltration,    # product cells (mapping cylinders)
+    _oineus.Cube_1D:      _oineus.CubeFiltration_1D,  # fat cubes (hand-built cubical complexes)
+    _oineus.Cube_2D:      _oineus.CubeFiltration_2D,
+    _oineus.Cube_3D:      _oineus.CubeFiltration_3D,
+}
+
+# Every concrete filtration C++ type, for isinstance(x, oineus.Filtration). Includes the
+# factory-produced slim Freudenthal / bit-packed ones, which a user never constructs by hand
+# but should still recognize as filtrations.
+_ALL_FILTRATION_TYPES = (
+    _oineus.Filtration, _oineus.ProdFiltration,
+    _oineus.CubeFiltration_1D, _oineus.CubeFiltration_2D, _oineus.CubeFiltration_3D,
+    _oineus.FreudenthalFiltration_1D, _oineus.FreudenthalFiltration_2D, _oineus.FreudenthalFiltration_3D,
+    _oineus.PackedSimplexFiltration_64, _oineus.PackedSimplexFiltration_128,
+)
+
+
+class _FiltrationMeta(type):
+    # isinstance(x, oineus.Filtration) is True for any concrete filtration the library builds,
+    # even though Filtration() returns the concrete C++ object (not a _FiltrationMeta instance).
+    def __instancecheck__(cls, obj):
+        return isinstance(obj, _ALL_FILTRATION_TYPES)
+
+    def __subclasscheck__(cls, sub):
+        return issubclass(sub, _ALL_FILTRATION_TYPES)
+
+
+class Filtration(metaclass=_FiltrationMeta):
+    """A filtration: an ordered list of cells, each with a filtration value.
+
+    Construct one from a list of fat cells with values, dispatching on the cell type::
+
+        oineus.Filtration([oineus.Simplex([0], 0.0), oineus.Simplex([0, 1], 1.0), ...])  # simplicial
+        oineus.Filtration([oineus.Cube_2D(...), ...])                                     # cubical
+        oineus.Filtration([oineus.ProdSimplex(...), ...])                                 # product cells
+
+    For the common constructions use the factory functions instead, which build the cells for
+    you (and pick an efficient internal cell encoding): vr_filtration / alpha_filtration for
+    point clouds, freudenthal_filtration / cube_filtration for functions on grids.
+
+    isinstance(x, oineus.Filtration) is True for any filtration the library produces, including
+    the factory-built ones whose concrete C++ type is an internal detail.
+    """
+
+    def __new__(cls, cells, *args, **kwargs):
+        try:
+            first = cells[0]
+        except IndexError:
+            # empty list -> the universal fat Simplex filtration (historical default; there is
+            # no cell to dispatch on)
+            return _oineus.Filtration(cells, *args, **kwargs)
+        except TypeError:
+            raise ValueError(
+                "Filtration(cells): cells must be a list of fat cells with values "
+                "(Simplex / Cube_1D/2D/3D / ProdSimplex). For point clouds use vr_filtration or "
+                "alpha_filtration; for functions on grids use freudenthal_filtration or "
+                "cube_filtration.")
+        fil_cls = _FIL_CLASS_BY_CELL_TYPE.get(type(first))
+        if fil_cls is None:
+            if isinstance(first, tuple):
+                # (vertices, value) pairs -> the universal simplicial constructor, which builds
+                # the Simplex cells itself (used by the diode alpha / Cech-Delaunay paths)
+                return _oineus.Filtration(cells, *args, **kwargs)
+            raise TypeError(
+                f"Filtration(cells): unsupported cell type {type(first).__name__}; expected one "
+                f"of {[t.__name__ for t in _FIL_CLASS_BY_CELL_TYPE]} or (vertices, value) tuples.")
+        return fil_cls(cells, *args, **kwargs)
 # Visualization helpers require matplotlib, an optional extra
 # (`pip install oineus[vis]`). When it is absent, the plot_* helpers and
 # style constants are simply unavailable; the rest of oineus works normally.
