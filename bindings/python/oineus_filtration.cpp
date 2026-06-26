@@ -1,5 +1,6 @@
 #include <functional>
 #include "oineus_persistence_bindings.h"
+#include "oineus_type_list.h"
 #include <nanobind/stl/function.h>
 #include <nanobind/stl/unordered_map.h>
 
@@ -26,6 +27,293 @@ nb::ndarray<size_t, nb::numpy> extract_simplices_as_numpy(const oin::Filtration<
    });
 
     return nb::ndarray<VertexIndex, nb::numpy>(simplices, {n_simplices, simplex_size}, free_when_done);
+}
+
+// ============ Slim filtration bindings (Cube / Freudenthal / bit-packed) ============
+// These three filtrations all follow ONE pattern: store slim cells + a shared geometry,
+// and materialize an honest fat cell on every Python access. They used to be three
+// near-identical hand macros (BIND_CUBE/FR/PACKED_FILTRATION); register_slim_filtration<Policy>
+// below binds the ~35 shared methods ONCE, and a per-policy SlimFilTraits<Policy> supplies the
+// few DIVERGENT hooks (the fat<->slim conversion family, the uid translation, the pickle state,
+// the display words, and the cube-only public ctor + boundary_matrix_rel). for_each_type then
+// instantiates it for all eight slim cell types. The fat Simplex/ProdFiltration bindings are a
+// different (self-contained, no-geometry) pattern and stay hand-written below.
+
+template<class Policy>
+struct SlimFilTraits;   // primary template intentionally undefined: each slim cell specializes it
+
+// --- cubical: slim Cube<Int,D> materializes a FatCube; its uid IS a dense int, so the uid
+// accessors take that int directly (no combinatorial translation). Cube alone has a public
+// ctor-from-fat-cells and boundary_matrix_rel. Geometry is the GridDomain, stored verbatim. ---
+template<unsigned D>
+struct SlimFilTraits<oin::Cube<oin_int, D>> {
+    using Cell = oin::Cube<oin_int, D>;
+    using Fil = oin::Filtration<Cell, oin_real>;
+    using SlimValue = oin::CellWithValue<Cell, oin_real>;
+    using FatValue = oin::CellWithValue<oin::FatCube<oin_int, D>, oin_real>;
+    using Geometry = typename Cell::Geometry;     // GridDomain<oin_int, D>
+    using UidArg = oin_int;                        // cube uid == fat uid, a plain int
+
+    static constexpr bool has_ctor = true;
+    static constexpr bool has_boundary_matrix_rel = true;
+    static std::string py_name() { return "CubeFiltration_" + std::to_string(D) + "D"; }
+    static constexpr const char* cell_word = "cube";
+    static constexpr const char* cells_word = "cubes";
+    static constexpr const char* value_word = "cube_value_by_sorted_id";
+
+    static FatValue fatten(const SlimValue& cv, const Geometry& g) { return fatten_cube<oin_int, D, oin_real>(cv, g); }
+    static std::vector<FatValue> fatten_all_(const Fil& fil) { return fatten_all<oin_int, D, oin_real>(fil); }
+    static SlimValue slim(const FatValue& fc, const Geometry&) { return slim_cube<oin_int, D, oin_real>(fc); }
+    static typename Cell::Uid to_slim_uid(const Geometry&, UidArg uid) { return uid; }
+
+    using StateTuple = std::tuple<decltype(Fil::negate_), std::vector<FatValue>, decltype(Fil::is_subfiltration_),
+            decltype(Fil::uid_to_sorted_id), decltype(Fil::id_to_sorted_id_), decltype(Fil::sorted_id_to_id_),
+            decltype(Fil::dim_first_), decltype(Fil::dim_last_), decltype(Fil::kind_), decltype(Fil::geometry_)>;
+
+    static StateTuple getstate(const Fil& fil)
+    {
+        auto fat = fatten_all<oin_int, D, oin_real>(fil);
+        return std::make_tuple(fil.negate_, std::move(fat), fil.is_subfiltration_,
+                fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_,
+                fil.kind_, fil.geometry_);
+    }
+    static void setstate(Fil& fil, const StateTuple& t)
+    {
+        new (&fil) Fil();
+        fil.negate_ = std::get<0>(t);
+        const auto& fat = std::get<1>(t);
+        typename Fil::CellVector slim_cells;
+        slim_cells.reserve(fat.size());
+        for (const auto& fc : fat) slim_cells.push_back(slim_cube<oin_int, D, oin_real>(fc));
+        fil.cells_ = std::move(slim_cells);
+        fil.is_subfiltration_ = std::get<2>(t);
+        fil.uid_to_sorted_id = std::get<3>(t);
+        fil.id_to_sorted_id_ = std::get<4>(t);
+        fil.sorted_id_to_id_ = std::get<5>(t);
+        fil.dim_first_ = std::get<6>(t);
+        fil.dim_last_ = std::get<7>(t);
+        fil.kind_ = std::get<8>(t);
+        fil.geometry_ = std::get<9>(t);
+        // cube uses the flat uid index, not the (empty) hash above; rebuild it from the
+        // restored cells (setstate bypasses the ctor)
+        fil.rebuild_uid_index_();
+    }
+};
+
+// --- slim Freudenthal: Simplex<Int, FreudenthalAnchorType<Int,D>> materializes a fat Simplex.
+// Factory-produced only (a fat simplex carries no grid domain). The Python-facing uid is the
+// universal COMBINATORIAL uid, translated to the slim (anchor,type) uid by fr_slim_uid_from_comb_uid.
+// FrGeometry is unpicklable, so the state stores its GridDomain and rebuilds it on unpickle. ---
+template<unsigned D>
+struct SlimFilTraits<oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, D>>> {
+    using Cell = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, D>>;
+    using Fil = oin::Filtration<Cell, oin_real>;
+    using SlimValue = oin::CellWithValue<Cell, oin_real>;
+    using FatValue = oin::CellWithValue<oin::Simplex<oin_int>, oin_real>;
+    using Geometry = oin::FrGeometry<oin_int, D>;
+    using UidArg = unsigned __int128;
+
+    static constexpr bool has_ctor = false;
+    static constexpr bool has_boundary_matrix_rel = false;
+    static std::string py_name() { return "FreudenthalFiltration_" + std::to_string(D) + "D"; }
+    static constexpr const char* cell_word = "simplex";
+    static constexpr const char* cells_word = "simplices";
+    static constexpr const char* value_word = "simplex_value_by_sorted_id";
+
+    static FatValue fatten(const SlimValue& cv, const Geometry& g) { return fatten_simplex_from_fr<oin_int, D, oin_real>(cv, g); }
+    static std::vector<FatValue> fatten_all_(const Fil& fil) { return fatten_all_fr<oin_int, D, oin_real>(fil); }
+    static SlimValue slim(const FatValue& fc, const Geometry& g) { return slim_simplex_from_fr<oin_int, D, oin_real>(fc, g); }
+    static typename Cell::Uid to_slim_uid(const Geometry& g, UidArg uid) { return fr_slim_uid_from_comb_uid<oin_int, D>(g, uid); }
+
+    using StateTuple = std::tuple<decltype(Fil::negate_), std::vector<FatValue>, decltype(Fil::is_subfiltration_),
+            decltype(Fil::uid_to_sorted_id), decltype(Fil::id_to_sorted_id_), decltype(Fil::sorted_id_to_id_),
+            decltype(Fil::dim_first_), decltype(Fil::dim_last_), decltype(Fil::kind_), oin::GridDomain<oin_int, D>>;
+
+    static StateTuple getstate(const Fil& fil)
+    {
+        auto fat = fatten_all_fr<oin_int, D, oin_real>(fil);
+        return std::make_tuple(fil.negate_, std::move(fat), fil.is_subfiltration_,
+                fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_,
+                fil.kind_, fil.geometry_.domain);
+    }
+    static void setstate(Fil& fil, const StateTuple& t)
+    {
+        new (&fil) Fil();
+        fil.negate_ = std::get<0>(t);
+        fil.is_subfiltration_ = std::get<2>(t);
+        fil.uid_to_sorted_id = std::get<3>(t);
+        fil.id_to_sorted_id_ = std::get<4>(t);
+        fil.sorted_id_to_id_ = std::get<5>(t);
+        fil.dim_first_ = std::get<6>(t);
+        fil.dim_last_ = std::get<7>(t);
+        fil.kind_ = std::get<8>(t);
+        // FrGeometry is not picklable; rebuild it from the stored GridDomain, then slim the fat
+        // cells back against it and rebuild the flat uid index
+        oin::FrGeometry<oin_int, D> frgeom(std::get<9>(t));
+        fil.set_geometry(frgeom);
+        const auto& fat = std::get<1>(t);
+        typename Fil::CellVector slim_cells;
+        slim_cells.reserve(fat.size());
+        for (const auto& fc : fat) slim_cells.push_back(slim_simplex_from_fr<oin_int, D, oin_real>(fc, frgeom));
+        fil.cells_ = std::move(slim_cells);
+        fil.rebuild_uid_index_();
+    }
+};
+
+// --- bit-packed VR/alpha: Simplex<Int, BitPacked<Int,Word>> materializes a fat Simplex. Geometry
+// is a trivially-copyable PackedGeom{int bits}, so the state stores the bits int directly (no
+// table-bearing geometry to rebuild) and OMITS uid_to_sorted_id (BitPacked uses the hash, which
+// rebuild_uid_index_ regenerates -- the __int128 hash keys cannot cross the pickle boundary). The
+// uid accessors translate the combinatorial uid to the packed Word via packed_word_uid_from_comb_uid. ---
+template<class Word>
+struct SlimFilTraits<oin::Simplex<oin_int, oin::BitPacked<oin_int, Word>>> {
+    using Cell = oin::Simplex<oin_int, oin::BitPacked<oin_int, Word>>;
+    using Fil = oin::Filtration<Cell, oin_real>;
+    using SlimValue = oin::CellWithValue<Cell, oin_real>;
+    using FatValue = oin::CellWithValue<oin::Simplex<oin_int>, oin_real>;
+    using Geometry = oin::PackedGeom;
+    using UidArg = unsigned __int128;
+
+    static constexpr bool has_ctor = false;
+    static constexpr bool has_boundary_matrix_rel = false;
+    static std::string py_name()
+    {
+        return std::string("PackedSimplexFiltration_") + (sizeof(Word) <= 8 ? "64" : "128");
+    }
+    static constexpr const char* cell_word = "simplex";
+    static constexpr const char* cells_word = "simplices";
+    static constexpr const char* value_word = "simplex_value_by_sorted_id";
+
+    static FatValue fatten(const SlimValue& cv, const Geometry& g) { return fatten_simplex_from_packed<oin_int, Word, oin_real>(cv, g); }
+    static std::vector<FatValue> fatten_all_(const Fil& fil) { return fatten_all_packed<oin_int, Word, oin_real>(fil); }
+    static SlimValue slim(const FatValue& fc, const Geometry& g) { return slim_simplex_from_packed<oin_int, Word, oin_real>(fc, g); }
+    static typename Cell::Uid to_slim_uid(const Geometry& g, UidArg uid) { return packed_word_uid_from_comb_uid<oin_int, Word>(g, uid); }
+
+    using StateTuple = std::tuple<decltype(Fil::negate_), std::vector<FatValue>, decltype(Fil::is_subfiltration_),
+            decltype(Fil::id_to_sorted_id_), decltype(Fil::sorted_id_to_id_),
+            decltype(Fil::dim_first_), decltype(Fil::dim_last_), decltype(Fil::kind_), int>;
+
+    static StateTuple getstate(const Fil& fil)
+    {
+        auto fat = fatten_all_packed<oin_int, Word, oin_real>(fil);
+        return std::make_tuple(fil.negate_, std::move(fat), fil.is_subfiltration_,
+                fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_,
+                fil.kind_, fil.geometry_.bits);
+    }
+    static void setstate(Fil& fil, const StateTuple& t)
+    {
+        new (&fil) Fil();
+        fil.negate_ = std::get<0>(t);
+        fil.is_subfiltration_ = std::get<2>(t);
+        fil.id_to_sorted_id_ = std::get<3>(t);
+        fil.sorted_id_to_id_ = std::get<4>(t);
+        fil.dim_first_ = std::get<5>(t);
+        fil.dim_last_ = std::get<6>(t);
+        fil.kind_ = std::get<7>(t);
+        oin::PackedGeom geom{std::get<8>(t)};
+        fil.set_geometry(geom);
+        const auto& fat = std::get<1>(t);
+        typename Fil::CellVector slim_cells;
+        slim_cells.reserve(fat.size());
+        for (const auto& fc : fat) slim_cells.push_back(slim_simplex_from_packed<oin_int, Word, oin_real>(fc, geom));
+        fil.cells_ = std::move(slim_cells);
+        fil.rebuild_uid_index_();
+    }
+};
+
+// Bind one slim filtration class (Cube / Freudenthal / packed) from the shared method set plus
+// the per-policy SlimFilTraits hooks. Replaces BIND_CUBE/FR/PACKED_FILTRATION.
+template<class Policy>
+void register_slim_filtration(nb::module_& m)
+{
+    using T = SlimFilTraits<Policy>;
+    using Fil = typename T::Fil;
+    using FatValue = typename T::FatValue;
+    using StateTuple = typename T::StateTuple;
+    namespace nbp = oineus_python;
+
+    auto cls = nb::class_<Fil>(m, T::py_name().c_str());
+
+    if constexpr (T::has_ctor) {
+        // ctor from fat cells: slim them, then recover the shared geometry from cell 0
+        cls.def("__init__", [](Fil* p, const std::vector<FatValue>& fat_cells, bool negate, int n_threads) {
+                typename T::Geometry dom;
+                if (not fat_cells.empty()) dom = fat_cells[0].get_cell().global_domain();
+                typename Fil::CellVector slim_cells;
+                slim_cells.reserve(fat_cells.size());
+                for (const auto& fc : fat_cells) slim_cells.push_back(T::slim(fc, dom));
+                new (p) Fil(std::move(slim_cells), negate, n_threads);
+                p->set_geometry(dom);
+            }, nb::arg("cells"), nb::arg("negate") = false, nb::arg("n_threads") = 1);
+    }
+
+    cls.def("__len__", &Fil::size)
+        .def("__iter__", [](const Fil& fil) -> nb::object {
+                nb::object lst = nb::cast(T::fatten_all_(fil));
+                return lst.attr("__iter__")();
+            })
+        .def("__getitem__", [](const Fil& fil, int i) {
+                if (i < 0) i = fil.size() + i;
+                return T::fatten(fil.get_cell(i), fil.geometry());
+            })
+        .def_prop_ro("negate", &Fil::negate)
+        .def("infinity", &Fil::infinity, "filtration-order +inf")
+        .def("neg_infinity", &Fil::neg_infinity, "filtration-order -inf")
+        .def("fil_min", &Fil::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min")
+        .def("fil_max", &Fil::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max")
+        .def_prop_ro("max_dim", &Fil::max_dim, "maximal dimension of a cell in filtration")
+        .def("cells", [](const Fil& fil) { return T::fatten_all_(fil); }, "copy of all cells in filtration order")
+        .def(T::cells_word, [](const Fil& fil) { return T::fatten_all_(fil); }, "copy of all cells in filtration order")
+        .def("size", &Fil::size, "number of cells in filtration")
+        .def("size_in_dimension", &Fil::size_in_dimension, nb::arg("dim"), "number of cells of dimension dim")
+        .def("n_vertices", &Fil::n_vertices)
+        .def(T::value_word, &Fil::value_by_sorted_id, nb::arg("sorted_id"))
+        .def("cell_value_by_sorted_id", &Fil::value_by_sorted_id, nb::arg("sorted_id"))
+        .def("id_by_sorted_id", &Fil::get_id_by_sorted_id, nb::arg("sorted_id"))
+        .def("sorted_id_by_id", &Fil::get_sorted_id, nb::arg("id"))
+        .def("cell", [](const Fil& fil, size_t i) { return T::fatten(fil.get_cell(i), fil.geometry()); }, nb::arg("i"))
+        .def(T::cell_word, [](const Fil& fil, size_t i) { return T::fatten(fil.get_cell(i), fil.geometry()); }, nb::arg("i"))
+        .def_prop_ro("dim_first", &Fil::dims_first)
+        .def_prop_ro("dim_last", &Fil::dims_last)
+        .def("sorting_permutation", &Fil::get_sorting_permutation)
+        .def("inv_sorting_permutation", &Fil::get_inv_sorting_permutation)
+        // uid accessors take the universal uid a Python cell carries (combinatorial for the
+        // simplicial slim cells, the dense int for cubes); to_slim_uid re-keys it into this
+        // filtration's internal uid
+        .def("value_by_uid", [](const Fil& fil, typename T::UidArg uid) {
+                return fil.value_by_uid(T::to_slim_uid(fil.geometry(), uid));
+            }, nb::arg("uid"))
+        .def("sorted_id_by_uid", [](const Fil& fil, typename T::UidArg uid) {
+                return fil.get_sorted_id_by_uid(T::to_slim_uid(fil.geometry(), uid));
+            }, nb::arg("uid"))
+        .def("cell_by_uid", [](const Fil& fil, typename T::UidArg uid) {
+                return T::fatten(fil.get_cell_by_uid(T::to_slim_uid(fil.geometry(), uid)), fil.geometry());
+            }, nb::arg("uid"))
+        .def("boundary_matrix", &Fil::boundary_matrix, nb::arg("n_threads") = 1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+        .def("boundary_matrix_in_dimension", &Fil::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads") = 1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+        .def("coboundary_matrix", &Fil::coboundary_matrix, nb::arg("n_threads") = 1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+
+    if constexpr (T::has_boundary_matrix_rel) {
+        cls.def("boundary_matrix_rel", &Fil::boundary_matrix_rel);
+    }
+
+    cls.def("star_closure", &Fil::star_closure, nb::arg("seed_sorted_ids"), nb::arg("n_threads") = 1,
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                "Coface up-closure (union of stars) of the given cells (sorted_ids).")
+        .def("is_up_closed", &Fil::is_up_closed, nb::arg("cells"), nb::arg("n_threads") = 1,
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                "True if the cells (sorted_ids) are closed under cofaces.")
+        .def("without_cells", &Fil::without_cells, nb::arg("cells_to_remove"), nb::rv_policy::move,
+                "Subfiltration with the given cells (sorted_ids) removed; survivors keep order.")
+        .def("reset_ids_to_sorted_ids", &Fil::reset_ids_to_sorted_ids)
+        .def("set_values", &Fil::set_values, nb::arg("new_values"), nb::arg("n_threads") = 1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+        .def(nb::self == nb::self)
+        .def(nb::self != nb::self)
+        .def("__repr__", [](const Fil& fil) { std::stringstream ss; ss << fil; return ss.str(); })
+        .def_prop_rw("kind", &Fil::kind, &Fil::set_kind,
+            "FiltrationKind tag set by the constructor that built this filtration (or User for hand-built ones).")
+        .def("__getstate__", [](const Fil& fil) -> StateTuple { return T::getstate(fil); })
+        .def("__setstate__", [](Fil& fil, const StateTuple& t) { T::setstate(fil, t); });
 }
 
 void init_oineus_filtration(nb::module_& m)
@@ -464,406 +752,21 @@ void init_oineus_filtration(nb::module_& m)
             })
     ;
 
-    // ============ CubeFiltration bindings ============
-    // The filtration stores slim cubes (oin::Cube) + one shared GridDomain;
-    // every cube-returning accessor materializes the fat Python cube
-    // (CellWithValue<FatCube>) via fatten_cube + the filtration's geometry(), and
-    // the constructor/unpickle slim them back (slim_cube), recovering the shared
-    // domain from the cells.
-    #define BIND_CUBE_FILTRATION(DIM) \
-        using CubeFiltration_##DIM##D = oin::Filtration<oin::Cube<oin_int, DIM>, oin_real>; \
-        using FatCubeValue_##DIM##D = oin::CellWithValue<oin::FatCube<oin_int, DIM>, oin_real>; \
-        using CubeFiltration_##DIM##DStateTuple = std::tuple<decltype(CubeFiltration_##DIM##D::negate_), \
-                                                std::vector<FatCubeValue_##DIM##D>, \
-                                                decltype(CubeFiltration_##DIM##D::is_subfiltration_), \
-                                                decltype(CubeFiltration_##DIM##D::uid_to_sorted_id), \
-                                                decltype(CubeFiltration_##DIM##D::id_to_sorted_id_), \
-                                                decltype(CubeFiltration_##DIM##D::sorted_id_to_id_), \
-                                                decltype(CubeFiltration_##DIM##D::dim_first_), \
-                                                decltype(CubeFiltration_##DIM##D::dim_last_), \
-                                                decltype(CubeFiltration_##DIM##D::kind_), \
-                                                decltype(CubeFiltration_##DIM##D::geometry_) \
-                                               >; \
-        nb::class_<CubeFiltration_##DIM##D>(m, "CubeFiltration_" #DIM "D") \
-            .def("__init__", [](CubeFiltration_##DIM##D* p, const std::vector<FatCubeValue_##DIM##D>& fat_cells, bool negate, int n_threads) { \
-                    oin::GridDomain<oin_int, DIM> dom; \
-                    if (not fat_cells.empty()) dom = fat_cells[0].get_cell().global_domain(); \
-                    typename CubeFiltration_##DIM##D::CellVector slim; \
-                    slim.reserve(fat_cells.size()); \
-                    for (const auto& fc : fat_cells) slim.push_back(slim_cube<oin_int, DIM, oin_real>(fc)); \
-                    new (p) CubeFiltration_##DIM##D(std::move(slim), negate, n_threads); \
-                    p->set_geometry(dom); \
-                }, nb::arg("cells"), nb::arg("negate") = false, nb::arg("n_threads") = 1) \
-            .def("__len__", &CubeFiltration_##DIM##D::size) \
-            .def("__iter__", [](const CubeFiltration_##DIM##D& fil) -> nb::object { \
-                    nb::object lst = nb::cast(fatten_all<oin_int, DIM, oin_real>(fil)); \
-                    return lst.attr("__iter__")(); \
-                }) \
-            .def("__getitem__", [](const CubeFiltration_##DIM##D& fil, int i) { \
-                    if (i < 0) i = fil.size() + i; \
-                    return fatten_cube<oin_int, DIM, oin_real>(fil.get_cell(i), fil.geometry()); \
-                }) \
-            .def_prop_ro("negate", &CubeFiltration_##DIM##D::negate) \
-            .def("infinity", &CubeFiltration_##DIM##D::infinity, "filtration-order +inf") \
-            .def("neg_infinity", &CubeFiltration_##DIM##D::neg_infinity, "filtration-order -inf") \
-            .def("fil_min", &CubeFiltration_##DIM##D::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min") \
-            .def("fil_max", &CubeFiltration_##DIM##D::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max") \
-            .def_prop_ro("max_dim", &CubeFiltration_##DIM##D::max_dim, "maximal dimension of a cell in filtration") \
-            .def("cells", [](const CubeFiltration_##DIM##D& fil) { return fatten_all<oin_int, DIM, oin_real>(fil); }, \
-                    "copy of all cells in filtration order") \
-            .def("cubes", [](const CubeFiltration_##DIM##D& fil) { return fatten_all<oin_int, DIM, oin_real>(fil); }, \
-                    "copy of all cells in filtration order") \
-            .def("size", &CubeFiltration_##DIM##D::size, "number of cells in filtration") \
-            .def("size_in_dimension", &CubeFiltration_##DIM##D::size_in_dimension, nb::arg("dim"), "number of cells of dimension dim") \
-            .def("n_vertices", &CubeFiltration_##DIM##D::n_vertices) \
-            .def("cube_value_by_sorted_id", &CubeFiltration_##DIM##D::value_by_sorted_id, nb::arg("sorted_id")) \
-            .def("cell_value_by_sorted_id", &CubeFiltration_##DIM##D::value_by_sorted_id, nb::arg("sorted_id")) \
-            .def("id_by_sorted_id", &CubeFiltration_##DIM##D::get_id_by_sorted_id, nb::arg("sorted_id")) \
-            .def("sorted_id_by_id", &CubeFiltration_##DIM##D::get_sorted_id, nb::arg("id")) \
-            .def("cell", [](const CubeFiltration_##DIM##D& fil, size_t i) { \
-                    return fatten_cube<oin_int, DIM, oin_real>(fil.get_cell(i), fil.geometry()); \
-                }, nb::arg("i")) \
-            .def("cube", [](const CubeFiltration_##DIM##D& fil, size_t i) { \
-                    return fatten_cube<oin_int, DIM, oin_real>(fil.get_cell(i), fil.geometry()); \
-                }, nb::arg("i")) \
-            .def_prop_ro("dim_first", &CubeFiltration_##DIM##D::dims_first) \
-            .def_prop_ro("dim_last", &CubeFiltration_##DIM##D::dims_last) \
-            .def("sorting_permutation", &CubeFiltration_##DIM##D::get_sorting_permutation) \
-            .def("inv_sorting_permutation", &CubeFiltration_##DIM##D::get_inv_sorting_permutation) \
-            .def("value_by_uid", &CubeFiltration_##DIM##D::value_by_uid, nb::arg("uid")) \
-            .def("sorted_id_by_uid", &CubeFiltration_##DIM##D::get_sorted_id_by_uid, nb::arg("uid")) \
-            .def("cell_by_uid", [](const CubeFiltration_##DIM##D& fil, oin_int uid) { \
-                    return fatten_cube<oin_int, DIM, oin_real>(fil.get_cell_by_uid(uid), fil.geometry()); \
-                }, nb::arg("uid")) \
-            .def("boundary_matrix", &CubeFiltration_##DIM##D::boundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            .def("boundary_matrix_in_dimension", &CubeFiltration_##DIM##D::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            .def("coboundary_matrix", &CubeFiltration_##DIM##D::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            .def("boundary_matrix_rel", &CubeFiltration_##DIM##D::boundary_matrix_rel) \
-            .def("star_closure", &CubeFiltration_##DIM##D::star_closure, nb::arg("seed_sorted_ids"), nb::arg("n_threads")=1, \
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
-                    "Coface up-closure (union of stars) of the given cells (sorted_ids).") \
-            .def("is_up_closed", &CubeFiltration_##DIM##D::is_up_closed, nb::arg("cells"), nb::arg("n_threads")=1, \
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
-                    "True if the cells (sorted_ids) are closed under cofaces.") \
-            .def("without_cells", &CubeFiltration_##DIM##D::without_cells, nb::arg("cells_to_remove"), nb::rv_policy::move, \
-                    "Subfiltration with the given cells (sorted_ids) removed; survivors keep order.") \
-            .def("reset_ids_to_sorted_ids", &CubeFiltration_##DIM##D::reset_ids_to_sorted_ids) \
-            .def("set_values", &CubeFiltration_##DIM##D::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            .def(nb::self == nb::self) \
-            .def(nb::self != nb::self) \
-            .def("__repr__", [](const CubeFiltration_##DIM##D& fil) { \
-                    std::stringstream ss; \
-                    ss << fil; \
-                    return ss.str(); \
-                }) \
-            .def_prop_rw("kind", &CubeFiltration_##DIM##D::kind, &CubeFiltration_##DIM##D::set_kind, \
-                "FiltrationKind tag set by the constructor that built this filtration " \
-                "(or User for hand-built ones).") \
-            .def("__getstate__", [](const CubeFiltration_##DIM##D& fil) -> CubeFiltration_##DIM##DStateTuple { \
-                      auto fat = fatten_all<oin_int, DIM, oin_real>(fil); \
-                      return std::make_tuple(fil.negate_, std::move(fat), fil.is_subfiltration_, \
-                          fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_, \
-                          fil.kind_, fil.geometry_); \
-                    }) \
-            .def("__setstate__", [](CubeFiltration_##DIM##D& fil, const CubeFiltration_##DIM##DStateTuple& t) { \
-                new (&fil) CubeFiltration_##DIM##D(); \
-                fil.negate_ = std::get<0>(t); \
-                const auto& fat = std::get<1>(t); \
-                typename CubeFiltration_##DIM##D::CellVector slim; \
-                slim.reserve(fat.size()); \
-                for (const auto& fc : fat) slim.push_back(slim_cube<oin_int, DIM, oin_real>(fc)); \
-                fil.cells_ = std::move(slim); \
-                fil.is_subfiltration_ = std::get<2>(t); \
-                fil.uid_to_sorted_id = std::get<3>(t); \
-                fil.id_to_sorted_id_ = std::get<4>(t); \
-                fil.sorted_id_to_id_ = std::get<5>(t); \
-                fil.dim_first_ = std::get<6>(t); \
-                fil.dim_last_ = std::get<7>(t); \
-                fil.kind_ = std::get<8>(t); \
-                fil.geometry_ = std::get<9>(t); \
-                /* cube uses the flat uid index, not the (empty) hash above; */ \
-                /* rebuild it from the restored cells (setstate bypasses the ctor) */ \
-                fil.rebuild_uid_index_(); \
-            }) \
-
-
-    BIND_CUBE_FILTRATION(1);
-    BIND_CUBE_FILTRATION(2);
-    BIND_CUBE_FILTRATION(3);
-
-    #undef BIND_CUBE_FILTRATION
-
-    // ============ FreudenthalFiltration (slim) bindings ============
-    // The slim Freudenthal filtration stores compact (anchor,type) Simplex cells +
-    // one shared FrGeometry; every cell-returning accessor materializes the fat
-    // Python simplex (CellWithValue<Simplex<oin_int>> == the "Simplex" class) via
-    // fatten_simplex_from_fr + the filtration's geometry(). It is factory-produced
-    // (Grid.freudenthal_filtration_slim / oineus.freudenthal_filtration), so there is
-    // no public ctor-from-cells: a fat simplex carries no grid domain, so the shared
-    // FrGeometry cannot be recovered from cells alone. Pickle stores the GridDomain
-    // (a bound type, unlike FrGeometry) and rebuilds the geometry + slims the cells
-    // back on restore.
-    #define BIND_FR_FILTRATION(DIM) \
-        using FrFiltration_##DIM##D = oin::Filtration<oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, DIM>>, oin_real>; \
-        using FatSimplexValue_##DIM##D = oin::CellWithValue<oin::Simplex<oin_int>, oin_real>; \
-        using FrFiltration_##DIM##DStateTuple = std::tuple<decltype(FrFiltration_##DIM##D::negate_), \
-                                                std::vector<FatSimplexValue_##DIM##D>, \
-                                                decltype(FrFiltration_##DIM##D::is_subfiltration_), \
-                                                decltype(FrFiltration_##DIM##D::uid_to_sorted_id), \
-                                                decltype(FrFiltration_##DIM##D::id_to_sorted_id_), \
-                                                decltype(FrFiltration_##DIM##D::sorted_id_to_id_), \
-                                                decltype(FrFiltration_##DIM##D::dim_first_), \
-                                                decltype(FrFiltration_##DIM##D::dim_last_), \
-                                                decltype(FrFiltration_##DIM##D::kind_), \
-                                                oin::GridDomain<oin_int, DIM> \
-                                               >; \
-        nb::class_<FrFiltration_##DIM##D>(m, "FreudenthalFiltration_" #DIM "D") \
-            .def("__len__", &FrFiltration_##DIM##D::size) \
-            .def("__iter__", [](const FrFiltration_##DIM##D& fil) -> nb::object { \
-                    nb::object lst = nb::cast(fatten_all_fr<oin_int, DIM, oin_real>(fil)); \
-                    return lst.attr("__iter__")(); \
-                }) \
-            .def("__getitem__", [](const FrFiltration_##DIM##D& fil, int i) { \
-                    if (i < 0) i = fil.size() + i; \
-                    return fatten_simplex_from_fr<oin_int, DIM, oin_real>(fil.get_cell(i), fil.geometry()); \
-                }) \
-            .def_prop_ro("negate", &FrFiltration_##DIM##D::negate) \
-            .def("infinity", &FrFiltration_##DIM##D::infinity, "filtration-order +inf") \
-            .def("neg_infinity", &FrFiltration_##DIM##D::neg_infinity, "filtration-order -inf") \
-            .def("fil_min", &FrFiltration_##DIM##D::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min") \
-            .def("fil_max", &FrFiltration_##DIM##D::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max") \
-            .def_prop_ro("max_dim", &FrFiltration_##DIM##D::max_dim, "maximal dimension of a cell in filtration") \
-            .def("cells", [](const FrFiltration_##DIM##D& fil) { return fatten_all_fr<oin_int, DIM, oin_real>(fil); }, \
-                    "copy of all cells in filtration order") \
-            .def("simplices", [](const FrFiltration_##DIM##D& fil) { return fatten_all_fr<oin_int, DIM, oin_real>(fil); }, \
-                    "copy of all cells in filtration order") \
-            .def("size", &FrFiltration_##DIM##D::size, "number of cells in filtration") \
-            .def("size_in_dimension", &FrFiltration_##DIM##D::size_in_dimension, nb::arg("dim"), "number of cells of dimension dim") \
-            .def("n_vertices", &FrFiltration_##DIM##D::n_vertices) \
-            .def("cell_value_by_sorted_id", &FrFiltration_##DIM##D::value_by_sorted_id, nb::arg("sorted_id")) \
-            .def("simplex_value_by_sorted_id", &FrFiltration_##DIM##D::value_by_sorted_id, nb::arg("sorted_id")) \
-            .def("id_by_sorted_id", &FrFiltration_##DIM##D::get_id_by_sorted_id, nb::arg("sorted_id")) \
-            .def("sorted_id_by_id", &FrFiltration_##DIM##D::get_sorted_id, nb::arg("id")) \
-            .def("cell", [](const FrFiltration_##DIM##D& fil, size_t i) { \
-                    return fatten_simplex_from_fr<oin_int, DIM, oin_real>(fil.get_cell(i), fil.geometry()); \
-                }, nb::arg("i")) \
-            .def("simplex", [](const FrFiltration_##DIM##D& fil, size_t i) { \
-                    return fatten_simplex_from_fr<oin_int, DIM, oin_real>(fil.get_cell(i), fil.geometry()); \
-                }, nb::arg("i")) \
-            .def_prop_ro("dim_first", &FrFiltration_##DIM##D::dims_first) \
-            .def_prop_ro("dim_last", &FrFiltration_##DIM##D::dims_last) \
-            .def("sorting_permutation", &FrFiltration_##DIM##D::get_sorting_permutation) \
-            .def("inv_sorting_permutation", &FrFiltration_##DIM##D::get_inv_sorting_permutation) \
-            /* uid accessors take the universal COMBINATORIAL uid that a (materialized fat) */ \
-            /* cell carries; fr_slim_uid_from_comb_uid decodes it to vertices and re-keys it */ \
-            /* into the slim (anchor,type) uid that this filtration is indexed by. */ \
-            .def("value_by_uid", [](const FrFiltration_##DIM##D& fil, unsigned __int128 uid) { \
-                    return fil.value_by_uid(fr_slim_uid_from_comb_uid<oin_int, DIM>(fil.geometry(), uid)); \
-                }, nb::arg("uid")) \
-            .def("sorted_id_by_uid", [](const FrFiltration_##DIM##D& fil, unsigned __int128 uid) { \
-                    return fil.get_sorted_id_by_uid(fr_slim_uid_from_comb_uid<oin_int, DIM>(fil.geometry(), uid)); \
-                }, nb::arg("uid")) \
-            .def("cell_by_uid", [](const FrFiltration_##DIM##D& fil, unsigned __int128 uid) { \
-                    oin_int slim_uid = fr_slim_uid_from_comb_uid<oin_int, DIM>(fil.geometry(), uid); \
-                    return fatten_simplex_from_fr<oin_int, DIM, oin_real>(fil.get_cell_by_uid(slim_uid), fil.geometry()); \
-                }, nb::arg("uid")) \
-            .def("boundary_matrix", &FrFiltration_##DIM##D::boundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            .def("boundary_matrix_in_dimension", &FrFiltration_##DIM##D::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            .def("coboundary_matrix", &FrFiltration_##DIM##D::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            /* boundary_matrix_rel is intentionally omitted: its relative path uses the */ \
-            /* vector boundary(geom), which the slim Simplex<Int,Enc> wrapper does not */ \
-            /* expose (only boundary_into). Relative homology with slim Freudenthal cells */ \
-            /* awaits the buffer (_into) conversion of that path (deferred seam). */ \
-            .def("star_closure", &FrFiltration_##DIM##D::star_closure, nb::arg("seed_sorted_ids"), nb::arg("n_threads")=1, \
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
-                    "Coface up-closure (union of stars) of the given cells (sorted_ids).") \
-            .def("is_up_closed", &FrFiltration_##DIM##D::is_up_closed, nb::arg("cells"), nb::arg("n_threads")=1, \
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
-                    "True if the cells (sorted_ids) are closed under cofaces.") \
-            .def("without_cells", &FrFiltration_##DIM##D::without_cells, nb::arg("cells_to_remove"), nb::rv_policy::move, \
-                    "Subfiltration with the given cells (sorted_ids) removed; survivors keep order.") \
-            .def("reset_ids_to_sorted_ids", &FrFiltration_##DIM##D::reset_ids_to_sorted_ids) \
-            .def("set_values", &FrFiltration_##DIM##D::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            .def(nb::self == nb::self) \
-            .def(nb::self != nb::self) \
-            .def("__repr__", [](const FrFiltration_##DIM##D& fil) { \
-                    std::stringstream ss; \
-                    ss << fil; \
-                    return ss.str(); \
-                }) \
-            .def_prop_rw("kind", &FrFiltration_##DIM##D::kind, &FrFiltration_##DIM##D::set_kind, \
-                "FiltrationKind tag set by the constructor that built this filtration " \
-                "(or User for hand-built ones).") \
-            .def("__getstate__", [](const FrFiltration_##DIM##D& fil) -> FrFiltration_##DIM##DStateTuple { \
-                      auto fat = fatten_all_fr<oin_int, DIM, oin_real>(fil); \
-                      return std::make_tuple(fil.negate_, std::move(fat), fil.is_subfiltration_, \
-                          fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_, \
-                          fil.kind_, fil.geometry_.domain); \
-                    }) \
-            .def("__setstate__", [](FrFiltration_##DIM##D& fil, const FrFiltration_##DIM##DStateTuple& t) { \
-                new (&fil) FrFiltration_##DIM##D(); \
-                fil.negate_ = std::get<0>(t); \
-                fil.is_subfiltration_ = std::get<2>(t); \
-                fil.uid_to_sorted_id = std::get<3>(t); \
-                fil.id_to_sorted_id_ = std::get<4>(t); \
-                fil.sorted_id_to_id_ = std::get<5>(t); \
-                fil.dim_first_ = std::get<6>(t); \
-                fil.dim_last_ = std::get<7>(t); \
-                fil.kind_ = std::get<8>(t); \
-                /* FrGeometry is not picklable; rebuild it from the stored GridDomain, */ \
-                /* then slim the fat cells back against it and rebuild the flat uid index */ \
-                oin::FrGeometry<oin_int, DIM> frgeom(std::get<9>(t)); \
-                fil.set_geometry(frgeom); \
-                const auto& fat = std::get<1>(t); \
-                typename FrFiltration_##DIM##D::CellVector slim; \
-                slim.reserve(fat.size()); \
-                for (const auto& fc : fat) slim.push_back(slim_simplex_from_fr<oin_int, DIM, oin_real>(fc, frgeom)); \
-                fil.cells_ = std::move(slim); \
-                fil.rebuild_uid_index_(); \
-            }) \
-
-
-    BIND_FR_FILTRATION(1);
-    BIND_FR_FILTRATION(2);
-    BIND_FR_FILTRATION(3);
-
-    #undef BIND_FR_FILTRATION
-
-    // ============ PackedSimplexFiltration (bit-packed VR/alpha) bindings ============
-    // The bit-packed filtration stores Simplex<Int,BitPacked<Int,Word>> cells (sorted
-    // vertex ids packed into one Word) + a shared PackedGeom{int bits}; every accessor
-    // materializes the fat Python simplex (the "Simplex" class) via
-    // fatten_simplex_from_packed. Factory-produced (vr_filtration(packed=True), and the
-    // same macro is what a future alpha packed path would reuse); a fat simplex carries
-    // no PackedGeom, so there is no public ctor-from-cells. One macro, two word tiers
-    // (64-bit, 128-bit). Differences from the Freudenthal macro: the geometry is a
-    // trivially-copyable int (pickle stores the bits directly, no geometry rebuild), and
-    // the uid_to_sorted_id pickle field is omitted. The uid-keyed accessors
-    // (value_by_uid/sorted_id_by_uid/cell_by_uid) take the universal COMBINATORIAL uid
-    // (the 128-bit identity a materialized fat Simplex carries -- it crosses the Python
-    // boundary via uid128_caster.h): packed_word_uid_from_comb_uid decodes it to vertices
-    // and re-packs them into the internal Word uid for the hash lookup, so the caller uses
-    // the same uid they read off a cell (matching the cube/Freudenthal/fat contract). The
-    // uid_to_sorted_id map is dropped from the pickle because rebuild_uid_index_
-    // regenerates the hash on unpickle (BitPacked is UsesDenseUidIndex=false), making the
-    // stored map redundant.
-    #define BIND_PACKED_FILTRATION(WORD, SUFFIX) \
-        using PackedFiltration_##SUFFIX = oin::Filtration<oin::Simplex<oin_int, oin::BitPacked<oin_int, WORD>>, oin_real>; \
-        using PackedFatSimplexValue_##SUFFIX = oin::CellWithValue<oin::Simplex<oin_int>, oin_real>; \
-        using PackedFiltration_##SUFFIX##StateTuple = std::tuple<decltype(PackedFiltration_##SUFFIX::negate_), \
-                                                std::vector<PackedFatSimplexValue_##SUFFIX>, \
-                                                decltype(PackedFiltration_##SUFFIX::is_subfiltration_), \
-                                                decltype(PackedFiltration_##SUFFIX::id_to_sorted_id_), \
-                                                decltype(PackedFiltration_##SUFFIX::sorted_id_to_id_), \
-                                                decltype(PackedFiltration_##SUFFIX::dim_first_), \
-                                                decltype(PackedFiltration_##SUFFIX::dim_last_), \
-                                                decltype(PackedFiltration_##SUFFIX::kind_), \
-                                                int \
-                                               >; \
-        nb::class_<PackedFiltration_##SUFFIX>(m, "PackedSimplexFiltration_" #SUFFIX) \
-            .def("__len__", &PackedFiltration_##SUFFIX::size) \
-            .def("__iter__", [](const PackedFiltration_##SUFFIX& fil) -> nb::object { \
-                    nb::object lst = nb::cast(fatten_all_packed<oin_int, WORD, oin_real>(fil)); \
-                    return lst.attr("__iter__")(); \
-                }) \
-            .def("__getitem__", [](const PackedFiltration_##SUFFIX& fil, int i) { \
-                    if (i < 0) i = fil.size() + i; \
-                    return fatten_simplex_from_packed<oin_int, WORD, oin_real>(fil.get_cell(i), fil.geometry()); \
-                }) \
-            .def_prop_ro("negate", &PackedFiltration_##SUFFIX::negate) \
-            .def("infinity", &PackedFiltration_##SUFFIX::infinity, "filtration-order +inf") \
-            .def("neg_infinity", &PackedFiltration_##SUFFIX::neg_infinity, "filtration-order -inf") \
-            .def("fil_min", &PackedFiltration_##SUFFIX::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min") \
-            .def("fil_max", &PackedFiltration_##SUFFIX::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max") \
-            .def_prop_ro("max_dim", &PackedFiltration_##SUFFIX::max_dim, "maximal dimension of a cell in filtration") \
-            .def("cells", [](const PackedFiltration_##SUFFIX& fil) { return fatten_all_packed<oin_int, WORD, oin_real>(fil); }, \
-                    "copy of all cells in filtration order") \
-            .def("simplices", [](const PackedFiltration_##SUFFIX& fil) { return fatten_all_packed<oin_int, WORD, oin_real>(fil); }, \
-                    "copy of all cells in filtration order") \
-            .def("size", &PackedFiltration_##SUFFIX::size, "number of cells in filtration") \
-            .def("size_in_dimension", &PackedFiltration_##SUFFIX::size_in_dimension, nb::arg("dim"), "number of cells of dimension dim") \
-            .def("n_vertices", &PackedFiltration_##SUFFIX::n_vertices) \
-            .def("cell_value_by_sorted_id", &PackedFiltration_##SUFFIX::value_by_sorted_id, nb::arg("sorted_id")) \
-            .def("simplex_value_by_sorted_id", &PackedFiltration_##SUFFIX::value_by_sorted_id, nb::arg("sorted_id")) \
-            .def("id_by_sorted_id", &PackedFiltration_##SUFFIX::get_id_by_sorted_id, nb::arg("sorted_id")) \
-            .def("sorted_id_by_id", &PackedFiltration_##SUFFIX::get_sorted_id, nb::arg("id")) \
-            .def("cell", [](const PackedFiltration_##SUFFIX& fil, size_t i) { \
-                    return fatten_simplex_from_packed<oin_int, WORD, oin_real>(fil.get_cell(i), fil.geometry()); \
-                }, nb::arg("i")) \
-            .def("simplex", [](const PackedFiltration_##SUFFIX& fil, size_t i) { \
-                    return fatten_simplex_from_packed<oin_int, WORD, oin_real>(fil.get_cell(i), fil.geometry()); \
-                }, nb::arg("i")) \
-            .def_prop_ro("dim_first", &PackedFiltration_##SUFFIX::dims_first) \
-            .def_prop_ro("dim_last", &PackedFiltration_##SUFFIX::dims_last) \
-            .def("sorting_permutation", &PackedFiltration_##SUFFIX::get_sorting_permutation) \
-            .def("inv_sorting_permutation", &PackedFiltration_##SUFFIX::get_inv_sorting_permutation) \
-            .def("boundary_matrix", &PackedFiltration_##SUFFIX::boundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            .def("boundary_matrix_in_dimension", &PackedFiltration_##SUFFIX::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            .def("coboundary_matrix", &PackedFiltration_##SUFFIX::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            /* boundary_matrix_rel omitted (slim wrapper has no vector boundary(geom)); */ \
-            /* uid accessors take the combinatorial uid and re-pack to the Word uid (see header) */ \
-            .def("value_by_uid", [](const PackedFiltration_##SUFFIX& fil, unsigned __int128 uid) { \
-                    return fil.value_by_uid(packed_word_uid_from_comb_uid<oin_int, WORD>(fil.geometry(), uid)); \
-                }, nb::arg("uid")) \
-            .def("sorted_id_by_uid", [](const PackedFiltration_##SUFFIX& fil, unsigned __int128 uid) { \
-                    return fil.get_sorted_id_by_uid(packed_word_uid_from_comb_uid<oin_int, WORD>(fil.geometry(), uid)); \
-                }, nb::arg("uid")) \
-            .def("cell_by_uid", [](const PackedFiltration_##SUFFIX& fil, unsigned __int128 uid) { \
-                    WORD w = packed_word_uid_from_comb_uid<oin_int, WORD>(fil.geometry(), uid); \
-                    return fatten_simplex_from_packed<oin_int, WORD, oin_real>(fil.get_cell_by_uid(w), fil.geometry()); \
-                }, nb::arg("uid")) \
-            .def("star_closure", &PackedFiltration_##SUFFIX::star_closure, nb::arg("seed_sorted_ids"), nb::arg("n_threads")=1, \
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
-                    "Coface up-closure (union of stars) of the given cells (sorted_ids).") \
-            .def("is_up_closed", &PackedFiltration_##SUFFIX::is_up_closed, nb::arg("cells"), nb::arg("n_threads")=1, \
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
-                    "True if the cells (sorted_ids) are closed under cofaces.") \
-            .def("without_cells", &PackedFiltration_##SUFFIX::without_cells, nb::arg("cells_to_remove"), nb::rv_policy::move, \
-                    "Subfiltration with the given cells (sorted_ids) removed; survivors keep order.") \
-            .def("reset_ids_to_sorted_ids", &PackedFiltration_##SUFFIX::reset_ids_to_sorted_ids) \
-            .def("set_values", &PackedFiltration_##SUFFIX::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            .def(nb::self == nb::self) \
-            .def(nb::self != nb::self) \
-            .def("__repr__", [](const PackedFiltration_##SUFFIX& fil) { \
-                    std::stringstream ss; \
-                    ss << fil; \
-                    return ss.str(); \
-                }) \
-            .def_prop_rw("kind", &PackedFiltration_##SUFFIX::kind, &PackedFiltration_##SUFFIX::set_kind, \
-                "FiltrationKind tag set by the constructor that built this filtration " \
-                "(or User for hand-built ones).") \
-            .def("__getstate__", [](const PackedFiltration_##SUFFIX& fil) -> PackedFiltration_##SUFFIX##StateTuple { \
-                      auto fat = fatten_all_packed<oin_int, WORD, oin_real>(fil); \
-                      return std::make_tuple(fil.negate_, std::move(fat), fil.is_subfiltration_, \
-                          fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_, \
-                          fil.kind_, fil.geometry_.bits); \
-                    }) \
-            .def("__setstate__", [](PackedFiltration_##SUFFIX& fil, const PackedFiltration_##SUFFIX##StateTuple& t) { \
-                new (&fil) PackedFiltration_##SUFFIX(); \
-                fil.negate_ = std::get<0>(t); \
-                fil.is_subfiltration_ = std::get<2>(t); \
-                fil.id_to_sorted_id_ = std::get<3>(t); \
-                fil.sorted_id_to_id_ = std::get<4>(t); \
-                fil.dim_first_ = std::get<5>(t); \
-                fil.dim_last_ = std::get<6>(t); \
-                fil.kind_ = std::get<7>(t); \
-                /* PackedGeom is a trivial int width; rebuild it, slim the fat cells, and */ \
-                /* regenerate the hash uid index (the packed cell uses the hash, not flat) */ \
-                oin::PackedGeom geom{std::get<8>(t)}; \
-                fil.set_geometry(geom); \
-                const auto& fat = std::get<1>(t); \
-                typename PackedFiltration_##SUFFIX::CellVector slim; \
-                slim.reserve(fat.size()); \
-                for (const auto& fc : fat) slim.push_back(slim_simplex_from_packed<oin_int, WORD, oin_real>(fc, geom)); \
-                fil.cells_ = std::move(slim); \
-                fil.rebuild_uid_index_(); \
-            }) \
-
-
-    BIND_PACKED_FILTRATION(std::uint64_t, 64);
-    BIND_PACKED_FILTRATION(unsigned __int128, 128);
-
-    #undef BIND_PACKED_FILTRATION
+    // ============ Slim filtration bindings (Cube / Freudenthal / bit-packed) ============
+    // register_slim_filtration<Policy> (above) binds the shared method set once; for_each_type
+    // instantiates it for every slim cell type, and SlimFilTraits<Policy> supplies the per-policy
+    // hooks (fat<->slim conversion, uid translation, pickle state, display words, the cube-only
+    // ctor + boundary_matrix_rel). This replaces the former BIND_CUBE/FR/PACKED_FILTRATION macros.
+    oineus_python::for_each_type(
+        oineus_python::TypeList<
+            oin::Cube<oin_int, 1>, oin::Cube<oin_int, 2>, oin::Cube<oin_int, 3>,
+            oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 1>>,
+            oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 2>>,
+            oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 3>>,
+            oin::Simplex<oin_int, oin::BitPacked<oin_int, std::uint64_t>>,
+            oin::Simplex<oin_int, oin::BitPacked<oin_int, unsigned __int128>>
+        >{},
+        [&m]<class Policy>() { register_slim_filtration<Policy>(m); });
 
     m.def("_mapping_cylinder",
           [](const Filtration& fil_domain, const Filtration& fil_codomain,
