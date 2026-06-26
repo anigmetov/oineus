@@ -1,4 +1,5 @@
 #include "oineus_persistence_bindings.h"
+#include "oineus_type_list.h"
 #include "nanobind/stl/variant.h"
 #include "nanobind/stl/map.h"
 #include "nanobind/stl/unordered_map.h"
@@ -343,74 +344,15 @@ void init_oineus_top_optimizer(nb::module_& m)
     init_oineus_top_optimizer_class<PackedCell_64>(m, "TopologyOptimizerPacked_64", "IndicesValuesPacked_64");
     init_oineus_top_optimizer_class<PackedCell_128>(m, "TopologyOptimizerPacked_128", "IndicesValuesPacked_128");
 
-    // induced matching
-    m.def("get_induced_matching", &oin::get_induced_matching<Simp, oin_real>,
-            "Compute induced matching for two filtrations of the same complex",
-            nb::arg("included_filtration"),
-            nb::arg("containing_filtration"),
-            nb::arg("dim")=static_cast<dim_type >(-1),
-            nb::arg("n_threads")=1);
-
-    m.def("get_induced_matching", &oin::get_induced_matching<SimpProd, oin_real>,
-           "Compute induced matching for two filtrations of the same complex",
-           nb::arg("included_filtration"),
-           nb::arg("containing_filtration"),
-           nb::arg("dim")=static_cast<dim_type >(-1),
-           nb::arg("n_threads")=1);
-
-    m.def("get_induced_matching", &oin::get_induced_matching<Cube_1D, oin_real>,
-           "Compute induced matching for two filtrations of the same complex",
-           nb::arg("included_filtration"),
-           nb::arg("containing_filtration"),
-           nb::arg("dim")=static_cast<dim_type >(-1),
-           nb::arg("n_threads")=1);
-
-    m.def("get_induced_matching", &oin::get_induced_matching<Cube_2D, oin_real>,
-           "Compute induced matching for two filtrations of the same complex",
-           nb::arg("included_filtration"),
-           nb::arg("containing_filtration"),
-           nb::arg("dim")=static_cast<dim_type >(-1),
-           nb::arg("n_threads")=1);
-
-    m.def("get_induced_matching", &oin::get_induced_matching<Cube_3D, oin_real>,
-           "Compute induced matching for two filtrations of the same complex",
-           nb::arg("included_filtration"),
-           nb::arg("containing_filtration"),
-           nb::arg("dim")=static_cast<dim_type >(-1),
-           nb::arg("n_threads")=1);
-
-    m.def("get_induced_matching", &oin::get_induced_matching<FrCell_1D, oin_real>,
-           "Compute induced matching for two filtrations of the same complex",
-           nb::arg("included_filtration"),
-           nb::arg("containing_filtration"),
-           nb::arg("dim")=static_cast<dim_type >(-1),
-           nb::arg("n_threads")=1);
-
-    m.def("get_induced_matching", &oin::get_induced_matching<FrCell_2D, oin_real>,
-           "Compute induced matching for two filtrations of the same complex",
-           nb::arg("included_filtration"),
-           nb::arg("containing_filtration"),
-           nb::arg("dim")=static_cast<dim_type >(-1),
-           nb::arg("n_threads")=1);
-
-    m.def("get_induced_matching", &oin::get_induced_matching<FrCell_3D, oin_real>,
-           "Compute induced matching for two filtrations of the same complex",
-           nb::arg("included_filtration"),
-           nb::arg("containing_filtration"),
-           nb::arg("dim")=static_cast<dim_type >(-1),
-           nb::arg("n_threads")=1);
-
-    m.def("get_induced_matching", &oin::get_induced_matching<PackedCell_64, oin_real>,
-           "Compute induced matching for two filtrations of the same complex",
-           nb::arg("included_filtration"),
-           nb::arg("containing_filtration"),
-           nb::arg("dim")=static_cast<dim_type >(-1),
-           nb::arg("n_threads")=1);
-
-    m.def("get_induced_matching", &oin::get_induced_matching<PackedCell_128, oin_real>,
-           "Compute induced matching for two filtrations of the same complex",
-           nb::arg("included_filtration"),
-           nb::arg("containing_filtration"),
-           nb::arg("dim")=static_cast<dim_type >(-1),
-           nb::arg("n_threads")=1);
+    // induced matching: one binding per cell type, folded (same order as before)
+    using OptCellList = oineus_python::TypeList<Simp, SimpProd, Cube_1D, Cube_2D, Cube_3D,
+            FrCell_1D, FrCell_2D, FrCell_3D, PackedCell_64, PackedCell_128>;
+    oineus_python::for_each_type(OptCellList{}, [&m]<class Cell>() {
+        m.def("get_induced_matching", &oin::get_induced_matching<Cell, oin_real>,
+                "Compute induced matching for two filtrations of the same complex",
+                nb::arg("included_filtration"),
+                nb::arg("containing_filtration"),
+                nb::arg("dim")=static_cast<dim_type>(-1),
+                nb::arg("n_threads")=1);
+    });
 }
