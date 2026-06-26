@@ -1,5 +1,7 @@
 import pickle
 
+import pytest
+
 import oineus as oin
 
 
@@ -333,6 +335,20 @@ def test_cube_filtration_1d_api():
 #
 #     fil_back = pickle.loads(pickle.dumps(fil))
 #     assert fil_back == fil
+
+def test_min_filtration_rejects_mismatched_sizes():
+    # min_filtration and min_filtration(..., with_indices=True) must both reject two
+    # filtrations of different sizes cleanly. The with_indices path used to guard this
+    # with an assert() (a silent no-op in release builds) -- it now throws like the
+    # plain path. The check lives in the shared C++ template, so the fat Simplex case
+    # below pins it for every cell type.
+    K = oin.list_to_filtration([[0, [0], 0.0], [1, [1], 1.0], [2, [0, 1], 2.0]])
+    L = oin.list_to_filtration([[0, [0], 0.0], [1, [1], 1.0]])
+    with pytest.raises(RuntimeError):
+        oin.min_filtration(K, L)
+    with pytest.raises(RuntimeError):
+        oin.min_filtration(K, L, with_indices=True)
+
 
 if __name__ == "__main__":
     test_prod_filtration_api()

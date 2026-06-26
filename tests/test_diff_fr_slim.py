@@ -103,3 +103,39 @@ def test_diff_optimizer_dispatches_to_slim_freudenthal():
     # construction; the meaningful checks are the dispatch (above) and that the
     # whole crit-set pipeline runs on the slim cell without error
     assert len(np.asarray(crit_indices)) == len(np.asarray(crit_values))
+
+
+def test_min_filtration_slim_matches_fat():
+    # oineus.diff.min_filtration over two slim Freudenthal diff-fils must agree with
+    # the fat path. This exercises the slim min_filtration_with_indices overload AND
+    # the E.1 combinatorial-uid round-trip in diff/min_filtration.py (it keys the
+    # result back into the source fils by the materialized fat cell's uid).
+    rng = np.random.default_rng(11)
+    shape = (5, 6)
+    data1 = torch.tensor(rng.uniform(-1, 1, size=shape).astype(REAL_DTYPE), dtype=TORCH_DTYPE)
+    data2 = torch.tensor(rng.uniform(-1, 1, size=shape).astype(REAL_DTYPE), dtype=TORCH_DTYPE)
+
+    df_min_s = od.min_filtration(
+        od.freudenthal_filtration(data1, max_dim=2, slim=True),
+        od.freudenthal_filtration(data2, max_dim=2, slim=True))
+    assert type(df_min_s.under_fil).__name__ == "_FreudenthalFiltration_2D"
+
+    df_min_f = od.min_filtration(
+        od.freudenthal_filtration(data1, max_dim=2, slim=False),
+        od.freudenthal_filtration(data2, max_dim=2, slim=False))
+
+    vs = np.array([c.value for c in df_min_s.under_fil], dtype=REAL_DTYPE)
+    vf = np.array([c.value for c in df_min_f.under_fil], dtype=REAL_DTYPE)
+    # same complex, same min values (as a multiset, robust to any sort tie-breaking)
+    np.testing.assert_allclose(np.sort(vs), np.sort(vf), atol=ATOL, rtol=RTOL)
+    # the differentiable values track this filtration's own under_fil per sorted_id
+    # (this is the uid round-trip that would silently misalign without E.1)
+    np.testing.assert_allclose(np.asarray(df_min_s.values, dtype=REAL_DTYPE), vs, atol=ATOL, rtol=RTOL)
+    # and they track the fat path's diff values, matched cell-for-cell by uid (symmetric
+    # with the packed test; for Freudenthal the diff value equals the static cell value
+    # so this is an exact slim-vs-fat per-cell check of the uid round-trip)
+    slim_vals = np.asarray(df_min_s.values, dtype=REAL_DTYPE)
+    fat_vals = np.asarray(df_min_f.values, dtype=REAL_DTYPE)
+    fat_by_uid = {c.uid: fat_vals[i] for i, c in enumerate(df_min_f.under_fil)}
+    for i, c in enumerate(df_min_s.under_fil):
+        assert slim_vals[i] == pytest.approx(fat_by_uid[c.uid], abs=ATOL, rel=RTOL)

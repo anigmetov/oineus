@@ -101,3 +101,39 @@ def test_vr_packed_optimizer_dispatches():
     dgm = top.compute_diagram(include_inf_points=False)
     # a connected 8-point cloud has a non-trivial H0 (the merges)
     assert np.asarray(dgm.in_dimension(0)).shape[0] >= 1
+
+
+def test_min_filtration_packed_matches_fat():
+    # oineus.diff.min_filtration over two packed VR diff-fils must agree with the fat
+    # path. max_diameter=1e9 forces the full 2-skeleton on both point clouds, so the
+    # two complexes are combinatorially identical and min_filtration can match cells
+    # by uid. Exercises the packed min_filtration_with_indices overload + the E.1
+    # combinatorial-uid round-trip (packed word translation).
+    rng = np.random.default_rng(12)
+    pts1 = torch.tensor(rng.uniform(-1, 1, size=(6, 2)).astype(REAL_DTYPE), dtype=TORCH_DTYPE)
+    pts2 = torch.tensor(rng.uniform(-1, 1, size=(6, 2)).astype(REAL_DTYPE), dtype=TORCH_DTYPE)
+
+    df_min_p = od.min_filtration(
+        od.vr_filtration(pts1, max_dim=2, max_diameter=1e9, packed=True),
+        od.vr_filtration(pts2, max_dim=2, max_diameter=1e9, packed=True))
+    assert type(df_min_p.under_fil).__name__ == "_PackedSimplexFiltration_64"
+
+    df_min_f = od.min_filtration(
+        od.vr_filtration(pts1, max_dim=2, max_diameter=1e9, packed=False),
+        od.vr_filtration(pts2, max_dim=2, max_diameter=1e9, packed=False))
+
+    # same complex, same min static values (multiset)
+    vp = np.array([c.value for c in df_min_p.under_fil], dtype=REAL_DTYPE)
+    vf = np.array([c.value for c in df_min_f.under_fil], dtype=REAL_DTYPE)
+    np.testing.assert_allclose(np.sort(vp), np.sort(vf), atol=ATOL, rtol=RTOL)
+
+    # the differentiable values track the fat path's, matched cell-for-cell by uid
+    # (this is the packed-word uid round-trip in diff/min_filtration.py; a broken
+    # translation would misalign these). Matching by uid -- not by sorted_id -- is
+    # robust to any tie-break difference in the two sort orders. The diff value of a
+    # VR vertex is sqrt(eps), not the static 0, so we compare diff-to-diff, not to vp.
+    pack_vals = np.asarray(df_min_p.values, dtype=REAL_DTYPE)
+    fat_vals = np.asarray(df_min_f.values, dtype=REAL_DTYPE)
+    fat_by_uid = {c.uid: fat_vals[i] for i, c in enumerate(df_min_f.under_fil)}
+    for i, c in enumerate(df_min_p.under_fil):
+        assert pack_vals[i] == pytest.approx(fat_by_uid[c.uid], abs=ATOL, rel=RTOL)

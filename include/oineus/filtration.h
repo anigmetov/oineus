@@ -1156,8 +1156,13 @@ namespace oineus {
     {
         using Real = R;
 
-        assert(fil_1.size() == fil_2.size());
-        assert(fil_1.negate() == fil_2.negate());
+        // throw (not assert): this is reachable from the public oineus.diff.min_filtration /
+        // oin.min_filtration(..., with_indices=True) API, so a release build must reject
+        // mismatched inputs cleanly rather than produce silent garbage. Mirrors min_filtration.
+        if (fil_1.negate() != fil_2.negate())
+            throw std::runtime_error("Cannot construct min filtration from two filtrations with opposite order");
+        if (fil_1.size() != fil_2.size())
+            throw std::runtime_error("Refuse to construct min filtration from two filtrations of different sizes");
 
         bool negate = fil_1.negate();
 

@@ -314,6 +314,18 @@ void register_slim_filtration(nb::module_& m)
             "FiltrationKind tag set by the constructor that built this filtration (or User for hand-built ones).")
         .def("__getstate__", [](const Fil& fil) -> StateTuple { return T::getstate(fil); })
         .def("__setstate__", [](Fil& fil, const StateTuple& t) { T::setstate(fil, t); });
+
+    // min_filtration over two slim/packed filtrations of this cell type. The C++ helper works
+    // entirely in the internal (anchor,type)/packed/dense uid space (cell.get_uid() ->
+    // fil_2.get_sorted_id_by_uid), so no combinatorial translation and no __int128 crosses the
+    // Python boundary -- it takes/returns Filtration objects and size_t perms only. Folding it
+    // here registers the overload for every slim cell type (cube / Freudenthal / bit-packed).
+    m.def("_min_filtration", &oin::min_filtration<Policy, oin_real>,
+          nb::arg("fil_1"), nb::arg("fil_2"),
+          "return a filtration where each cell has minimal value from fil_1, fil_2");
+    m.def("_min_filtration_with_indices", &oin::min_filtration_with_indices<Policy, oin_real>,
+          nb::arg("fil_1"), nb::arg("fil_2"),
+          "return a tuple (filtration, inds_1, inds_2) where each cell has minimal value from fil_1, fil_2 and inds_1, inds_2 are its indices in fil_1, fil_2");
 }
 
 void init_oineus_filtration(nb::module_& m)
@@ -809,10 +821,7 @@ void init_oineus_filtration(nb::module_& m)
     // helper for differentiable filtration
     m.def("_min_filtration_with_indices", &oin::min_filtration_with_indices<Simplex, oin_real>, nb::arg("fil_1"), nb::arg("fil_2"), "return a tuple (filtration, inds_1, inds_2) where each simplex has minimal value from fil_1, fil_2 and inds_1, inds_2 are its indices in fil_1, fil_2");
     m.def("_min_filtration_with_indices", &oin::min_filtration_with_indices<ProdSimplex, oin_real>, nb::arg("fil_1"), nb::arg("fil_2"), "return a tuple (filtration, inds_1, inds_2) where each simplex has minimal value from fil_1, fil_2 and inds_1, inds_2 are its indices in fil_1, fil_2");
-    // No slim FreudenthalFiltration overload: oineus.diff.min_filtration keys the
-    // result back into the source filtrations by the materialized fat cell's
-    // combinatorial uid, which a slim filtration (keyed by the (anchor,type) uid)
-    // cannot resolve. Wiring it awaits the unified uid contract; until then
-    // min_filtration over slim filtrations fails cleanly at overload resolution.
+    // The slim/packed overloads of _min_filtration[_with_indices] are registered inside
+    // register_slim_filtration<Policy> (folded over every slim cell type).
 
 }
