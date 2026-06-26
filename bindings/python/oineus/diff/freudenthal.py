@@ -13,18 +13,16 @@ def freudenthal_filtration(data, negate=False, wrap=False, max_dim=3, slim=False
     tensor = epy.astensor(data)
     np_data = tensor_to_real_numpy(tensor)
     max_dim = min(max_dim, np_data.ndim)
-    # slim=True builds the compact (anchor,type) FreudenthalFiltration_ND for D=1,2,3
-    # on non-wrap grids: it reduces, produces diagrams and optimizes (sorted_id +
-    # value based) identically to the fat path but with a far smaller boundary-build
-    # footprint, and oineus.diff.TopologyOptimizer dispatches on its per-dim type. It
-    # is opt-in because the materialized fat cells carry the combinatorial uid while
-    # the filtration is keyed by the slim (anchor,type) uid, so uid-based lookups
-    # (value_by_uid / sorted_id_by_uid) are not interchangeable with cell.uid yet --
-    # reconciling that uid contract is part of the unified facade. wrap grids and
-    # D>=4 always use the fat universal Filtration (FrGeometry rejects wrap; the slim
-    # builder is bound only for D=1,2,3). The critical-vertex array cv is a flat index
-    # array into the data, identical between the slim and fat paths, so the gathered
-    # values are unchanged.
+    # slim=True builds the compact (anchor,type) FreudenthalFiltration_ND for D=1,2,3 on non-wrap
+    # grids: it reduces, produces diagrams and optimizes (sorted_id + value based) identically to
+    # the fat path but with a far smaller boundary-build footprint, and oineus.diff.TopologyOptimizer
+    # dispatches on its per-dim type. It is opt-in for the differentiable factory (the non-diff
+    # oineus.freudenthal_filtration defaults to slim) because some low-level diff entry points
+    # (compute_partial_u_rows, the raw per-cell optimizer ctor) are still fat-only; the high-level
+    # diff pipeline (persistence_diagram, TopologyOptimizer, mapping_cylinder) handles slim. wrap
+    # grids and D>=4 always use the fat universal Filtration (FrGeometry rejects wrap; the slim
+    # builder is bound only for D=1,2,3). The critical-vertex array cv is a flat index array into
+    # the data, identical between the slim and fat paths, so the gathered values are unchanged.
     if slim and (not wrap) and (1 <= np_data.ndim <= 3):
         grid = _FR_GRID_CLASS_BY_NDIM[np_data.ndim](np_data, wrap=wrap, values_on="vertices")
         fil, cv = grid.freudenthal_filtration_and_critical_vertices_slim(

@@ -137,3 +137,47 @@ def test_min_filtration_packed_matches_fat():
     fat_by_uid = {c.uid: fat_vals[i] for i, c in enumerate(df_min_f.under_fil)}
     for i, c in enumerate(df_min_p.under_fil):
         assert pack_vals[i] == pytest.approx(fat_by_uid[c.uid], abs=ATOL, rel=RTOL)
+
+
+def test_diff_mapping_cylinder_packed_matches_fat():
+    # oineus.diff.mapping_cylinder_filtration over packed VR diff-fils must match the fat
+    # path. The cylinder builder is fat-only, so the packed path fattens the under-filtrations
+    # and reorders the value tensors into the fat sorted order; this checks that the resulting
+    # cylinder is identical to the fat cylinder cell-for-cell (so the value reorder + the
+    # concat/cyl_val_inds gather are aligned) and that gradients flow back to the points
+    # identically. The packed and fat cylinders share the same sorted order (the fat rebuild of
+    # the packed cells reproduces it), so values are compared positionally, not as a multiset.
+    # max_diameter=1e9 gives the full 2-skeleton (smooth in the points, no combinatorial jumps).
+    rng = np.random.default_rng(7)
+    p1 = rng.uniform(-1, 1, size=(8, 2)).astype(REAL_DTYPE)
+    p2 = rng.uniform(-1, 1, size=(8, 2)).astype(REAL_DTYPE)
+
+    def run(packed):
+        t1 = torch.tensor(p1, dtype=TORCH_DTYPE, requires_grad=True)
+        t2 = torch.tensor(p2, dtype=TORCH_DTYPE, requires_grad=True)
+        fd = od.vr_filtration(t1, max_dim=2, max_diameter=1e9, packed=packed)
+        fc = od.vr_filtration(t2, max_dim=2, max_diameter=1e9, packed=packed)
+        v0 = oin.Simplex([fd.size() + fc.size()])
+        v1 = oin.Simplex([fd.size() + fc.size() + 1])
+        cyl = od.mapping_cylinder_filtration(fd, fc, v0, v1)
+        vals = cyl.values
+        finite = torch.isfinite(vals)
+        loss = (vals[finite] ** 2).sum()
+        loss.backward()
+        return (cyl, float(loss.detach()),
+                t1.grad.detach().numpy().copy(), t2.grad.detach().numpy().copy(),
+                np.asarray(vals.detach()), np.asarray(finite))
+
+    cylp, lp, g1p, g2p, vp, mp = run(True)
+    cylf, lf, g1f, g2f, vf, mf = run(False)
+    assert type(cylp.under_fil).__name__ == "_ProdFiltration"
+    assert type(cylf.under_fil).__name__ == "_ProdFiltration"
+    # the two cylinders share the same cell order, so compare values POSITIONALLY (not as a
+    # multiset) -- this catches a value-reorder / cyl_val_inds misalignment that a sorted
+    # comparison would hide. The finite mask must coincide for the comparison to be cell-aligned.
+    assert np.array_equal(mp, mf)
+    np.testing.assert_allclose(vp[mp], vf[mf], atol=ATOL, rtol=RTOL)
+    np.testing.assert_allclose(lp, lf, atol=ATOL, rtol=RTOL)
+    np.testing.assert_allclose(g1p, g1f, atol=ATOL, rtol=RTOL)
+    np.testing.assert_allclose(g2p, g2f, atol=ATOL, rtol=RTOL)
+    _assert_grad_nonzero(g1p, g2p)

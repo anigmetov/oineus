@@ -12,10 +12,13 @@ def vr_filtration(data, from_pwdists: bool = False, max_dim: int = -1,
     data_np = tensor_to_real_numpy(data)
     assert data.ndim == 2
 
-    # packed=True builds the bit-packed PackedSimplexFiltration; the critical-edge
-    # array is encoding-independent (vertex-id pairs aligned to the sorted cells), so
-    # the differentiable distance gather below is unchanged. oineus.diff.TopologyOptimizer
-    # dispatches the packed type via _OPT_CLASS_BY_FIL_TYPE.
+    # packed=True builds the bit-packed PackedSimplexFiltration when the tier fits (else fat);
+    # the critical-edge array is encoding-independent (vertex-id pairs aligned to the sorted
+    # cells), so the differentiable distance gather below is unchanged. oineus.diff.TopologyOptimizer
+    # dispatches the packed type and mapping_cylinder_filtration fattens packed under-filtrations as
+    # needed. It is opt-in for the differentiable factory (the non-diff oineus.vr_filtration defaults
+    # to packed) because some low-level diff entry points (compute_partial_u_rows, the raw per-cell
+    # optimizer ctor) are still fat-only.
     fil, edges = non_diff_vr_filtration(
         data=data_np,
         from_pwdists=from_pwdists,
