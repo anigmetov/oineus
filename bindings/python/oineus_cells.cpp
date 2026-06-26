@@ -44,10 +44,12 @@ void init_oineus_cells(nb::module_& m)
         .def("__iter__", [](Simplex& sigma) { return nb::make_iterator(nb::type<Simplex>(), "vertices_iterator", sigma.get_vertices().begin(), sigma.get_vertices().end()); }, nb::keep_alive<0, 1>())
         .def("__getitem__", [](Simplex& sigma, size_t i) { return sigma.get_vertices()[i]; })
         .def_prop_rw("id", &Simplex::get_id, &Simplex::set_id)
-        .def_prop_ro("vertices", &Simplex::get_vertices)
+        // get_vertices / boundary are SFINAE-gated member templates on Simplex<Int,Enc>
+        // (Fat-only), so they are bound via lambdas rather than &Simplex::method pointers.
+        .def_prop_ro("vertices", [](const Simplex& s) { return s.get_vertices(); })
         .def_prop_ro("uid", &Simplex::get_uid)
         .def_prop_ro("dim", &Simplex::dim)
-        .def("boundary", &Simplex::boundary)
+        .def("boundary", [](const Simplex& s) { return s.boundary(); })
         .def("join", [](const Simplex& sigma, oin_int new_vertex, oin_int new_id) {
                   return sigma.join(new_id, new_vertex);
                 },

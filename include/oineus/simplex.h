@@ -339,18 +339,20 @@ struct Simplex {
     Uid get_uid() const { return enc_.get_uid(); }
     void set_uid() { enc_.set_uid(); }
 
+    // get_vertices / no-arg boundary / join / repr are valid only for self-contained
+    // (NoGeometry) encodings, which carry their own vertex list -- i.e. Fat. They are
+    // SFINAE-gated member templates (the gate depends on the function's own template
+    // parameter E) so they simply do NOT exist for geometry-bearing encodings
+    // (Freudenthal anchor+type, bit-packed): a stray slim/packed call is a clean
+    // "no such method", and trait detection (e.g. CellWithValue::get_vertices /
+    // boundary, which decltype-probe these) is honest. Geometry-bearing encodings use
+    // boundary_into / coboundary_into / vertices(geom) (below) instead. Being templates,
+    // they are bound via lambdas, not &Simplex::method member pointers.
+    template<class E = Enc, std::enable_if_t<std::is_same_v<typename E::Geometry, NoGeometry>, int> = 0>
     const IdxVector& get_vertices() const { return enc_.get_vertices(); }
 
-    // No-argument boundary, for self-contained encodings (NoGeometry, e.g. Fat).
-    // Encodings that need the shared geometry to compute their boundary do not
-    // expose a no-argument form; the static_assert turns a stray call into a clear
-    // compile error rather than a silent empty result.
-    Boundary boundary() const
-    {
-        static_assert(std::is_same_v<Geometry, NoGeometry>,
-                      "no-argument boundary() is only available for self-contained (NoGeometry) encodings");
-        return enc_.boundary();
-    }
+    template<class E = Enc, std::enable_if_t<std::is_same_v<typename E::Geometry, NoGeometry>, int> = 0>
+    Boundary boundary() const { return enc_.boundary(); }
 
     // Geometry-bearing encodings (Freudenthal anchor+type, bit-packed) expose
     // alloc-elided buffer (co)boundary and on-the-fly vertex materialization that need
@@ -376,7 +378,8 @@ struct Simplex {
         return enc_.vertices(geom);
     }
 
-    // create a new simplex by joining with vertex and assign id to it
+    // create a new simplex by joining with vertex and assign id to it (Fat-only, see above)
+    template<class E = Enc, std::enable_if_t<std::is_same_v<typename E::Geometry, NoGeometry>, int> = 0>
     Simplex join(Int new_id, Int vertex) const
     {
         const IdxVector& vs = enc_.get_vertices();
@@ -388,6 +391,7 @@ struct Simplex {
         return Simplex(new_id, new_vertices);
     }
 
+    template<class E = Enc, std::enable_if_t<std::is_same_v<typename E::Geometry, NoGeometry>, int> = 0>
     Simplex join(Int vertex)
     {
         return join(k_invalid_id, vertex);
@@ -407,6 +411,7 @@ struct Simplex {
     template<typename I, typename E>
     friend std::ostream& operator<<(std::ostream&, const Simplex<I, E>&);
 
+    template<class E = Enc, std::enable_if_t<std::is_same_v<typename E::Geometry, NoGeometry>, int> = 0>
     std::string repr() const
     {
         std::stringstream out;
