@@ -6,6 +6,12 @@ import oineus as oin
 # alpha-shapes need diode (CGAL); skip the whole module if it is absent
 pytest.importorskip("diode")
 
+# the packed default for alpha only kicks in on the diode-array fast path
+requires_arrays = pytest.mark.skipif(
+    not getattr(oin, "_HAS_DIODE_ARRAYS", False),
+    reason="requires a diode build with the array exporters",
+)
+
 
 def _sorted(a):
     a = np.asarray(a, dtype=np.float64).reshape(-1, 2)
@@ -78,3 +84,12 @@ def test_packed_alpha_uid_accessors_round_trip():
         assert fp.sorted_id_by_uid(c.uid) == i
         assert fp.value_by_uid(c.uid) == c.value
         assert list(fp.cell_by_uid(c.uid).vertices) == list(c.vertices)
+
+
+@requires_arrays
+def test_alpha_default_is_packed():
+    # the default (no packed= kwarg) is now the bit-packed path on the fast array path
+    pts = np.ascontiguousarray(np.random.default_rng(0).random((40, 3)))
+    assert type(oin.alpha_filtration(pts)).__name__ == "_PackedSimplexFiltration_64"
+    # escape hatch yields the fat universal Filtration
+    assert type(oin.alpha_filtration(pts, packed=False)).__name__ == "_Filtration"

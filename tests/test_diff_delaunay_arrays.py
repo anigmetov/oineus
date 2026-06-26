@@ -51,12 +51,12 @@ UNIT_TET = np.array([
 
 
 def _simplex_set(fil):
-    """Set of simplices in a filtration as sorted vertex-index tuples."""
-    out = set()
-    for d in range(fil.max_dim + 1):
-        for row in np.asarray(fil.get_simplices_as_arr(d)):
-            out.add(tuple(sorted(int(v) for v in row)))
-    return out
+    """Set of simplices in a filtration as sorted vertex-index tuples.
+
+    Iterate materialized cells via .vertices so this works for any encoding
+    (the fat-only get_simplices_as_arr helper is not bound on packed cells).
+    """
+    return {tuple(sorted(int(v) for v in c.vertices)) for c in fil.cells()}
 
 
 def _per_dim_diagrams(fil, maxdim=2, include_inf=True):

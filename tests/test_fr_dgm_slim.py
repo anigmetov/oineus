@@ -190,3 +190,12 @@ def test_induced_matching_cube_identity_runs():
     m = oin.get_induced_matching(cf, cf)
     assert len(m) >= 1
     assert len(m[0]) >= 1
+
+
+def test_freudenthal_default_is_slim():
+    # the default (no slim= kwarg) is now the slim path for D<=3 non-wrap grids
+    a = np.random.default_rng(0).random((6, 7)).astype(np.float64)
+    assert type(oin.freudenthal_filtration(a, max_dim=2)).__name__ == "_FreudenthalFiltration_2D"
+    # escape hatch and the wrap fallback both yield the fat universal Filtration
+    assert type(oin.freudenthal_filtration(a, max_dim=2, slim=False)).__name__ == "_Filtration"
+    assert type(oin.freudenthal_filtration(a, max_dim=2, wrap=True)).__name__ == "_Filtration"

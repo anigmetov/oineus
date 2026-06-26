@@ -1001,17 +1001,15 @@ def freudenthal_filtration(data: np.ndarray,
                            wrap: bool=False,
                            max_dim: int = 3,
                            with_critical_vertices: bool=False,
-                           slim: bool=False,
+                           slim: bool=True,
                            n_threads: int=1):
     max_dim = min(max_dim, data.ndim)
-    # slim=True returns the compact (anchor,type) _FreudenthalFiltration_ND (one shared
-    # FrGeometry, fat simplices materialized on access) for D=1,2,3 on non-wrap grids;
-    # it reduces and produces diagrams identically to the fat path but with a far
-    # smaller boundary-build footprint. It is opt-in for now because the bare
-    # oineus.TopologyOptimizer is per-cell-type and does not yet accept the slim type
-    # (oineus.diff.TopologyOptimizer does); the default flip awaits the unified
-    # optimizer facade. wrap grids and D>=4 always use the fat universal Filtration
-    # (FrGeometry rejects wrap; the slim builder is bound only for D=1,2,3).
+    # slim (the default) returns the compact (anchor,type) _FreudenthalFiltration_ND (one shared
+    # FrGeometry, fat simplices materialized on access) for D=1,2,3 on non-wrap grids; it reduces,
+    # produces diagrams, optimizes (oineus.TopologyOptimizer dispatches it) and supports KICR
+    # identically to the fat path but with a far smaller boundary-build footprint. wrap grids and
+    # D>=4 always fall back to the fat universal Filtration (FrGeometry rejects wrap; the slim
+    # builder is bound only for D=1,2,3). Pass slim=False to force the fat path.
     use_slim = slim and (not wrap) and (1 <= data.ndim <= 3)
     if use_slim:
         grid = _FR_GRID_CLASS_BY_NDIM[data.ndim](data, wrap=wrap, values_on="vertices")
@@ -1045,7 +1043,7 @@ def vr_filtration(data: np.ndarray,
                   max_dim: int = -1,
                   max_diameter: float = -1.0,
                   with_critical_edges: bool = False,
-                  packed: bool = False,
+                  packed: bool = True,
                   n_threads: int = 1):
     """Build a Vietoris-Rips filtration from points or pairwise distances.
 
@@ -1067,6 +1065,10 @@ def vr_filtration(data: np.ndarray,
     with_critical_edges : bool
         Also return an array (one per simplex) of an edge whose length equals
         the simplex's filtration value.
+    packed : bool
+        Use the compact bit-packed cell encoding (the default) when the vertex
+        ids fit a 64- or 128-bit word; falls back to the fat encoding otherwise.
+        Pass packed=False to force the fat universal Simplex filtration.
     n_threads : int
         Threads used for the (parallel) sort inside the Filtration ctor.
         Enumeration itself is single-threaded.
@@ -1086,13 +1088,12 @@ def vr_filtration(data: np.ndarray,
         else:
             max_dim = data.shape[1]
 
-    # packed=True returns a bit-packed _PackedSimplexFiltration_64/128 (compact cells,
-    # one shared PackedGeom) when the vertex ids fit a 64- or 128-bit word; if they do
-    # not fit (very large/high-dim complex) it transparently falls back to the fat path.
-    # It reduces and produces diagrams identically to fat but with a smaller footprint;
-    # opt-in for now because the materialized fat cell carries the combinatorial uid
-    # while the filtration is keyed by the packed uid, so uid-keyed APIs and the bare
-    # oineus.TopologyOptimizer are not yet wired for it (oineus.diff.TopologyOptimizer is).
+    # packed (the default) returns a bit-packed _PackedSimplexFiltration_64/128 (compact cells,
+    # one shared PackedGeom) when the vertex ids fit a 64- or 128-bit word; if they do not fit
+    # (very large/high-dim complex) it transparently falls back to the fat path. It reduces,
+    # produces diagrams, optimizes (oineus.TopologyOptimizer dispatches it), supports KICR and
+    # the uid-keyed accessors (via the combinatorial-uid translation) identically to fat but with
+    # a smaller footprint. Pass packed=False to force the fat universal Simplex filtration.
     suffix = _vr_packed_word_suffix(data.shape[0], max_dim) if packed else None
 
     if from_pwdists:
@@ -1143,6 +1144,27 @@ def is_reduced(a):
             lowest_ones.append(np.max(np.where(a[:, col_idx] % 2 == 1)))
     return len(lowest_ones) == len(set(lowest_ones))
 
+_SLIM_SIMPLEX_FIL_TYPES = (
+    _oineus._FreudenthalFiltration_1D, _oineus._FreudenthalFiltration_2D,
+    _oineus._FreudenthalFiltration_3D,
+    _oineus._PackedSimplexFiltration_64, _oineus._PackedSimplexFiltration_128,
+)
+
+
+def _to_fat_simplex_filtration(fil):
+    """Materialize a slim/packed simplicial filtration into a fat _Filtration.
+
+    mapping_cylinder / multiply_filtration build fat ProductCell<Simplex, Simplex>
+    filtrations, so they need fat Simplex factors. A slim Freudenthal / bit-packed
+    filtration materializes fat Simplex cells on access, so rebuild a fat _Filtration
+    from them. Fat Simplex / product filtrations pass through unchanged; cube (and
+    anything else) is returned as-is so the C++ overload rejects it as before.
+    """
+    if isinstance(fil, _SLIM_SIMPLEX_FIL_TYPES):
+        return _oineus._Filtration(fil.cells(), fil.negate)
+    return fil
+
+
 def mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain,
                      v_domain_value=None, v_codomain_value=None, with_indices=False):
     """Build the mapping cylinder of the inclusion fil_domain -> fil_codomain.
@@ -1152,7 +1174,14 @@ def mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain,
     keeps the cylinder's persistent homology equivalent to the inclusion's.
     Pass explicit values only if you intentionally want the auxiliary vertices
     to enter at a finite point in the filtration.
+
+    Slim Freudenthal / bit-packed inputs are materialized to the fat encoding
+    first (the cylinder is built over fat product cells); the cells keep their
+    combinatorial uids, so uid-keyed lookups against the original filtrations
+    still resolve.
     """
+    fil_domain = _to_fat_simplex_filtration(fil_domain)
+    fil_codomain = _to_fat_simplex_filtration(fil_codomain)
     # Accept either valued (oin.Simplex / SimplexValue) or bare (CombinatorialSimplex)
     # auxiliary vertices. Strip the value -- we use the explicit *_value args
     # below, so any value baked into the simplex would only confuse readers.
@@ -1177,7 +1206,11 @@ def multiply_filtration(fil, sigma, sigma_value=None):
     Each product cell receives value ``fil.fil_max(cell.value, sigma_value)``.
     sigma_value defaults to ``fil.neg_infinity()`` so each product cell
     inherits its primary factor's value unchanged.
+
+    A slim Freudenthal / bit-packed fil is materialized to the fat encoding first
+    (the product cells are fat).
     """
+    fil = _to_fat_simplex_filtration(fil)
     if isinstance(sigma, _oineus.Simplex):
         sigma = sigma.combinatorial_cell
     if sigma_value is None:
@@ -1260,7 +1293,7 @@ def alpha_filtration(points: np.ndarray,
                      compute_bounding_box: bool=True,
                      bbox_min=None,
                      bbox_max=None,
-                     packed: bool=False,
+                     packed: bool=True,
                      n_threads: int=1):
     """Build an alpha-shape filtration from a 2D or 3D point cloud.
 
@@ -1278,6 +1311,9 @@ def alpha_filtration(points: np.ndarray,
         periodic: Use periodic alpha-shapes on a torus.
         compute_bounding_box: If True, use the bounding box of the data.
         bbox_min, bbox_max: Bounding box if compute_bounding_box=False.
+        packed: Use the compact bit-packed cell encoding (the default) on the
+            fast unweighted/non-periodic array path when the vertex ids fit a
+            64/128-bit word. Pass packed=False to force the fat encoding.
         n_threads: Threads used inside the Filtration constructor.
 
     Returns:
@@ -1334,7 +1370,7 @@ def alpha_filtration(points: np.ndarray,
             # arrays, avoiding one Python tuple per simplex. Same combinatorics
             # and values as fill_alpha_shapes.
             verts_by_dim, vals_by_dim = diode.fill_alpha_shapes_arrays(points, exact=exact)
-            # packed=True returns a bit-packed PackedSimplexFiltration when the vertex
+            # packed (the default) returns a bit-packed PackedSimplexFiltration when the vertex
             # ids fit a 64/128-bit word (only this fast array path supports it; the
             # weighted/periodic/list fallbacks below stay fat). Reduces and produces
             # diagrams identically to fat, with a smaller footprint.

@@ -267,3 +267,11 @@ def test_packed_vr_kicr_128_tier_matches_fat():
 
     import pickle
     assert pickle.loads(pickle.dumps(kp)) == kp
+
+
+def test_vr_default_is_packed():
+    # the default (no packed= kwarg) is now the bit-packed path when the tier fits
+    pts = np.ascontiguousarray(np.random.default_rng(0).random((15, 3)))
+    assert type(oin.vr_filtration(pts, max_dim=2, max_diameter=1.0)).__name__ == "_PackedSimplexFiltration_64"
+    # escape hatch yields the fat universal Filtration
+    assert type(oin.vr_filtration(pts, max_dim=2, max_diameter=1.0, packed=False)).__name__ == "_Filtration"
