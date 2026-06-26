@@ -147,6 +147,29 @@ def test_slim_kicr_rejected_clearly():
         oin.compute_kernel_image_cokernel_reduction(K, L)
 
 
+def test_bare_topology_optimizer_dispatches_slim():
+    # the bare oin.TopologyOptimizer must dispatch on cell type (like oineus.diff's),
+    # returning the slim-Freudenthal C++ optimizer and running a full optimize cycle.
+    # This is what the opt-fr / opt-wass examples call; it must work once the default
+    # freudenthal path becomes slim.
+    np.random.seed(13)
+    a = np.random.randn(9, 8).astype(np.float64)
+    fs = oin.freudenthal_filtration(a, max_dim=2, slim=True)
+    opt = oin.TopologyOptimizer(fs)
+    assert type(opt).__name__ == "TopologyOptimizerFreudenthal_2D"
+    opt.reduce_all()
+    dgm = opt.compute_diagram(include_inf_points=False)
+
+    ff = oin.freudenthal_filtration(a, max_dim=2, slim=False)
+    opt_fat = oin.TopologyOptimizer(ff)
+    assert type(opt_fat).__name__ == "TopologyOptimizer"
+    opt_fat.reduce_all()
+    dgm_fat = opt_fat.compute_diagram(include_inf_points=False)
+    for d in range(2):
+        assert dgms_close(np.asarray(dgm.in_dimension(d)),
+                          np.asarray(dgm_fat.in_dimension(d))), f"bare opt slim != fat dim {d}"
+
+
 def test_induced_matching_cube_identity_runs():
     # the same inclusion boundary_into branch now serves the slim Cube; an identity
     # cube inclusion must run through it and match the H0 component bar

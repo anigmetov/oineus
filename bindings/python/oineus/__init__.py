@@ -18,7 +18,7 @@ from ._oineus import reduce
 from ._oineus import DecompositionManipStats
 from ._oineus import ReductionParams, ReductionTimings, KICRParams, KerImCokReduced, KerImCokReducedProd
 from ._oineus import ColumnRepr
-from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizer, TopologyOptimizerProd
+from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizerProd
 from ._oineus import TopologyOptimizerCube_1D, TopologyOptimizerCube_2D, TopologyOptimizerCube_3D
 from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise_target, get_induced_matching
 from ._oineus import get_nth_persistence, get_permutation_dtv, get_permutation
@@ -120,6 +120,49 @@ except:
 # when False, the code falls back to the list-of-(vertices, value) API.
 _HAS_DIODE_ARRAYS = _HAS_DIODE and hasattr(diode, "fill_delaunay_arrays") \
     and hasattr(diode, "fill_alpha_shapes_arrays")
+
+
+# Maps each filtration cell encoding to its C++ TopologyOptimizer instantiation. The
+# reduction core is cell-agnostic, but the optimizer is templated on the cell type, so
+# there is one bound class per encoding (universal Simplex, product, slim cube, slim
+# Freudenthal, bit-packed VR/alpha). Single source of truth: oineus.diff reuses it.
+_OPT_CLASS_BY_FIL_TYPE = {
+    _oineus.Filtration:               _oineus.TopologyOptimizer,
+    _oineus.ProdFiltration:           _oineus.TopologyOptimizerProd,
+    _oineus.CubeFiltration_1D:        _oineus.TopologyOptimizerCube_1D,
+    _oineus.CubeFiltration_2D:        _oineus.TopologyOptimizerCube_2D,
+    _oineus.CubeFiltration_3D:        _oineus.TopologyOptimizerCube_3D,
+    _oineus.FreudenthalFiltration_1D: _oineus.TopologyOptimizerFreudenthal_1D,
+    _oineus.FreudenthalFiltration_2D: _oineus.TopologyOptimizerFreudenthal_2D,
+    _oineus.FreudenthalFiltration_3D: _oineus.TopologyOptimizerFreudenthal_3D,
+    _oineus.PackedSimplexFiltration_64:  _oineus.TopologyOptimizerPacked_64,
+    _oineus.PackedSimplexFiltration_128: _oineus.TopologyOptimizerPacked_128,
+}
+
+
+class TopologyOptimizer:
+    """Topology optimizer for a filtration of any cell encoding.
+
+    Dispatches on the filtration's cell type -- universal Simplex (VR / alpha / user),
+    product, slim cube, slim Freudenthal, or bit-packed VR/alpha -- and returns the
+    matching C++ optimizer instance directly, so its full native API (reduce_all,
+    compute_diagram, simplify, match, singletons, combine_loss, ...) is available
+    unchanged. Constructor keywords (with_crit_sets, dims_to_restore_elz, n_threads,
+    u_strategy) are forwarded verbatim.
+
+    oineus.diff.TopologyOptimizer is the differentiable-pipeline wrapper built on the
+    same dispatch; use this bare class for direct (non-autograd) topology optimization.
+    """
+
+    def __new__(cls, fil, *args, **kwargs):
+        opt_cls = _OPT_CLASS_BY_FIL_TYPE.get(type(fil))
+        if opt_cls is None:
+            raise TypeError(
+                f"TopologyOptimizer: unsupported filtration type "
+                f"{type(fil).__name__}; expected one of "
+                f"{[t.__name__ for t in _OPT_CLASS_BY_FIL_TYPE]}"
+            )
+        return opt_cls(fil, *args, **kwargs)
 
 
 def _check_numpy_diagram_shape(dgm):

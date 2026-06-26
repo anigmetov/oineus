@@ -1,22 +1,9 @@
 from typing import List, Optional
 
 from .. import _oineus
+from .. import _OPT_CLASS_BY_FIL_TYPE
 from .diff_filtration import DiffFiltration
 from ._reduction_policy import default_dualize_for_filtration
-
-
-_OPT_CLASS_BY_FIL_TYPE = {
-    _oineus.Filtration:               _oineus.TopologyOptimizer,
-    _oineus.ProdFiltration:           _oineus.TopologyOptimizerProd,
-    _oineus.CubeFiltration_1D:        _oineus.TopologyOptimizerCube_1D,
-    _oineus.CubeFiltration_2D:        _oineus.TopologyOptimizerCube_2D,
-    _oineus.CubeFiltration_3D:        _oineus.TopologyOptimizerCube_3D,
-    _oineus.FreudenthalFiltration_1D: _oineus.TopologyOptimizerFreudenthal_1D,
-    _oineus.FreudenthalFiltration_2D: _oineus.TopologyOptimizerFreudenthal_2D,
-    _oineus.FreudenthalFiltration_3D: _oineus.TopologyOptimizerFreudenthal_3D,
-    _oineus.PackedSimplexFiltration_64:  _oineus.TopologyOptimizerPacked_64,
-    _oineus.PackedSimplexFiltration_128: _oineus.TopologyOptimizerPacked_128,
-}
 
 
 def _opt_class_for_filtration(fil):

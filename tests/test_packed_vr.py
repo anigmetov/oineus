@@ -180,6 +180,29 @@ def test_packed_vr_128_tier_matches_fat():
     assert pickle.loads(pickle.dumps(fp)) == fp
 
 
+def test_bare_topology_optimizer_dispatches_packed():
+    # the bare oin.TopologyOptimizer must dispatch to the bit-packed C++ optimizer and
+    # produce the same diagram as the fat path
+    pts = np.ascontiguousarray(np.random.default_rng(6).random((22, 3)))
+    fp = oin.vr_filtration(pts, max_dim=2, max_diameter=1.0, packed=True)
+    opt = oin.TopologyOptimizer(fp)
+    assert type(opt).__name__ == "TopologyOptimizerPacked_64"
+    opt.reduce_all()
+    dp = opt.compute_diagram(include_inf_points=False)
+
+    ff = oin.vr_filtration(pts, max_dim=2, max_diameter=1.0, packed=False)
+    opt_f = oin.TopologyOptimizer(ff)
+    assert type(opt_f).__name__ == "TopologyOptimizer"
+    opt_f.reduce_all()
+    df = opt_f.compute_diagram(include_inf_points=False)
+    for d in range(3):
+        a = _sorted(dp.in_dimension(d))
+        b = _sorted(df.in_dimension(d))
+        a[a == np.inf] = 1e9
+        b[b == np.inf] = 1e9
+        assert a.shape == b.shape and np.allclose(a, b, atol=1e-6), f"bare opt packed != fat dim {d}"
+
+
 def test_packed_vr_kicr_rejected():
     # KICR is not wired for the bit-packed cell; reject clearly (the materialized fat
     # cell would otherwise slip past the Simplex-isinstance dispatch into a wrong ctor).
