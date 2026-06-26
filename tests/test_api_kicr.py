@@ -1,3 +1,7 @@
+import pickle
+
+import numpy as np
+
 import oineus as oin
 
 
@@ -103,6 +107,29 @@ def test_kicr_reduced_prod_api():
     for s in (repr(kicr), str(kicr)):
         assert s.startswith("KerImCokReduced(")
         assert "0x" not in s
+
+
+def test_kicr_cube_smoke():
+    # KICR is wired for the slim cube cell too (compute_kernel_image_cokernel_reduction
+    # dispatches a _CubeFiltration to _KerImCokReduced_Cube_ND). Smoke-test that the path
+    # runs end to end, exposes the diagram families + decomposition handles, and pickles.
+    a = np.random.default_rng(5).random((6, 6))
+    K = oin.cube_filtration(a, max_dim=2)
+    L = K.without_cells([K.size() - 1])
+    params = oin.KICRParams(kernel=True, image=True, cokernel=True, codomain=True)
+
+    kicr = oin.compute_kernel_image_cokernel_reduction(K, L, params)
+    assert type(kicr).__name__ == "_KerImCokReduced_Cube_2D"
+
+    # the inclusion L -> K is the full complex minus one top cube, so the image/domain
+    # diagrams are non-trivial
+    assert sum(len(kicr.image_diagrams().in_dimension(d)) for d in range(3)) > 0
+    for fam in ("domain_diagrams", "codomain_diagrams", "kernel_diagrams",
+                "cokernel_diagrams", "image_diagrams"):
+        _ = getattr(kicr, fam)()
+    _ = kicr.decomposition_f, kicr.decomposition_ker, kicr.decomposition_cok
+
+    assert pickle.loads(pickle.dumps(kicr)) == kicr
 
 
 if __name__ == "__main__":

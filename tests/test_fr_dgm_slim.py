@@ -135,16 +135,27 @@ def test_induced_matching_slim_matches_fat(dim, shape):
         assert len(m_s[d]) == len(m_f[d])
 
 
-def test_slim_kicr_rejected_clearly():
-    # KICR is not wired for the slim cell; the materialized fat cell defeats the
-    # isinstance(K[0], Simplex) dispatch, so we must reject slim up front with a
-    # clear NotImplementedError rather than a cryptic nanobind ctor TypeError.
+def test_slim_kicr_matches_fat():
+    # KICR is wired for the slim cell (compute_kernel_image_cokernel_reduction dispatches
+    # on the filtration type to _KerImCokReduced_Fr_2D). A slim Freudenthal K/L pair must
+    # give the same kernel/image/cokernel/(co)domain diagrams as the fat path.
     np.random.seed(2)
     a = np.random.randn(6, 6).astype(np.float64)
-    K = oin.freudenthal_filtration(a, max_dim=2, slim=True)
-    L = K.without_cells([K.size() - 1])
-    with pytest.raises(NotImplementedError):
-        oin.compute_kernel_image_cokernel_reduction(K, L)
+
+    def run(slim):
+        K = oin.freudenthal_filtration(a, max_dim=2, slim=slim)
+        L = K.without_cells([K.size() - 1])
+        params = oin.KICRParams()
+        params.codomain = params.kernel = params.image = params.cokernel = True
+        return oin.compute_kernel_image_cokernel_reduction(K, L, params)
+
+    ks, kf = run(True), run(False)
+    assert type(ks).__name__ == "_KerImCokReduced_Fr_2D"
+    for fam in ("kernel_diagrams", "cokernel_diagrams", "image_diagrams",
+                "domain_diagrams", "codomain_diagrams"):
+        for d in range(3):
+            assert dgms_close(getattr(ks, fam)().in_dimension(d),
+                              getattr(kf, fam)().in_dimension(d)), f"{fam} dim {d}"
 
 
 def test_bare_topology_optimizer_dispatches_slim():

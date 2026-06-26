@@ -62,61 +62,64 @@ void bind_kicr_pickle_and_equality(nb::class_<KerImCokReduced>& cls)
         });
 }
 
+// Bind KerImCokReduced<Cell> under a given Python name. kernel.h is cell-agnostic (it builds
+// boundary matrices via fil.boundary_matrix() and works purely on uids/dims/sorted_ids), so the
+// same class body works for every cell type -- fat Simplex / product, slim Freudenthal, bit-packed
+// VR/alpha, slim cube. Mirrors init_oineus_top_optimizer_class<Cell> in oineus_top_optimizer.cpp.
+template<class Cell>
+void init_oineus_kicr_class(nb::module_& m, const std::string& class_name)
+{
+    using Fil = oin::Filtration<Cell, oin_real>;
+    using KICR = oin::KerImCokReduced<Cell, oin_real>;
+
+    auto cls = nb::class_<KICR>(m, class_name.c_str())
+            .def(nb::init<const Fil&, const Fil&, oin::KICRParams&>(), nb::arg("K"), nb::arg("L"), nb::arg("params"),
+                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("domain_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_domain_diagrams()); })
+            .def("codomain_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_codomain_diagrams()); })
+            .def("kernel_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_kernel_diagrams()); })
+            .def("cokernel_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_cokernel_diagrams()); })
+            .def("image_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_image_diagrams()); })
+            .def("old_order_to_new", [](const KICR& self) { return self.get_old_order_to_new(); })
+            .def("new_order_to_old", [](const KICR& self) { return self.get_new_order_to_old(); })
+            .def_rw("fil_K", &KICR::fil_K_)
+            .def_rw("fil_L", &KICR::fil_L_)
+            // decomposition objects provide access to their R/V/U matrices
+            .def_rw("decomposition_f", &KICR::dcmp_F_)
+            .def_rw("decomposition_g", &KICR::dcmp_G_)
+            .def_rw("decomposition_im", &KICR::dcmp_im_)
+            .def_rw("decomposition_ker", &KICR::dcmp_ker_)
+            .def_rw("decomposition_cok", &KICR::dcmp_cok_)
+            .def("__str__", [](const KICR& self) { std::stringstream ss; ss << self; return ss.str(); })
+            .def("__repr__", [](const KICR& self) { std::stringstream ss; ss << self; return ss.str(); })
+            ;
+    bind_kicr_pickle_and_equality(cls);
+}
+
 void init_oineus_kicr(nb::module_& m)
 {
-    using Simplex = oin::Simplex<oin_int>;
-    using Filtration = oin::Filtration<Simplex, oin_real>;
+    using Simp = oin::Simplex<oin_int>;
+    using SimpProd = oin::ProductCell<Simp, Simp>;
+    using Cube_1D = oin::Cube<oin_int, 1>;
+    using Cube_2D = oin::Cube<oin_int, 2>;
+    using Cube_3D = oin::Cube<oin_int, 3>;
+    using FrCell_1D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 1>>;
+    using FrCell_2D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 2>>;
+    using FrCell_3D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 3>>;
+    using PackedCell_64 = oin::Simplex<oin_int, oin::BitPacked<oin_int, std::uint64_t>>;
+    using PackedCell_128 = oin::Simplex<oin_int, oin::BitPacked<oin_int, unsigned __int128>>;
 
-    using ProdSimplex = oin::ProductCell<Simplex, Simplex>;
-    using ProdFiltration = oin::Filtration<ProdSimplex, oin_real>;
-
-    using KerImCokRedSimplex = oin::KerImCokReduced<Simplex, oin_real>;
-    using KerImCokRedProdSimplex = oin::KerImCokReduced<ProdSimplex, oin_real>;
-
-    const std::string ker_im_cok_reduced_class_name = "KerImCokReduced";
-    const std::string ker_im_cok_reduced_prod_class_name = "KerImCokReducedProd";
-
-    auto kicr_simplex = nb::class_<KerImCokRedSimplex>(m, ker_im_cok_reduced_class_name.c_str())
-            .def(nb::init<const Filtration&, const Filtration&, oin::KICRParams&>(), nb::arg("K"), nb::arg("L"), nb::arg("params"),
-                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("domain_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_domain_diagrams()); })
-            .def("codomain_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_codomain_diagrams()); })
-            .def("kernel_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_kernel_diagrams()); })
-            .def("cokernel_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_cokernel_diagrams()); })
-            .def("image_diagrams", [](const KerImCokRedSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_image_diagrams()); })
-			.def("old_order_to_new", [](const KerImCokRedSimplex& self) { return self.get_old_order_to_new(); })
-			.def("new_order_to_old", [](const KerImCokRedSimplex& self) { return self.get_new_order_to_old(); })
-			.def_rw("fil_K", &KerImCokRedSimplex::fil_K_)
-			.def_rw("fil_L", &KerImCokRedSimplex::fil_L_)
-            // decomposition objects provide access to their R/V/U matrices
-            .def_rw("decomposition_f", &KerImCokRedSimplex::dcmp_F_)
-            .def_rw("decomposition_g", &KerImCokRedSimplex::dcmp_G_)
-            .def_rw("decomposition_im", &KerImCokRedSimplex::dcmp_im_)
-            .def_rw("decomposition_ker", &KerImCokRedSimplex::dcmp_ker_)
-            .def_rw("decomposition_cok", &KerImCokRedSimplex::dcmp_cok_)
-            .def("__str__", [](const KerImCokRedSimplex& self) { std::stringstream ss; ss << self; return ss.str(); })
-            .def("__repr__", [](const KerImCokRedSimplex& self) { std::stringstream ss; ss << self; return ss.str(); })
-            ;
-    bind_kicr_pickle_and_equality(kicr_simplex);
-
-    auto kicr_prod = nb::class_<KerImCokRedProdSimplex>(m, ker_im_cok_reduced_prod_class_name.c_str())
-            .def(nb::init<const ProdFiltration&, const ProdFiltration&, oin::KICRParams&>(), nb::arg("K"), nb::arg("L"), nb::arg("params"),
-                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("kernel_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_kernel_diagrams()); })
-            .def("cokernel_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_cokernel_diagrams()); })
-            .def("image_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_image_diagrams()); })
-            .def("domain_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_domain_diagrams()); })
-            .def("codomain_diagrams", [](const KerImCokRedProdSimplex& self) { return PyOineusDiagrams<oin_real>(self.get_codomain_diagrams()); })
-            // decomposition objects provide access to their R/V/U matrices
-            .def_rw("decomposition_f", &KerImCokRedProdSimplex::dcmp_F_)
-            .def_rw("decomposition_g", &KerImCokRedProdSimplex::dcmp_G_)
-            .def_rw("decomposition_im", &KerImCokRedProdSimplex::dcmp_im_)
-            .def_rw("decomposition_ker", &KerImCokRedProdSimplex::dcmp_ker_)
-            .def_rw("decomposition_cok", &KerImCokRedProdSimplex::dcmp_cok_)
-            .def_rw("fil_K", &KerImCokRedProdSimplex::fil_K_)
-            .def_rw("fil_L", &KerImCokRedProdSimplex::fil_L_)
-            .def("__str__", [](const KerImCokRedProdSimplex& self) { std::stringstream ss; ss << self; return ss.str(); })
-            .def("__repr__", [](const KerImCokRedProdSimplex& self) { std::stringstream ss; ss << self; return ss.str(); })
-            ;
-    bind_kicr_pickle_and_equality(kicr_prod);
+    // The two historical fat classes keep their public names (imported by name in __init__.py
+    // and used directly in compute_ker_cok_reduction_cyl); the slim/packed/cube families get
+    // hidden underscore names dispatched via _KICR_CLASS_BY_FIL_TYPE in __init__.py.
+    init_oineus_kicr_class<Simp>(m, "KerImCokReduced");
+    init_oineus_kicr_class<SimpProd>(m, "KerImCokReducedProd");
+    init_oineus_kicr_class<Cube_1D>(m, "_KerImCokReduced_Cube_1D");
+    init_oineus_kicr_class<Cube_2D>(m, "_KerImCokReduced_Cube_2D");
+    init_oineus_kicr_class<Cube_3D>(m, "_KerImCokReduced_Cube_3D");
+    init_oineus_kicr_class<FrCell_1D>(m, "_KerImCokReduced_Fr_1D");
+    init_oineus_kicr_class<FrCell_2D>(m, "_KerImCokReduced_Fr_2D");
+    init_oineus_kicr_class<FrCell_3D>(m, "_KerImCokReduced_Fr_3D");
+    init_oineus_kicr_class<PackedCell_64>(m, "_KerImCokReduced_Packed_64");
+    init_oineus_kicr_class<PackedCell_128>(m, "_KerImCokReduced_Packed_128");
 }

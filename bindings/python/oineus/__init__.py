@@ -211,6 +211,25 @@ _OPT_CLASS_BY_FIL_TYPE = {
 }
 
 
+# Maps each filtration cell encoding to its C++ KerImCokReduced (kernel/image/cokernel)
+# instantiation. kernel.h is cell-agnostic, so KICR is wired for every encoding; the two
+# fat classes keep their public names, the rest are hidden underscore names. Keyed by the
+# filtration type (type(K)) -- NOT by K[0], whose materialized fat cell would misdispatch
+# slim/packed filtrations into the fat ctor.
+_KICR_CLASS_BY_FIL_TYPE = {
+    _oineus._Filtration:               _oineus.KerImCokReduced,
+    _oineus._ProdFiltration:           _oineus.KerImCokReducedProd,
+    _oineus._CubeFiltration_1D:        _oineus._KerImCokReduced_Cube_1D,
+    _oineus._CubeFiltration_2D:        _oineus._KerImCokReduced_Cube_2D,
+    _oineus._CubeFiltration_3D:        _oineus._KerImCokReduced_Cube_3D,
+    _oineus._FreudenthalFiltration_1D: _oineus._KerImCokReduced_Fr_1D,
+    _oineus._FreudenthalFiltration_2D: _oineus._KerImCokReduced_Fr_2D,
+    _oineus._FreudenthalFiltration_3D: _oineus._KerImCokReduced_Fr_3D,
+    _oineus._PackedSimplexFiltration_64:  _oineus._KerImCokReduced_Packed_64,
+    _oineus._PackedSimplexFiltration_128: _oineus._KerImCokReduced_Packed_128,
+}
+
+
 class TopologyOptimizer:
     """Topology optimizer for a filtration of any cell encoding.
 
@@ -1442,29 +1461,16 @@ def compute_kernel_image_cokernel_reduction(K, L, params=None, reduction_params=
     if isinstance(L, list):
         L = list_to_filtration(L)
 
-    # KICR class is templatized by cell type in C++
-    # different instantiations have different class names in Python
-    # figure out the right one by type
-    # A slim FreudenthalFiltration / bit-packed PackedSimplexFiltration materializes
-    # fat Simplex cells, so K[0] is an _oineus.Simplex and would slip past the
-    # isinstance check below into the Simplex-only KerImCokReduced ctor (a different
-    # C++ filtration type) with a cryptic nanobind error. KICR is not wired for these
-    # compact cells yet -- reject up front with a clear message (use the fat path).
-    if isinstance(K, (_oineus._FreudenthalFiltration_1D, _oineus._FreudenthalFiltration_2D, _oineus._FreudenthalFiltration_3D)):
-        raise NotImplementedError(
-            "kernel/image/cokernel is not supported for the slim FreudenthalFiltration; "
-            "rebuild with the fat path (freudenthal_filtration(..., slim=False))")
-    if isinstance(K, (_oineus._PackedSimplexFiltration_64, _oineus._PackedSimplexFiltration_128)):
-        raise NotImplementedError(
-            "kernel/image/cokernel is not supported for the bit-packed simplex filtration; "
-            "rebuild without packing (vr_filtration(..., packed=False), the default)")
-
-    if isinstance(K[0], _oineus.Simplex):
-        KICR_Class = _oineus.KerImCokReduced
-    elif isinstance(K[0], _oineus.ProdSimplex):
-        KICR_Class = _oineus.KerImCokReducedProd
-    else:
-        raise TypeError(f"Unsupported filtration cell type: {type(K[0])}")
+    # KICR is templated on the cell type in C++; each encoding has its own bound class.
+    # Dispatch on the FILTRATION type, not K[0]: a slim/packed filtration materializes a
+    # fat Simplex on K[0], which would misdispatch it into the fat ctor. type(K) is the
+    # stable C++ class for every encoding (and is correct for empty filtrations too).
+    KICR_Class = _KICR_CLASS_BY_FIL_TYPE.get(type(K))
+    if KICR_Class is None:
+        raise TypeError(
+            f"compute_kernel_image_cokernel_reduction: unsupported filtration type "
+            f"{type(K).__name__}; expected one of "
+            f"{[t.__name__ for t in _KICR_CLASS_BY_FIL_TYPE]}")
 
     if params is None:
         # compute all by default

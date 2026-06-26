@@ -9,6 +9,17 @@ def _sorted(a):
     return a[np.lexsort((a[:, 1], a[:, 0]))]
 
 
+def _kicr_dim(dgms, d):
+    # KICR diagram families span fewer dimensions than the complex max_dim, so
+    # in_dimension(d) raises IndexError past the family's top dim -- treat as empty.
+    try:
+        a = _sorted(dgms.in_dimension(d))
+    except IndexError:
+        a = np.empty((0, 2), dtype=np.float64)
+    a[a == np.inf] = 1e9
+    return a
+
+
 def _reduce(fil, dualize=False, n_threads=1):
     d = oin.Decomposition(fil, dualize)
     rp = oin.ReductionParams()
@@ -203,11 +214,56 @@ def test_bare_topology_optimizer_dispatches_packed():
         assert a.shape == b.shape and np.allclose(a, b, atol=1e-6), f"bare opt packed != fat dim {d}"
 
 
-def test_packed_vr_kicr_rejected():
-    # KICR is not wired for the bit-packed cell; reject clearly (the materialized fat
-    # cell would otherwise slip past the Simplex-isinstance dispatch into a wrong ctor).
+def test_packed_vr_kicr_matches_fat():
+    # KICR is wired for the bit-packed cell (dispatch on the filtration type to
+    # _KerImCokReduced_Packed_64). A packed VR K/L pair must give the same
+    # kernel/image/cokernel/(co)domain diagrams as the fat path.
     pts = np.ascontiguousarray(np.random.default_rng(4).random((15, 3)))
-    K = oin.vr_filtration(pts, max_dim=2, max_diameter=1.0, packed=True)
-    L = K.without_cells([K.size() - 1])
-    with pytest.raises(NotImplementedError):
-        oin.compute_kernel_image_cokernel_reduction(K, L)
+
+    def run(packed):
+        K = oin.vr_filtration(pts, max_dim=2, max_diameter=1.0, packed=packed)
+        L = K.without_cells([K.size() - 1])
+        params = oin.KICRParams()
+        params.codomain = params.kernel = params.image = params.cokernel = True
+        return oin.compute_kernel_image_cokernel_reduction(K, L, params)
+
+    kp, kf = run(True), run(False)
+    assert type(kp).__name__ == "_KerImCokReduced_Packed_64"
+    for fam in ("kernel_diagrams", "cokernel_diagrams", "image_diagrams",
+                "domain_diagrams", "codomain_diagrams"):
+        for d in range(3):
+            a = _kicr_dim(getattr(kp, fam)(), d)
+            b = _kicr_dim(getattr(kf, fam)(), d)
+            assert a.shape == b.shape and (a.size == 0 or np.allclose(a, b, atol=1e-6)), f"{fam} dim {d}"
+
+
+def test_packed_vr_kicr_128_tier_matches_fat():
+    # KICR on the 128-bit packed tier (KerImCokReduced<BitPacked<__int128>>). Same tiny-complex
+    # trick as test_packed_vr_128_tier_matches_fat: 1100 points (11-bit ids) at max_dim 5 needs
+    # 6*11 = 66 > 64 bits, but only a tight 6-point cluster forms higher simplices, so the
+    # complex (and the 5 KICR reductions) stay small. Exercises the __int128 KICR class + pickle.
+    rng = np.random.default_rng(7)
+    cluster = rng.random((6, 3)) * 0.01
+    far = np.stack([np.arange(1094) * 100.0 + 100.0,
+                    np.zeros(1094), np.zeros(1094)], axis=1)
+    pts = np.ascontiguousarray(np.vstack([cluster, far]))
+    assert oin._vr_packed_word_suffix(pts.shape[0], 5) == "128"
+
+    def run(packed):
+        K = oin.vr_filtration(pts, max_dim=5, max_diameter=0.5, packed=packed)
+        L = K.without_cells([K.size() - 1])
+        params = oin.KICRParams()
+        params.codomain = params.kernel = params.image = params.cokernel = True
+        return oin.compute_kernel_image_cokernel_reduction(K, L, params)
+
+    kp, kf = run(True), run(False)
+    assert type(kp).__name__ == "_KerImCokReduced_Packed_128"
+    for fam in ("kernel_diagrams", "cokernel_diagrams", "image_diagrams",
+                "domain_diagrams", "codomain_diagrams"):
+        for d in range(6):
+            a = _kicr_dim(getattr(kp, fam)(), d)
+            b = _kicr_dim(getattr(kf, fam)(), d)
+            assert a.shape == b.shape and (a.size == 0 or np.allclose(a, b, atol=1e-6)), f"{fam} dim {d}"
+
+    import pickle
+    assert pickle.loads(pickle.dumps(kp)) == kp
