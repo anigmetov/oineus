@@ -207,3 +207,43 @@ def test_cech_delaunay_gradient_flows():
     assert pts.grad is not None
     assert torch.isfinite(pts.grad).all()
     assert pts.grad.abs().sum().item() > 0.0
+
+
+# ---------------------------------------------------------------------------
+# differentiable paths: bit-packed vs fat encoding (E.4.2)
+# ---------------------------------------------------------------------------
+
+@requires_arrays
+@requires_torch
+@pytest.mark.parametrize("filt", ["cech", "weak"])
+@pytest.mark.parametrize("dim", [2, 3])
+def test_diff_alpha_packed_matches_fat(filt, dim):
+    # cech_delaunay / weak_alpha with packed=True build the Delaunay combinatorics in the
+    # bit-packed encoding and extract simplices via the packed get_edges/get_triangles/
+    # get_tetrahedra (materialized from the shared geometry). The recomputed values, the
+    # diagrams, and the gradients w.r.t. the points must all match the fat encoding.
+    from oineus.diff import cech_delaunay_filtration, weak_alpha_filtration
+    build = cech_delaunay_filtration if filt == "cech" else weak_alpha_filtration
+    rng = np.random.default_rng(23)
+    pts = rng.random((40, dim))
+
+    def run(packed):
+        t = torch.tensor(pts, dtype=torch.float64, requires_grad=True)
+        df = build(t, packed=packed)
+        loss = df.values.sum()
+        loss.backward()
+        return df, float(loss.detach()), t.grad.detach().numpy().copy()
+
+    dfp, lp, gp = run(True)
+    dff, lf, gf = run(False)
+    assert type(dfp.under_fil).__name__ == "_PackedSimplexFiltration_64"
+    assert len(dfp.under_fil) == len(dff.under_fil)
+    # identical complex -> identical diagrams in every dimension
+    _assert_diagrams_equal(
+        _per_dim_diagrams(dfp.under_fil, maxdim=dim - 1),
+        _per_dim_diagrams(dff.under_fil, maxdim=dim - 1),
+    )
+    # the differentiable value sum (order-independent) and the per-point gradients match
+    np.testing.assert_allclose(lp, lf, atol=1e-9)
+    np.testing.assert_allclose(gp, gf, atol=1e-7)
+    assert np.abs(gp).sum() > 0.0

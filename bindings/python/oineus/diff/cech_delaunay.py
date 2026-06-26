@@ -172,7 +172,7 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False):
     return centers, min_radii_sq
 
 
-def cech_delaunay_filtration(points, eps: float = 0.0, print_time: bool = False):
+def cech_delaunay_filtration(points, eps: float = 0.0, packed: bool = False, print_time: bool = False):
     """Build a differentiable Cech-Delaunay filtration from a point cloud.
 
     The combinatorics of the alpha complex are computed via diode (CGAL); the
@@ -182,6 +182,9 @@ def cech_delaunay_filtration(points, eps: float = 0.0, print_time: bool = False)
     Args:
         points: ``(n, d)`` torch.Tensor with ``d in {2, 3}``. Differentiable.
         eps: Small value for numerical stability in the MEB computation.
+        packed: Use the compact bit-packed cell encoding for the Delaunay
+            combinatorics when the vertex ids fit a 64/128-bit word. The values
+            (and gradients) are recomputed here regardless of encoding.
         print_time: If True, print per-stage timings.
 
     Returns:
@@ -191,7 +194,7 @@ def cech_delaunay_filtration(points, eps: float = 0.0, print_time: bool = False)
         start = time.time()
 
     points_np = points.detach().cpu().numpy()
-    alpha_fil = _delaunay_combinatorics(points_np)
+    alpha_fil = _delaunay_combinatorics(points_np, packed=packed)
     if print_time:
         elapsed = time.time() - start
         print(f"alpha_fil construction elapsed: {elapsed:.3f}")

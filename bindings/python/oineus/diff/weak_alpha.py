@@ -15,11 +15,14 @@ from .. import _delaunay_combinatorics, _oineus
 from .diff_filtration import DiffFiltration
 
 
-def weak_alpha_filtration(points, print_time: bool = False):
+def weak_alpha_filtration(points, packed: bool = False, print_time: bool = False):
     """Build a differentiable weak-alpha filtration from a point cloud.
 
     Args:
         points: ``(n, d)`` torch.Tensor with ``d in {2, 3}``. Differentiable.
+        packed: Use the compact bit-packed cell encoding for the Delaunay
+            combinatorics when the vertex ids fit a 64/128-bit word. The values
+            (and gradients) are recomputed here regardless of encoding.
         print_time: If True, print per-stage timings.
 
     Returns:
@@ -29,7 +32,7 @@ def weak_alpha_filtration(points, print_time: bool = False):
         start = time.time()
 
     points_np = points.detach().cpu().numpy()
-    alpha_fil = _delaunay_combinatorics(points_np)
+    alpha_fil = _delaunay_combinatorics(points_np, packed=packed)
     if print_time:
         elapsed = time.time() - start
         print(f"alpha_fil construction elapsed: {elapsed:.3f}")

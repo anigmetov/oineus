@@ -1393,7 +1393,7 @@ def alpha_filtration(points: np.ndarray,
     return fil
 
 
-def _delaunay_combinatorics(points: np.ndarray, exact: bool=False, n_threads: int=1):
+def _delaunay_combinatorics(points: np.ndarray, exact: bool=False, packed: bool=False, n_threads: int=1):
     """Build the Delaunay complex as a Filtration, for its combinatorics only.
 
     For callers that recompute and set their own values (the differentiable
@@ -1407,6 +1407,9 @@ def _delaunay_combinatorics(points: np.ndarray, exact: bool=False, n_threads: in
     Args:
         points: NumPy array of shape (n, 2) or (n, 3).
         exact: Use CGAL's exact kernel.
+        packed: Use the compact bit-packed cell encoding when the vertex ids fit
+            a 64/128-bit word (only the fast diode-array path supports it; the
+            alpha_filtration fallback honors packed too).
         n_threads: Threads used inside the Filtration constructor.
 
     Returns:
@@ -1415,8 +1418,11 @@ def _delaunay_combinatorics(points: np.ndarray, exact: bool=False, n_threads: in
     """
     if _HAS_DIODE_ARRAYS:
         verts_by_dim = diode.fill_delaunay_arrays(points, exact=exact)
+        suffix = _vr_packed_word_suffix(points.shape[0], points.shape[1]) if packed else None
+        if suffix is not None:
+            return getattr(_oineus, "_filtration_from_arrays_packed" + suffix)(verts_by_dim, None, n_threads=n_threads)
         return _oineus._filtration_from_arrays(verts_by_dim, None, n_threads=n_threads)
-    return alpha_filtration(points, exact=exact, n_threads=n_threads)
+    return alpha_filtration(points, exact=exact, packed=packed, n_threads=n_threads)
 
 
 def compute_diagrams_alpha(points: np.ndarray,

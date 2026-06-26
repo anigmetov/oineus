@@ -5,20 +5,40 @@
 #include <nanobind/stl/unordered_map.h>
 
 
-nb::ndarray<size_t, nb::numpy> extract_simplices_as_numpy(const oin::Filtration<oin::Simplex<oin_int>, oin_real>& fil, dim_type simplex_dim)
+// True for the simplicial cell encodings (fat / Freudenthal anchor+type / bit-packed),
+// i.e. Simplex<Int, Enc>. Used to gate the simplex-vertex extractors (get_edges etc.),
+// which are meaningless for cubical cells.
+template<class C> struct is_simplex_cell : std::false_type {};
+template<class Int, class Enc> struct is_simplex_cell<oin::Simplex<Int, Enc>> : std::true_type {};
+
+// Extract the (simplex_dim)-simplices of a simplicial filtration as an (n, simplex_dim+1)
+// numpy array of vertex ids. Works for any simplicial encoding: a fat (NoGeometry) cell exposes
+// its vertices directly; a slim/packed cell materializes them from the shared geometry. The
+// rows are in filtration order within the dimension, so a caller can compute per-simplex values
+// (edge lengths, circumradii, ...) aligned to the cells.
+template<class Fil>
+nb::ndarray<size_t, nb::numpy> extract_simplices_as_numpy(const Fil& fil, dim_type simplex_dim)
 {
     using VertexIndex = size_t;
+    using UnderCell = std::decay_t<decltype(fil.cells()[0].get_cell())>;
     const dim_type simplex_size = simplex_dim + 1;
     const VertexIndex n_simplices = fil.size_in_dimension(simplex_dim);
+    const auto first = fil.dim_first(simplex_dim);
 
     auto* simplices = new VertexIndex[simplex_size * n_simplices];
 
-    for(auto simplex_idx = fil.dim_first(simplex_dim); simplex_idx <= fil.dim_last(simplex_dim); ++simplex_idx) {
-        size_t array_idx = simplex_idx - fil.dim_first(simplex_dim);
-        assert(fil.get_cell(simplex_idx).get_vertices().size() == simplex_size);
-        for(size_t v_idx = 0; v_idx < simplex_size; ++v_idx) {
-            simplices[simplex_size * array_idx + v_idx] = fil.get_cell(simplex_idx).get_vertices()[v_idx];
-        }
+    for(auto simplex_idx = first; simplex_idx <= fil.dim_last(simplex_dim); ++simplex_idx) {
+        size_t array_idx = simplex_idx - first;
+        const UnderCell& under = fil.cells()[simplex_idx].get_cell();
+        auto write = [&](const auto& vs) {
+            assert(vs.size() == static_cast<size_t>(simplex_size));
+            for(size_t v_idx = 0; v_idx < static_cast<size_t>(simplex_size); ++v_idx)
+                simplices[simplex_size * array_idx + v_idx] = static_cast<VertexIndex>(vs[v_idx]);
+        };
+        if constexpr (std::is_same_v<typename UnderCell::Geometry, oin::NoGeometry>)
+            write(under.get_vertices());
+        else
+            write(under.vertices(fil.geometry()));
     }
 
     nb::capsule free_when_done(simplices, [](void* p) noexcept {
@@ -26,7 +46,7 @@ nb::ndarray<size_t, nb::numpy> extract_simplices_as_numpy(const oin::Filtration<
      delete[] pp;
    });
 
-    return nb::ndarray<VertexIndex, nb::numpy>(simplices, {n_simplices, simplex_size}, free_when_done);
+    return nb::ndarray<VertexIndex, nb::numpy>(simplices, {n_simplices, static_cast<size_t>(simplex_size)}, free_when_done);
 }
 
 // ============ Slim filtration bindings (Cube / Freudenthal / bit-packed) ============
@@ -314,6 +334,20 @@ void register_slim_filtration(nb::module_& m)
             "FiltrationKind tag set by the constructor that built this filtration (or User for hand-built ones).")
         .def("__getstate__", [](const Fil& fil) -> StateTuple { return T::getstate(fil); })
         .def("__setstate__", [](Fil& fil, const StateTuple& t) { T::setstate(fil, t); });
+
+    // Simplex-vertex extractors (parity with the fat Filtration), for the simplicial slim/packed
+    // encodings only -- a slim/packed cell materializes its vertices from the shared geometry.
+    // The differentiable Cech-Delaunay / weak-alpha paths use get_edges/get_triangles/
+    // get_tetrahedra to recompute per-simplex values. Cubical cells are excluded (not simplices).
+    if constexpr (is_simplex_cell<Policy>::value) {
+        cls.def("get_vertices",   [](const Fil& self) { return extract_simplices_as_numpy(self, 0); })
+           .def("get_edges",      [](const Fil& self) { return extract_simplices_as_numpy(self, 1); })
+           .def("get_triangles",  [](const Fil& self) { return extract_simplices_as_numpy(self, 2); })
+           .def("get_tetrahedra", [](const Fil& self) { return extract_simplices_as_numpy(self, 3); })
+           // name matches the fat Filtration's binding for cross-encoding consistency
+           .def("get_simplices_as_arr", [](const Fil& self, dim_type simplex_dim) { return extract_simplices_as_numpy(self, simplex_dim); },
+                nb::arg("simplex_dim"));
+    }
 
     // min_filtration over two slim/packed filtrations of this cell type. The C++ helper works
     // entirely in the internal (anchor,type)/packed/dense uid space (cell.get_uid() ->
