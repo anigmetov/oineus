@@ -1,4 +1,5 @@
 #include "oineus_persistence_bindings.h"
+#include "oineus_type_list.h"
 #include <Eigen/SparseCore>
 #include "nanobind/eigen/sparse.h"
 #include "nanobind/stl/set.h"
@@ -307,79 +308,50 @@ void init_oineus_common_decomposition(nb::module_& m)
     using PackedFiltration_64 = oin::Filtration<oin::Simplex<oin_int, oin::BitPacked<oin_int, std::uint64_t>>, oin_real>;
     using PackedFiltration_128 = oin::Filtration<oin::Simplex<oin_int, oin::BitPacked<oin_int, unsigned __int128>>, oin_real>;
 
-    // Fused one-shot reduction: builds R directly from the filtration (no D, no
-    // d_data->r_data copy), reduces, and returns the reduced decomposition --
-    // dcmp = oin.reduce(fil, params). sanity_check then needs D passed explicitly.
+    // Fold the per-filtration-type bindings (reduce / ctor / diagram / ...) over the cell
+    // types instead of writing each ~10 times. The reduction core is cell-agnostic; only the
+    // strongly-typed entry points vary by Filtration<Cell>.
+    using DecompFilList = oineus_python::TypeList<
+        SimplexFiltration, ProdSimplexFiltration,
+        CubeFiltration_1D, CubeFiltration_2D, CubeFiltration_3D,
+        FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D,
+        PackedFiltration_64, PackedFiltration_128>;
+    // slim self-materializing filtrations: the lean apparent form defers a resolver that closes
+    // over the filtration, so the returned decomposition must keep it alive (keep_alive<0,1>).
+    using SlimFilList = oineus_python::TypeList<
+        CubeFiltration_1D, CubeFiltration_2D, CubeFiltration_3D,
+        FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D,
+        PackedFiltration_64, PackedFiltration_128>;
+    using FatFilList = oineus_python::TypeList<SimplexFiltration, ProdSimplexFiltration>;
+
     {
         auto reduce_fil = [](const auto& fil, oin::Params& params, bool dualize) {
             return Decomposition::reduce_from_filtration_fused(fil, params, dualize);
         };
-        m.def("reduce", [reduce_fil](const SimplexFiltration& fil, oin::Params& params, bool dualize)
-                { return reduce_fil(fil, params, dualize); },
-                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
-        m.def("reduce", [reduce_fil](const ProdSimplexFiltration& fil, oin::Params& params, bool dualize)
-                { return reduce_fil(fil, params, dualize); },
-                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
-        // keep_alive<0, 1>: the apparent (decorated-matrix) lean form holds a resolver
-        // that closes over this filtration and is invoked on a deferred matrix access /
-        // clone / pickle, so the returned decomposition must keep the filtration alive.
-        m.def("reduce", [reduce_fil](const CubeFiltration_1D& fil, oin::Params& params, bool dualize)
-                { return reduce_fil(fil, params, dualize); },
-                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
-                nb::keep_alive<0, 1>());
-        m.def("reduce", [reduce_fil](const CubeFiltration_2D& fil, oin::Params& params, bool dualize)
-                { return reduce_fil(fil, params, dualize); },
-                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
-                nb::keep_alive<0, 1>());
-        m.def("reduce", [reduce_fil](const CubeFiltration_3D& fil, oin::Params& params, bool dualize)
-                { return reduce_fil(fil, params, dualize); },
-                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
-                nb::keep_alive<0, 1>());
-        // Freudenthal slim filtrations: like cubes, self-materializing on deferred
-        // access, so keep the filtration alive for the returned decomposition.
-        m.def("reduce", [reduce_fil](const FreudenthalFiltration_1D& fil, oin::Params& params, bool dualize)
-                { return reduce_fil(fil, params, dualize); },
-                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
-                nb::keep_alive<0, 1>());
-        m.def("reduce", [reduce_fil](const FreudenthalFiltration_2D& fil, oin::Params& params, bool dualize)
-                { return reduce_fil(fil, params, dualize); },
-                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
-                nb::keep_alive<0, 1>());
-        m.def("reduce", [reduce_fil](const FreudenthalFiltration_3D& fil, oin::Params& params, bool dualize)
-                { return reduce_fil(fil, params, dualize); },
-                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
-                nb::keep_alive<0, 1>());
-        m.def("reduce", [reduce_fil](const PackedFiltration_64& fil, oin::Params& params, bool dualize)
-                { return reduce_fil(fil, params, dualize); },
-                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
-                nb::keep_alive<0, 1>());
-        m.def("reduce", [reduce_fil](const PackedFiltration_128& fil, oin::Params& params, bool dualize)
-                { return reduce_fil(fil, params, dualize); },
-                nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
-                nb::keep_alive<0, 1>());
+        // fat Simplex / product: no keep_alive (no deferred resolver over the filtration)
+        oineus_python::for_each_type(FatFilList{}, [&m, reduce_fil]<class Fil>() {
+            m.def("reduce", [reduce_fil](const Fil& fil, oin::Params& params, bool dualize)
+                    { return reduce_fil(fil, params, dualize); },
+                    nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+        });
+        // slim cube / Freudenthal / packed: keep_alive<0, 1> (see SlimFilList note above)
+        oineus_python::for_each_type(SlimFilList{}, [&m, reduce_fil]<class Fil>() {
+            m.def("reduce", [reduce_fil](const Fil& fil, oin::Params& params, bool dualize)
+                    { return reduce_fil(fil, params, dualize); },
+                    nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    nb::keep_alive<0, 1>());
+        });
     }
 
-    nb::class_<Decomposition>(m, "Decomposition")
-            .def(nb::init<const SimplexFiltration&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
-            .def(nb::init<const ProdSimplexFiltration&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
-            .def(nb::init<const CubeFiltration_1D&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
-            .def(nb::init<const CubeFiltration_2D&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
-            .def(nb::init<const CubeFiltration_3D&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
-            .def(nb::init<const FreudenthalFiltration_1D&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
-            .def(nb::init<const FreudenthalFiltration_2D&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
-            .def(nb::init<const FreudenthalFiltration_3D&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
-            .def(nb::init<const PackedFiltration_64&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
-            .def(nb::init<const PackedFiltration_128&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4)
+    auto dcmp_cls = nb::class_<Decomposition>(m, "Decomposition");
+    // per-filtration-type constructors, folded over the cell types (Decomposition itself is
+    // cell-agnostic; only this strongly-typed ctor varies by Filtration<Cell>)
+    oineus_python::for_each_type(DecompFilList{}, [&dcmp_cls]<class Fil>() {
+        dcmp_cls.def(nb::init<const Fil&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4);
+    });
+    dcmp_cls
             .def(nb::init<const typename Decomposition::MatrixData&, size_t, bool, bool>(),
                     nb::arg("d"), nb::arg("n_rows"), nb::arg("dualize")=false, nb::arg("skip_check")=false)
             // Fast deep copy at C++ speed (the copy constructor), unlike a
@@ -541,122 +513,25 @@ void init_oineus_common_decomposition(nb::module_& m)
                  nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("sanity_check", [](Decomposition& self, const typename Decomposition::MatrixData& d) { return self.sanity_check(d); },
                     nb::arg("d") = typename Decomposition::MatrixData{},
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            // diagram(): parallel by default (n_threads), GIL released so the
-            // taskflow workers run truly parallel and Ctrl-C surfaces as
-            // KeyboardInterrupt. n_threads = 1 keeps the original serial behavior.
-            .def("diagram", [](const Decomposition& self, const SimplexFiltration& fil, bool include_inf_points, int n_threads)
-                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram", [](const Decomposition& self, const ProdSimplexFiltration& fil, bool include_inf_points, int n_threads)
-                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram", [](const Decomposition& self, const CubeFiltration_1D& fil, bool include_inf_points, int n_threads)
-                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram", [](const Decomposition& self, const CubeFiltration_2D& fil, bool include_inf_points, int n_threads)
-                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram", [](const Decomposition& self, const CubeFiltration_3D& fil, bool include_inf_points, int n_threads)
-                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram", [](const Decomposition& self, const FreudenthalFiltration_1D& fil, bool include_inf_points, int n_threads)
-                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram", [](const Decomposition& self, const FreudenthalFiltration_2D& fil, bool include_inf_points, int n_threads)
-                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram", [](const Decomposition& self, const FreudenthalFiltration_3D& fil, bool include_inf_points, int n_threads)
-                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram", [](const Decomposition& self, const PackedFiltration_64& fil, bool include_inf_points, int n_threads)
-                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram", [](const Decomposition& self, const PackedFiltration_128& fil, bool include_inf_points, int n_threads)
-                            { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            // diagram_serial(): the untouched serial implementation, kept as a
-            // regression oracle for the parallel diagram().
-            .def("diagram_serial", [](const Decomposition& self, const SimplexFiltration& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram_serial", [](const Decomposition& self, const ProdSimplexFiltration& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram_serial", [](const Decomposition& self, const CubeFiltration_1D& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram_serial", [](const Decomposition& self, const CubeFiltration_2D& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram_serial", [](const Decomposition& self, const CubeFiltration_3D& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram_serial", [](const Decomposition& self, const FreudenthalFiltration_1D& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram_serial", [](const Decomposition& self, const FreudenthalFiltration_2D& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram_serial", [](const Decomposition& self, const FreudenthalFiltration_3D& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram_serial", [](const Decomposition& self, const PackedFiltration_64& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("diagram_serial", [](const Decomposition& self, const PackedFiltration_128& fil, bool include_inf_points)
-                            { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
-                    nb::arg("fil"), nb::arg("include_inf_points") = true,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("zero_pers_diagram", [](const Decomposition& self, const SimplexFiltration& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
-                    nb::arg("fil"), nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("zero_pers_diagram", [](const Decomposition& self, const ProdSimplexFiltration& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
-                    nb::arg("fil"), nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_1D& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
-                    nb::arg("fil"), nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_2D& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
-                    nb::arg("fil"), nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("zero_pers_diagram", [](const Decomposition& self, const CubeFiltration_3D& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
-                    nb::arg("fil"), nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("zero_pers_diagram", [](const Decomposition& self, const FreudenthalFiltration_1D& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
-                    nb::arg("fil"), nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("zero_pers_diagram", [](const Decomposition& self, const FreudenthalFiltration_2D& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
-                    nb::arg("fil"), nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("zero_pers_diagram", [](const Decomposition& self, const FreudenthalFiltration_3D& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
-                    nb::arg("fil"), nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("zero_pers_diagram", [](const Decomposition& self, const PackedFiltration_64& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
-                    nb::arg("fil"), nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("zero_pers_diagram", [](const Decomposition& self, const PackedFiltration_128& fil, int n_threads) { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
-                    nb::arg("fil"), nb::arg("n_threads") = 1,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+    // diagram / diagram_serial / zero_pers_diagram: one strongly-typed binding per filtration
+    // type, folded. The heavy extraction is already cell-erased (FiltrationValues POD); these
+    // just dispatch nanobind overload resolution to the right Filtration<Cell>.
+    oineus_python::for_each_type(DecompFilList{}, [&dcmp_cls]<class Fil>() {
+        dcmp_cls.def("diagram", [](const Decomposition& self, const Fil& fil, bool include_inf_points, int n_threads)
+                        { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
+                nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+        dcmp_cls.def("diagram_serial", [](const Decomposition& self, const Fil& fil, bool include_inf_points)
+                        { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
+                nb::arg("fil"), nb::arg("include_inf_points") = true,
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+        dcmp_cls.def("zero_pers_diagram", [](const Decomposition& self, const Fil& fil, int n_threads)
+                        { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
+                nb::arg("fil"), nb::arg("n_threads") = 1,
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+    });
+    dcmp_cls
             .def("filtration_index", &Decomposition::filtration_index, nb::arg("matrix_index"))
             .def("__repr__", [](const Decomposition& self) {
                 std::stringstream ss;
