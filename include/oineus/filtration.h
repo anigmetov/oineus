@@ -836,6 +836,27 @@ namespace oineus {
         [[nodiscard]] size_t index_in_matrix(size_t cell_idx, bool dualize) const { return dualize ? size() - cell_idx - 1 : cell_idx; }
         [[nodiscard]] size_t index_in_filtration(size_t matrix_idx, bool dualize) const { return dualize ? size() - matrix_idx - 1 : matrix_idx; }
 
+        // Cell-type-erased snapshot for the non-relative diagram extraction (see
+        // FiltrationValues in diagram.h): copies the per-sorted_id values out of the cell
+        // objects, borrows the already-contiguous sorted_id_to_id_ map, and copies the tiny
+        // dimension-range arrays. Lets VRUDecomposition::diagram_general* compile once
+        // (Real/Int only) rather than once per cell type. The borrowed pointer is valid for
+        // the lifetime of this filtration, which outlives the synchronous diagram call.
+        FiltrationValues<Real, Int> values_view() const
+        {
+            FiltrationValues<Real, Int> fv;
+            fv.n = cells_.size();
+            fv.max_dim_ = max_dim();
+            fv.infinity_ = infinity();
+            fv.values_.resize(cells_.size());
+            for(size_t i = 0; i < cells_.size(); ++i)
+                fv.values_[i] = cells_[i].get_value();
+            fv.sorted_id_to_id_ = &sorted_id_to_id_;
+            fv.dim_first_ = dim_first_;
+            fv.dim_last_ = dim_last_;
+            return fv;
+        }
+
         void set_values(const std::vector<Real>& new_values, int n_threads=1)
         {
             if (new_values.size() != cells_.size())

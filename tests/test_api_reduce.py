@@ -34,6 +34,45 @@ def _finite(dgm):
     return dgm[np.isfinite(dgm).all(axis=1)] if len(dgm) else dgm.reshape(0, 2)
 
 
+def _exact_points(dgms_obj, ndims):
+    # full diagram points (birth, death, birth_index, death_index) per dimension, sorted,
+    # so two extractions can be compared for EXACT identity (not just value-closeness)
+    out = []
+    for d in range(ndims):
+        pts = dgms_obj.in_dimension(d, as_numpy=False)
+        rows = sorted((p.birth, p.death, p.birth_index, p.death_index) for p in pts)
+        out.append(rows)
+    return out
+
+
+@pytest.mark.parametrize("builder", ["freudenthal", "cube", "vr"])
+@pytest.mark.parametrize("dualize", [False, True])
+def test_diagram_pod_serial_parallel_invariant(builder, dualize):
+    # The non-relative diagram extraction was de-templated onto a cell-type-erased
+    # FiltrationValues view (one compiled function for all cell types). This pins the
+    # invariant that matters: for one reduced decomposition, the serial path, the
+    # taskflow-parallel path at several thread counts, and diagram_serial() all yield the
+    # EXACT same diagram (same points AND same birth/death indices) -- across cell types.
+    rng = np.random.default_rng(1)
+    if builder == "freudenthal":
+        fil = oin.freudenthal_filtration(data=np.ascontiguousarray(rng.random((20, 20))))
+    elif builder == "cube":
+        fil = oin.cube_filtration(np.ascontiguousarray(rng.random((16, 16))))
+    else:
+        fil = oin.vr_filtration(np.ascontiguousarray(rng.random((40, 3))), max_dim=2, max_diameter=0.6)
+    ndims = fil.max_dim + 1
+
+    dcmp = oin.Decomposition(fil, dualize)
+    p = oin.ReductionParams()
+    p.n_threads = 4
+    dcmp.reduce(p)
+
+    ref = _exact_points(dcmp.diagram(fil, include_inf_points=True, n_threads=1), ndims)
+    for nt in (2, 4):
+        assert _exact_points(dcmp.diagram(fil, include_inf_points=True, n_threads=nt), ndims) == ref
+    assert _exact_points(dcmp.diagram_serial(fil, include_inf_points=True), ndims) == ref
+
+
 @pytest.mark.parametrize("dualize", [False, True])
 @pytest.mark.parametrize("n_threads", [1, 2, 4])
 @pytest.mark.parametrize("compute_v", [False, True])

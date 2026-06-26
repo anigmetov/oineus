@@ -155,6 +155,49 @@ namespace oineus {
         return out;
     }
 
+    // Cell-type-erased snapshot of the filtration data the NON-RELATIVE diagram
+    // extraction needs: per-sorted_id value / dimension / original (unsorted) id, plus
+    // the filtration size, max dimension, and filtration-order infinity. Built once by
+    // Filtration::values_view() and consumed by VRUDecomposition::diagram_general* so the
+    // heavy diagram code is compiled ONCE (parameterized on Real/Int only) instead of once
+    // per cell type. Why a copy of `values`: filtration values live INSIDE the cell objects
+    // (cells_[i].get_value()), so there is no contiguous Real array to borrow -- the O(n)
+    // copy is the price of erasing the cell type, and it is the same order as the col_to_low
+    // / is_pivot_row buffers the extraction already allocates. sorted_id_to_id_ is already
+    // contiguous and is BORROWED (the source Filtration outlives the diagram call); the tiny
+    // dim_first/dim_last range arrays are copied. `dualize` is applied by the caller (a
+    // Decomposition member), so index_in_filtration needs only the size. The relative
+    // (kernel/image/cokernel) diagram path stays cell-typed -- it dereferences cell uids --
+    // and does not use this view.
+    template<class Real, class Int>
+    struct FiltrationValues {
+        size_t n {0};
+        dim_type max_dim_ {0};
+        Real infinity_ {};
+        std::vector<Real> values_;                            // owned: value per sorted_id
+        const std::vector<Int>* sorted_id_to_id_ {nullptr};   // borrowed: sorted_id -> original id
+        std::vector<Int> dim_first_;                          // small copy (max_dim + 1 entries)
+        std::vector<Int> dim_last_;
+
+        size_t size() const { return n; }
+        dim_type max_dim() const { return max_dim_; }
+        Real infinity() const { return infinity_; }
+
+        size_t index_in_filtration(size_t matrix_idx, bool dualize) const
+        { return dualize ? n - matrix_idx - 1 : matrix_idx; }
+
+        Real value_by_sorted_id(Int sorted_id) const { return values_[static_cast<size_t>(sorted_id)]; }
+        Int get_id_by_sorted_id(Int sorted_id) const { return (*sorted_id_to_id_)[static_cast<size_t>(sorted_id)]; }
+
+        dim_type dim_by_sorted_id(Int sorted_id) const
+        {
+            for(dim_type d = 0; d < static_cast<dim_type>(dim_first_.size()); ++d)
+                if (dim_first_[d] <= sorted_id and dim_last_[d] >= sorted_id)
+                    return d;
+            throw std::runtime_error("FiltrationValues::dim_by_sorted_id: sorted_id out of range");
+        }
+    };
+
     template<typename Real_>
     struct Diagrams {
         using Real = Real_;

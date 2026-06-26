@@ -55,10 +55,15 @@ int run_bench(const Fil& fil, bool fused, bool dualize, const std::vector<int>& 
               << " threads): " << t_reduce.elapsed() * 1000 << " ms [excluded from timing]\n";
     std::cout << "state: " << (dcmp.is_pivots_only() ? "fused / pivots-only" : "classic / r_data") << "\n";
 
+    // The three diagram-extraction variants now take the cell-type-erased FiltrationValues
+    // view; build it once here so the timing measures the extraction, not the (common) view
+    // build (which is the same fixed cost the public diagram() pays per call).
+    auto fv = fil.values_view();
+
     // include_all = false, include_inf_points = true, only_zero_persistence = false
-    auto serial_dgm = [&]() { return dcmp.diagram_general_serial(fil, false, true, false); };
-    auto tf_dgm     = [&](int nt) { return dcmp.diagram_general_par(fil, false, true, false, nt); };
-    auto st_dgm     = [&](int nt) { return dcmp.diagram_general_par_stdthread(fil, false, true, false, nt); };
+    auto serial_dgm = [&]() { return dcmp.diagram_general_serial(fv, false, true, false); };
+    auto tf_dgm     = [&](int nt) { return dcmp.diagram_general_par(fv, false, true, false, nt); };
+    auto st_dgm     = [&](int nt) { return dcmp.diagram_general_par_stdthread(fv, false, true, false, nt); };
 
     // warm up (page in cells_, etc.)
     { auto w = serial_dgm(); (void) w; }

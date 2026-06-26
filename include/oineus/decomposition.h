@@ -1196,29 +1196,31 @@ namespace oineus {
         // precomputed low (col_low_val) and zero-ness (col_zero) of the column;
         // is_pivot_row is consulted only for essential points (it may be empty
         // when include_inf_points is false).
-        template<typename Cell, typename Real>
-        void emit_column_(const Filtration<Cell, Real>& fil, size_t col_idx,
+        // Takes the cell-type-erased FiltrationValues view (not Filtration<Cell>) so the
+        // whole non-relative extraction below compiles once per Real, not once per cell type.
+        template<typename Real>
+        void emit_column_(const FiltrationValues<Real, Int>& fil, size_t col_idx,
                 Int col_low_val, bool col_zero, const std::vector<char>& is_pivot_row,
                 bool include_all, bool include_inf_points, bool only_zero_persistence,
                 Diagrams<Real>& out) const;
 
         // Non-relative general diagram, serial implementation. Also the
         // n_threads <= 1 fast path of the dispatcher and the regression oracle.
-        template<typename Cell, typename Real>
-        Diagrams<Real> diagram_general_serial(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const;
+        template<typename Real>
+        Diagrams<Real> diagram_general_serial(const FiltrationValues<Real, Int>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const;
 
         // Non-relative general diagram, parallel implementation (taskflow).
-        template<typename Cell, typename Real>
-        Diagrams<Real> diagram_general_par(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const;
+        template<typename Real>
+        Diagrams<Real> diagram_general_par(const FiltrationValues<Real, Int>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const;
 
         // Non-relative general diagram, parallel implementation using raw
         // std::thread (benchmark-only A/B variant; not exposed to Python).
-        template<typename Cell, typename Real>
-        Diagrams<Real> diagram_general_par_stdthread(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const;
+        template<typename Real>
+        Diagrams<Real> diagram_general_par_stdthread(const FiltrationValues<Real, Int>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const;
 
         // Non-relative general diagram, dispatcher: n_threads <= 1 -> serial, else parallel.
-        template<typename Cell, typename Real>
-        Diagrams<Real> diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads = 1) const;
+        template<typename Real>
+        Diagrams<Real> diagram_general(const FiltrationValues<Real, Int>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads = 1) const;
 
         // Relative general diagram (kernel/image/cokernel): serial, unchanged.
         template<typename Cell, typename Real>
@@ -3761,8 +3763,8 @@ namespace oineus {
     }
 
     template<class Int>
-    template<class Cell, class Real>
-    void VRUDecomposition<Int>::emit_column_(const Filtration<Cell, Real>& fil, size_t col_idx,
+    template<class Real>
+    void VRUDecomposition<Int>::emit_column_(const FiltrationValues<Real, Int>& fil, size_t col_idx,
             Int col_low_val, bool col_zero, const std::vector<char>& is_pivot_row,
             bool include_all, bool include_inf_points, bool only_zero_persistence,
             Diagrams<Real>& out) const
@@ -3802,8 +3804,8 @@ namespace oineus {
     }
 
     template<class Int>
-    template<class Cell, class Real>
-    Diagrams<Real> VRUDecomposition<Int>::diagram_general_serial(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const
+    template<class Real>
+    Diagrams<Real> VRUDecomposition<Int>::diagram_general_serial(const FiltrationValues<Real, Int>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence) const
     {
         if (not is_reduced)
             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
@@ -3874,8 +3876,8 @@ namespace oineus {
     // col_is_zero accessors as the serial path. add_point is not thread-safe, so
     // each worker owns its own Diagrams and there is no shared mutable diagram.
     template<class Int>
-    template<class Cell, class Real>
-    Diagrams<Real> VRUDecomposition<Int>::diagram_general_par(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const
+    template<class Real>
+    Diagrams<Real> VRUDecomposition<Int>::diagram_general_par(const FiltrationValues<Real, Int>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const
     {
         if (not is_reduced)
             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
@@ -3975,8 +3977,8 @@ namespace oineus {
     // std::thread joins instead of taskflow. Exists only to A/B the taskflow
     // scheduler overhead in benchmarks; not exposed to Python.
     template<class Int>
-    template<class Cell, class Real>
-    Diagrams<Real> VRUDecomposition<Int>::diagram_general_par_stdthread(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const
+    template<class Real>
+    Diagrams<Real> VRUDecomposition<Int>::diagram_general_par_stdthread(const FiltrationValues<Real, Int>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const
     {
         if (not is_reduced)
             throw std::runtime_error("Cannot compute diagram from non-reduced matrix, call reduce_parallel");
@@ -4069,8 +4071,8 @@ namespace oineus {
     // Dispatcher: n_threads <= 1 runs the serial implementation; otherwise the
     // parallel one (which itself falls back to serial for tiny inputs).
     template<class Int>
-    template<class Cell, class Real>
-    Diagrams<Real> VRUDecomposition<Int>::diagram_general(const Filtration<Cell, Real>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const
+    template<class Real>
+    Diagrams<Real> VRUDecomposition<Int>::diagram_general(const FiltrationValues<Real, Int>& fil, bool include_all, bool include_inf_points, bool only_zero_persistence, int n_threads) const
     {
         if (n_threads <= 1)
             return diagram_general_serial(fil, include_all, include_inf_points, only_zero_persistence);
@@ -4169,14 +4171,16 @@ namespace oineus {
     template<class Cell, class Real>
     Diagrams<Real> VRUDecomposition<Int>::diagram(const Filtration<Cell, Real>& fil, bool include_inf_points, int n_threads) const
     {
-        return diagram_general(fil, false, include_inf_points, false, n_threads);
+        // erase the cell type into the FiltrationValues view once; the heavy extraction
+        // below it is compiled per Real, not per cell type
+        return diagram_general(fil.values_view(), false, include_inf_points, false, n_threads);
     }
 
     template<class Int>
     template<class Cell, class Real>
     Diagrams<Real> VRUDecomposition<Int>::diagram_serial(const Filtration<Cell, Real>& fil, bool include_inf_points) const
     {
-        return diagram_general_serial(fil, false, include_inf_points, false);
+        return diagram_general_serial(fil.values_view(), false, include_inf_points, false);
     }
 
     template<class Int>
@@ -4190,7 +4194,7 @@ namespace oineus {
     template<class Cell, class Real>
     Diagrams<Real> VRUDecomposition<Int>::zero_persistence_diagram(const Filtration<Cell, Real>& fil, int n_threads) const
     {
-        return diagram_general(fil, false, false, true, n_threads);
+        return diagram_general(fil.values_view(), false, false, true, n_threads);
     }
 
     template<typename Int_>
