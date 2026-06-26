@@ -135,6 +135,14 @@ def test_prod_filtration_api():
     _ = fil.get_sorting_permutation()
     _ = fil.get_inv_sorting_permutation()
 
+    # unprefixed aliases matching every other filtration binding; must agree with the
+    # get_-prefixed forms (kept for backward compatibility)
+    assert fil.id_by_sorted_id(0) == fil.get_id_by_sorted_id(0)
+    assert fil.sorted_id_by_id(fil[0].id) == fil.get_sorted_id_by_id(fil[0].id)
+    assert fil.cell(0).uid == fil.get_cell(0).uid
+    assert list(fil.sorting_permutation()) == list(fil.get_sorting_permutation())
+    assert list(fil.inv_sorting_permutation()) == list(fil.get_inv_sorting_permutation())
+
     _ = fil.boundary_matrix(n_threads=1)
     _ = fil.boundary_matrix_in_dimension(0, n_threads=1)
     _ = fil.coboundary_matrix(n_threads=1)

@@ -414,6 +414,14 @@ void init_oineus_filtration(nb::module_& m)
             .def("get_cell", &ProdFiltration::get_cell, nb::arg("i"))
             .def("get_sorting_permutation", &ProdFiltration::get_sorting_permutation)
             .def("get_inv_sorting_permutation", &ProdFiltration::get_inv_sorting_permutation)
+            // unprefixed aliases matching every other filtration binding (Simplex / Cube /
+            // Freudenthal / Packed), so a facade can treat all filtration types uniformly;
+            // the get_-prefixed forms above are kept for backward compatibility
+            .def("id_by_sorted_id", &ProdFiltration::get_id_by_sorted_id, nb::arg("sorted_id"))
+            .def("sorted_id_by_id", &ProdFiltration::get_sorted_id, nb::arg("id"))
+            .def("cell", &ProdFiltration::get_cell, nb::arg("i"))
+            .def("sorting_permutation", &ProdFiltration::get_sorting_permutation)
+            .def("inv_sorting_permutation", &ProdFiltration::get_inv_sorting_permutation)
             .def("boundary_matrix", &ProdFiltration::boundary_matrix, nb::arg("n_threads"), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("boundary_matrix_in_dimension", &ProdFiltration::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads"), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("coboundary_matrix", &ProdFiltration::coboundary_matrix, nb::arg("n_threads"), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
