@@ -31,7 +31,7 @@ def _make_prod_filtration():
     v1 = oin.Simplex([1], 0.1)
     p01 = oin.ProdSimplex(v0, v1, 0.2)
     p10 = oin.ProdSimplex(v1, v0, 0.3)
-    return oin.ProdFiltration([p01, p10], negate=False, n_threads=1)
+    return oin.Filtration([p01, p10], negate=False, n_threads=1)
 
 
 def _make_cube_filtration_1d():
@@ -39,7 +39,7 @@ def _make_cube_filtration_1d():
     v0 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[], domain=dom, value=0.0)
     v1 = oin.Cube_1D(anchor_vertex=[1], spanning_dims=[], domain=dom, value=0.1)
     e01 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[0], domain=dom, value=0.5)
-    return oin.CubeFiltration_1D([v0, v1, e01], negate=False, n_threads=1)
+    return oin.Filtration([v0, v1, e01], negate=False, n_threads=1)
 
 
 def test_decomposition_api():

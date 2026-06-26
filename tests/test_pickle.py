@@ -30,7 +30,7 @@ def _make_prod_filtration():
     v1 = oin.Simplex([1], 0.1)
     p01 = oin.ProdSimplex(v0, v1, 0.2)
     p10 = oin.ProdSimplex(v1, v0, 0.3)
-    return oin.ProdFiltration([p01, p10], negate=False, n_threads=1)
+    return oin.Filtration([p01, p10], negate=False, n_threads=1)
 
 
 def test_cells():

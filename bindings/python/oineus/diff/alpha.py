@@ -171,11 +171,11 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
         t0 = time.time()
 
     pairs = [(s, a) for s, a, _ in triples]
-    alpha_fil = _oineus.Filtration(pairs, duplicates_possible=False, n_threads=1)
+    alpha_fil = _oineus._Filtration(pairs, duplicates_possible=False, n_threads=1)
     alpha_fil.kind = _oineus.FiltrationKind.Alpha
 
     if print_time:
-        print(f"build _oineus.Filtration elapsed: {time.time() - t0:.3f}")
+        print(f"build _oineus._Filtration elapsed: {time.time() - t0:.3f}")
         t0 = time.time()
 
     # Diode may emit sigma vertices unsorted; Oineus stores them sorted (Simplex

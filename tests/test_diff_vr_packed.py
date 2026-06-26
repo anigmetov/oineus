@@ -60,7 +60,7 @@ def test_vr_packed_gradient_matches_finite_difference():
     pts = torch.tensor(pts_np, dtype=TORCH_DTYPE, requires_grad=True)
 
     df = od.vr_filtration(pts, max_dim=1, max_diameter=10.0, packed=True, n_threads=1)
-    assert type(df.under_fil).__name__ == "PackedSimplexFiltration_64"
+    assert type(df.under_fil).__name__ == "_PackedSimplexFiltration_64"
     ((df.values ** 2).sum()).backward()
     grad_auto = pts.grad.detach().numpy()
     _assert_grad_nonzero(grad_auto)

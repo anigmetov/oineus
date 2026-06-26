@@ -51,7 +51,7 @@ def test_slim_matches_fat(dim, shape, negate, dualize, n_threads):
     fil_slim = oin.freudenthal_filtration(a, negate=negate, max_dim=dim, slim=True, n_threads=n_threads)
     fil_fat = oin.freudenthal_filtration(a, negate=negate, max_dim=dim, slim=False, n_threads=n_threads)
 
-    assert type(fil_slim).__name__ == f"FreudenthalFiltration_{dim}D"
+    assert type(fil_slim).__name__ == f"_FreudenthalFiltration_{dim}D"
     assert fil_slim.size() == fil_fat.size()
 
     slim_dgms = reduce_to_dgms(fil_slim, dualize, n_threads, dim)

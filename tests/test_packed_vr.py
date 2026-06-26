@@ -36,7 +36,7 @@ def test_packed_vr_matches_fat(n_threads, dualize):
     R = 1.0
     ff = oin.vr_filtration(pts, max_dim=2, max_diameter=R, n_threads=n_threads, packed=False)
     fp = oin.vr_filtration(pts, max_dim=2, max_diameter=R, n_threads=n_threads, packed=True)
-    assert type(fp).__name__ == "PackedSimplexFiltration_64"
+    assert type(fp).__name__ == "_PackedSimplexFiltration_64"
     assert fp.size() == ff.size()
     _dgms_equal(_reduce(fp, dualize, n_threads), fp, _reduce(ff, dualize, n_threads), ff, 2)
 
@@ -49,7 +49,7 @@ def test_packed_vr_from_pwdists_matches_fat():
     R = 1.0
     ff = oin.vr_filtration(pw, from_pwdists=True, max_dim=2, max_diameter=R, packed=False)
     fp = oin.vr_filtration(pw, from_pwdists=True, max_dim=2, max_diameter=R, packed=True)
-    assert type(fp).__name__ == "PackedSimplexFiltration_64"
+    assert type(fp).__name__ == "_PackedSimplexFiltration_64"
     assert fp.size() == ff.size()
     _dgms_equal(_reduce(fp), fp, _reduce(ff), ff, 2)
 
@@ -102,7 +102,7 @@ def _check_uid_round_trip(fil):
 def test_packed_vr_uid_accessors_round_trip():
     pts = np.ascontiguousarray(np.random.default_rng(2).random((22, 3)))
     fp = oin.vr_filtration(pts, max_dim=2, max_diameter=1.0, packed=True)
-    assert type(fp).__name__ == "PackedSimplexFiltration_64"
+    assert type(fp).__name__ == "_PackedSimplexFiltration_64"
     _check_uid_round_trip(fp)
 
     # a vertex-set uid not present in the filtration must raise (not silently 0)
@@ -127,7 +127,7 @@ def test_packed_vr_uid_foreign_vertex_not_misidentified():
     # tight cluster so every pairwise edge (incl. {0,1}) is present in the packed filtration
     tight = np.ascontiguousarray(np.random.default_rng(1).random((22, 3)) * 0.001)
     fp = oin.vr_filtration(tight, max_dim=2, max_diameter=10.0, packed=True)
-    assert type(fp).__name__ == "PackedSimplexFiltration_64"
+    assert type(fp).__name__ == "_PackedSimplexFiltration_64"
     assert all(fp.cell(i).uid != uid32 for i in range(fp.size()))  # {32} genuinely absent
     with pytest.raises((IndexError, KeyError)):
         fp.sorted_id_by_uid(uid32)
@@ -143,7 +143,7 @@ def test_packed_vr_uid_accessors_round_trip_128_tier():
                     np.zeros(1094), np.zeros(1094)], axis=1)
     pts = np.ascontiguousarray(np.vstack([cluster, far]))
     fp = oin.vr_filtration(pts, max_dim=5, max_diameter=0.5, packed=True)
-    assert type(fp).__name__ == "PackedSimplexFiltration_128"
+    assert type(fp).__name__ == "_PackedSimplexFiltration_128"
     _check_uid_round_trip(fp)
 
 
@@ -169,7 +169,7 @@ def test_packed_vr_128_tier_matches_fat():
 
     R = 0.5
     fp = oin.vr_filtration(pts, max_dim=5, max_diameter=R, packed=True)
-    assert type(fp).__name__ == "PackedSimplexFiltration_128"
+    assert type(fp).__name__ == "_PackedSimplexFiltration_128"
     ff = oin.vr_filtration(pts, max_dim=5, max_diameter=R, packed=False)
     assert fp.size() == ff.size()
     _dgms_equal(_reduce(fp), fp, _reduce(ff), ff, 5)

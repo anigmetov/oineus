@@ -56,7 +56,7 @@ struct SlimFilTraits<oin::Cube<oin_int, D>> {
 
     static constexpr bool has_ctor = true;
     static constexpr bool has_boundary_matrix_rel = true;
-    static std::string py_name() { return "CubeFiltration_" + std::to_string(D) + "D"; }
+    static std::string py_name() { return "_CubeFiltration_" + std::to_string(D) + "D"; }
     static constexpr const char* cell_word = "cube";
     static constexpr const char* cells_word = "cubes";
     static constexpr const char* value_word = "cube_value_by_sorted_id";
@@ -115,7 +115,7 @@ struct SlimFilTraits<oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, D
 
     static constexpr bool has_ctor = false;
     static constexpr bool has_boundary_matrix_rel = false;
-    static std::string py_name() { return "FreudenthalFiltration_" + std::to_string(D) + "D"; }
+    static std::string py_name() { return "_FreudenthalFiltration_" + std::to_string(D) + "D"; }
     static constexpr const char* cell_word = "simplex";
     static constexpr const char* cells_word = "simplices";
     static constexpr const char* value_word = "simplex_value_by_sorted_id";
@@ -178,7 +178,7 @@ struct SlimFilTraits<oin::Simplex<oin_int, oin::BitPacked<oin_int, Word>>> {
     static constexpr bool has_boundary_matrix_rel = false;
     static std::string py_name()
     {
-        return std::string("PackedSimplexFiltration_") + (sizeof(Word) <= 8 ? "64" : "128");
+        return std::string("_PackedSimplexFiltration_") + (sizeof(Word) <= 8 ? "64" : "128");
     }
     static constexpr const char* cell_word = "simplex";
     static constexpr const char* cells_word = "simplices";
@@ -349,8 +349,8 @@ void init_oineus_filtration(nb::module_& m)
 
     using oin::VREdge;
 
-    const std::string filtration_class_name = "Filtration";
-    const std::string prod_filtration_class_name = "ProdFiltration";
+    const std::string filtration_class_name = "_Filtration";
+    const std::string prod_filtration_class_name = "_ProdFiltration";
 
 
     nb::class_<Filtration>(m, filtration_class_name.c_str())

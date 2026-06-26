@@ -12,7 +12,6 @@ from . import _oineus
 from ._oineus import ConflictStrategy, DenoiseStrategy, VREdge, FiltrationKind
 from ._oineus import DiagramPlaneDomain, FrechetMeanInit
 from ._oineus import CombinatorialProdSimplex, CombinatorialSimplex,Simplex, ProdSimplex
-from ._oineus import ProdFiltration  # noqa: F401  (oin.Filtration below dispatches to it)
 from ._oineus import Decomposition, IndexDiagramPoint, DiagramPoint, Diagrams
 from ._oineus import reduce
 from ._oineus import DecompositionManipStats
@@ -29,32 +28,30 @@ from ._oineus import init_frechet_mean_random_diagram as _init_frechet_mean_rand
 from ._oineus import init_frechet_mean_medoid_diagram as _init_frechet_mean_medoid_diagram_cpp
 from ._oineus import init_frechet_mean_diagonal_grid as _init_frechet_mean_diagonal_grid_cpp
 from ._oineus import frechet_mean as _frechet_mean_cpp
-from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D, CubeFiltration_1D
-from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, CubeFiltration_2D
-from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
-from ._oineus import FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D
-from ._oineus import PackedSimplexFiltration_64, PackedSimplexFiltration_128
+from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D
+from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D
+from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D
 
 
 # Maps the fat cell-with-value type a user hands to Filtration(...) to the concrete C++
 # filtration class that consumes it. The per-encoding internal filtrations are distinct C++
 # types (cube vs simplex vs product), but the user sees one Filtration.
 _FIL_CLASS_BY_CELL_TYPE = {
-    _oineus.Simplex:      _oineus.Filtration,        # fat Simplex (VR / alpha / user-built)
-    _oineus.ProdSimplex:  _oineus.ProdFiltration,    # product cells (mapping cylinders)
-    _oineus.Cube_1D:      _oineus.CubeFiltration_1D,  # fat cubes (hand-built cubical complexes)
-    _oineus.Cube_2D:      _oineus.CubeFiltration_2D,
-    _oineus.Cube_3D:      _oineus.CubeFiltration_3D,
+    _oineus.Simplex:      _oineus._Filtration,        # fat Simplex (VR / alpha / user-built)
+    _oineus.ProdSimplex:  _oineus._ProdFiltration,    # product cells (mapping cylinders)
+    _oineus.Cube_1D:      _oineus._CubeFiltration_1D,  # fat cubes (hand-built cubical complexes)
+    _oineus.Cube_2D:      _oineus._CubeFiltration_2D,
+    _oineus.Cube_3D:      _oineus._CubeFiltration_3D,
 }
 
 # Every concrete filtration C++ type, for isinstance(x, oineus.Filtration). Includes the
 # factory-produced slim Freudenthal / bit-packed ones, which a user never constructs by hand
 # but should still recognize as filtrations.
 _ALL_FILTRATION_TYPES = (
-    _oineus.Filtration, _oineus.ProdFiltration,
-    _oineus.CubeFiltration_1D, _oineus.CubeFiltration_2D, _oineus.CubeFiltration_3D,
-    _oineus.FreudenthalFiltration_1D, _oineus.FreudenthalFiltration_2D, _oineus.FreudenthalFiltration_3D,
-    _oineus.PackedSimplexFiltration_64, _oineus.PackedSimplexFiltration_128,
+    _oineus._Filtration, _oineus._ProdFiltration,
+    _oineus._CubeFiltration_1D, _oineus._CubeFiltration_2D, _oineus._CubeFiltration_3D,
+    _oineus._FreudenthalFiltration_1D, _oineus._FreudenthalFiltration_2D, _oineus._FreudenthalFiltration_3D,
+    _oineus._PackedSimplexFiltration_64, _oineus._PackedSimplexFiltration_128,
 )
 
 
@@ -91,7 +88,7 @@ class Filtration(metaclass=_FiltrationMeta):
         except IndexError:
             # empty list -> the universal fat Simplex filtration (historical default; there is
             # no cell to dispatch on)
-            return _oineus.Filtration(cells, *args, **kwargs)
+            return _oineus._Filtration(cells, *args, **kwargs)
         except TypeError:
             raise ValueError(
                 "Filtration(cells): cells must be a list of fat cells with values "
@@ -103,7 +100,7 @@ class Filtration(metaclass=_FiltrationMeta):
             if isinstance(first, tuple):
                 # (vertices, value) pairs -> the universal simplicial constructor, which builds
                 # the Simplex cells itself (used by the diode alpha / Cech-Delaunay paths)
-                return _oineus.Filtration(cells, *args, **kwargs)
+                return _oineus._Filtration(cells, *args, **kwargs)
             raise TypeError(
                 f"Filtration(cells): unsupported cell type {type(first).__name__}; expected one "
                 f"of {[t.__name__ for t in _FIL_CLASS_BY_CELL_TYPE]} or (vertices, value) tuples.")
@@ -201,16 +198,16 @@ _HAS_DIODE_ARRAYS = _HAS_DIODE and hasattr(diode, "fill_delaunay_arrays") \
 # there is one bound class per encoding (universal Simplex, product, slim cube, slim
 # Freudenthal, bit-packed VR/alpha). Single source of truth: oineus.diff reuses it.
 _OPT_CLASS_BY_FIL_TYPE = {
-    _oineus.Filtration:               _oineus.TopologyOptimizer,
-    _oineus.ProdFiltration:           _oineus.TopologyOptimizerProd,
-    _oineus.CubeFiltration_1D:        _oineus.TopologyOptimizerCube_1D,
-    _oineus.CubeFiltration_2D:        _oineus.TopologyOptimizerCube_2D,
-    _oineus.CubeFiltration_3D:        _oineus.TopologyOptimizerCube_3D,
-    _oineus.FreudenthalFiltration_1D: _oineus.TopologyOptimizerFreudenthal_1D,
-    _oineus.FreudenthalFiltration_2D: _oineus.TopologyOptimizerFreudenthal_2D,
-    _oineus.FreudenthalFiltration_3D: _oineus.TopologyOptimizerFreudenthal_3D,
-    _oineus.PackedSimplexFiltration_64:  _oineus.TopologyOptimizerPacked_64,
-    _oineus.PackedSimplexFiltration_128: _oineus.TopologyOptimizerPacked_128,
+    _oineus._Filtration:               _oineus.TopologyOptimizer,
+    _oineus._ProdFiltration:           _oineus.TopologyOptimizerProd,
+    _oineus._CubeFiltration_1D:        _oineus.TopologyOptimizerCube_1D,
+    _oineus._CubeFiltration_2D:        _oineus.TopologyOptimizerCube_2D,
+    _oineus._CubeFiltration_3D:        _oineus.TopologyOptimizerCube_3D,
+    _oineus._FreudenthalFiltration_1D: _oineus.TopologyOptimizerFreudenthal_1D,
+    _oineus._FreudenthalFiltration_2D: _oineus.TopologyOptimizerFreudenthal_2D,
+    _oineus._FreudenthalFiltration_3D: _oineus.TopologyOptimizerFreudenthal_3D,
+    _oineus._PackedSimplexFiltration_64:  _oineus.TopologyOptimizerPacked_64,
+    _oineus._PackedSimplexFiltration_128: _oineus.TopologyOptimizerPacked_128,
 }
 
 
@@ -988,7 +985,7 @@ def freudenthal_filtration(data: np.ndarray,
                            slim: bool=False,
                            n_threads: int=1):
     max_dim = min(max_dim, data.ndim)
-    # slim=True returns the compact (anchor,type) FreudenthalFiltration_ND (one shared
+    # slim=True returns the compact (anchor,type) _FreudenthalFiltration_ND (one shared
     # FrGeometry, fat simplices materialized on access) for D=1,2,3 on non-wrap grids;
     # it reduces and produces diagrams identically to the fat path but with a far
     # smaller boundary-build footprint. It is opt-in for now because the bare
@@ -1070,7 +1067,7 @@ def vr_filtration(data: np.ndarray,
         else:
             max_dim = data.shape[1]
 
-    # packed=True returns a bit-packed PackedSimplexFiltration_64/128 (compact cells,
+    # packed=True returns a bit-packed _PackedSimplexFiltration_64/128 (compact cells,
     # one shared PackedGeom) when the vertex ids fit a 64- or 128-bit word; if they do
     # not fit (very large/high-dim complex) it transparently falls back to the fat path.
     # It reduces and produces diagrams identically to fat but with a smaller footprint;
@@ -1332,7 +1329,7 @@ def alpha_filtration(points: np.ndarray,
         else:
             fil_diode = diode.fill_alpha_shapes(points, exact=exact)
 
-    fil = _oineus.Filtration(
+    fil = _oineus._Filtration(
         fil_diode,
         duplicates_possible=periodic,
         n_threads=n_threads,
@@ -1453,11 +1450,11 @@ def compute_kernel_image_cokernel_reduction(K, L, params=None, reduction_params=
     # isinstance check below into the Simplex-only KerImCokReduced ctor (a different
     # C++ filtration type) with a cryptic nanobind error. KICR is not wired for these
     # compact cells yet -- reject up front with a clear message (use the fat path).
-    if isinstance(K, (FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D)):
+    if isinstance(K, (_oineus._FreudenthalFiltration_1D, _oineus._FreudenthalFiltration_2D, _oineus._FreudenthalFiltration_3D)):
         raise NotImplementedError(
             "kernel/image/cokernel is not supported for the slim FreudenthalFiltration; "
             "rebuild with the fat path (freudenthal_filtration(..., slim=False))")
-    if isinstance(K, (PackedSimplexFiltration_64, PackedSimplexFiltration_128)):
+    if isinstance(K, (_oineus._PackedSimplexFiltration_64, _oineus._PackedSimplexFiltration_128)):
         raise NotImplementedError(
             "kernel/image/cokernel is not supported for the bit-packed simplex filtration; "
             "rebuild without packing (vr_filtration(..., packed=False), the default)")
@@ -1554,7 +1551,6 @@ _PUBLIC_API_NAMES = [
     "Simplex",
     "ProdSimplex",
     "Filtration",
-    "ProdFiltration",
     "Decomposition",
     "IndexDiagramPoint",
     "DiagramPoint",
@@ -1585,22 +1581,14 @@ _PUBLIC_API_NAMES = [
     "Grid_1D",
     "CombinatorialCube_1D",
     "Cube_1D",
-    "CubeFiltration_1D",
     "GridDomain_2D",
     "Grid_2D",
     "CombinatorialCube_2D",
     "Cube_2D",
-    "CubeFiltration_2D",
     "GridDomain_3D",
     "Grid_3D",
     "CombinatorialCube_3D",
     "Cube_3D",
-    "CubeFiltration_3D",
-    "FreudenthalFiltration_1D",
-    "FreudenthalFiltration_2D",
-    "FreudenthalFiltration_3D",
-    "PackedSimplexFiltration_64",
-    "PackedSimplexFiltration_128",
     "DiagramMatching",
     "BottleneckMatching",
     "InfKind",

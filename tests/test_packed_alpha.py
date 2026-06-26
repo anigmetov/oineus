@@ -37,7 +37,7 @@ def test_packed_alpha_matches_fat(ambient):
     pts = np.ascontiguousarray(np.random.default_rng(0).random((40, ambient)))
     ff = oin.alpha_filtration(pts, packed=False)
     fp = oin.alpha_filtration(pts, packed=True)
-    assert type(fp).__name__ == "PackedSimplexFiltration_64"
+    assert type(fp).__name__ == "_PackedSimplexFiltration_64"
     assert fp.size() == ff.size()
     _dgms_equal(_reduce(fp), fp, _reduce(ff), ff, ambient)
 

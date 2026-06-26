@@ -246,7 +246,7 @@ def test_coboundary_matrix_partial_cube_complex():
     v1 = oin.Cube_1D(anchor_vertex=[1], spanning_dims=[], domain=dom, value=0.0)
     v2 = oin.Cube_1D(anchor_vertex=[2], spanning_dims=[], domain=dom, value=0.0)
     e01 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[0], domain=dom, value=1.0)
-    fil = oin.CubeFiltration_1D([v0, v1, v2, e01], negate=False, n_threads=1)
+    fil = oin.Filtration([v0, v1, v2, e01], negate=False, n_threads=1)
     n = fil.size()
 
     bm = [list(c) for c in fil.boundary_matrix(n_threads=1)]
@@ -278,6 +278,6 @@ def test_boundary_matrix_raises_on_non_face_closed_cube():
     dom = oin.GridDomain_1D(3)
     v0 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[], domain=dom, value=0.0)
     e01 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[0], domain=dom, value=1.0)
-    fil = oin.CubeFiltration_1D([v0, e01], negate=False, n_threads=1)
+    fil = oin.Filtration([v0, e01], negate=False, n_threads=1)
     with pytest.raises((IndexError, KeyError, RuntimeError)):
         fil.boundary_matrix(n_threads=1)

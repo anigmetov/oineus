@@ -43,7 +43,7 @@ def test_crit_vertex_array_round_trips(dim, shape):
     data = torch.tensor(data_np, dtype=TORCH_DTYPE)
 
     df = od.freudenthal_filtration(data, negate=False, max_dim=dim, slim=True, n_threads=1)
-    assert type(df.under_fil).__name__ == f"FreudenthalFiltration_{dim}D"
+    assert type(df.under_fil).__name__ == f"_FreudenthalFiltration_{dim}D"
 
     # the gathered values equal the filtration's per-cell values (= data at the
     # lower-star max-value vertex of each simplex)

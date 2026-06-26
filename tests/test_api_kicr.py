@@ -36,12 +36,12 @@ def _make_prod_segment_inclusion_filtrations():
     k_v0 = oin.ProdSimplex(s0, t2, 0.00)
     k_v1 = oin.ProdSimplex(s1, t2, 0.10)
     k_e01 = oin.ProdSimplex(s01, t2, 0.30)
-    k = oin.ProdFiltration([k_v0, k_v1, k_e01], negate=False, n_threads=1)
+    k = oin.Filtration([k_v0, k_v1, k_e01], negate=False, n_threads=1)
 
     l_v0 = oin.ProdSimplex(s0, t2, 0.20)
     l_v1 = oin.ProdSimplex(s1, t2, 0.25)
     l_e01 = oin.ProdSimplex(s01, t2, 0.40)
-    l = oin.ProdFiltration([l_v0, l_v1, l_e01], negate=False, n_threads=1)
+    l = oin.Filtration([l_v0, l_v1, l_e01], negate=False, n_threads=1)
 
     return k, l
 

@@ -197,12 +197,14 @@ def test_compute_ker_cok_reduction_cyl_smoke():
 # Fix #8 -- __all__ exposes core constructors and types
 # ---------------------------------------------------------------------------
 
+# oineus.Filtration is the single public facade; the per-encoding filtration classes
+# (ProdFiltration / CubeFiltration_ND / FreudenthalFiltration_ND / PackedSimplexFiltration_*)
+# are intentionally hidden (reached only as internal _oineus._* types via the dispatcher).
 @pytest.mark.parametrize("name", [
     "vr_filtration", "freudenthal_filtration", "cube_filtration",
     "min_filtration", "mapping_cylinder", "multiply_filtration",
     "compute_ker_cok_reduction_cyl",
-    "Filtration", "ProdFiltration",
-    "CubeFiltration_1D", "CubeFiltration_2D", "CubeFiltration_3D",
+    "Filtration",
     "Simplex", "FiltrationKind", "KerImCokReduced", "KerImCokReducedProd",
     "TopologyOptimizer", "TopologyOptimizerProd",
     "TopologyOptimizerCube_1D", "TopologyOptimizerCube_2D", "TopologyOptimizerCube_3D",
@@ -210,6 +212,17 @@ def test_compute_ker_cok_reduction_cyl_smoke():
 def test_public_api_in_all(name):
     assert name in oin.__all__, f"{name} should appear in oineus.__all__"
     assert getattr(oin, name) is not None
+
+
+@pytest.mark.parametrize("name", [
+    "ProdFiltration", "CubeFiltration_1D", "CubeFiltration_2D", "CubeFiltration_3D",
+    "FreudenthalFiltration_1D", "FreudenthalFiltration_2D", "FreudenthalFiltration_3D",
+    "PackedSimplexFiltration_64", "PackedSimplexFiltration_128",
+])
+def test_per_type_filtration_classes_are_hidden(name):
+    # the per-encoding filtration classes are no longer in the public oineus namespace;
+    # oineus.Filtration (the dispatcher) is the one public entry point
+    assert not hasattr(oin, name), f"{name} should be hidden from the public oineus namespace"
 
 
 # ---------------------------------------------------------------------------

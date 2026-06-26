@@ -35,18 +35,18 @@ def test_filtration_dispatches_on_cell_type():
     import numpy as np
 
     fs = oin.Filtration([oin.Simplex([0], 0.0), oin.Simplex([1], 0.0), oin.Simplex([0, 1], 1.0)])
-    assert type(fs).__name__ == "Filtration"
+    assert type(fs).__name__ == "_Filtration"
     assert isinstance(fs, oin.Filtration)
 
     dom = oin.GridDomain_2D(2, 2)
     cubes = [oin.Cube_2D(anchor_vertex=[0, 0], spanning_dims=[], domain=dom, value=0.0),
              oin.Cube_2D(anchor_vertex=[0, 0], spanning_dims=[0], domain=dom, value=0.5)]
     fc = oin.Filtration(cubes)
-    assert type(fc).__name__ == "CubeFiltration_2D"
+    assert type(fc).__name__ == "_CubeFiltration_2D"
     assert isinstance(fc, oin.Filtration)
 
     fp = oin.Filtration([oin.ProdSimplex(oin.Simplex([0], 0.0), oin.Simplex([1], 0.1), 0.2)])
-    assert type(fp).__name__ == "ProdFiltration"
+    assert type(fp).__name__ == "_ProdFiltration"
     assert isinstance(fp, oin.Filtration)
 
     # factory-built filtrations are recognized as Filtrations even though their concrete
@@ -57,7 +57,7 @@ def test_filtration_dispatches_on_cell_type():
 
     # the (vertices, value)-tuple constructor of the universal simplicial filtration still works
     ft = oin.Filtration([([0], 0.0), ([1], 0.0), ([0, 1], 1.0)])
-    assert type(ft).__name__ == "Filtration" and ft.size() == 3
+    assert type(ft).__name__ == "_Filtration" and ft.size() == 3
 
     # empty -> the universal (fat Simplex) filtration; a non-cell list -> clear error
     assert oin.Filtration([]).size() == 0
@@ -73,28 +73,28 @@ def _make_prod_filtration():
     v1 = oin.Simplex([1], 0.1)
     p01 = oin.ProdSimplex(v0, v1, 0.2)
     p10 = oin.ProdSimplex(v1, v0, 0.3)
-    return oin.ProdFiltration([p01, p10], negate=False, n_threads=1)
+    return oin.Filtration([p01, p10], negate=False, n_threads=1)
 
 
 def _make_cube_filtration_1d():
     dom = oin.GridDomain_1D(2)
     v0 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[], domain=dom, value=0.0)
     e01 = oin.Cube_1D(anchor_vertex=[0], spanning_dims=[0], domain=dom, value=0.5)
-    return oin.CubeFiltration_1D([v0, e01], negate=False, n_threads=1)
+    return oin.Filtration([v0, e01], negate=False, n_threads=1)
 
 
 def _make_cube_filtration_2d():
     dom = oin.GridDomain_2D(2, 2)
     v00 = oin.Cube_2D(anchor_vertex=[0, 0], spanning_dims=[], domain=dom, value=0.0)
     e00 = oin.Cube_2D(anchor_vertex=[0, 0], spanning_dims=[0], domain=dom, value=0.2)
-    return oin.CubeFiltration_2D([v00, e00], negate=False, n_threads=1)
+    return oin.Filtration([v00, e00], negate=False, n_threads=1)
 
 
 def _make_cube_filtration_3d():
     dom = oin.GridDomain_3D(2, 2, 2)
     v000 = oin.Cube_3D(anchor_vertex=[0, 0, 0], spanning_dims=[], domain=dom, value=0.0)
     e000 = oin.Cube_3D(anchor_vertex=[0, 0, 0], spanning_dims=[0], domain=dom, value=0.2)
-    return oin.CubeFiltration_3D([v000, e000], negate=False, n_threads=1)
+    return oin.Filtration([v000, e000], negate=False, n_threads=1)
 
 
 def test_filtration_api():
