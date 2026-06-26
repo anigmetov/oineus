@@ -128,6 +128,54 @@ TEST_CASE("bit-packed simplex: pack / unpack / boundary by hand")
     REQUIRE(v.vertices(g) == std::vector<Int>{4});
 }
 
+// vertices_from_simplex_uid is the inverse of simplex_uid: it recovers the ascending
+// vertex set from the universal combinatorial uid. It is the Python-facing uid-contract
+// translation -- a (fat) simplex's uid decodes back to vertices, which the slim/packed
+// encodings re-key into their own internal uid. Property-test the round-trip across
+// dimensions, including vertex 0 and the all-minimal simplex (uid body 0).
+TEST_CASE("combinatorial uid round-trip: vertices_from_simplex_uid(simplex_uid(v)) == v")
+{
+    auto check = [](std::vector<Int> v) {
+        std::sort(v.begin(), v.end());
+        Uid128 uid = simplex_uid<Int>(v);
+        std::vector<Int> back = vertices_from_simplex_uid<Int>(uid);
+        REQUIRE(back == v);
+    };
+
+    // explicit edge cases
+    check({0});                 // vertex 0: uid body 0
+    check({7});                 // a single non-zero vertex
+    check({0, 1});              // lowest edge: uid body 0
+    check({0, 1, 2, 3, 4});     // lowest 4-simplex
+    check({3, 8});
+    check({2, 5, 9});
+    check({10, 11, 12, 13});
+    check({0, 100, 5000});      // wide vertex spread
+
+    // exhaustive small simplices: every strictly-increasing vertex set drawn from
+    // {0..15} of size 1..4
+    for (int n = 0; n <= 15; ++n)
+        for (int a = n + 1; a <= 15; ++a) {
+            check({n});
+            check({n, a});
+            for (int b = a + 1; b <= 15; ++b) {
+                check({n, a, b});
+                for (int c = b + 1; c <= 15; ++c)
+                    check({n, a, b, c});
+            }
+        }
+
+    // a garbage uid whose decoded vertex id exceeds the Int range must throw out_of_range
+    // (the binding layer maps this to "uid not present"), never overflow / return garbage.
+    using Uid = Uid128;
+    // single vertex with id 2^31 > INT_MAX: dim_info = (1+1)<<124, body = comb(2^31,1) = 2^31
+    Uid uid_big_vertex = (Uid(2) << 124) | Uid(2147483648ULL);
+    REQUIRE_THROWS_AS(vertices_from_simplex_uid<Int>(uid_big_vertex), std::out_of_range);
+    // a 3-vertex uid with a near-maximal 124-bit body decodes to vertices far beyond INT_MAX
+    Uid uid_huge_triangle = (Uid(4) << 124) | ((Uid(1) << 124) - 1);
+    REQUIRE_THROWS_AS(vertices_from_simplex_uid<Int>(uid_huge_triangle), std::out_of_range);
+}
+
 // Build a Filtration<Simplex<...,BitPacked>> from a fat Vietoris-Rips master, in the
 // SAME order, and verify (a) the boundary/coboundary matrices are column-identical to
 // the fat master, (b) it reduces to a valid R = D V, and (c) per cell the materializer

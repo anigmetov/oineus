@@ -66,3 +66,15 @@ def test_packed_alpha_pickle_round_trip():
     pts = np.ascontiguousarray(np.random.default_rng(3).random((30, 3)))
     fp = oin.alpha_filtration(pts, packed=True)
     assert pickle.loads(pickle.dumps(fp)) == fp
+
+
+def test_packed_alpha_uid_accessors_round_trip():
+    # alpha is a distinct entry point but shares the packed filtration type; the uid
+    # accessors must round-trip the combinatorial uid of each materialized cell
+    pts = np.ascontiguousarray(np.random.default_rng(4).random((35, 3)))
+    fp = oin.alpha_filtration(pts, packed=True)
+    for i in range(fp.size()):
+        c = fp.cell(i)
+        assert fp.sorted_id_by_uid(c.uid) == i
+        assert fp.value_by_uid(c.uid) == c.value
+        assert list(fp.cell_by_uid(c.uid).vertices) == list(c.vertices)

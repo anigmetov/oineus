@@ -233,6 +233,49 @@ fatten_all_packed(const oin::Filtration<oin::Simplex<Int, oin::BitPacked<Int, Wo
     return fat;
 }
 
+// uid-contract translation for the Python-facing uid accessors of slim/packed
+// filtrations. A Python cell always carries the universal COMBINATORIAL uid (a function
+// of its sorted vertex set, identical across any filtration containing that simplex),
+// but a slim Freudenthal / bit-packed filtration is keyed internally by its own compact
+// uid. These helpers decode the combinatorial uid back to its vertex set
+// (vertices_from_simplex_uid) and re-key it into the filtration's internal form, so
+// value_by_uid / sorted_id_by_uid / cell_by_uid accept the same uid the user reads off a
+// cell. Both are pure (no shared mutable state) -- safe to call concurrently. A uid whose
+// vertex set is not a cell of this filtration is reported as "not present" (out_of_range),
+// matching the fat Simplex accessor contract.
+template<class Int, unsigned D>
+Int fr_slim_uid_from_comb_uid(const oin::FrGeometry<Int, D>& geom, unsigned __int128 comb_uid)
+{
+    std::vector<Int> vids = oin::vertices_from_simplex_uid<Int>(comb_uid);
+    try {
+        return geom.uid_of_vertices(vids);
+    } catch (const std::runtime_error&) {
+        // vertex set is not a Freudenthal simplex of this grid -> not a cell here
+        throw std::out_of_range("Filtration: uid not present in filtration");
+    }
+}
+
+template<class Int, class Word>
+Word packed_word_uid_from_comb_uid(const oin::PackedGeom& geom, unsigned __int128 comb_uid)
+{
+    std::vector<Int> vids = oin::vertices_from_simplex_uid<Int>(comb_uid);
+    const int field_bits = geom.bits;
+    const int word_bits = static_cast<int>(8 * sizeof(Word));
+    // A foreign uid may decode to a simplex that does not FIT this filtration's packing:
+    // too many vertices for the Word, or a vertex id wider than the field. BitPacked::pack
+    // would then bit-spill (e.g. pack({32}) == pack({0,1}) at bits=5) and the Word could
+    // alias a different, present cell -- silently returning the wrong cell. Such a simplex
+    // is not in this filtration, so report "not present" (matching the fat accessor).
+    if (static_cast<int>(vids.size()) * field_bits > word_bits)
+        throw std::out_of_range("Filtration: uid not present in filtration");
+    if (field_bits < word_bits) {
+        for (Int v : vids)
+            if (v < 0 || (static_cast<Word>(v) >> field_bits) != 0)
+                throw std::out_of_range("Filtration: uid not present in filtration");
+    }
+    return oin::BitPacked<Int, Word>::pack(vids, geom.bits);
+}
+
 template<class Real>
 class PyOineusDiagrams {
 public:

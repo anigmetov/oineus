@@ -59,6 +59,26 @@ IntOut comb(IntIn n, IntIn k)
     return result;
 }
 
+// True iff binomial(n, k) <= bound, evaluated WITHOUT 128-bit overflow. The combinatorial
+// number system decode (vertices_from_simplex_uid) only needs this comparison, never the
+// possibly-huge exact value, so we build C(n,i) iteratively and bail out the moment a
+// multiply would overflow: when C(n,i-1) * (n-i+1) exceeds the Uid range, C(n,i) >= 2^124
+// (for the small k we use), which already exceeds any 124-bit bound, so C(n,k) > bound.
+template<typename Uid>
+bool comb_leq(Uid n, Uid k, Uid bound)
+{
+    if (n < k)
+        return true;            // C(n, k) == 0
+    Uid result = 1;             // C(n, 0)
+    for(Uid i = 1; i <= k; ++i) {
+        Uid factor = n - i + 1;
+        if (result > std::numeric_limits<Uid>::max() / factor)
+            return false;       // C(n, i) (hence C(n, k)) overflows 124-bit bound
+        result = result * factor / i;
+    }
+    return result <= bound;
+}
+
 // combinatorial simplex numbering, as in Ripser (see Bauer's paper).
 // Encodes dimension info in the 4 most significant bits of the 128-bit result.
 template<typename IntIn, typename Alloc = std::allocator<IntIn>>
@@ -71,6 +91,54 @@ unsigned __int128 simplex_uid(const std::vector<IntIn, Alloc>& vertices)
         uid += comb<IntIn, Uid>(vertices[i], i + 1);
     }
     return uid | dim_info;
+}
+
+// Inverse of simplex_uid: recover the ascending vertex ids encoded in a combinatorial
+// uid. The top 4 bits hold (n_vertices + 1); the low 124 bits hold
+// sum_i C(vertices[i], i+1) with vertices ascending (the combinatorial number system).
+// We peel terms from the highest position k = n_vertices down to 1: the largest c with
+// comb(c, k) <= remainder is vertices[k-1]. comb(.,k) is monotone in its first argument,
+// so each c is found by an exponential probe followed by a binary search -- O(d log V)
+// comb evaluations, no precomputed table. This is the Python-facing translation that maps
+// a (fat) simplex's universal combinatorial uid back to its vertex set, so that the slim /
+// bit-packed encodings can re-key it into their own internal uid for uid-based lookups.
+template<typename Int>
+std::vector<Int> vertices_from_simplex_uid(unsigned __int128 uid)
+{
+    using Uid = unsigned __int128;
+    constexpr unsigned dim_shift = 8 * sizeof(Uid) - 4;
+    Int n_vertices = static_cast<Int>(uid >> dim_shift) - 1;
+    if (n_vertices <= 0)
+        throw std::runtime_error("vertices_from_simplex_uid: malformed uid (no vertices)");
+
+    Uid rem = uid & ((static_cast<Uid>(1) << dim_shift) - 1);
+    const Uid int_max = static_cast<Uid>(std::numeric_limits<Int>::max());
+    std::vector<Int> vertices(n_vertices);
+
+    for(Int k = n_vertices; k >= 1; --k) {
+        Uid kk = static_cast<Uid>(k);
+        // a vertex id beyond the Int range is not a cell of any (Int-indexed) filtration;
+        // if even comb(int_max, k) still fits under rem the decoded vertex overflows Int,
+        // so report the uid as out of range (the binding layer maps this to "not present",
+        // matching the fat accessor, instead of returning a truncated/garbage vertex)
+        if (comb_leq<Uid>(int_max, kk, rem))
+            throw std::out_of_range("vertices_from_simplex_uid: uid out of range");
+        // largest c in [k-1, int_max] with comb(c, k) <= rem (comb is monotone in c, and
+        // comb_leq(int_max, ...) is false here so the boundary is bracketed); binary search
+        Uid lo = kk - 1, hi = int_max;          // comb(k-1, k) == 0 <= rem is the floor
+        while (hi - lo > 1) {
+            Uid mid = lo + (hi - lo) / 2;
+            if (comb_leq<Uid>(mid, kk, rem))
+                lo = mid;
+            else
+                hi = mid;
+        }
+        vertices[k - 1] = static_cast<Int>(lo);
+        rem -= comb<Uid, Uid>(lo, kk);          // exact: comb(lo, k) <= rem < 2^124, no overflow
+    }
+
+    assert(std::is_sorted(vertices.begin(), vertices.end()));
+    return vertices;
 }
 
 template<typename Int_>

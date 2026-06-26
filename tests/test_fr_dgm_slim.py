@@ -93,6 +93,31 @@ def test_slim_pickle_round_trip():
     assert fil2 == fil
 
 
+@pytest.mark.parametrize("dim,shape", [(2, (9, 8)), (3, (6, 5, 5))])
+def test_slim_uid_accessors_round_trip(dim, shape):
+    # The Python-facing uid is the universal COMBINATORIAL uid that a materialized fat
+    # cell carries. The slim filtration's uid accessors must accept that uid and re-key
+    # it into the internal (anchor,type) form: value_by_uid / sorted_id_by_uid /
+    # cell_by_uid must round-trip every cell exactly (the uniform uid contract that makes
+    # the slim path a drop-in for the fat one). A uid not in the filtration must raise.
+    np.random.seed(3)
+    a = np.random.randn(*shape).astype(np.float64)
+    fil = oin.freudenthal_filtration(a, max_dim=dim, slim=True)
+    for i in range(fil.size()):
+        c = fil.cell(i)
+        assert fil.sorted_id_by_uid(c.uid) == i
+        assert fil.value_by_uid(c.uid) == c.value
+        assert list(fil.cell_by_uid(c.uid).vertices) == list(c.vertices)
+
+    # a uid whose vertex set is not a cell here -> not present (IndexError)
+    other = oin.freudenthal_filtration(np.random.randn(5, 4).astype(np.float64),
+                                       max_dim=dim, slim=True)
+    missing_uid = max(other.cell(i).uid for i in range(other.size()))
+    if all(fil.cell(i).uid != missing_uid for i in range(fil.size())):
+        with pytest.raises((IndexError, KeyError)):
+            fil.sorted_id_by_uid(missing_uid)
+
+
 @pytest.mark.parametrize("dim,shape", [(2, (8, 7)), (3, (6, 5, 5))])
 def test_induced_matching_slim_matches_fat(dim, shape):
     # get_induced_matching builds an InclusionFiltration and is the only caller of

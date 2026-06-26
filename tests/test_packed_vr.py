@@ -88,6 +88,65 @@ def test_packed_vr_pickle_round_trip():
     assert pickle.loads(pickle.dumps(fp)) == fp
 
 
+def _check_uid_round_trip(fil):
+    # The Python-facing uid is the universal COMBINATORIAL uid a materialized fat cell
+    # carries; the packed filtration's uid accessors must accept it and re-pack it into
+    # the internal Word uid. Every cell must round-trip through value/sorted_id/cell_by_uid.
+    for i in range(fil.size()):
+        c = fil.cell(i)
+        assert fil.sorted_id_by_uid(c.uid) == i
+        assert fil.value_by_uid(c.uid) == c.value
+        assert list(fil.cell_by_uid(c.uid).vertices) == list(c.vertices)
+
+
+def test_packed_vr_uid_accessors_round_trip():
+    pts = np.ascontiguousarray(np.random.default_rng(2).random((22, 3)))
+    fp = oin.vr_filtration(pts, max_dim=2, max_diameter=1.0, packed=True)
+    assert type(fp).__name__ == "PackedSimplexFiltration_64"
+    _check_uid_round_trip(fp)
+
+    # a vertex-set uid not present in the filtration must raise (not silently 0)
+    bogus = oin.vr_filtration(np.ascontiguousarray(np.random.default_rng(8).random((40, 3))),
+                              max_dim=2, max_diameter=1.0, packed=True)
+    missing = max(bogus.cell(i).uid for i in range(bogus.size()))
+    if all(fp.cell(i).uid != missing for i in range(fp.size())):
+        with pytest.raises((IndexError, KeyError)):
+            fp.sorted_id_by_uid(missing)
+
+
+def test_packed_vr_uid_foreign_vertex_not_misidentified():
+    # A foreign uid whose vertex id exceeds the target field width must report "not
+    # present", never silently alias a different present cell. With bits=5 (22 points),
+    # the absent 0-cell {32} bit-spills to the same packed word as the present edge
+    # {0,1} (pack({32}) == pack({0,1}) == 32); the accessor must raise, not return {0,1}.
+    fat = oin.vr_filtration(np.ascontiguousarray(np.random.default_rng(0).random((40, 3))),
+                            max_dim=0, max_diameter=10.0, packed=False)
+    uid32 = next(fat.cell(i).uid for i in range(fat.size())
+                 if list(fat.cell(i).vertices) == [32])
+
+    # tight cluster so every pairwise edge (incl. {0,1}) is present in the packed filtration
+    tight = np.ascontiguousarray(np.random.default_rng(1).random((22, 3)) * 0.001)
+    fp = oin.vr_filtration(tight, max_dim=2, max_diameter=10.0, packed=True)
+    assert type(fp).__name__ == "PackedSimplexFiltration_64"
+    assert all(fp.cell(i).uid != uid32 for i in range(fp.size()))  # {32} genuinely absent
+    with pytest.raises((IndexError, KeyError)):
+        fp.sorted_id_by_uid(uid32)
+    with pytest.raises((IndexError, KeyError)):
+        fp.cell_by_uid(uid32)
+
+
+def test_packed_vr_uid_accessors_round_trip_128_tier():
+    # the 128-bit tier exercises the unsigned __int128 Word re-pack + __int128 hash lookup
+    rng = np.random.default_rng(7)
+    cluster = rng.random((6, 3)) * 0.01
+    far = np.stack([np.arange(1094) * 100.0 + 100.0,
+                    np.zeros(1094), np.zeros(1094)], axis=1)
+    pts = np.ascontiguousarray(np.vstack([cluster, far]))
+    fp = oin.vr_filtration(pts, max_dim=5, max_diameter=0.5, packed=True)
+    assert type(fp).__name__ == "PackedSimplexFiltration_128"
+    _check_uid_round_trip(fp)
+
+
 def test_packed_vr_tier_selection():
     # 64-bit tier for small clouds; 128-bit when a (dim+1)*bits field-set exceeds 64;
     # None (fat fallback) when it exceeds 128.

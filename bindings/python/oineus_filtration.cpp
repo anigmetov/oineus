@@ -646,10 +646,18 @@ void init_oineus_filtration(nb::module_& m)
             .def_prop_ro("dim_last", &FrFiltration_##DIM##D::dims_last) \
             .def("sorting_permutation", &FrFiltration_##DIM##D::get_sorting_permutation) \
             .def("inv_sorting_permutation", &FrFiltration_##DIM##D::get_inv_sorting_permutation) \
-            .def("value_by_uid", &FrFiltration_##DIM##D::value_by_uid, nb::arg("uid")) \
-            .def("sorted_id_by_uid", &FrFiltration_##DIM##D::get_sorted_id_by_uid, nb::arg("uid")) \
-            .def("cell_by_uid", [](const FrFiltration_##DIM##D& fil, oin_int uid) { \
-                    return fatten_simplex_from_fr<oin_int, DIM, oin_real>(fil.get_cell_by_uid(uid), fil.geometry()); \
+            /* uid accessors take the universal COMBINATORIAL uid that a (materialized fat) */ \
+            /* cell carries; fr_slim_uid_from_comb_uid decodes it to vertices and re-keys it */ \
+            /* into the slim (anchor,type) uid that this filtration is indexed by. */ \
+            .def("value_by_uid", [](const FrFiltration_##DIM##D& fil, unsigned __int128 uid) { \
+                    return fil.value_by_uid(fr_slim_uid_from_comb_uid<oin_int, DIM>(fil.geometry(), uid)); \
+                }, nb::arg("uid")) \
+            .def("sorted_id_by_uid", [](const FrFiltration_##DIM##D& fil, unsigned __int128 uid) { \
+                    return fil.get_sorted_id_by_uid(fr_slim_uid_from_comb_uid<oin_int, DIM>(fil.geometry(), uid)); \
+                }, nb::arg("uid")) \
+            .def("cell_by_uid", [](const FrFiltration_##DIM##D& fil, unsigned __int128 uid) { \
+                    oin_int slim_uid = fr_slim_uid_from_comb_uid<oin_int, DIM>(fil.geometry(), uid); \
+                    return fatten_simplex_from_fr<oin_int, DIM, oin_real>(fil.get_cell_by_uid(slim_uid), fil.geometry()); \
                 }, nb::arg("uid")) \
             .def("boundary_matrix", &FrFiltration_##DIM##D::boundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
             .def("boundary_matrix_in_dimension", &FrFiltration_##DIM##D::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
@@ -722,14 +730,15 @@ void init_oineus_filtration(nb::module_& m)
     // no PackedGeom, so there is no public ctor-from-cells. One macro, two word tiers
     // (64-bit, 128-bit). Differences from the Freudenthal macro: the geometry is a
     // trivially-copyable int (pickle stores the bits directly, no geometry rebuild), and
-    // the uid-keyed accessors (value_by_uid/sorted_id_by_uid/cell_by_uid) plus the
-    // uid_to_sorted_id pickle field are omitted. (unsigned __int128 itself crosses the
-    // Python boundary fine via uid128_caster.h.) The accessors are omitted because the
-    // packed-Word uid is meaningless to a Python caller: cells materialize to the fat
-    // Simplex, which carries the 128-bit COMBINATORIAL uid, not the packed Word -- so a
-    // caller can never supply a valid packed uid. The uid_to_sorted_id map is dropped
-    // from the pickle simply because rebuild_uid_index_ regenerates the hash on unpickle
-    // (BitPacked is UsesDenseUidIndex=false), making the stored map redundant.
+    // the uid_to_sorted_id pickle field is omitted. The uid-keyed accessors
+    // (value_by_uid/sorted_id_by_uid/cell_by_uid) take the universal COMBINATORIAL uid
+    // (the 128-bit identity a materialized fat Simplex carries -- it crosses the Python
+    // boundary via uid128_caster.h): packed_word_uid_from_comb_uid decodes it to vertices
+    // and re-packs them into the internal Word uid for the hash lookup, so the caller uses
+    // the same uid they read off a cell (matching the cube/Freudenthal/fat contract). The
+    // uid_to_sorted_id map is dropped from the pickle because rebuild_uid_index_
+    // regenerates the hash on unpickle (BitPacked is UsesDenseUidIndex=false), making the
+    // stored map redundant.
     #define BIND_PACKED_FILTRATION(WORD, SUFFIX) \
         using PackedFiltration_##SUFFIX = oin::Filtration<oin::Simplex<oin_int, oin::BitPacked<oin_int, WORD>>, oin_real>; \
         using PackedFatSimplexValue_##SUFFIX = oin::CellWithValue<oin::Simplex<oin_int>, oin_real>; \
@@ -783,7 +792,18 @@ void init_oineus_filtration(nb::module_& m)
             .def("boundary_matrix", &PackedFiltration_##SUFFIX::boundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
             .def("boundary_matrix_in_dimension", &PackedFiltration_##SUFFIX::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
             .def("coboundary_matrix", &PackedFiltration_##SUFFIX::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
-            /* boundary_matrix_rel + uid-keyed accessors omitted (see header comment) */ \
+            /* boundary_matrix_rel omitted (slim wrapper has no vector boundary(geom)); */ \
+            /* uid accessors take the combinatorial uid and re-pack to the Word uid (see header) */ \
+            .def("value_by_uid", [](const PackedFiltration_##SUFFIX& fil, unsigned __int128 uid) { \
+                    return fil.value_by_uid(packed_word_uid_from_comb_uid<oin_int, WORD>(fil.geometry(), uid)); \
+                }, nb::arg("uid")) \
+            .def("sorted_id_by_uid", [](const PackedFiltration_##SUFFIX& fil, unsigned __int128 uid) { \
+                    return fil.get_sorted_id_by_uid(packed_word_uid_from_comb_uid<oin_int, WORD>(fil.geometry(), uid)); \
+                }, nb::arg("uid")) \
+            .def("cell_by_uid", [](const PackedFiltration_##SUFFIX& fil, unsigned __int128 uid) { \
+                    WORD w = packed_word_uid_from_comb_uid<oin_int, WORD>(fil.geometry(), uid); \
+                    return fatten_simplex_from_packed<oin_int, WORD, oin_real>(fil.get_cell_by_uid(w), fil.geometry()); \
+                }, nb::arg("uid")) \
             .def("star_closure", &PackedFiltration_##SUFFIX::star_closure, nb::arg("seed_sorted_ids"), nb::arg("n_threads")=1, \
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
                     "Coface up-closure (union of stars) of the given cells (sorted_ids).") \
