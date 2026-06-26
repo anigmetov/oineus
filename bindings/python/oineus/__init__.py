@@ -32,6 +32,7 @@ from ._oineus import frechet_mean as _frechet_mean_cpp
 from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D, CubeFiltration_1D
 from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, CubeFiltration_2D
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
+from ._oineus import FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D
 # Visualization helpers require matplotlib, an optional extra
 # (`pip install oineus[vis]`). When it is absent, the plot_* helpers and
 # style constants are simply unavailable; the rest of oineus works normally.
@@ -858,19 +859,38 @@ def max_distance(data: np.ndarray, from_pwdists: bool=False):
         return 1.00001 * np.sqrt(np.min(np.max(squared_distances, axis=1)))
 
 
+_FR_GRID_CLASS_BY_NDIM = {1: Grid_1D, 2: Grid_2D, 3: Grid_3D}
+
+
 def freudenthal_filtration(data: np.ndarray,
                            negate: bool=False,
                            wrap: bool=False,
                            max_dim: int = 3,
                            with_critical_vertices: bool=False,
+                           slim: bool=False,
                            n_threads: int=1):
     max_dim = min(max_dim, data.ndim)
+    # slim=True returns the compact (anchor,type) FreudenthalFiltration_ND (one shared
+    # FrGeometry, fat simplices materialized on access) for D=1,2,3 on non-wrap grids;
+    # it reduces and produces diagrams identically to the fat path but with a far
+    # smaller boundary-build footprint. It is opt-in for now because the bare
+    # oineus.TopologyOptimizer is per-cell-type and does not yet accept the slim type
+    # (oineus.diff.TopologyOptimizer does); the default flip awaits the unified
+    # optimizer facade. wrap grids and D>=4 always use the fat universal Filtration
+    # (FrGeometry rejects wrap; the slim builder is bound only for D=1,2,3).
+    use_slim = slim and (not wrap) and (1 <= data.ndim <= 3)
+    if use_slim:
+        grid = _FR_GRID_CLASS_BY_NDIM[data.ndim](data, wrap=wrap, values_on="vertices")
+        if with_critical_vertices:
+            fil, vertices = grid.freudenthal_filtration_and_critical_vertices_slim(max_dim=max_dim, negate=negate, n_threads=n_threads)
+            vertices = np.array(vertices, dtype=np.int64)
+            return fil, vertices
+        return grid.freudenthal_filtration_slim(max_dim=max_dim, negate=negate, n_threads=n_threads)
     if with_critical_vertices:
         fil, vertices = _oineus.get_freudenthal_filtration_and_crit_vertices(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
         vertices = np.array(vertices, dtype=np.int64)
         return fil, vertices
-    else:
-        return _oineus.get_freudenthal_filtration(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
+    return _oineus.get_freudenthal_filtration(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
 
 
 def vr_filtration(data: np.ndarray,
@@ -1272,6 +1292,16 @@ def compute_kernel_image_cokernel_reduction(K, L, params=None, reduction_params=
     # KICR class is templatized by cell type in C++
     # different instantiations have different class names in Python
     # figure out the right one by type
+    # A slim FreudenthalFiltration materializes fat Simplex cells, so K[0] is an
+    # _oineus.Simplex and would slip past the isinstance check below into the
+    # Simplex-only KerImCokReduced ctor (a different C++ filtration type) with a
+    # cryptic nanobind error. KICR is not wired for the slim cell yet -- reject it
+    # up front with a clear message (use the fat path: slim=False / default).
+    if isinstance(K, (FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D)):
+        raise NotImplementedError(
+            "kernel/image/cokernel is not supported for the slim FreudenthalFiltration; "
+            "rebuild with the fat path (freudenthal_filtration(..., slim=False))")
+
     if isinstance(K[0], _oineus.Simplex):
         KICR_Class = _oineus.KerImCokReduced
     elif isinstance(K[0], _oineus.ProdSimplex):
@@ -1406,6 +1436,9 @@ _PUBLIC_API_NAMES = [
     "CombinatorialCube_3D",
     "Cube_3D",
     "CubeFiltration_3D",
+    "FreudenthalFiltration_1D",
+    "FreudenthalFiltration_2D",
+    "FreudenthalFiltration_3D",
     "DiagramMatching",
     "BottleneckMatching",
     "InfKind",

@@ -144,6 +144,52 @@ fatten_all(const oin::Filtration<oin::Cube<Int, D>, Real>& fil)
     return fat;
 }
 
+// The slim Freudenthal filtration stores compact (anchor,type) cells
+// (Simplex<Int, FreudenthalAnchorType>) + one shared FrGeometry. As with cubes,
+// Python expects a self-contained fat cell -- here a fat Simplex<Int>, because a
+// Freudenthal cell IS the simplex on its grid vertices (FrGeometry::vertices_of).
+// These helpers convert at the binding boundary: filtration accessors materialize fat
+// simplices (fatten_simplex_from_fr + the filtration's geometry()), and the
+// constructor/unpickle slim them back (slim_simplex_from_fr). The pickle stores the
+// GridDomain (a bound type) rather than the unbound FrGeometry and rebuilds the
+// geometry on restore.
+template<class Int, unsigned D, class Real>
+oin::CellWithValue<oin::Simplex<Int>, Real>
+fatten_simplex_from_fr(const oin::CellWithValue<oin::Simplex<Int, oin::FreudenthalAnchorType<Int, D>>, Real>& slim,
+                       const oin::FrGeometry<Int, D>& geom)
+{
+    auto vids = slim.get_cell().vertices(geom);  // sorted fat grid-vertex ids
+    typename oin::Simplex<Int>::IdxVector iv(vids.begin(), vids.end());
+    oin::Simplex<Int> sigma(slim.get_cell().get_id(), iv);
+    oin::CellWithValue<oin::Simplex<Int>, Real> fat(std::move(sigma), slim.get_value());
+    fat.set_sorted_id(slim.get_sorted_id());
+    return fat;
+}
+
+template<class Int, unsigned D, class Real>
+oin::CellWithValue<oin::Simplex<Int, oin::FreudenthalAnchorType<Int, D>>, Real>
+slim_simplex_from_fr(const oin::CellWithValue<oin::Simplex<Int>, Real>& fat, const oin::FrGeometry<Int, D>& geom)
+{
+    std::vector<Int> vids(fat.get_cell().get_vertices().begin(), fat.get_cell().get_vertices().end());
+    Int uid = geom.uid_of_vertices(vids);
+    oin::Simplex<Int, oin::FreudenthalAnchorType<Int, D>> slim_cell(
+            oin::FreudenthalAnchorType<Int, D>(uid, geom.dim_of_uid(uid)), fat.get_cell().get_id());
+    oin::CellWithValue<oin::Simplex<Int, oin::FreudenthalAnchorType<Int, D>>, Real> slim(slim_cell, fat.get_value());
+    slim.set_sorted_id(fat.get_sorted_id());
+    return slim;
+}
+
+template<class Int, unsigned D, class Real>
+std::vector<oin::CellWithValue<oin::Simplex<Int>, Real>>
+fatten_all_fr(const oin::Filtration<oin::Simplex<Int, oin::FreudenthalAnchorType<Int, D>>, Real>& fil)
+{
+    std::vector<oin::CellWithValue<oin::Simplex<Int>, Real>> fat;
+    fat.reserve(fil.size());
+    for (const auto& cv : fil.cells())
+        fat.push_back(fatten_simplex_from_fr<Int, D, Real>(cv, fil.geometry()));
+    return fat;
+}
+
 template<class Real>
 class PyOineusDiagrams {
 public:

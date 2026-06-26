@@ -92,8 +92,10 @@ else()
             diff-partial-u-elz-assert
             diff-review-bugfixes
             diff-update-is-lazy
+            diff-fr-slim
             diff-wass
             fr-dgm-random
+            fr-dgm-slim
             fr-dgm-vertebra
             frechet
             ind-match

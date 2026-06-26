@@ -262,6 +262,10 @@ void init_oineus_cells(nb::module_& m)
                   nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1) \
             .def("freudenthal_filtration_and_critical_vertices", &Grid_##DIM##D::freudenthal_filtration_and_critical_vertices, \
                   nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1) \
+            .def("freudenthal_filtration_slim", &Grid_##DIM##D::freudenthal_filtration_slim, \
+                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1) \
+            .def("freudenthal_filtration_and_critical_vertices_slim", &Grid_##DIM##D::freudenthal_filtration_and_critical_vertices_slim, \
+                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1) \
 
 
     BIND_GRID(1);

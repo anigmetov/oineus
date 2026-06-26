@@ -100,8 +100,18 @@ public:
                 auto& col = result[codomain_idx];
                 col.reserve(d + 1);
 
-                for(const auto& tau_vertices: sigma.boundary(fil_codomain_.geometry())) {
-                    col.push_back(fil_domain_.get_sorted_id_by_uid(tau_vertices));
+                // Packed cells (Cube, slim Freudenthal) expose only the alloc-elided
+                // boundary_into; the slim Simplex<Int,Enc> wrapper has no vector
+                // boundary(geom). Emit facet uids straight from the geometry tables and
+                // map each to its domain sorted_id, matching the vector path below.
+                auto emit = [this, &col](const typename Cell::Uid& fuid) {
+                    col.push_back(fil_domain_.get_sorted_id_by_uid(fuid));
+                };
+                if constexpr (HasPackedBoundary<Cell>::value) {
+                    sigma.get_cell().boundary_into(fil_codomain_.geometry(), emit);
+                } else {
+                    for(const auto& tau_vertices: sigma.boundary(fil_codomain_.geometry()))
+                        emit(tau_vertices);
                 }
 
                 std::sort(col.begin(), col.end());

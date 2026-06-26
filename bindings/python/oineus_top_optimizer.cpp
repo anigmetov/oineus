@@ -318,6 +318,9 @@ void init_oineus_top_optimizer(nb::module_& m)
     using Cube_1D = oin::Cube<oin_int, 1>;
     using Cube_2D = oin::Cube<oin_int, 2>;
     using Cube_3D = oin::Cube<oin_int, 3>;
+    using FrCell_1D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 1>>;
+    using FrCell_2D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 2>>;
+    using FrCell_3D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 3>>;
 
     nb::enum_<oin::UStrategy>(m, "UStrategy",
             "U-computation strategy used by the crit-sets backward in "
@@ -332,6 +335,9 @@ void init_oineus_top_optimizer(nb::module_& m)
     init_oineus_top_optimizer_class<Cube_1D>(m, "TopologyOptimizerCube_1D", "IndicesValuesCube_1D");
     init_oineus_top_optimizer_class<Cube_2D>(m, "TopologyOptimizerCube_2D", "IndicesValuesCube_2D");
     init_oineus_top_optimizer_class<Cube_3D>(m, "TopologyOptimizerCube_3D", "IndicesValuesCube_3D");
+    init_oineus_top_optimizer_class<FrCell_1D>(m, "TopologyOptimizerFreudenthal_1D", "IndicesValuesFreudenthal_1D");
+    init_oineus_top_optimizer_class<FrCell_2D>(m, "TopologyOptimizerFreudenthal_2D", "IndicesValuesFreudenthal_2D");
+    init_oineus_top_optimizer_class<FrCell_3D>(m, "TopologyOptimizerFreudenthal_3D", "IndicesValuesFreudenthal_3D");
 
     // induced matching
     m.def("get_induced_matching", &oin::get_induced_matching<Simp, oin_real>,
@@ -363,6 +369,27 @@ void init_oineus_top_optimizer(nb::module_& m)
            nb::arg("n_threads")=1);
 
     m.def("get_induced_matching", &oin::get_induced_matching<Cube_3D, oin_real>,
+           "Compute induced matching for two filtrations of the same complex",
+           nb::arg("included_filtration"),
+           nb::arg("containing_filtration"),
+           nb::arg("dim")=static_cast<dim_type >(-1),
+           nb::arg("n_threads")=1);
+
+    m.def("get_induced_matching", &oin::get_induced_matching<FrCell_1D, oin_real>,
+           "Compute induced matching for two filtrations of the same complex",
+           nb::arg("included_filtration"),
+           nb::arg("containing_filtration"),
+           nb::arg("dim")=static_cast<dim_type >(-1),
+           nb::arg("n_threads")=1);
+
+    m.def("get_induced_matching", &oin::get_induced_matching<FrCell_2D, oin_real>,
+           "Compute induced matching for two filtrations of the same complex",
+           nb::arg("included_filtration"),
+           nb::arg("containing_filtration"),
+           nb::arg("dim")=static_cast<dim_type >(-1),
+           nb::arg("n_threads")=1);
+
+    m.def("get_induced_matching", &oin::get_induced_matching<FrCell_3D, oin_real>,
            "Compute induced matching for two filtrations of the same complex",
            nb::arg("included_filtration"),
            nb::arg("containing_filtration"),

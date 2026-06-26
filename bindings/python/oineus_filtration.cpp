@@ -486,6 +486,134 @@ void init_oineus_filtration(nb::module_& m)
 
     #undef BIND_CUBE_FILTRATION
 
+    // ============ FreudenthalFiltration (slim) bindings ============
+    // The slim Freudenthal filtration stores compact (anchor,type) Simplex cells +
+    // one shared FrGeometry; every cell-returning accessor materializes the fat
+    // Python simplex (CellWithValue<Simplex<oin_int>> == the "Simplex" class) via
+    // fatten_simplex_from_fr + the filtration's geometry(). It is factory-produced
+    // (Grid.freudenthal_filtration_slim / oineus.freudenthal_filtration), so there is
+    // no public ctor-from-cells: a fat simplex carries no grid domain, so the shared
+    // FrGeometry cannot be recovered from cells alone. Pickle stores the GridDomain
+    // (a bound type, unlike FrGeometry) and rebuilds the geometry + slims the cells
+    // back on restore.
+    #define BIND_FR_FILTRATION(DIM) \
+        using FrFiltration_##DIM##D = oin::Filtration<oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, DIM>>, oin_real>; \
+        using FatSimplexValue_##DIM##D = oin::CellWithValue<oin::Simplex<oin_int>, oin_real>; \
+        using FrFiltration_##DIM##DStateTuple = std::tuple<decltype(FrFiltration_##DIM##D::negate_), \
+                                                std::vector<FatSimplexValue_##DIM##D>, \
+                                                decltype(FrFiltration_##DIM##D::is_subfiltration_), \
+                                                decltype(FrFiltration_##DIM##D::uid_to_sorted_id), \
+                                                decltype(FrFiltration_##DIM##D::id_to_sorted_id_), \
+                                                decltype(FrFiltration_##DIM##D::sorted_id_to_id_), \
+                                                decltype(FrFiltration_##DIM##D::dim_first_), \
+                                                decltype(FrFiltration_##DIM##D::dim_last_), \
+                                                decltype(FrFiltration_##DIM##D::kind_), \
+                                                oin::GridDomain<oin_int, DIM> \
+                                               >; \
+        nb::class_<FrFiltration_##DIM##D>(m, "FreudenthalFiltration_" #DIM "D") \
+            .def("__len__", &FrFiltration_##DIM##D::size) \
+            .def("__iter__", [](const FrFiltration_##DIM##D& fil) -> nb::object { \
+                    nb::object lst = nb::cast(fatten_all_fr<oin_int, DIM, oin_real>(fil)); \
+                    return lst.attr("__iter__")(); \
+                }) \
+            .def("__getitem__", [](const FrFiltration_##DIM##D& fil, int i) { \
+                    if (i < 0) i = fil.size() + i; \
+                    return fatten_simplex_from_fr<oin_int, DIM, oin_real>(fil.get_cell(i), fil.geometry()); \
+                }) \
+            .def_prop_ro("negate", &FrFiltration_##DIM##D::negate) \
+            .def("infinity", &FrFiltration_##DIM##D::infinity, "filtration-order +inf") \
+            .def("neg_infinity", &FrFiltration_##DIM##D::neg_infinity, "filtration-order -inf") \
+            .def("fil_min", &FrFiltration_##DIM##D::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min") \
+            .def("fil_max", &FrFiltration_##DIM##D::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max") \
+            .def_prop_ro("max_dim", &FrFiltration_##DIM##D::max_dim, "maximal dimension of a cell in filtration") \
+            .def("cells", [](const FrFiltration_##DIM##D& fil) { return fatten_all_fr<oin_int, DIM, oin_real>(fil); }, \
+                    "copy of all cells in filtration order") \
+            .def("simplices", [](const FrFiltration_##DIM##D& fil) { return fatten_all_fr<oin_int, DIM, oin_real>(fil); }, \
+                    "copy of all cells in filtration order") \
+            .def("size", &FrFiltration_##DIM##D::size, "number of cells in filtration") \
+            .def("size_in_dimension", &FrFiltration_##DIM##D::size_in_dimension, nb::arg("dim"), "number of cells of dimension dim") \
+            .def("n_vertices", &FrFiltration_##DIM##D::n_vertices) \
+            .def("cell_value_by_sorted_id", &FrFiltration_##DIM##D::value_by_sorted_id, nb::arg("sorted_id")) \
+            .def("simplex_value_by_sorted_id", &FrFiltration_##DIM##D::value_by_sorted_id, nb::arg("sorted_id")) \
+            .def("id_by_sorted_id", &FrFiltration_##DIM##D::get_id_by_sorted_id, nb::arg("sorted_id")) \
+            .def("sorted_id_by_id", &FrFiltration_##DIM##D::get_sorted_id, nb::arg("id")) \
+            .def("cell", [](const FrFiltration_##DIM##D& fil, size_t i) { \
+                    return fatten_simplex_from_fr<oin_int, DIM, oin_real>(fil.get_cell(i), fil.geometry()); \
+                }, nb::arg("i")) \
+            .def("simplex", [](const FrFiltration_##DIM##D& fil, size_t i) { \
+                    return fatten_simplex_from_fr<oin_int, DIM, oin_real>(fil.get_cell(i), fil.geometry()); \
+                }, nb::arg("i")) \
+            .def_prop_ro("dim_first", &FrFiltration_##DIM##D::dims_first) \
+            .def_prop_ro("dim_last", &FrFiltration_##DIM##D::dims_last) \
+            .def("sorting_permutation", &FrFiltration_##DIM##D::get_sorting_permutation) \
+            .def("inv_sorting_permutation", &FrFiltration_##DIM##D::get_inv_sorting_permutation) \
+            .def("value_by_uid", &FrFiltration_##DIM##D::value_by_uid, nb::arg("uid")) \
+            .def("sorted_id_by_uid", &FrFiltration_##DIM##D::get_sorted_id_by_uid, nb::arg("uid")) \
+            .def("cell_by_uid", [](const FrFiltration_##DIM##D& fil, oin_int uid) { \
+                    return fatten_simplex_from_fr<oin_int, DIM, oin_real>(fil.get_cell_by_uid(uid), fil.geometry()); \
+                }, nb::arg("uid")) \
+            .def("boundary_matrix", &FrFiltration_##DIM##D::boundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
+            .def("boundary_matrix_in_dimension", &FrFiltration_##DIM##D::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
+            .def("coboundary_matrix", &FrFiltration_##DIM##D::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
+            /* boundary_matrix_rel is intentionally omitted: its relative path uses the */ \
+            /* vector boundary(geom), which the slim Simplex<Int,Enc> wrapper does not */ \
+            /* expose (only boundary_into). Relative homology with slim Freudenthal cells */ \
+            /* awaits the buffer (_into) conversion of that path (deferred seam). */ \
+            .def("star_closure", &FrFiltration_##DIM##D::star_closure, nb::arg("seed_sorted_ids"), nb::arg("n_threads")=1, \
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
+                    "Coface up-closure (union of stars) of the given cells (sorted_ids).") \
+            .def("is_up_closed", &FrFiltration_##DIM##D::is_up_closed, nb::arg("cells"), nb::arg("n_threads")=1, \
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
+                    "True if the cells (sorted_ids) are closed under cofaces.") \
+            .def("without_cells", &FrFiltration_##DIM##D::without_cells, nb::arg("cells_to_remove"), nb::rv_policy::move, \
+                    "Subfiltration with the given cells (sorted_ids) removed; survivors keep order.") \
+            .def("reset_ids_to_sorted_ids", &FrFiltration_##DIM##D::reset_ids_to_sorted_ids) \
+            .def("set_values", &FrFiltration_##DIM##D::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
+            .def(nb::self == nb::self) \
+            .def(nb::self != nb::self) \
+            .def("__repr__", [](const FrFiltration_##DIM##D& fil) { \
+                    std::stringstream ss; \
+                    ss << fil; \
+                    return ss.str(); \
+                }) \
+            .def_prop_rw("kind", &FrFiltration_##DIM##D::kind, &FrFiltration_##DIM##D::set_kind, \
+                "FiltrationKind tag set by the constructor that built this filtration " \
+                "(or User for hand-built ones).") \
+            .def("__getstate__", [](const FrFiltration_##DIM##D& fil) -> FrFiltration_##DIM##DStateTuple { \
+                      auto fat = fatten_all_fr<oin_int, DIM, oin_real>(fil); \
+                      return std::make_tuple(fil.negate_, std::move(fat), fil.is_subfiltration_, \
+                          fil.uid_to_sorted_id, fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_, \
+                          fil.kind_, fil.geometry_.domain); \
+                    }) \
+            .def("__setstate__", [](FrFiltration_##DIM##D& fil, const FrFiltration_##DIM##DStateTuple& t) { \
+                new (&fil) FrFiltration_##DIM##D(); \
+                fil.negate_ = std::get<0>(t); \
+                fil.is_subfiltration_ = std::get<2>(t); \
+                fil.uid_to_sorted_id = std::get<3>(t); \
+                fil.id_to_sorted_id_ = std::get<4>(t); \
+                fil.sorted_id_to_id_ = std::get<5>(t); \
+                fil.dim_first_ = std::get<6>(t); \
+                fil.dim_last_ = std::get<7>(t); \
+                fil.kind_ = std::get<8>(t); \
+                /* FrGeometry is not picklable; rebuild it from the stored GridDomain, */ \
+                /* then slim the fat cells back against it and rebuild the flat uid index */ \
+                oin::FrGeometry<oin_int, DIM> frgeom(std::get<9>(t)); \
+                fil.set_geometry(frgeom); \
+                const auto& fat = std::get<1>(t); \
+                typename FrFiltration_##DIM##D::CellVector slim; \
+                slim.reserve(fat.size()); \
+                for (const auto& fc : fat) slim.push_back(slim_simplex_from_fr<oin_int, DIM, oin_real>(fc, frgeom)); \
+                fil.cells_ = std::move(slim); \
+                fil.rebuild_uid_index_(); \
+            }) \
+
+
+    BIND_FR_FILTRATION(1);
+    BIND_FR_FILTRATION(2);
+    BIND_FR_FILTRATION(3);
+
+    #undef BIND_FR_FILTRATION
+
     m.def("_mapping_cylinder",
           [](const Filtration& fil_domain, const Filtration& fil_codomain,
              const Simplex& v_domain, const Simplex& v_codomain,
@@ -527,5 +655,10 @@ void init_oineus_filtration(nb::module_& m)
     // helper for differentiable filtration
     m.def("_min_filtration_with_indices", &oin::min_filtration_with_indices<Simplex, oin_real>, nb::arg("fil_1"), nb::arg("fil_2"), "return a tuple (filtration, inds_1, inds_2) where each simplex has minimal value from fil_1, fil_2 and inds_1, inds_2 are its indices in fil_1, fil_2");
     m.def("_min_filtration_with_indices", &oin::min_filtration_with_indices<ProdSimplex, oin_real>, nb::arg("fil_1"), nb::arg("fil_2"), "return a tuple (filtration, inds_1, inds_2) where each simplex has minimal value from fil_1, fil_2 and inds_1, inds_2 are its indices in fil_1, fil_2");
+    // No slim FreudenthalFiltration overload: oineus.diff.min_filtration keys the
+    // result back into the source filtrations by the materialized fat cell's
+    // combinatorial uid, which a slim filtration (keyed by the (anchor,type) uid)
+    // cannot resolve. Wiring it awaits the unified uid contract; until then
+    // min_filtration over slim filtrations fails cleanly at overload resolution.
 
 }
