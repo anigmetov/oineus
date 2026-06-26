@@ -816,4 +816,26 @@ public:
 	}
 
 };
+
+// Concise human-readable summary: the complex sizes, max dimension, and the point count
+// of each diagram family that was requested (kernel / image / cokernel). The full reduced
+// triples and reindexing tables are omitted -- this is the pretty (operator<<) form.
+template<typename Cell, typename Real_, int P>
+std::ostream& operator<<(std::ostream& out, const KerImCokReduced<Cell, Real_, P>& kicr)
+{
+    using KICR = KerImCokReduced<Cell, Real_, P>;
+    auto n_points = [](const typename KICR::Dgms& dgms) {
+        size_t n = 0;
+        for(size_t d = 0; d < dgms.n_dims(); ++d)
+            n += dgms[d].size();
+        return n;
+    };
+    out << "KerImCokReduced(max_dim=" << kicr.max_dim_
+        << ", |K|=" << kicr.fil_K_.size() << ", |L|=" << kicr.fil_L_.size();
+    if (kicr.params_.kernel)   out << ", kernel=" << n_points(kicr.ker_diagrams_) << " pts";
+    if (kicr.params_.image)    out << ", image=" << n_points(kicr.im_diagrams_) << " pts";
+    if (kicr.params_.cokernel) out << ", cokernel=" << n_points(kicr.cok_diagrams_) << " pts";
+    out << ")";
+    return out;
+}
 } // namespace oineus

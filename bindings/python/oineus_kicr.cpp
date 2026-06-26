@@ -94,6 +94,8 @@ void init_oineus_kicr(nb::module_& m)
             .def_rw("decomposition_im", &KerImCokRedSimplex::dcmp_im_)
             .def_rw("decomposition_ker", &KerImCokRedSimplex::dcmp_ker_)
             .def_rw("decomposition_cok", &KerImCokRedSimplex::dcmp_cok_)
+            .def("__str__", [](const KerImCokRedSimplex& self) { std::stringstream ss; ss << self; return ss.str(); })
+            .def("__repr__", [](const KerImCokRedSimplex& self) { std::stringstream ss; ss << self; return ss.str(); })
             ;
     bind_kicr_pickle_and_equality(kicr_simplex);
 
@@ -113,6 +115,8 @@ void init_oineus_kicr(nb::module_& m)
             .def_rw("decomposition_cok", &KerImCokRedProdSimplex::dcmp_cok_)
             .def_rw("fil_K", &KerImCokRedProdSimplex::fil_K_)
             .def_rw("fil_L", &KerImCokRedProdSimplex::fil_L_)
+            .def("__str__", [](const KerImCokRedProdSimplex& self) { std::stringstream ss; ss << self; return ss.str(); })
+            .def("__repr__", [](const KerImCokRedProdSimplex& self) { std::stringstream ss; ss << self; return ss.str(); })
             ;
     bind_kicr_pickle_and_equality(kicr_prod);
 }

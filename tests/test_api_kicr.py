@@ -72,6 +72,13 @@ def test_kicr_reduced_simplex_api():
     _ = kicr.decomposition_ker
     _ = kicr.decomposition_cok
 
+    # printable (CLAUDE.md convention): a concise human-readable summary, not the
+    # default <object at 0x...> repr
+    for s in (repr(kicr), str(kicr)):
+        assert s.startswith("KerImCokReduced(")
+        assert "max_dim=" in s and "kernel=" in s
+        assert "0x" not in s
+
 
 def test_kicr_reduced_prod_api():
     k, l = _make_prod_segment_inclusion_filtrations()
@@ -92,6 +99,10 @@ def test_kicr_reduced_prod_api():
     _ = kicr.decomposition_im
     _ = kicr.decomposition_ker
     _ = kicr.decomposition_cok
+
+    for s in (repr(kicr), str(kicr)):
+        assert s.startswith("KerImCokReduced(")
+        assert "0x" not in s
 
 
 if __name__ == "__main__":
