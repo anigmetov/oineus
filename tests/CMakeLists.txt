@@ -103,6 +103,7 @@ else()
             interrupt
             kicr
             match-rv-policy
+            packed-alpha
             packed-vr
             parallel-dgm
             pickle

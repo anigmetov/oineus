@@ -1127,6 +1127,7 @@ def alpha_filtration(points: np.ndarray,
                      compute_bounding_box: bool=True,
                      bbox_min=None,
                      bbox_max=None,
+                     packed: bool=False,
                      n_threads: int=1):
     """Build an alpha-shape filtration from a 2D or 3D point cloud.
 
@@ -1200,7 +1201,15 @@ def alpha_filtration(points: np.ndarray,
             # arrays, avoiding one Python tuple per simplex. Same combinatorics
             # and values as fill_alpha_shapes.
             verts_by_dim, vals_by_dim = diode.fill_alpha_shapes_arrays(points, exact=exact)
-            fil = _oineus._filtration_from_arrays(verts_by_dim, vals_by_dim, n_threads=n_threads)
+            # packed=True returns a bit-packed PackedSimplexFiltration when the vertex
+            # ids fit a 64/128-bit word (only this fast array path supports it; the
+            # weighted/periodic/list fallbacks below stay fat). Reduces and produces
+            # diagrams identically to fat, with a smaller footprint.
+            suffix = _vr_packed_word_suffix(points.shape[0], points.shape[1]) if packed else None
+            if suffix is not None:
+                fil = getattr(_oineus, "_filtration_from_arrays_packed" + suffix)(verts_by_dim, vals_by_dim, n_threads=n_threads)
+            else:
+                fil = _oineus._filtration_from_arrays(verts_by_dim, vals_by_dim, n_threads=n_threads)
             fil.kind = _oineus.FiltrationKind.Alpha
             return fil
         else:

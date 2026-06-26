@@ -208,6 +208,105 @@ void init_oineus_filtration(nb::module_& m)
     // arrays (0 is used when omitted, e.g. for combinatorics-only Delaunay whose
     // consumer recomputes the values). No deduplication -- intended for
     // non-periodic input, which has no duplicate simplices.
+    // Bit-packed variant of the diode-array builder (below): emits
+    // Simplex<oin_int, BitPacked<oin_int, Word>> cells with a shared PackedGeom{bits},
+    // bits chosen to hold the largest vertex id. Same validation + sort as the fat
+    // builder; covers alpha / Cech-Delaunay / weak-alpha (all funnel through here).
+    // Templated on Word so one definition serves both packed tiers; bound below as
+    // _filtration_from_arrays_packed64 / _packed128.
+    auto make_filtration_from_arrays_packed = [](auto word_tag) {
+        using Word = typename decltype(word_tag)::type;
+        using PackedCell = oin::Simplex<oin_int, oin::BitPacked<oin_int, Word>>;
+        using PackedFil = oin::Filtration<PackedCell, oin_real>;
+        return [](nb::list verts_by_dim, nb::object vals_by_dim, int n_threads) -> PackedFil {
+            using VertArr = nb::ndarray<oin_int,  nb::ndim<2>, nb::c_contig, nb::device::cpu, nb::ro>;
+            using ValArr  = nb::ndarray<oin_real, nb::ndim<1>, nb::c_contig, nb::device::cpu, nb::ro>;
+
+            const bool have_vals = !vals_by_dim.is_none();
+            const size_t n_dims = nb::len(verts_by_dim);
+
+            nb::list vals_list;
+            if (have_vals) {
+                vals_list = nb::cast<nb::list>(vals_by_dim);
+                if (nb::len(vals_list) != n_dims)
+                    throw std::runtime_error("_filtration_from_arrays_packed: vals_by_dim must have the same length as verts_by_dim");
+            }
+
+            std::vector<VertArr> vert_arrs;
+            std::vector<ValArr> val_arrs;
+            vert_arrs.reserve(n_dims);
+            if (have_vals) val_arrs.reserve(n_dims);
+            for (size_t d = 0; d < n_dims; ++d) {
+                VertArr va = nb::cast<VertArr>(verts_by_dim[d]);
+                if (static_cast<size_t>(va.shape(1)) != d + 1)
+                    throw std::runtime_error("_filtration_from_arrays_packed: verts_by_dim[" + std::to_string(d)
+                        + "] must have " + std::to_string(d + 1) + " columns");
+                vert_arrs.push_back(va);
+                if (have_vals) {
+                    ValArr vala = nb::cast<ValArr>(vals_list[d]);
+                    if (vala.shape(0) != va.shape(0))
+                        throw std::runtime_error("_filtration_from_arrays_packed: vals_by_dim[" + std::to_string(d)
+                            + "] length does not match verts_by_dim");
+                    val_arrs.push_back(vala);
+                }
+            }
+
+            PackedFil result;
+            {
+                oineus_python::SignalGuard guard;
+                nb::gil_scoped_release release;
+
+                // bits must hold the largest vertex id seen across all arrays
+                oin_int max_id = 0;
+                for (const auto& va : vert_arrs) {
+                    const oin_int* vp = va.data();
+                    const size_t cnt = static_cast<size_t>(va.shape(0)) * static_cast<size_t>(va.shape(1));
+                    for (size_t k = 0; k < cnt; ++k)
+                        max_id = std::max(max_id, vp[k]);
+                }
+                const int bits = oin::packed_vertex_bits(static_cast<size_t>(max_id) + 1);
+
+                typename PackedFil::CellVector cells;
+                size_t total = 0;
+                for (const auto& va : vert_arrs)
+                    total += va.shape(0);
+                cells.reserve(total);
+
+                for (size_t d = 0; d < vert_arrs.size(); ++d) {
+                    const oin_int* vp = vert_arrs[d].data();
+                    const oin_real* valp = have_vals ? val_arrs[d].data() : nullptr;
+                    const size_t n = vert_arrs[d].shape(0);
+                    const size_t w = vert_arrs[d].shape(1);
+                    for (size_t i = 0; i < n; ++i) {
+                        std::vector<oin_int> vs;
+                        vs.reserve(w);
+                        for (size_t j = 0; j < w; ++j)
+                            vs.push_back(vp[i * w + j]);
+                        if (w > 1)
+                            std::sort(vs.begin(), vs.end());
+                        cells.emplace_back(PackedCell(oin::BitPacked<oin_int, Word>(vs, bits)),
+                                           valp ? valp[i] : oin_real(0));
+                    }
+                }
+
+                result = PackedFil(std::move(cells), false, std::max(1, n_threads));
+                result.set_geometry(oin::PackedGeom{bits});
+            }
+            return result;
+        };
+    };
+
+    {
+        struct W64 { using type = std::uint64_t; };
+        struct W128 { using type = unsigned __int128; };
+        m.def("_filtration_from_arrays_packed64", make_filtration_from_arrays_packed(W64{}),
+            nb::arg("verts_by_dim"), nb::arg("vals_by_dim") = nb::none(), nb::arg("n_threads") = 1,
+            "Bit-packed (uint64) variant of _filtration_from_arrays (alpha/Delaunay).");
+        m.def("_filtration_from_arrays_packed128", make_filtration_from_arrays_packed(W128{}),
+            nb::arg("verts_by_dim"), nb::arg("vals_by_dim") = nb::none(), nb::arg("n_threads") = 1,
+            "Bit-packed (unsigned __int128) variant of _filtration_from_arrays (alpha/Delaunay).");
+    }
+
     m.def("_filtration_from_arrays",
         [](nb::list verts_by_dim, nb::object vals_by_dim, int n_threads) -> Filtration {
             using VertArr = nb::ndarray<oin_int,  nb::ndim<2>, nb::c_contig, nb::device::cpu, nb::ro>;
