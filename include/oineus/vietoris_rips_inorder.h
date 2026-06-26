@@ -8,10 +8,12 @@
 #include <cassert>
 #include <utility>
 #include <algorithm>
+#include <type_traits>
 #include <thread>
 
 #include "filtration.h"
 #include "vietoris_rips.h"
+#include "packed_simplex.h"
 #include "interrupt.h"
 
 // In-order Vietoris-Rips construction (VRE), following
@@ -224,28 +226,42 @@ void generate_cofacets(const VreFrame<Int, Real>& parent,
 // full-length edge of cells_[i] (or a (v, v) self-loop for vertex i).
 // Because cells go in already in sorted order, `edges` does not need
 // post-sort permutation either.
-template<class Int, class Real, class CompareDistFn, class CompareToDiamFn>
+// UnderCell is the stored simplicial cell type: Simplex<Int> (Fat) for the classic
+// fat filtration, or Simplex<Int, BitPacked<Int,Word>> for the bit-packed one. The
+// enumeration is identical either way -- it always works on ascending vertex lists --
+// only how each cell is STORED differs, decided by `if constexpr` on the encoding in
+// the record/add_cell sinks. `bits` is the PackedGeom field width for the packed
+// encoding (ignored for Fat).
+template<class Int, class Real, class UnderCell, class CompareDistFn, class CompareToDiamFn>
 void vre_build(Int n_points,
                dim_type max_dim,
                Real max_compare,
                const CompareDistFn& compare_dist,
                const CompareToDiamFn& compare_to_diameter,
                bool collect_edges,
-               typename Filtration<Simplex<Int>, Real>::CellVector& simplices,
+               int bits,
+               typename Filtration<UnderCell, Real>::CellVector& simplices,
                std::vector<VREdge<Int>>& edges,
                int n_threads = 1)
 {
-    using Cell = CellWithValue<Simplex<Int>, Real>;
+    using Cell = CellWithValue<UnderCell, Real>;
+    using Enc = typename UnderCell::Enc;
     // Per-layer frame buffers hold the intermediate-dimension simplices (the
     // bulk for max_dim >= 3); route their growth through jemalloc too.
     using FrameVec = std::vector<VreFrame<Int, Real>, JeAllocator<VreFrame<Int, Real>>>;
 
-    // VRE always builds vs in ascending order (see generate_cofacets), so
-    // we use the presorted Simplex ctor to skip a redundant std::sort and
-    // a redundant copy. (The non-presorted ctor takes its arg by const
-    // lvalue reference and copies before sorting in place.)
+    // Construct the stored cell from an ascending vertex list. Fat uses the presorted
+    // Simplex ctor (move, no re-sort); a packed encoding packs the ascending ids into
+    // a word with `bits` per field. `vs` is ascending by construction (generate_cofacets).
+    auto make_under = [bits](typename Simplex<Int>::IdxVector&& vs) -> UnderCell {
+        if constexpr (std::is_same_v<Enc, Fat<Int>>)
+            return UnderCell(presorted, std::move(vs));
+        else
+            return UnderCell(Enc(vs, bits));
+    };
+
     auto record = [&](typename Simplex<Int>::IdxVector vs, Real diam, VREdge<Int> e) {
-        simplices.emplace_back(Simplex<Int>(presorted, std::move(vs)), diam);
+        simplices.emplace_back(make_under(std::move(vs)), diam);
         if (collect_edges) edges.push_back(e);
     };
 
@@ -421,7 +437,7 @@ void vre_build(Int n_points,
                 auto& ce = loc_edges[static_cast<size_t>(t)];
                 auto add_cell = [&](typename Simplex<Int>::IdxVector vs, Real diam,
                                     VREdge<Int> e) {
-                    cells.emplace_back(Simplex<Int>(presorted, std::move(vs)), diam);
+                    cells.emplace_back(make_under(std::move(vs)), diam);
                     if (collect_edges) ce.push_back(e);
                 };
                 if (is_final) {
@@ -526,9 +542,9 @@ auto get_vr_filtration_inorder(const std::vector<Point<Real, D>>& points,
 
     std::vector<Cell, JeAllocator<Cell>> simplices;
     std::vector<VREdge<Int>> edges;  // unused
-    detail::vre_build<Int, Real>(static_cast<Int>(points.size()), max_dim,
+    detail::vre_build<Int, Real, Simplex<Int>>(static_cast<Int>(points.size()), max_dim,
                                  max_compare, compare_dist, compare_to_diameter,
-                                 /*collect_edges=*/false, simplices, edges, n_threads);
+                                 /*collect_edges=*/false, /*bits=*/0, simplices, edges, n_threads);
     auto fil = Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
     fil.set_kind(FiltrationKind::Vr);
     return fil;
@@ -550,9 +566,9 @@ auto get_vr_filtration_inorder(const DistMatrix<Real>& dm,
 
     std::vector<Cell, JeAllocator<Cell>> simplices;
     std::vector<VREdge<Int>> edges;  // unused
-    detail::vre_build<Int, Real>(static_cast<Int>(dm.n_points), max_dim,
+    detail::vre_build<Int, Real, Simplex<Int>>(static_cast<Int>(dm.n_points), max_dim,
                                  max_diameter, compare_dist, compare_to_diameter,
-                                 /*collect_edges=*/false, simplices, edges, n_threads);
+                                 /*collect_edges=*/false, /*bits=*/0, simplices, edges, n_threads);
     auto fil = Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
     fil.set_kind(FiltrationKind::Vr);
     return fil;
@@ -580,9 +596,9 @@ auto get_vr_filtration_and_critical_edges_inorder(
 
     std::vector<Cell, JeAllocator<Cell>> simplices;
     std::vector<VREdge<Int>> edges;
-    detail::vre_build<Int, Real>(static_cast<Int>(points.size()), max_dim,
+    detail::vre_build<Int, Real, Simplex<Int>>(static_cast<Int>(points.size()), max_dim,
                                  max_compare, compare_dist, compare_to_diameter,
-                                 /*collect_edges=*/true, simplices, edges, n_threads);
+                                 /*collect_edges=*/true, /*bits=*/0, simplices, edges, n_threads);
 
     auto fil = Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
     fil.set_kind(FiltrationKind::Vr);
@@ -606,12 +622,132 @@ auto get_vr_filtration_and_critical_edges_inorder(
 
     std::vector<Cell, JeAllocator<Cell>> simplices;
     std::vector<VREdge<Int>> edges;
-    detail::vre_build<Int, Real>(static_cast<Int>(dm.n_points), max_dim,
+    detail::vre_build<Int, Real, Simplex<Int>>(static_cast<Int>(dm.n_points), max_dim,
                                  max_diameter, compare_dist, compare_to_diameter,
-                                 /*collect_edges=*/true, simplices, edges, n_threads);
+                                 /*collect_edges=*/true, /*bits=*/0, simplices, edges, n_threads);
 
     auto fil = Filtration<Simplex<Int>, Real>(presorted, std::move(simplices), /*negate=*/false);
     fil.set_kind(FiltrationKind::Vr);
+    return std::make_pair(std::move(fil), std::move(edges));
+}
+
+// ---- Packed (bit-packed) VR builders. Same VRE enumeration, but each stored cell is
+// a Simplex<Int, BitPacked<Int,Word>> whose sorted vertex ids are packed into one Word
+// (bits = ceil(log2(n_points)) per field); the shared PackedGeom{bits} is set on the
+// filtration so the (co)boundary can unpack. The caller picks Word via
+// bit_packing_fits<Word>(n_points, max_dim); reduce/diagram are identical to the fat
+// path (BitPacked is HasDirectCoboundary=false -> antitranspose, like the fat Simplex).
+// The critical-edge VREdge array is vertex-id pairs, encoding-independent, and stays
+// aligned to the presorted cells exactly as in the fat path.
+template<class Int, class Real, class Word, std::size_t D>
+auto get_vr_filtration_packed_inorder(const std::vector<Point<Real, D>>& points,
+                                      dim_type max_dim = D,
+                                      Real max_diameter = std::numeric_limits<Real>::max(),
+                                      int n_threads = 1)
+    -> Filtration<Simplex<Int, BitPacked<Int, Word>>, Real>
+{
+    using PackedCell = Simplex<Int, BitPacked<Int, Word>>;
+    using Cell = CellWithValue<PackedCell, Real>;
+    auto compare_dist = [&](Int a, Int b) -> Real {
+        return sq_dist<Real, D>(points[a], points[b]);
+    };
+    auto compare_to_diameter = [](Real cv) -> Real { return std::sqrt(cv); };
+    const Real max_compare = (max_diameter >= std::numeric_limits<Real>::max() / 2)
+        ? std::numeric_limits<Real>::max()
+        : max_diameter * max_diameter;
+
+    const int bits = packed_vertex_bits(static_cast<size_t>(points.size()));
+    std::vector<Cell, JeAllocator<Cell>> simplices;
+    std::vector<VREdge<Int>> edges;  // unused
+    detail::vre_build<Int, Real, PackedCell>(static_cast<Int>(points.size()), max_dim,
+                                 max_compare, compare_dist, compare_to_diameter,
+                                 /*collect_edges=*/false, bits, simplices, edges, n_threads);
+    auto fil = Filtration<PackedCell, Real>(presorted, std::move(simplices), /*negate=*/false);
+    fil.set_kind(FiltrationKind::Vr);
+    fil.set_geometry(PackedGeom{bits});
+    return fil;
+}
+
+template<class Int, class Real, class Word>
+auto get_vr_filtration_packed_inorder(const DistMatrix<Real>& dm,
+                                      dim_type max_dim,
+                                      Real max_diameter = std::numeric_limits<Real>::max(),
+                                      int n_threads = 1)
+    -> Filtration<Simplex<Int, BitPacked<Int, Word>>, Real>
+{
+    using PackedCell = Simplex<Int, BitPacked<Int, Word>>;
+    using Cell = CellWithValue<PackedCell, Real>;
+    auto compare_dist = [&](Int a, Int b) -> Real {
+        return dm.get_distance(a, b);
+    };
+    auto compare_to_diameter = [](Real cv) -> Real { return cv; };
+
+    const int bits = packed_vertex_bits(static_cast<size_t>(dm.n_points));
+    std::vector<Cell, JeAllocator<Cell>> simplices;
+    std::vector<VREdge<Int>> edges;  // unused
+    detail::vre_build<Int, Real, PackedCell>(static_cast<Int>(dm.n_points), max_dim,
+                                 max_diameter, compare_dist, compare_to_diameter,
+                                 /*collect_edges=*/false, bits, simplices, edges, n_threads);
+    auto fil = Filtration<PackedCell, Real>(presorted, std::move(simplices), /*negate=*/false);
+    fil.set_kind(FiltrationKind::Vr);
+    fil.set_geometry(PackedGeom{bits});
+    return fil;
+}
+
+template<class Int, class Real, class Word, std::size_t D>
+auto get_vr_filtration_and_critical_edges_packed_inorder(
+        const std::vector<Point<Real, D>>& points,
+        dim_type max_dim = D,
+        Real max_diameter = std::numeric_limits<Real>::max(),
+        int n_threads = 1)
+    -> std::pair<Filtration<Simplex<Int, BitPacked<Int, Word>>, Real>, std::vector<VREdge<Int>>>
+{
+    using PackedCell = Simplex<Int, BitPacked<Int, Word>>;
+    using Cell = CellWithValue<PackedCell, Real>;
+    auto compare_dist = [&](Int a, Int b) -> Real {
+        return sq_dist<Real, D>(points[a], points[b]);
+    };
+    auto compare_to_diameter = [](Real cv) -> Real { return std::sqrt(cv); };
+    const Real max_compare = (max_diameter >= std::numeric_limits<Real>::max() / 2)
+        ? std::numeric_limits<Real>::max()
+        : max_diameter * max_diameter;
+
+    const int bits = packed_vertex_bits(static_cast<size_t>(points.size()));
+    std::vector<Cell, JeAllocator<Cell>> simplices;
+    std::vector<VREdge<Int>> edges;
+    detail::vre_build<Int, Real, PackedCell>(static_cast<Int>(points.size()), max_dim,
+                                 max_compare, compare_dist, compare_to_diameter,
+                                 /*collect_edges=*/true, bits, simplices, edges, n_threads);
+    auto fil = Filtration<PackedCell, Real>(presorted, std::move(simplices), /*negate=*/false);
+    fil.set_kind(FiltrationKind::Vr);
+    fil.set_geometry(PackedGeom{bits});
+    return std::make_pair(std::move(fil), std::move(edges));
+}
+
+template<class Int, class Real, class Word>
+auto get_vr_filtration_and_critical_edges_packed_inorder(
+        const DistMatrix<Real>& dm,
+        dim_type max_dim,
+        Real max_diameter = std::numeric_limits<Real>::max(),
+        int n_threads = 1)
+    -> std::pair<Filtration<Simplex<Int, BitPacked<Int, Word>>, Real>, std::vector<VREdge<Int>>>
+{
+    using PackedCell = Simplex<Int, BitPacked<Int, Word>>;
+    using Cell = CellWithValue<PackedCell, Real>;
+    auto compare_dist = [&](Int a, Int b) -> Real {
+        return dm.get_distance(a, b);
+    };
+    auto compare_to_diameter = [](Real cv) -> Real { return cv; };
+
+    const int bits = packed_vertex_bits(static_cast<size_t>(dm.n_points));
+    std::vector<Cell, JeAllocator<Cell>> simplices;
+    std::vector<VREdge<Int>> edges;
+    detail::vre_build<Int, Real, PackedCell>(static_cast<Int>(dm.n_points), max_dim,
+                                 max_diameter, compare_dist, compare_to_diameter,
+                                 /*collect_edges=*/true, bits, simplices, edges, n_threads);
+    auto fil = Filtration<PackedCell, Real>(presorted, std::move(simplices), /*negate=*/false);
+    fil.set_kind(FiltrationKind::Vr);
+    fil.set_geometry(PackedGeom{bits});
     return std::make_pair(std::move(fil), std::move(edges));
 }
 

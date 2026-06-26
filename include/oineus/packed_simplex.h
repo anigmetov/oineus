@@ -5,6 +5,8 @@
 #include <vector>
 #include <unordered_set>
 #include <functional>
+#include <utility>
+#include <algorithm>
 #include <cassert>
 
 #include "common_defs.h"
@@ -85,8 +87,12 @@ struct BitPacked {
     BitPacked(Word uid, dim_type d) : uid_(uid), dim_(d) {}
 
     // pack an ascending vertex list, `bits` per field (caller supplies bits from the
-    // PackedGeom; the cell does not store it)
-    BitPacked(const std::vector<Int>& sorted_vertices, int bits)
+    // PackedGeom; the cell does not store it). Templated on the container so the VR
+    // builder's jemalloc-allocated vertex buffer packs without an intermediate copy;
+    // the trailing decltype constrains it to size()-having containers so it never
+    // competes with the BitPacked(Word, dim_type) ctor above for integral arguments.
+    template<class Vec, class = decltype(std::declval<const Vec&>().size())>
+    BitPacked(const Vec& sorted_vertices, int bits)
             : uid_(pack(sorted_vertices, bits)),
               dim_(static_cast<dim_type>(sorted_vertices.size()) - 1)
     {
@@ -95,7 +101,8 @@ struct BitPacked {
 
     static Word field_mask(int bits) { return (static_cast<Word>(1) << bits) - 1; }
 
-    static Word pack(const std::vector<Int>& sorted_vertices, int bits)
+    template<class Vec>
+    static Word pack(const Vec& sorted_vertices, int bits)
     {
         Word w = 0;
         for (size_t i = 0; i < sorted_vertices.size(); ++i)

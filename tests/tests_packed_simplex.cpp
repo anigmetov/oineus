@@ -35,6 +35,67 @@ std::vector<Word> bd_words(const PackedCell& c, const PackedGeom& g)
     return r;
 }
 
+// The packed VR builder (get_vr_filtration_packed_inorder<...,W>) must produce a
+// filtration cell-for-cell identical to the fat builder (same enumeration order, same
+// values, hence identical (co)boundary matrices and diagrams), with the critical-edge
+// array aligned, and each packed cell materializing back to the fat vertex set. Run as
+// a templated helper so it covers both word widths (u64 and __int128); the caller
+// guarantees the points/max_dim force the requested width via bit_packing_fits.
+template<class W, std::size_t D>
+void check_packed_vr_builder(const std::vector<oineus::Point<Real, D>>& points,
+                             dim_type max_dim, Real max_diameter, int n_threads = 1)
+{
+    using Pk = oineus::BitPacked<Int, W>;
+    using PkCell = oineus::Simplex<Int, Pk>;
+    const size_t n_points = points.size();
+    REQUIRE(oineus::bit_packing_fits<W>(n_points, max_dim));
+
+    // compare against the FAT VRE builder (same enumeration order), not the
+    // Bron-Kerbosch get_vr_filtration, so the cell orders -- hence the (co)boundary
+    // matrices -- coincide. n_threads > 1 also exercises the parallel add_cell sink.
+    auto fat = oineus::get_vr_filtration_inorder<Int, Real, D>(points, max_dim, max_diameter, n_threads);
+    auto packed = oineus::get_vr_filtration_packed_inorder<Int, Real, W, D>(points, max_dim, max_diameter, n_threads);
+
+    REQUIRE(packed.size() == fat.size());
+    REQUIRE(packed.size() > 0);
+
+    // identical enumeration order + values -> column-identical (co)boundary matrices
+    REQUIRE(packed.boundary_matrix(1) == fat.boundary_matrix(1));
+    REQUIRE(packed.coboundary_matrix(1) == fat.coboundary_matrix(1));
+
+    // the packed filtration reduces to a valid R = D V (exercises the packed-boundary +
+    // hash-uid-index + antitranspose-coboundary path, newly for the __int128 hash)
+    VRUDecomposition<Int> dcmp(packed, /*dualize=*/false);
+    Params p;
+    p.compute_v = true;
+    p.n_threads = 1;
+    dcmp.reduce(p);
+    REQUIRE(dcmp.sanity_check());
+
+    // per-cell: same value, and the packed cell materializes to the fat vertex set
+    const auto& geom = packed.geometry();
+    for (size_t c = 0; c < packed.size(); ++c) {
+        REQUIRE(packed.cells()[c].get_value() == fat.cells()[c].get_value());
+        const PkCell& cell = packed.cells()[c].get_cell();
+        std::vector<Int> fat_vs(fat.cells()[c].get_cell().get_vertices().begin(),
+                                fat.cells()[c].get_cell().get_vertices().end());
+        REQUIRE(cell.vertices(geom) == fat_vs);
+    }
+
+    // critical edges: same array, aligned to the (presorted) cells. Compare as
+    // unordered endpoint pairs since VREdge stores {s, t} (s may be > t).
+    auto [fat_e, fat_edges] = oineus::get_vr_filtration_and_critical_edges_inorder<Int, Real, D>(
+            points, max_dim, max_diameter, n_threads);
+    auto [packed_e, packed_edges] = oineus::get_vr_filtration_and_critical_edges_packed_inorder<Int, Real, W, D>(
+            points, max_dim, max_diameter, n_threads);
+    REQUIRE(packed_edges.size() == fat_edges.size());
+    REQUIRE(packed_edges.size() == packed.size());
+    // both builders run the identical VRE enumeration, so the per-cell VREdge is
+    // byte-identical (same endpoint order), not merely the same unordered pair
+    for (size_t i = 0; i < fat_edges.size(); ++i)
+        REQUIRE(fat_edges[i] == packed_edges[i]);
+}
+
 } // namespace
 
 TEST_CASE("bit-packed simplex: pack / unpack / boundary by hand")
@@ -140,4 +201,46 @@ TEST_CASE("bit-packed simplex: filtration matches fat VR master + materializatio
         std::sort(b_fat.begin(), b_fat.end());
         REQUIRE(b_slim == b_fat);
     }
+}
+
+TEST_CASE("bit-packed VR builder: packed (uint64) matches fat builder, 3D cloud")
+{
+    constexpr std::size_t D = 3;
+    const std::vector<oineus::Point<Real, D>> points = {
+        {0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1},
+        {1, 1, 0}, {1, 0, 1}, {0, 1, 1},
+    };
+    // n_points = 7 -> bits = 3; a 3-simplex needs 4*3 = 12 bits, fits uint64
+    REQUIRE(oineus::bit_packing_fits<std::uint64_t>(points.size(), 3));
+    for (int nt : {1, 4})
+        check_packed_vr_builder<std::uint64_t, D>(points, /*max_dim=*/3, std::numeric_limits<Real>::max(), nt);
+}
+
+TEST_CASE("bit-packed VR builder: packed (__int128) matches fat builder, tiered overflow")
+{
+    using Word128 = unsigned __int128;
+    constexpr std::size_t D = 3;
+    // A tight 6-point cluster (forms a full 5-simplex) plus many isolated far points,
+    // so n_points is large (bits = 11) while the complex stays tiny. A 5-simplex needs
+    // 6*11 = 66 bits: too wide for uint64 (forces the __int128 tier), fits __int128.
+    std::vector<oineus::Point<Real, D>> points;
+    const double e = 0.01;
+    points.push_back({0, 0, 0});
+    points.push_back({e, 0, 0});
+    points.push_back({0, e, 0});
+    points.push_back({0, 0, e});
+    points.push_back({e, e, 0});
+    points.push_back({e, 0, e});
+    // isolated far points: 100 apart on the x-axis, none within max_diameter of anything
+    for (int m = 0; m < 1094; ++m)
+        points.push_back({100.0 * (m + 1), 0, 0});
+
+    const size_t n_points = points.size();   // 1100
+    const dim_type max_dim = 5;
+    REQUIRE(oineus::packed_vertex_bits(n_points) == 11);
+    REQUIRE_FALSE(oineus::bit_packing_fits<std::uint64_t>(n_points, max_dim));
+    REQUIRE(oineus::bit_packing_fits<Word128>(n_points, max_dim));
+
+    for (int nt : {1, 4})
+        check_packed_vr_builder<Word128, D>(points, max_dim, /*max_diameter=*/0.5, nt);
 }
