@@ -1,3 +1,7 @@
+# Strategy enums the diff optimizer API consumes (combine_loss/crit_sets_apply take
+# ConflictStrategy, simplify takes DenoiseStrategy, the optimizer takes UStrategy);
+# re-exported so oineus.diff is self-contained without reaching into the top-level oineus.
+from .._oineus import ConflictStrategy, UStrategy, DenoiseStrategy
 from .diff_filtration import DiffFiltration
 from .top_optimizer import TopologyOptimizer
 from .freudenthal import freudenthal_filtration
