@@ -614,6 +614,130 @@ void init_oineus_filtration(nb::module_& m)
 
     #undef BIND_FR_FILTRATION
 
+    // ============ PackedSimplexFiltration (bit-packed VR/alpha) bindings ============
+    // The bit-packed filtration stores Simplex<Int,BitPacked<Int,Word>> cells (sorted
+    // vertex ids packed into one Word) + a shared PackedGeom{int bits}; every accessor
+    // materializes the fat Python simplex (the "Simplex" class) via
+    // fatten_simplex_from_packed. Factory-produced (vr_filtration(packed=True), and the
+    // same macro is what a future alpha packed path would reuse); a fat simplex carries
+    // no PackedGeom, so there is no public ctor-from-cells. One macro, two word tiers
+    // (64-bit, 128-bit). Differences from the Freudenthal macro: the geometry is a
+    // trivially-copyable int (pickle stores the bits directly, no geometry rebuild), and
+    // the uid-keyed accessors (value_by_uid/sorted_id_by_uid/cell_by_uid) plus the
+    // uid_to_sorted_id pickle field are omitted. (unsigned __int128 itself crosses the
+    // Python boundary fine via uid128_caster.h.) The accessors are omitted because the
+    // packed-Word uid is meaningless to a Python caller: cells materialize to the fat
+    // Simplex, which carries the 128-bit COMBINATORIAL uid, not the packed Word -- so a
+    // caller can never supply a valid packed uid. The uid_to_sorted_id map is dropped
+    // from the pickle simply because rebuild_uid_index_ regenerates the hash on unpickle
+    // (BitPacked is UsesDenseUidIndex=false), making the stored map redundant.
+    #define BIND_PACKED_FILTRATION(WORD, SUFFIX) \
+        using PackedFiltration_##SUFFIX = oin::Filtration<oin::Simplex<oin_int, oin::BitPacked<oin_int, WORD>>, oin_real>; \
+        using PackedFatSimplexValue_##SUFFIX = oin::CellWithValue<oin::Simplex<oin_int>, oin_real>; \
+        using PackedFiltration_##SUFFIX##StateTuple = std::tuple<decltype(PackedFiltration_##SUFFIX::negate_), \
+                                                std::vector<PackedFatSimplexValue_##SUFFIX>, \
+                                                decltype(PackedFiltration_##SUFFIX::is_subfiltration_), \
+                                                decltype(PackedFiltration_##SUFFIX::id_to_sorted_id_), \
+                                                decltype(PackedFiltration_##SUFFIX::sorted_id_to_id_), \
+                                                decltype(PackedFiltration_##SUFFIX::dim_first_), \
+                                                decltype(PackedFiltration_##SUFFIX::dim_last_), \
+                                                decltype(PackedFiltration_##SUFFIX::kind_), \
+                                                int \
+                                               >; \
+        nb::class_<PackedFiltration_##SUFFIX>(m, "PackedSimplexFiltration_" #SUFFIX) \
+            .def("__len__", &PackedFiltration_##SUFFIX::size) \
+            .def("__iter__", [](const PackedFiltration_##SUFFIX& fil) -> nb::object { \
+                    nb::object lst = nb::cast(fatten_all_packed<oin_int, WORD, oin_real>(fil)); \
+                    return lst.attr("__iter__")(); \
+                }) \
+            .def("__getitem__", [](const PackedFiltration_##SUFFIX& fil, int i) { \
+                    if (i < 0) i = fil.size() + i; \
+                    return fatten_simplex_from_packed<oin_int, WORD, oin_real>(fil.get_cell(i), fil.geometry()); \
+                }) \
+            .def_prop_ro("negate", &PackedFiltration_##SUFFIX::negate) \
+            .def("infinity", &PackedFiltration_##SUFFIX::infinity, "filtration-order +inf") \
+            .def("neg_infinity", &PackedFiltration_##SUFFIX::neg_infinity, "filtration-order -inf") \
+            .def("fil_min", &PackedFiltration_##SUFFIX::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min") \
+            .def("fil_max", &PackedFiltration_##SUFFIX::fil_max, nb::arg("a"), nb::arg("b"), "filtration-order max") \
+            .def_prop_ro("max_dim", &PackedFiltration_##SUFFIX::max_dim, "maximal dimension of a cell in filtration") \
+            .def("cells", [](const PackedFiltration_##SUFFIX& fil) { return fatten_all_packed<oin_int, WORD, oin_real>(fil); }, \
+                    "copy of all cells in filtration order") \
+            .def("simplices", [](const PackedFiltration_##SUFFIX& fil) { return fatten_all_packed<oin_int, WORD, oin_real>(fil); }, \
+                    "copy of all cells in filtration order") \
+            .def("size", &PackedFiltration_##SUFFIX::size, "number of cells in filtration") \
+            .def("size_in_dimension", &PackedFiltration_##SUFFIX::size_in_dimension, nb::arg("dim"), "number of cells of dimension dim") \
+            .def("n_vertices", &PackedFiltration_##SUFFIX::n_vertices) \
+            .def("cell_value_by_sorted_id", &PackedFiltration_##SUFFIX::value_by_sorted_id, nb::arg("sorted_id")) \
+            .def("simplex_value_by_sorted_id", &PackedFiltration_##SUFFIX::value_by_sorted_id, nb::arg("sorted_id")) \
+            .def("id_by_sorted_id", &PackedFiltration_##SUFFIX::get_id_by_sorted_id, nb::arg("sorted_id")) \
+            .def("sorted_id_by_id", &PackedFiltration_##SUFFIX::get_sorted_id, nb::arg("id")) \
+            .def("cell", [](const PackedFiltration_##SUFFIX& fil, size_t i) { \
+                    return fatten_simplex_from_packed<oin_int, WORD, oin_real>(fil.get_cell(i), fil.geometry()); \
+                }, nb::arg("i")) \
+            .def("simplex", [](const PackedFiltration_##SUFFIX& fil, size_t i) { \
+                    return fatten_simplex_from_packed<oin_int, WORD, oin_real>(fil.get_cell(i), fil.geometry()); \
+                }, nb::arg("i")) \
+            .def_prop_ro("dim_first", &PackedFiltration_##SUFFIX::dims_first) \
+            .def_prop_ro("dim_last", &PackedFiltration_##SUFFIX::dims_last) \
+            .def("sorting_permutation", &PackedFiltration_##SUFFIX::get_sorting_permutation) \
+            .def("inv_sorting_permutation", &PackedFiltration_##SUFFIX::get_inv_sorting_permutation) \
+            .def("boundary_matrix", &PackedFiltration_##SUFFIX::boundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
+            .def("boundary_matrix_in_dimension", &PackedFiltration_##SUFFIX::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
+            .def("coboundary_matrix", &PackedFiltration_##SUFFIX::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
+            /* boundary_matrix_rel + uid-keyed accessors omitted (see header comment) */ \
+            .def("star_closure", &PackedFiltration_##SUFFIX::star_closure, nb::arg("seed_sorted_ids"), nb::arg("n_threads")=1, \
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
+                    "Coface up-closure (union of stars) of the given cells (sorted_ids).") \
+            .def("is_up_closed", &PackedFiltration_##SUFFIX::is_up_closed, nb::arg("cells"), nb::arg("n_threads")=1, \
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(), \
+                    "True if the cells (sorted_ids) are closed under cofaces.") \
+            .def("without_cells", &PackedFiltration_##SUFFIX::without_cells, nb::arg("cells_to_remove"), nb::rv_policy::move, \
+                    "Subfiltration with the given cells (sorted_ids) removed; survivors keep order.") \
+            .def("reset_ids_to_sorted_ids", &PackedFiltration_##SUFFIX::reset_ids_to_sorted_ids) \
+            .def("set_values", &PackedFiltration_##SUFFIX::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>()) \
+            .def(nb::self == nb::self) \
+            .def(nb::self != nb::self) \
+            .def("__repr__", [](const PackedFiltration_##SUFFIX& fil) { \
+                    std::stringstream ss; \
+                    ss << fil; \
+                    return ss.str(); \
+                }) \
+            .def_prop_rw("kind", &PackedFiltration_##SUFFIX::kind, &PackedFiltration_##SUFFIX::set_kind, \
+                "FiltrationKind tag set by the constructor that built this filtration " \
+                "(or User for hand-built ones).") \
+            .def("__getstate__", [](const PackedFiltration_##SUFFIX& fil) -> PackedFiltration_##SUFFIX##StateTuple { \
+                      auto fat = fatten_all_packed<oin_int, WORD, oin_real>(fil); \
+                      return std::make_tuple(fil.negate_, std::move(fat), fil.is_subfiltration_, \
+                          fil.id_to_sorted_id_, fil.sorted_id_to_id_, fil.dim_first_, fil.dim_last_, \
+                          fil.kind_, fil.geometry_.bits); \
+                    }) \
+            .def("__setstate__", [](PackedFiltration_##SUFFIX& fil, const PackedFiltration_##SUFFIX##StateTuple& t) { \
+                new (&fil) PackedFiltration_##SUFFIX(); \
+                fil.negate_ = std::get<0>(t); \
+                fil.is_subfiltration_ = std::get<2>(t); \
+                fil.id_to_sorted_id_ = std::get<3>(t); \
+                fil.sorted_id_to_id_ = std::get<4>(t); \
+                fil.dim_first_ = std::get<5>(t); \
+                fil.dim_last_ = std::get<6>(t); \
+                fil.kind_ = std::get<7>(t); \
+                /* PackedGeom is a trivial int width; rebuild it, slim the fat cells, and */ \
+                /* regenerate the hash uid index (the packed cell uses the hash, not flat) */ \
+                oin::PackedGeom geom{std::get<8>(t)}; \
+                fil.set_geometry(geom); \
+                const auto& fat = std::get<1>(t); \
+                typename PackedFiltration_##SUFFIX::CellVector slim; \
+                slim.reserve(fat.size()); \
+                for (const auto& fc : fat) slim.push_back(slim_simplex_from_packed<oin_int, WORD, oin_real>(fc, geom)); \
+                fil.cells_ = std::move(slim); \
+                fil.rebuild_uid_index_(); \
+            }) \
+
+
+    BIND_PACKED_FILTRATION(std::uint64_t, 64);
+    BIND_PACKED_FILTRATION(unsigned __int128, 128);
+
+    #undef BIND_PACKED_FILTRATION
+
     m.def("_mapping_cylinder",
           [](const Filtration& fil_domain, const Filtration& fil_codomain,
              const Simplex& v_domain, const Simplex& v_codomain,

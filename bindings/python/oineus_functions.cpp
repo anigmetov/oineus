@@ -313,6 +313,45 @@ void init_oineus_functions(nb::module_& m)
             nb::arg("pwdists"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
             nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
 
+    // Bit-packed VR builders (two word tiers; the Python factory picks the tier by
+    // bit_packing_fits and falls back to fat if neither fits). Same arguments as the
+    // fat versions, returning a PackedSimplexFiltration_64/128.
+    func_name = "get_vr_filtration_packed64";
+    m.def(func_name.c_str(), &get_vr_filtration_packed<oin_int, oin_real, std::uint64_t>,
+            nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+    func_name = "get_vr_filtration_packed128";
+    m.def(func_name.c_str(), &get_vr_filtration_packed<oin_int, oin_real, unsigned __int128>,
+            nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+
+    func_name = "get_vr_filtration_and_critical_edges_packed64";
+    m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges_packed<oin_int, oin_real, std::uint64_t>,
+            nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+    func_name = "get_vr_filtration_and_critical_edges_packed128";
+    m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges_packed<oin_int, oin_real, unsigned __int128>,
+            nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+
+    func_name = "get_vr_filtration_packed64_from_pwdists";
+    m.def(func_name.c_str(), &get_vr_filtration_packed_from_pwdists<oin_int, oin_real, std::uint64_t>,
+            nb::arg("pwdists"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+    func_name = "get_vr_filtration_packed128_from_pwdists";
+    m.def(func_name.c_str(), &get_vr_filtration_packed_from_pwdists<oin_int, oin_real, unsigned __int128>,
+            nb::arg("pwdists"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+
+    func_name = "get_vr_filtration_and_critical_edges_packed64_from_pwdists";
+    m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges_packed_from_pwdists<oin_int, oin_real, std::uint64_t>,
+            nb::arg("pwdists"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+    func_name = "get_vr_filtration_and_critical_edges_packed128_from_pwdists";
+    m.def(func_name.c_str(), &get_vr_filtration_and_critical_edges_packed_from_pwdists<oin_int, oin_real, unsigned __int128>,
+            nb::arg("pwdists"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
+            nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+
     // Internal: brute-force VR construction, exposed for cross-checking VRE
     // in the test suite. Not part of the user API.
     func_name = "_get_vr_filtration_naive";

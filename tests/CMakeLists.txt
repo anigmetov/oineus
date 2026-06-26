@@ -89,6 +89,7 @@ else()
             diff-fused-optimizer
             diff-grad
             diff-inf-points-raises
+            diff-vr-packed
             diff-partial-u-elz-assert
             diff-review-bugfixes
             diff-update-is-lazy
@@ -102,6 +103,7 @@ else()
             interrupt
             kicr
             match-rv-policy
+            packed-vr
             parallel-dgm
             pickle
             plot

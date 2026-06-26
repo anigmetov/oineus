@@ -33,6 +33,7 @@ from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D, Cube
 from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D, CubeFiltration_2D
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D, CubeFiltration_3D
 from ._oineus import FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D
+from ._oineus import PackedSimplexFiltration_64, PackedSimplexFiltration_128
 # Visualization helpers require matplotlib, an optional extra
 # (`pip install oineus[vis]`). When it is absent, the plot_* helpers and
 # style constants are simply unavailable; the rest of oineus works normally.
@@ -893,11 +894,25 @@ def freudenthal_filtration(data: np.ndarray,
     return _oineus.get_freudenthal_filtration(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
 
 
+def _vr_packed_word_suffix(n_points, max_dim):
+    # Smallest packed word that holds a (max_dim)-simplex over n_points vertices:
+    # bits = ceil(log2(n_points)) per field (== C++ packed_vertex_bits), (max_dim+1)
+    # fields. Returns "64", "128", or None (too wide -> fat fallback).
+    bits = max(1, (int(n_points) - 1).bit_length())
+    width = (int(max_dim) + 1) * bits
+    if width <= 64:
+        return "64"
+    if width <= 128:
+        return "128"
+    return None
+
+
 def vr_filtration(data: np.ndarray,
                   from_pwdists: bool = False,
                   max_dim: int = -1,
                   max_diameter: float = -1.0,
                   with_critical_edges: bool = False,
+                  packed: bool = False,
                   n_threads: int = 1):
     """Build a Vietoris-Rips filtration from points or pairwise distances.
 
@@ -938,13 +953,28 @@ def vr_filtration(data: np.ndarray,
         else:
             max_dim = data.shape[1]
 
+    # packed=True returns a bit-packed PackedSimplexFiltration_64/128 (compact cells,
+    # one shared PackedGeom) when the vertex ids fit a 64- or 128-bit word; if they do
+    # not fit (very large/high-dim complex) it transparently falls back to the fat path.
+    # It reduces and produces diagrams identically to fat but with a smaller footprint;
+    # opt-in for now because the materialized fat cell carries the combinatorial uid
+    # while the filtration is keyed by the packed uid, so uid-keyed APIs and the bare
+    # oineus.TopologyOptimizer are not yet wired for it (oineus.diff.TopologyOptimizer is).
+    suffix = _vr_packed_word_suffix(data.shape[0], max_dim) if packed else None
+
     if from_pwdists:
-        if with_critical_edges:
+        if suffix is not None:
+            base = "get_vr_filtration_and_critical_edges_packed" if with_critical_edges else "get_vr_filtration_packed"
+            func = getattr(_oineus, base + suffix + "_from_pwdists")
+        elif with_critical_edges:
             func = _oineus.get_vr_filtration_and_critical_edges_from_pwdists
         else:
             func = _oineus.get_vr_filtration_from_pwdists
     else:
-        if with_critical_edges:
+        if suffix is not None:
+            base = "get_vr_filtration_and_critical_edges_packed" if with_critical_edges else "get_vr_filtration_packed"
+            func = getattr(_oineus, base + suffix)
+        elif with_critical_edges:
             func = _oineus.get_vr_filtration_and_critical_edges
         else:
             func = _oineus.get_vr_filtration
@@ -1292,15 +1322,19 @@ def compute_kernel_image_cokernel_reduction(K, L, params=None, reduction_params=
     # KICR class is templatized by cell type in C++
     # different instantiations have different class names in Python
     # figure out the right one by type
-    # A slim FreudenthalFiltration materializes fat Simplex cells, so K[0] is an
-    # _oineus.Simplex and would slip past the isinstance check below into the
-    # Simplex-only KerImCokReduced ctor (a different C++ filtration type) with a
-    # cryptic nanobind error. KICR is not wired for the slim cell yet -- reject it
-    # up front with a clear message (use the fat path: slim=False / default).
+    # A slim FreudenthalFiltration / bit-packed PackedSimplexFiltration materializes
+    # fat Simplex cells, so K[0] is an _oineus.Simplex and would slip past the
+    # isinstance check below into the Simplex-only KerImCokReduced ctor (a different
+    # C++ filtration type) with a cryptic nanobind error. KICR is not wired for these
+    # compact cells yet -- reject up front with a clear message (use the fat path).
     if isinstance(K, (FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D)):
         raise NotImplementedError(
             "kernel/image/cokernel is not supported for the slim FreudenthalFiltration; "
             "rebuild with the fat path (freudenthal_filtration(..., slim=False))")
+    if isinstance(K, (PackedSimplexFiltration_64, PackedSimplexFiltration_128)):
+        raise NotImplementedError(
+            "kernel/image/cokernel is not supported for the bit-packed simplex filtration; "
+            "rebuild without packing (vr_filtration(..., packed=False), the default)")
 
     if isinstance(K[0], _oineus.Simplex):
         KICR_Class = _oineus.KerImCokReduced
@@ -1439,6 +1473,8 @@ _PUBLIC_API_NAMES = [
     "FreudenthalFiltration_1D",
     "FreudenthalFiltration_2D",
     "FreudenthalFiltration_3D",
+    "PackedSimplexFiltration_64",
+    "PackedSimplexFiltration_128",
     "DiagramMatching",
     "BottleneckMatching",
     "InfKind",

@@ -190,6 +190,49 @@ fatten_all_fr(const oin::Filtration<oin::Simplex<Int, oin::FreudenthalAnchorType
     return fat;
 }
 
+// Bit-packed VR/alpha filtrations: the same materialize-to-fat-Simplex pattern as the
+// slim Freudenthal one (a packed simplex IS the simplex on its unpacked vertices), but
+// the geometry is a trivially-copyable PackedGeom{int bits}, so pickle stores the bits
+// int directly (no unbound table-bearing geometry to rebuild). Shared by VR and alpha,
+// which both materialize to the universal fat Simplex<Int>. Templated on the word width
+// Word so one definition serves both packed tiers (uint64 / unsigned __int128).
+template<class Int, class Word, class Real>
+oin::CellWithValue<oin::Simplex<Int>, Real>
+fatten_simplex_from_packed(const oin::CellWithValue<oin::Simplex<Int, oin::BitPacked<Int, Word>>, Real>& slim,
+                           const oin::PackedGeom& geom)
+{
+    auto vids = slim.get_cell().vertices(geom);  // ascending unpacked vertex ids
+    typename oin::Simplex<Int>::IdxVector iv(vids.begin(), vids.end());
+    oin::Simplex<Int> sigma(slim.get_cell().get_id(), iv);
+    oin::CellWithValue<oin::Simplex<Int>, Real> fat(std::move(sigma), slim.get_value());
+    fat.set_sorted_id(slim.get_sorted_id());
+    return fat;
+}
+
+template<class Int, class Word, class Real>
+oin::CellWithValue<oin::Simplex<Int, oin::BitPacked<Int, Word>>, Real>
+slim_simplex_from_packed(const oin::CellWithValue<oin::Simplex<Int>, Real>& fat, const oin::PackedGeom& geom)
+{
+    // fat Simplex vertices are already ascending, so the BitPacked ctor packs directly
+    const auto& vids = fat.get_cell().get_vertices();
+    oin::Simplex<Int, oin::BitPacked<Int, Word>> slim_cell(
+            oin::BitPacked<Int, Word>(vids, geom.bits), fat.get_cell().get_id());
+    oin::CellWithValue<oin::Simplex<Int, oin::BitPacked<Int, Word>>, Real> slim(slim_cell, fat.get_value());
+    slim.set_sorted_id(fat.get_sorted_id());
+    return slim;
+}
+
+template<class Int, class Word, class Real>
+std::vector<oin::CellWithValue<oin::Simplex<Int>, Real>>
+fatten_all_packed(const oin::Filtration<oin::Simplex<Int, oin::BitPacked<Int, Word>>, Real>& fil)
+{
+    std::vector<oin::CellWithValue<oin::Simplex<Int>, Real>> fat;
+    fat.reserve(fil.size());
+    for (const auto& cv : fil.cells())
+        fat.push_back(fatten_simplex_from_packed<Int, Word, Real>(cv, fil.geometry()));
+    return fat;
+}
+
 template<class Real>
 class PyOineusDiagrams {
 public:
@@ -544,6 +587,80 @@ get_vr_filtration_and_critical_edges(nb::ndarray<Real, nb::c_contig, nb::device:
     } else {
         throw std::runtime_error("get_vr_filtration_and_critical_edges: dimension " + std::to_string(d) + " not supported by default, recompilation needed");
     }
+}
+
+// Bit-packed VR builders: same dispatch on the spatial dimension as the fat versions
+// above, but emit Filtration<Simplex<Int,BitPacked<Int,Word>>>. Templated on the word
+// width Word (the Python factory picks it via bit_packing_fits before calling, so the
+// vertex ids are guaranteed to fit). All spatial-dimension branches return the same
+// packed Filtration type, so decltype(auto) is single-typed as in the fat versions.
+template<class Int, class Real, class Word>
+decltype(auto)
+get_vr_filtration_packed(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> points, dim_type max_dim, Real max_diameter, int n_threads)
+{
+    if (points.ndim() != 2)
+        throw std::runtime_error("get_vr_filtration_packed: expected 2D array");
+
+    dim_type d = points.shape(1);
+
+    if (d == 1) {
+        return oin::get_vr_filtration_packed_inorder<Int, Real, Word, 1>(numpy_to_point_vector<Real, 1>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 2) {
+        return oin::get_vr_filtration_packed_inorder<Int, Real, Word, 2>(numpy_to_point_vector<Real, 2>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 3) {
+        return oin::get_vr_filtration_packed_inorder<Int, Real, Word, 3>(numpy_to_point_vector<Real, 3>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 4) {
+        return oin::get_vr_filtration_packed_inorder<Int, Real, Word, 4>(numpy_to_point_vector<Real, 4>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 5) {
+        return oin::get_vr_filtration_packed_inorder<Int, Real, Word, 5>(numpy_to_point_vector<Real, 5>(points), max_dim, max_diameter, n_threads);
+    } else {
+        throw std::runtime_error("get_vr_filtration_packed: dimension not supported by default, recompilation needed");
+    }
+}
+
+template<class Int, class Real, class Word>
+decltype(auto)
+get_vr_filtration_and_critical_edges_packed(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> points, dim_type max_dim, Real max_diameter, int n_threads)
+{
+    if (points.ndim() != 2)
+        throw std::runtime_error("get_vr_filtration_and_critical_edges_packed: expected 2D array");
+
+    dim_type d = points.shape(1);
+
+    if (d == 1) {
+        return oin::get_vr_filtration_and_critical_edges_packed_inorder<Int, Real, Word, 1>(numpy_to_point_vector<Real, 1>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 2) {
+        return oin::get_vr_filtration_and_critical_edges_packed_inorder<Int, Real, Word, 2>(numpy_to_point_vector<Real, 2>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 3) {
+        return oin::get_vr_filtration_and_critical_edges_packed_inorder<Int, Real, Word, 3>(numpy_to_point_vector<Real, 3>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 4) {
+        return oin::get_vr_filtration_and_critical_edges_packed_inorder<Int, Real, Word, 4>(numpy_to_point_vector<Real, 4>(points), max_dim, max_diameter, n_threads);
+    } else if (d == 5) {
+        return oin::get_vr_filtration_and_critical_edges_packed_inorder<Int, Real, Word, 5>(numpy_to_point_vector<Real, 5>(points), max_dim, max_diameter, n_threads);
+    } else {
+        throw std::runtime_error("get_vr_filtration_and_critical_edges_packed: dimension " + std::to_string(d) + " not supported by default, recompilation needed");
+    }
+}
+
+template<class Int, class Real, class Word>
+decltype(auto)
+get_vr_filtration_and_critical_edges_packed_from_pwdists(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> pw_dists, dim_type max_dim, Real max_diameter, int n_threads)
+{
+    if (pw_dists.ndim() != 2 or pw_dists.shape(0) != pw_dists.shape(1))
+        throw std::runtime_error("Dimension mismatch");
+
+    const Real* pdata {static_cast<const Real*>(pw_dists.data())};
+    size_t n_points = pw_dists.shape(1);
+    oin::DistMatrix<Real> dist_matrix {pdata, n_points};
+
+    return oin::get_vr_filtration_and_critical_edges_packed_inorder<Int, Real, Word>(dist_matrix, max_dim, max_diameter, n_threads);
+}
+
+template<class Int, class Real, class Word>
+decltype(auto)
+get_vr_filtration_packed_from_pwdists(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> pw_dists, dim_type max_dim, Real max_diameter, int n_threads)
+{
+    return get_vr_filtration_and_critical_edges_packed_from_pwdists<Int, Real, Word>(pw_dists, max_dim, max_diameter, n_threads).first;
 }
 
 // Internal/test-only: brute-force VR construction (uses C++ naive fallback).

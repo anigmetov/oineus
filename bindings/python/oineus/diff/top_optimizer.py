@@ -14,6 +14,8 @@ _OPT_CLASS_BY_FIL_TYPE = {
     _oineus.FreudenthalFiltration_1D: _oineus.TopologyOptimizerFreudenthal_1D,
     _oineus.FreudenthalFiltration_2D: _oineus.TopologyOptimizerFreudenthal_2D,
     _oineus.FreudenthalFiltration_3D: _oineus.TopologyOptimizerFreudenthal_3D,
+    _oineus.PackedSimplexFiltration_64:  _oineus.TopologyOptimizerPacked_64,
+    _oineus.PackedSimplexFiltration_128: _oineus.TopologyOptimizerPacked_128,
 }
 
 
