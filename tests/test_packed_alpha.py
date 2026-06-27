@@ -93,3 +93,30 @@ def test_alpha_default_is_packed():
     assert type(oin.alpha_filtration(pts)).__name__ == "_PackedSimplexFiltration_64"
     # escape hatch yields the fat universal Filtration
     assert type(oin.alpha_filtration(pts, packed=False)).__name__ == "_Filtration"
+
+
+def test_alpha_packed_silently_downgrades_on_weighted():
+    # only the unweighted/non-periodic array path packs; weighted alpha stays fat even
+    # with packed=True (documented behavior -- pin it so a future change that tries to
+    # pack the weighted path and breaks is caught)
+    pts = np.ascontiguousarray(np.random.default_rng(0).random((20, 3)))
+    w = np.ascontiguousarray(np.random.default_rng(1).random(20) * 0.01)
+    fil = oin.alpha_filtration(pts, weights=w, packed=True)
+    assert type(fil).__name__ == "_Filtration"
+
+
+def test_alpha_packed_silently_downgrades_on_list_fallback(monkeypatch):
+    # without the diode array exporters the list path is taken, which is always fat
+    monkeypatch.setattr(oin, "_HAS_DIODE_ARRAYS", False)
+    pts = np.ascontiguousarray(np.random.default_rng(0).random((20, 3)))
+    fil = oin.alpha_filtration(pts, packed=True)
+    assert type(fil).__name__ == "_Filtration"
+
+
+def test_alpha_tier_selection():
+    # a large vertex count pushes the packed tier from 64 to 128 bits. For max_dim 3 the
+    # field-set is 4*bits; bits = ceil(log2(n)), so n ~ 40000 -> 16 bits -> width 64 (still
+    # the 64 tier), while n ~ 70000 -> 17 bits -> width 68 (the 128 tier).
+    assert oin._vr_packed_word_suffix(40, 3) == "64"
+    assert oin._vr_packed_word_suffix(40000, 3) == "64"
+    assert oin._vr_packed_word_suffix(70000, 3) == "128"

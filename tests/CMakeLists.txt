@@ -102,7 +102,9 @@ else()
             ind-match
             interrupt
             kicr
+            kicr-reference
             match-rv-policy
+            min-filtration
             packed-alpha
             packed-vr
             parallel-dgm

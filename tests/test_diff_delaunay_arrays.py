@@ -247,3 +247,24 @@ def test_diff_alpha_packed_matches_fat(filt, dim):
     np.testing.assert_allclose(lp, lf, atol=1e-9)
     np.testing.assert_allclose(gp, gf, atol=1e-7)
     assert np.abs(gp).sum() > 0.0
+
+
+@requires_arrays
+@requires_torch
+@pytest.mark.parametrize("filt", ["cech", "weak"])
+@pytest.mark.parametrize("packed", [False, True])
+@pytest.mark.parametrize("dt", [torch.float32, torch.float64])
+def test_diff_alpha_values_dtype_and_alignment(filt, packed, dt):
+    # the differentiable value tensor must carry the input dtype (the dim-0 leaf is built
+    # without an explicit dtype, but torch.cat promotes it) so downstream losses keep the
+    # requested precision; and its values must be the under-filtration's values (multiset).
+    from oineus.diff import cech_delaunay_filtration, weak_alpha_filtration
+    build = cech_delaunay_filtration if filt == "cech" else weak_alpha_filtration
+    pts = torch.tensor(np.random.default_rng(0).random((25, 3)), dtype=dt, requires_grad=True)
+    df = build(pts, packed=packed)
+    assert df.values.dtype == dt
+    vals = df.values.detach().cpu().numpy()
+    under = np.array([df.under_fil.cell_value_by_sorted_id(i)
+                      for i in range(df.under_fil.size())])
+    np.testing.assert_allclose(np.sort(vals.astype(np.float64)),
+                               np.sort(under.astype(np.float64)), atol=1e-5)

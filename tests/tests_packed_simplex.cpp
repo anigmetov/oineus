@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <oineus/oineus.h>
@@ -18,6 +20,37 @@ using Packed = oineus::BitPacked<Int, Word>;
 using PackedCell = oineus::Simplex<Int, Packed>;
 using FatSimplex = oineus::Simplex<Int>;
 using Uid128 = typename FatSimplex::Uid;
+
+// ---- E.4 SFINAE gate (compile-time contract) ----
+// get_vertices / no-arg boundary() / join are valid only for the self-contained Fat
+// encoding; the geometry-bearing encodings (BitPacked, FreudenthalAnchorType) must NOT
+// expose them (they use vertices(geom) / boundary_into instead). This is the only place
+// the gate's contract can be locked in: from Python every materialized cell is fat, so a
+// relaxed enable_if that silently re-exposed a broken no-arg boundary() on a slim cell
+// would slip past the Python tests. The static_asserts below fail the build if the gate
+// regresses.
+template<class, class = void> struct has_get_vertices : std::false_type {};
+template<class T> struct has_get_vertices<T, std::void_t<decltype(std::declval<const T&>().get_vertices())>> : std::true_type {};
+
+template<class, class = void> struct has_no_arg_boundary : std::false_type {};
+template<class T> struct has_no_arg_boundary<T, std::void_t<decltype(std::declval<const T&>().boundary())>> : std::true_type {};
+
+template<class, class = void> struct has_join : std::false_type {};
+template<class T> struct has_join<T, std::void_t<decltype(std::declval<const T&>().join(std::declval<typename T::Int>(), std::declval<typename T::Int>()))>> : std::true_type {};
+
+using FrCell2 = oineus::Simplex<Int, oineus::FreudenthalAnchorType<Int, 2>>;
+
+static_assert(has_get_vertices<FatSimplex>::value, "fat Simplex must expose get_vertices()");
+static_assert(!has_get_vertices<PackedCell>::value, "bit-packed cell must NOT expose get_vertices()");
+static_assert(!has_get_vertices<FrCell2>::value, "Freudenthal cell must NOT expose get_vertices()");
+
+static_assert(has_no_arg_boundary<FatSimplex>::value, "fat Simplex must expose no-arg boundary()");
+static_assert(!has_no_arg_boundary<PackedCell>::value, "bit-packed cell must NOT expose no-arg boundary()");
+static_assert(!has_no_arg_boundary<FrCell2>::value, "Freudenthal cell must NOT expose no-arg boundary()");
+
+static_assert(has_join<FatSimplex>::value, "fat Simplex must expose join()");
+static_assert(!has_join<PackedCell>::value, "bit-packed cell must NOT expose join()");
+static_assert(!has_join<FrCell2>::value, "Freudenthal cell must NOT expose join()");
 
 // fat 128-bit combinatorial uid of a vertex set (the master's uid space), used to
 // compare the slim packed (co)boundary against the fat one in vertex-set space
@@ -291,4 +324,21 @@ TEST_CASE("bit-packed VR builder: packed (__int128) matches fat builder, tiered 
 
     for (int nt : {1, 4})
         check_packed_vr_builder<Word128, D>(points, max_dim, /*max_diameter=*/0.5, nt);
+}
+
+TEST_CASE("E.4 SFINAE gate: Fat-only methods absent on geometry-bearing encodings")
+{
+    // mirrors the file-scope static_asserts (which already fail the build on regression);
+    // surfaced here so the contract shows up as a ctest case
+    CHECK(has_get_vertices<FatSimplex>::value);
+    CHECK_FALSE(has_get_vertices<PackedCell>::value);
+    CHECK_FALSE(has_get_vertices<FrCell2>::value);
+
+    CHECK(has_no_arg_boundary<FatSimplex>::value);
+    CHECK_FALSE(has_no_arg_boundary<PackedCell>::value);
+    CHECK_FALSE(has_no_arg_boundary<FrCell2>::value);
+
+    CHECK(has_join<FatSimplex>::value);
+    CHECK_FALSE(has_join<PackedCell>::value);
+    CHECK_FALSE(has_join<FrCell2>::value);
 }

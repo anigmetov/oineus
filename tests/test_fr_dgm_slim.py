@@ -199,3 +199,25 @@ def test_freudenthal_default_is_slim():
     # escape hatch and the wrap fallback both yield the fat universal Filtration
     assert type(oin.freudenthal_filtration(a, max_dim=2, slim=False)).__name__ == "_Filtration"
     assert type(oin.freudenthal_filtration(a, max_dim=2, wrap=True)).__name__ == "_Filtration"
+
+
+def test_freudenthal_4d_unsupported():
+    # Freudenthal is supported only for D=1,2,3 (slim and fat alike -- the C++ builder
+    # knows no higher dimension), so a 4D grid raises cleanly rather than silently
+    # mis-building. This is a pre-existing limitation, unchanged by the default flip; the
+    # flip fallback that matters (wrap -> fat) is covered in test_freudenthal_default_is_slim.
+    a = np.random.default_rng(0).random((3, 3, 3, 3))
+    with pytest.raises(RuntimeError):
+        oin.freudenthal_filtration(a, max_dim=3)
+
+
+@pytest.mark.parametrize("getter", ["get_vertices", "get_edges", "get_triangles"])
+def test_slim_fr_extractors_match_fat(getter):
+    # the slim Freudenthal simplex-vertex extractors must return the same simplices as
+    # the fat path (vertices materialized from the shared FrGeometry)
+    a = np.random.default_rng(1).random((6, 7))
+    fs = oin.freudenthal_filtration(a, max_dim=2, slim=True)
+    ff = oin.freudenthal_filtration(a, max_dim=2, slim=False)
+    sp = {tuple(sorted(int(v) for v in r)) for r in np.asarray(getattr(fs, getter)())}
+    sf = {tuple(sorted(int(v) for v in r)) for r in np.asarray(getattr(ff, getter)())}
+    assert sp == sf

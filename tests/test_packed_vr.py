@@ -275,3 +275,27 @@ def test_vr_default_is_packed():
     assert type(oin.vr_filtration(pts, max_dim=2, max_diameter=1.0)).__name__ == "_PackedSimplexFiltration_64"
     # escape hatch yields the fat universal Filtration
     assert type(oin.vr_filtration(pts, max_dim=2, max_diameter=1.0, packed=False)).__name__ == "_Filtration"
+
+
+def test_vr_tier_overflow_falls_back_to_fat():
+    # when (max_dim+1)*bits > 128 the packed tier does not fit, so the default packed path
+    # must transparently fall back to fat -- not raise AttributeError on a "...packedNone".
+    assert oin._vr_packed_word_suffix(3, 130) is None
+    pts = np.ascontiguousarray(np.random.default_rng(0).random((3, 2)))
+    fil = oin.vr_filtration(pts, max_dim=130, max_diameter=1e9)   # packed default, overflows tier
+    assert type(fil).__name__ == "_Filtration"
+
+
+@pytest.mark.parametrize("d,getter", [(0, "get_vertices"), (1, "get_edges"), (2, "get_triangles")])
+def test_packed_extractors_match_fat(d, getter):
+    # the packed simplex-vertex extractors (materialized from the geometry) must return
+    # the same simplices as the fat extractors, and the dim-specific accessors must agree
+    # with the generic get_simplices_as_arr.
+    pts = np.ascontiguousarray(np.random.default_rng(1).random((10, 3)))
+    fp = oin.vr_filtration(pts, max_dim=2, max_diameter=1e9, packed=True)
+    ff = oin.vr_filtration(pts, max_dim=2, max_diameter=1e9, packed=False)
+    sp = {tuple(sorted(int(v) for v in r)) for r in np.asarray(getattr(fp, getter)())}
+    sf = {tuple(sorted(int(v) for v in r)) for r in np.asarray(getattr(ff, getter)())}
+    assert sp == sf
+    sa = {tuple(sorted(int(v) for v in r)) for r in np.asarray(fp.get_simplices_as_arr(d))}
+    assert sa == sp
