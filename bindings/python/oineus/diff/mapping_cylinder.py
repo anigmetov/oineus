@@ -6,29 +6,28 @@ from .diff_filtration import DiffFiltration
 
 
 def _fatten_under_with_values(under_fil, values):
-    """Materialize a slim/packed under-filtration to fat, reordering the values.
+    """Materialize a slim/packed under-filtration to fat, keeping ``values`` aligned.
 
     mapping_cylinder's C++ builder is fat-Simplex-only and returns value indices
     aligned to the filtration order it is handed, so a slim/packed under-filtration
-    must be fattened first and its sorted_id-aligned ``values`` tensor reordered into
-    the fat filtration's sorted order. The permutation is recovered via the
-    combinatorial uid (fat cell j -> its sorted_id in the original filtration), which
-    the slim/packed filtration resolves through the uid translation. The gather is
-    differentiable, so gradients still flow back to the original values.
+    must be fattened first. The fat _Filtration constructor re-sorts the cells by the
+    same (value, dim, id) keys that ``under_fil.cells()`` already emits in sorted order
+    (id is a total tie-break), so the rebuild is ORDER-PRESERVING: fat cell j is the
+    materialization of under_fil cell j, and ``values`` (aligned to the under_fil sorted
+    order) is therefore already aligned to the fat order -- no permutation is needed.
 
-    For the current encodings the fat rebuild reproduces the slim/packed sorted order
-    (same value/dim/id sort keys), so this permutation is the identity in practice; the
-    gather is kept as a defensive correctness measure that stays valid if a future
-    encoding's fat rebuild reorders.
+    Do NOT reintroduce a per-cell Python permutation here: building one via
+    under_fil.sorted_id_by_uid(fat.cell(j).uid) is an O(n) loop with ~3 binding
+    round-trips per cell over a (million-cell) filtration, which dwarfs the actual
+    reduction (CLAUDE.md: do not wrap a mildly-superlinear C++ core in a linear Python
+    loop). The identity is asserted by tests/test_diff_vr_packed.py
+    (test_diff_mapping_cylinder_packed_matches_fat, cell-for-cell vs the fat path). A
+    hypothetical future encoding whose fat rebuild reorders would need a C++-side
+    permutation (a vectorized sorted_id_by_uid binding), never a Python loop.
     """
     if not isinstance(under_fil, _SLIM_SIMPLEX_FIL_TYPES):
         return under_fil, values
-    fat = _oineus._Filtration(under_fil.cells(), under_fil.negate)
-    perm = np.fromiter(
-        (under_fil.sorted_id_by_uid(fat.cell(j).uid) for j in range(fat.size())),
-        dtype=np.int64, count=fat.size(),
-    )
-    return fat, values[epy.astensor(perm)]
+    return _oineus._Filtration(under_fil.cells(), under_fil.negate), values
 
 
 def mapping_cylinder_filtration(fil_domain: DiffFiltration, fil_codomain: DiffFiltration,
