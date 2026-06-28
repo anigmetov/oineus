@@ -1,9 +1,17 @@
 #include "oineus_persistence_bindings.h"
 #include "oineus_type_list.h"
 #include <Eigen/SparseCore>
+#include <optional>
 #include "nanobind/eigen/sparse.h"
 #include "nanobind/stl/set.h"
 #include "nanobind/stl/list.h"
+
+// VRUDecomposition<Int> is Real-independent, so its nanobind class is created
+// exactly once (in the reg_indep / double pass) and the per-Real passes add their
+// Real-dependent ctor/diagram overloads to it. Shared across the passes here rather
+// than threaded through the header; module init is single-threaded so this static is
+// safe. (Distinct from a function-local static, which is per template instantiation.)
+static std::optional<nb::class_<oin::VRUDecomposition<oin_int>>> g_dcmp_cls;
 
 // Raise a clear error when R was not materialized. The fused diagram-only
 // reduce (oin.reduce with n_threads > 1 and compute_v=False) frees the reduced
@@ -86,13 +94,15 @@ Eigen::SparseMatrix<oin_int, Eigen::RowMajor>  z2_row_matrix_to_csr(const oin::V
 }
 
 
-Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv_1(
+template<class Real>
+Eigen::SparseMatrix<Real, Eigen::RowMajor> densify_v_for_selinv_1(
     const oin::VRUDecomposition<oin_int>& dcmp,
-    const oin::Filtration<oin::Simplex<oin_int>, oin_real>& fil,
+    const oin::Filtration<oin::Simplex<oin_int>, Real>& fil,
     const std::vector<oin_int>& rows_to_invert,
-    const std::vector<oin_real>& u_targets,
+    const std::vector<Real>& u_targets,
     int num_rows_)
 {
+    using oin_real = Real;
     if (not dcmp.has_matrix_v())
         throw std::runtime_error("densify_v_for_selinv called on matrix without V");
     if (not dcmp.is_reduced)
@@ -186,11 +196,13 @@ Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv_1(
 }
 
 
-Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv(
+template<class Real>
+Eigen::SparseMatrix<Real, Eigen::RowMajor> densify_v_for_selinv(
     const oin::VRUDecomposition<oin_int>& dcmp,
     const std::set<oin_int>& rows_to_invert,
     int num_rows_, int n_threads=1, bool print_time=false)
 {
+    using oin_real = Real;
     (void)n_threads;
     Timer timer;
     if (not dcmp.has_matrix_v())
@@ -276,8 +288,10 @@ Eigen::SparseMatrix<oin_real, Eigen::RowMajor> densify_v_for_selinv(
     return densified_v;
 }
 
-void init_oineus_common_decomposition(nb::module_& m)
+template<class Real>
+void register_oineus_decomposition(nb::module_& m, bool reg_indep)
 {
+    using oin_real = Real;
     using Decomposition = oin::VRUDecomposition<oin_int>;
     using DecompositionStateTuple = std::tuple<decltype(Decomposition::d_data),
                                                decltype(Decomposition::r_data),
@@ -347,12 +361,17 @@ void init_oineus_common_decomposition(nb::module_& m)
         });
     }
 
-    auto dcmp_cls = nb::class_<Decomposition>(m, "Decomposition");
+    // create the (Real-independent) class once, on the top module; later passes add
+    // their Real-dependent overloads to the same handle
+    if (reg_indep)
+        g_dcmp_cls.emplace(m, "Decomposition");
+    auto& dcmp_cls = *g_dcmp_cls;
     // per-filtration-type constructors, folded over the cell types (Decomposition itself is
-    // cell-agnostic; only this strongly-typed ctor varies by Filtration<Cell>)
+    // cell-agnostic; only this strongly-typed ctor varies by Filtration<Cell>). Real-dependent.
     oineus_python::for_each_type(DecompFilList{}, [&dcmp_cls]<class Fil>() {
         dcmp_cls.def(nb::init<const Fil&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4);
     });
+    if (reg_indep)
     dcmp_cls
             .def(nb::init<const typename Decomposition::MatrixData&, size_t, bool, bool>(),
                     nb::arg("d"), nb::arg("n_rows"), nb::arg("dualize")=false, nb::arg("skip_check")=false)
@@ -446,7 +465,11 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def("is_column_elz", &Decomposition::is_column_elz, nb::arg("column_idx"))
             .def("restore_elz", &Decomposition::restore_elz, nb::arg("dim")=oin::k_invalid_index, nb::arg("v_only")=false, nb::arg("verbose")=false, nb::arg("n_threads")=1)
             .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false)
-            .def("compute_u_from_v_1", &Decomposition::compute_u_from_v_1, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false)
+            .def("compute_u_from_v_1", &Decomposition::compute_u_from_v_1, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false);
+
+    // Real-DEPENDENT row-form U + densify methods: value_at reads the filtration's
+    // Real-typed values, so these are added on every pass (not under reg_indep).
+    dcmp_cls
             // Row-form U drivers. cmp direction picks the truncation:
             //   "above" -> hom-side increase_death on non-negate
             //              (matrix order = filtration order; values
@@ -503,7 +526,7 @@ void init_oineus_common_decomposition(nb::module_& m)
                  nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("densify_v_for_selinv", [](Decomposition& self, const std::set<oin_int>& rows_to_invert, int n_threads) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
                      int num_rows = self.r_data.size();
-                     return densify_v_for_selinv(self, rows_to_invert, num_rows, n_threads);
+                     return densify_v_for_selinv<oin_real>(self, rows_to_invert, num_rows, n_threads);
                  },
                  nb::arg("rows_to_invert"), nb::arg("n_threads")=1,
                  nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
@@ -512,7 +535,10 @@ void init_oineus_common_decomposition(nb::module_& m)
                      return densify_v_for_selinv_1(self, fil, rows_to_invert, targets, num_rows);
                  },
                  nb::arg("filtration"), nb::arg("rows_to_invert"), nb::arg("targets"),
-                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+    // sanity_check is Real-independent
+    if (reg_indep)
+    dcmp_cls
             .def("sanity_check", [](Decomposition& self, const typename Decomposition::MatrixData& d) { return self.sanity_check(d); },
                     nb::arg("d") = typename Decomposition::MatrixData{},
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
@@ -533,6 +559,8 @@ void init_oineus_common_decomposition(nb::module_& m)
                 nb::arg("fil"), nb::arg("n_threads") = 1,
                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
     });
+    // Real-independent tail (filtration_index / repr / equality / pickle)
+    if (reg_indep)
     dcmp_cls
             .def("filtration_index", &Decomposition::filtration_index, nb::arg("matrix_index"))
             .def("__repr__", [](const Decomposition& self) {
@@ -568,3 +596,10 @@ void init_oineus_common_decomposition(nb::module_& m)
                     ;
 
 }
+
+// double pass: creates the (Real-independent) Decomposition class + its Real-independent
+// methods on the top module, plus the double ctor/diagram/reduce overloads
+void init_oineus_common_decomposition(nb::module_& m) { register_oineus_decomposition<double>(m, true); }
+
+// float pass is compiled here; the driver calls it (reg_indep=false) into the _f32 submodule
+template void register_oineus_decomposition<float>(nb::module_&, bool);

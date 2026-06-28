@@ -812,12 +812,12 @@ template<class Real> void register_oineus_filtration(nb::module_& m, bool reg_in
 template<class Real> void register_oineus_kicr(nb::module_& m, bool reg_indep);
 template<class Real> void register_oineus_top_optimizer(nb::module_& m, bool reg_indep);
 // Decomposition: the class (VRUDecomposition<Int>) is Real-independent but has
-// Real-dependent ctors/diagram/reduce. The base call registers the class + its
-// Real-independent methods once and returns the handle; the per-Real call adds the
-// Real-dependent overloads to that handle and the per-Real free `reduce` functions.
-nb::class_<oin::VRUDecomposition<oin_int>> register_oineus_decomposition_base(nb::module_& m);
-template<class Real> void register_oineus_decomposition_real(nb::module_& m,
-        nb::class_<oin::VRUDecomposition<oin_int>>& dcmp_cls);
+// Real-dependent ctors/diagram/reduce. One templated registrar handles both: the
+// class + its Real-independent methods register once (reg_indep, on the top module
+// via a file-scope handle shared across the passes), and every pass adds the
+// Real-dependent ctor/diagram overloads to that one class plus its per-Real free
+// `reduce` functions on the target module.
+template<class Real> void register_oineus_decomposition(nb::module_& m, bool reg_indep);
 
 void init_oineus_common_decomposition(nb::module_& m);
 void init_oineus_diagram(nb::module_& m);
