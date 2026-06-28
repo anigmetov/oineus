@@ -372,6 +372,8 @@ void init_oineus_common_decomposition(nb::module_& m)
                     },
                     [](Decomposition& self, const typename Decomposition::MatrixData& value) { self.v_data = value; })
             .def_rw("u_data_t", &Decomposition::u_data_t)
+            .def_ro("u_timings", &Decomposition::u_timings_,
+                    "Per-phase wall-clock breakdown of the last compute_u_* call (UComputeTimings).")
             .def_ro("d_data", &Decomposition::d_data)
             .def_ro("is_reduced", &Decomposition::is_reduced)
             .def("has_matrix_v", &Decomposition::has_matrix_v)
@@ -455,50 +457,9 @@ void init_oineus_common_decomposition(nb::module_& m)
             //              descend, stop when piv falls below
             //              target_birth)
             // Negate flips both; not yet supported.
-            .def("compute_partial_u_rows",
-                 [](Decomposition& self, const SimplexFiltration& fil,
-                    const std::vector<size_t>& rows,
-                    const std::vector<oin_real>& bounds,
-                    int dim,
-                    const std::string& cmp,
-                    int n_threads, bool verbose) {
-                     const bool dualize = self.dualize();
-                     auto value_at = [&fil, dualize](oin_int matrix_idx) -> oin_real {
-                         return fil.get_cell_value(fil.index_in_filtration(static_cast<size_t>(matrix_idx), dualize));
-                     };
-                     if (cmp == "below") {
-                         auto cmp_op = [](oin_real piv_value, oin_real value_bound) {
-                             return piv_value < value_bound;
-                         };
-                         self.compute_partial_u_rows(rows, bounds, dim, value_at, cmp_op,
-                                                     static_cast<size_t>(n_threads), verbose);
-                     } else if (cmp == "above") {
-                         auto cmp_op = [](oin_real piv_value, oin_real value_bound) {
-                             return piv_value > value_bound;
-                         };
-                         self.compute_partial_u_rows(rows, bounds, dim, value_at, cmp_op,
-                                                     static_cast<size_t>(n_threads), verbose);
-                     } else {
-                         throw std::runtime_error("compute_partial_u_rows: cmp must be 'below' or 'above'");
-                     }
-                 },
-                 nb::arg("filtration"), nb::arg("rows"), nb::arg("bounds"),
-                 nb::arg("dim"), nb::arg("cmp")="above",
-                 nb::arg("n_threads")=1, nb::arg("verbose")=false,
-                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("compute_full_u_rows",
-                 [](Decomposition& self, const SimplexFiltration& fil,
-                    int dim, int n_threads, bool verbose) {
-                     const bool dualize = self.dualize();
-                     auto value_at = [&fil, dualize](oin_int matrix_idx) -> oin_real {
-                         return fil.get_cell_value(fil.index_in_filtration(static_cast<size_t>(matrix_idx), dualize));
-                     };
-                     self.compute_full_u_rows<oin_real>(dim, value_at,
-                                                        static_cast<size_t>(n_threads), verbose);
-                 },
-                 nb::arg("filtration"), nb::arg("dim"),
-                 nb::arg("n_threads")=1, nb::arg("verbose")=false,
-                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            // compute_partial_u_rows / compute_full_u_rows are folded over every
+            // filtration cell type in the for_each_type(DecompFilList) block below
+            // (so grids/cubes/packed get the row-form path, not just fat simplices).
             .def("densify_v_for_selinv", [](Decomposition& self, const std::set<oin_int>& rows_to_invert, int n_threads) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
                      int num_rows = self.r_data.size();
                      return densify_v_for_selinv(self, rows_to_invert, num_rows, n_threads);
@@ -529,6 +490,49 @@ void init_oineus_common_decomposition(nb::module_& m)
         dcmp_cls.def("zero_pers_diagram", [](const Decomposition& self, const Fil& fil, int n_threads)
                         { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
                 nb::arg("fil"), nb::arg("n_threads") = 1,
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+        // Row-form U drivers (V^T U^T = Id). cmp picks the truncation direction:
+        //   "above" -> hom-side increase_death (values ascend along the solve)
+        //   "below" -> coh-side decrease_birth (values descend). Negate not yet supported.
+        // value_at only uses generic Filtration members, so this works for every cell type.
+        dcmp_cls.def("compute_partial_u_rows",
+                [](Decomposition& self, const Fil& fil,
+                   const std::vector<size_t>& rows,
+                   const std::vector<oin_real>& bounds,
+                   int dim, const std::string& cmp,
+                   int n_threads, bool verbose) {
+                    const bool dualize = self.dualize();
+                    auto value_at = [&fil, dualize](oin_int matrix_idx) -> oin_real {
+                        return fil.get_cell_value(fil.index_in_filtration(static_cast<size_t>(matrix_idx), dualize));
+                    };
+                    if (cmp == "below") {
+                        auto cmp_op = [](oin_real piv_value, oin_real value_bound) { return piv_value < value_bound; };
+                        self.compute_partial_u_rows(rows, bounds, dim, value_at, cmp_op,
+                                                    static_cast<size_t>(n_threads), verbose);
+                    } else if (cmp == "above") {
+                        auto cmp_op = [](oin_real piv_value, oin_real value_bound) { return piv_value > value_bound; };
+                        self.compute_partial_u_rows(rows, bounds, dim, value_at, cmp_op,
+                                                    static_cast<size_t>(n_threads), verbose);
+                    } else {
+                        throw std::runtime_error("compute_partial_u_rows: cmp must be 'below' or 'above'");
+                    }
+                },
+                nb::arg("filtration"), nb::arg("rows"), nb::arg("bounds"),
+                nb::arg("dim"), nb::arg("cmp")="above",
+                nb::arg("n_threads")=1, nb::arg("verbose")=false,
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+        dcmp_cls.def("compute_full_u_rows",
+                [](Decomposition& self, const Fil& fil,
+                   int dim, int n_threads, bool verbose) {
+                    const bool dualize = self.dualize();
+                    auto value_at = [&fil, dualize](oin_int matrix_idx) -> oin_real {
+                        return fil.get_cell_value(fil.index_in_filtration(static_cast<size_t>(matrix_idx), dualize));
+                    };
+                    self.compute_full_u_rows<oin_real>(dim, value_at,
+                                                       static_cast<size_t>(n_threads), verbose);
+                },
+                nb::arg("filtration"), nb::arg("dim"),
+                nb::arg("n_threads")=1, nb::arg("verbose")=false,
                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
     });
     dcmp_cls

@@ -400,6 +400,71 @@ TEST_CASE("compute_partial_u_rows writes only requested rows, hom")
 }
 
 
+// The benchmark drives three full-inversion strategies on the SAME reduced
+// (clearing + restore_elz) decomposition and must get the same U from each,
+// while u_timings records the per-phase split. This guards both invariants:
+//   - compute_u_from_v   (RUD, R u_c = D_c, column-form)   -> col_solve + col_to_row
+//   - compute_u_from_v_1 (VUI, V u_c = e_c, column-form)   -> col_solve + col_to_row
+//   - compute_full_u_rows (V^T U^T = Id, row-form)         -> transpose_v + row_solve
+// all equal the in-band U over the dim-1 row block.
+TEST_CASE("full-inversion strategies agree on U and populate u_timings")
+{
+    using Int = long;
+    using Real = double;
+    auto fil = make_test_filtration<Int, Real>(6, 6);
+
+    // In-band reference U (clearing off, serial).
+    auto decmp_ref = reduce_with_params_dualize<Int, Real>(
+            fil, /*dualize=*/false, /*clearing=*/false,
+            /*compute_u=*/true, /*restore_elz=*/false);
+
+    const dim_type dim = 1;
+
+    auto fresh = [&fil]() {
+        // The benchmark's reduction config: parallel clearing + restore_elz.
+        return reduce_with_params_dualize<Int, Real>(
+                fil, /*dualize=*/false, /*clearing=*/true,
+                /*compute_u=*/false, /*restore_elz=*/true, /*n_threads=*/4);
+    };
+    auto value_at = make_value_at<Int, Real>(fil, /*dualize=*/false);
+
+    // The dim-1 row block; the three strategies only touch these rows.
+    auto rng = fresh();
+    const size_t cstart = rng.range_start_(dim);
+    const size_t cend = rng.range_end_(dim);
+    REQUIRE(cend > cstart);
+
+    auto check_dim1_rows = [&](const auto& decmp) {
+        REQUIRE(decmp.u_data_t.size() == decmp_ref.u_data_t.size());
+        for (size_t r = cstart; r < cend; ++r)
+            REQUIRE(decmp.u_data_t[r] == decmp_ref.u_data_t[r]);
+    };
+
+    // RUD: R u_c = D_c (needs d_data, kept by the ctor+reduce path).
+    auto decmp_rud = fresh();
+    decmp_rud.compute_u_from_v(dim, /*n_threads=*/4);
+    check_dim1_rows(decmp_rud);
+    REQUIRE(decmp_rud.u_timings_.col_solve > 0.0);
+    REQUIRE(decmp_rud.u_timings_.transpose_v == 0.0);
+    REQUIRE(decmp_rud.u_timings_.row_solve == 0.0);
+
+    // VUI: V u_c = e_c.
+    auto decmp_vui = fresh();
+    decmp_vui.compute_u_from_v_1(dim, /*n_threads=*/4);
+    check_dim1_rows(decmp_vui);
+    REQUIRE(decmp_vui.u_timings_.col_solve > 0.0);
+    REQUIRE(decmp_vui.u_timings_.transpose_v == 0.0);
+
+    // VtUt: V^T U^T = Id (row-form).
+    auto decmp_vtut = fresh();
+    decmp_vtut.compute_full_u_rows<Real>(dim, value_at, /*n_threads=*/4);
+    check_dim1_rows(decmp_vtut);
+    REQUIRE(decmp_vtut.u_timings_.transpose_v > 0.0);
+    REQUIRE(decmp_vtut.u_timings_.row_solve > 0.0);
+    REQUIRE(decmp_vtut.u_timings_.col_solve == 0.0);
+}
+
+
 TEST_CASE("compute_partial_u_rows is deterministic across thread counts")
 {
     using Int = long;

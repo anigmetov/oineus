@@ -105,6 +105,34 @@ void init_oineus_common(nb::module_& m)
                 t.copy_pivots = std::get<4>(s);
             });
 
+    using UComputeTimings = oin::UComputeTimings;
+    using UTimingsStateTuple = std::tuple<double, double, double, double>;
+
+    nb::class_<UComputeTimings>(m, "UComputeTimings",
+            "Per-phase wall-clock breakdown (seconds) of the last compute_u_* call. "
+            "Only the fields the chosen strategy uses are nonzero: row-form "
+            "(compute_full_u_rows / compute_partial_u_rows) fills transpose_v + "
+            "row_solve; column-form (compute_u_from_v / compute_u_from_v_1) fills "
+            "col_solve + col_to_row. total is the strategy-comparable U-compute time.")
+            .def(nb::init<>())
+            .def_rw("transpose_v", &UComputeTimings::transpose_v, "row-form Stage A: build V^T (parallel col->row transpose)")
+            .def_rw("row_solve", &UComputeTimings::row_solve, "row-form Stage B: parallel per-row forward substitution")
+            .def_rw("col_solve", &UComputeTimings::col_solve, "column-form: solve each U column in parallel")
+            .def_rw("col_to_row", &UComputeTimings::col_to_row, "column-form: transpose column-form U into row form")
+            .def_prop_ro("total", &UComputeTimings::total, "Total U-compute wall-clock across every phase -- comparable across strategies.")
+            .def("reset", &UComputeTimings::reset)
+            .def("__repr__", [](const UComputeTimings& self) { std::stringstream ss; ss << self; return ss.str(); })
+            .def("__getstate__", [](const UComputeTimings& t) -> UTimingsStateTuple {
+                return std::make_tuple(t.transpose_v, t.row_solve, t.col_solve, t.col_to_row);
+            })
+            .def("__setstate__", [](UComputeTimings& t, const UTimingsStateTuple& s) {
+                new (&t) UComputeTimings();
+                t.transpose_v = std::get<0>(s);
+                t.row_solve   = std::get<1>(s);
+                t.col_solve   = std::get<2>(s);
+                t.col_to_row  = std::get<3>(s);
+            });
+
     nb::class_<ReductionParams>(m, "ReductionParams")
             .def(nb::init<>())
             .def("__init__",

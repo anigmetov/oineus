@@ -34,6 +34,7 @@
 #endif
 
 #include "common_defs.h"
+#include "reduction_timings.h"
 #include "diagram.h"
 #include "mem_reclamation.h"
 #include "sparse_matrix.h"
@@ -460,6 +461,8 @@ namespace oineus {
         MatrixData r_data;
         MatrixData v_data;
         MatrixData u_data_t;
+        // Per-phase wall-clock of the last compute_u_* call (see UComputeTimings).
+        UComputeTimings u_timings_;
         bool is_reduced {false};
         // Whether d_data (the original boundary) is held. The fused
         // reduce_from_filtration path builds R directly and does not keep D, so
@@ -4267,6 +4270,7 @@ namespace oineus {
     void VRUDecomposition<Int_>::compute_u_from_v_1(dim_type dim, size_t n_threads, bool verbose)
     {
         Timer timer;
+        u_timings_.reset();
         using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
 
         // compute columns of U in parallel
@@ -4301,19 +4305,20 @@ namespace oineus {
         for(auto& worker: workers)
             worker.join();
 
-        [[maybe_unused]] auto col_inv_elapsed = timer.elapsed_reset();
+        u_timings_.col_solve = timer.elapsed_reset();
 
         u_data_t = MatrixTraits::col_to_row_format_parallel(u_data, n_threads, col_start, col_end, v_data.size());
 
-        [[maybe_unused]] auto col_to_row_elapsed = timer.elapsed_reset();
+        u_timings_.col_to_row = timer.elapsed_reset();
 
-        if (verbose) IC(col_inv_elapsed, col_to_row_elapsed);
+        if (verbose) IC(u_timings_.col_solve, u_timings_.col_to_row);
     }
 
     template<typename Int_>
     void VRUDecomposition<Int_>::compute_u_from_v(dim_type dim, size_t n_threads, bool verbose)
     {
         Timer timer;
+        u_timings_.reset();
         using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
 
         // compute columns of U in parallel
@@ -4341,13 +4346,13 @@ namespace oineus {
         for(auto& worker: workers)
             worker.join();
 
-        [[maybe_unused]] auto col_inv_elapsed = timer.elapsed_reset();
+        u_timings_.col_solve = timer.elapsed_reset();
 
         u_data_t = MatrixTraits::col_to_row_format_parallel(u_data, n_threads, col_start, col_end, v_data.size());
 
-        [[maybe_unused]] auto col_to_row_elapsed = timer.elapsed_reset();
+        u_timings_.col_to_row = timer.elapsed_reset();
 
-        if (verbose) IC(col_inv_elapsed, col_to_row_elapsed);
+        if (verbose) IC(u_timings_.col_solve, u_timings_.col_to_row);
     }
 
     template<typename Int_>
@@ -4432,6 +4437,8 @@ namespace oineus {
         if (rows.size() != bounds.size())
             throw std::runtime_error("compute_partial_u_rows: rows and bounds must have the same size");
 
+        u_timings_.reset();
+
         // The apparent lean working form has null slots the resolver alone can fill;
         // reading V per-column here would deref null, so materialize first.
         if (apparent_) ensure_materialized_();
@@ -4487,7 +4494,7 @@ namespace oineus {
                     static_cast<typename MatrixTraits::Int>(v_data.size()));
         }
 
-        [[maybe_unused]] auto vt_elapsed = timer.elapsed_reset();
+        u_timings_.transpose_v = timer.elapsed_reset();
 
         // Stage B: parallel row solves. Each row writes to its own
         // u_data_t[r] slot; no shared writes.
@@ -4509,9 +4516,9 @@ namespace oineus {
 
         for (auto& w : workers) w.join();
 
-        [[maybe_unused]] auto solve_elapsed = timer.elapsed_reset();
+        u_timings_.row_solve = timer.elapsed_reset();
 
-        if (verbose) IC(vt_elapsed, solve_elapsed);
+        if (verbose) IC(u_timings_.transpose_v, u_timings_.row_solve);
     }
 
     template<typename Int_>
@@ -4521,6 +4528,7 @@ namespace oineus {
                                                      size_t n_threads,
                                                      bool verbose)
     {
+        u_timings_.reset();
         const auto _dim = _dim_from_dim(dim);
         const size_t cstart = range_start_(_dim);
         const size_t cend = range_end_(_dim);
