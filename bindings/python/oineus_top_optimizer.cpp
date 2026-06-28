@@ -70,9 +70,10 @@
     // }
 
 
-template<class Cell>
+template<class Cell, class Real>
 void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::string ind_vals_name)
 {
+    using oin_real = Real;
     using Filtration = oin::Filtration<Cell, oin_real>;
     using TopologyOptimizer = oin::TopologyOptimizer<Cell, oin_real>;
     using IndicesValues = typename TopologyOptimizer::IndicesValues;
@@ -312,8 +313,10 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
 
 }
 
-void init_oineus_top_optimizer(nb::module_& m)
+template<class Real>
+void register_oineus_top_optimizer(nb::module_& m, bool reg_indep)
 {
+    using oin_real = Real;
     using Simp = oin::Simplex<oin_int>;
     using SimpProd = oin::ProductCell<Simp, Simp>;
     using Cube_1D = oin::Cube<oin_int, 1>;
@@ -327,6 +330,8 @@ void init_oineus_top_optimizer(nb::module_& m)
     using PackedCell_64 = oin::Simplex<oin_int, oin::BitPacked<oin_int, std::uint64_t>>;
     using PackedCell_128 = oin::Simplex<oin_int, oin::BitPacked<oin_int, unsigned __int128>>;
 
+    // UStrategy is Real-independent -- register once (default real)
+    if (reg_indep)
     nb::enum_<oin::UStrategy>(m, "UStrategy",
             "U-computation strategy used by the crit-sets backward in "
             "oineus.diff. Auto resolves to RowPartial; LegacyInBand "
@@ -335,18 +340,18 @@ void init_oineus_top_optimizer(nb::module_& m)
             .value("RowPartial",   oin::UStrategy::RowPartial)
             .value("LegacyInBand", oin::UStrategy::LegacyInBand);
 
-    init_oineus_top_optimizer_class<Simp>(m, "TopologyOptimizer", "IndicesValues");
-    init_oineus_top_optimizer_class<SimpProd>(m, "TopologyOptimizerProd", "IndicesValuesProd");
-    init_oineus_top_optimizer_class<Cube_1D>(m, "TopologyOptimizerCube_1D", "IndicesValuesCube_1D");
-    init_oineus_top_optimizer_class<Cube_2D>(m, "TopologyOptimizerCube_2D", "IndicesValuesCube_2D");
-    init_oineus_top_optimizer_class<Cube_3D>(m, "TopologyOptimizerCube_3D", "IndicesValuesCube_3D");
-    init_oineus_top_optimizer_class<Cube_4D>(m, "TopologyOptimizerCube_4D", "IndicesValuesCube_4D");
-    init_oineus_top_optimizer_class<FrCell_1D>(m, "TopologyOptimizerFreudenthal_1D", "IndicesValuesFreudenthal_1D");
-    init_oineus_top_optimizer_class<FrCell_2D>(m, "TopologyOptimizerFreudenthal_2D", "IndicesValuesFreudenthal_2D");
-    init_oineus_top_optimizer_class<FrCell_3D>(m, "TopologyOptimizerFreudenthal_3D", "IndicesValuesFreudenthal_3D");
-    init_oineus_top_optimizer_class<FrCell_4D>(m, "TopologyOptimizerFreudenthal_4D", "IndicesValuesFreudenthal_4D");
-    init_oineus_top_optimizer_class<PackedCell_64>(m, "TopologyOptimizerPacked_64", "IndicesValuesPacked_64");
-    init_oineus_top_optimizer_class<PackedCell_128>(m, "TopologyOptimizerPacked_128", "IndicesValuesPacked_128");
+    init_oineus_top_optimizer_class<Simp, oin_real>(m, "TopologyOptimizer", "IndicesValues");
+    init_oineus_top_optimizer_class<SimpProd, oin_real>(m, "TopologyOptimizerProd", "IndicesValuesProd");
+    init_oineus_top_optimizer_class<Cube_1D, oin_real>(m, "TopologyOptimizerCube_1D", "IndicesValuesCube_1D");
+    init_oineus_top_optimizer_class<Cube_2D, oin_real>(m, "TopologyOptimizerCube_2D", "IndicesValuesCube_2D");
+    init_oineus_top_optimizer_class<Cube_3D, oin_real>(m, "TopologyOptimizerCube_3D", "IndicesValuesCube_3D");
+    init_oineus_top_optimizer_class<Cube_4D, oin_real>(m, "TopologyOptimizerCube_4D", "IndicesValuesCube_4D");
+    init_oineus_top_optimizer_class<FrCell_1D, oin_real>(m, "TopologyOptimizerFreudenthal_1D", "IndicesValuesFreudenthal_1D");
+    init_oineus_top_optimizer_class<FrCell_2D, oin_real>(m, "TopologyOptimizerFreudenthal_2D", "IndicesValuesFreudenthal_2D");
+    init_oineus_top_optimizer_class<FrCell_3D, oin_real>(m, "TopologyOptimizerFreudenthal_3D", "IndicesValuesFreudenthal_3D");
+    init_oineus_top_optimizer_class<FrCell_4D, oin_real>(m, "TopologyOptimizerFreudenthal_4D", "IndicesValuesFreudenthal_4D");
+    init_oineus_top_optimizer_class<PackedCell_64, oin_real>(m, "TopologyOptimizerPacked_64", "IndicesValuesPacked_64");
+    init_oineus_top_optimizer_class<PackedCell_128, oin_real>(m, "TopologyOptimizerPacked_128", "IndicesValuesPacked_128");
 
     // induced matching: one binding per cell type, folded (same order as before)
     using OptCellList = oineus_python::TypeList<Simp, SimpProd, Cube_1D, Cube_2D, Cube_3D, Cube_4D,
@@ -360,3 +365,9 @@ void init_oineus_top_optimizer(nb::module_& m)
                 nb::arg("n_threads")=1);
     });
 }
+
+// double pass on the top module (registers the Real-independent UStrategy enum too)
+void init_oineus_top_optimizer(nb::module_& m) { register_oineus_top_optimizer<double>(m, true); }
+
+// float pass is compiled here; the driver calls it into the _f32 submodule
+template void register_oineus_top_optimizer<float>(nb::module_&, bool);

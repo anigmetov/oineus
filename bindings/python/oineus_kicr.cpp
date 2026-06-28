@@ -66,9 +66,10 @@ void bind_kicr_pickle_and_equality(nb::class_<KerImCokReduced>& cls)
 // boundary matrices via fil.boundary_matrix() and works purely on uids/dims/sorted_ids), so the
 // same class body works for every cell type -- fat Simplex / product, slim Freudenthal, bit-packed
 // VR/alpha, slim cube. Mirrors init_oineus_top_optimizer_class<Cell> in oineus_top_optimizer.cpp.
-template<class Cell>
+template<class Cell, class Real>
 void init_oineus_kicr_class(nb::module_& m, const std::string& class_name)
 {
+    using oin_real = Real;
     using Fil = oin::Filtration<Cell, oin_real>;
     using KICR = oin::KerImCokReduced<Cell, oin_real>;
 
@@ -96,8 +97,10 @@ void init_oineus_kicr_class(nb::module_& m, const std::string& class_name)
     bind_kicr_pickle_and_equality(cls);
 }
 
-void init_oineus_kicr(nb::module_& m)
+template<class Real>
+void register_oineus_kicr(nb::module_& m, bool reg_indep)
 {
+    using oin_real = Real;
     using Simp = oin::Simplex<oin_int>;
     using SimpProd = oin::ProductCell<Simp, Simp>;
     using Cube_1D = oin::Cube<oin_int, 1>;
@@ -114,16 +117,22 @@ void init_oineus_kicr(nb::module_& m)
     // The two historical fat classes keep their public names (imported by name in __init__.py
     // and used directly in compute_ker_cok_reduction_cyl); the slim/packed/cube families get
     // hidden underscore names dispatched via _KICR_CLASS_BY_FIL_TYPE in __init__.py.
-    init_oineus_kicr_class<Simp>(m, "KerImCokReduced");
-    init_oineus_kicr_class<SimpProd>(m, "KerImCokReducedProd");
-    init_oineus_kicr_class<Cube_1D>(m, "_KerImCokReduced_Cube_1D");
-    init_oineus_kicr_class<Cube_2D>(m, "_KerImCokReduced_Cube_2D");
-    init_oineus_kicr_class<Cube_3D>(m, "_KerImCokReduced_Cube_3D");
-    init_oineus_kicr_class<Cube_4D>(m, "_KerImCokReduced_Cube_4D");
-    init_oineus_kicr_class<FrCell_1D>(m, "_KerImCokReduced_Fr_1D");
-    init_oineus_kicr_class<FrCell_2D>(m, "_KerImCokReduced_Fr_2D");
-    init_oineus_kicr_class<FrCell_3D>(m, "_KerImCokReduced_Fr_3D");
-    init_oineus_kicr_class<FrCell_4D>(m, "_KerImCokReduced_Fr_4D");
-    init_oineus_kicr_class<PackedCell_64>(m, "_KerImCokReduced_Packed_64");
-    init_oineus_kicr_class<PackedCell_128>(m, "_KerImCokReduced_Packed_128");
+    init_oineus_kicr_class<Simp, oin_real>(m, "KerImCokReduced");
+    init_oineus_kicr_class<SimpProd, oin_real>(m, "KerImCokReducedProd");
+    init_oineus_kicr_class<Cube_1D, oin_real>(m, "_KerImCokReduced_Cube_1D");
+    init_oineus_kicr_class<Cube_2D, oin_real>(m, "_KerImCokReduced_Cube_2D");
+    init_oineus_kicr_class<Cube_3D, oin_real>(m, "_KerImCokReduced_Cube_3D");
+    init_oineus_kicr_class<Cube_4D, oin_real>(m, "_KerImCokReduced_Cube_4D");
+    init_oineus_kicr_class<FrCell_1D, oin_real>(m, "_KerImCokReduced_Fr_1D");
+    init_oineus_kicr_class<FrCell_2D, oin_real>(m, "_KerImCokReduced_Fr_2D");
+    init_oineus_kicr_class<FrCell_3D, oin_real>(m, "_KerImCokReduced_Fr_3D");
+    init_oineus_kicr_class<FrCell_4D, oin_real>(m, "_KerImCokReduced_Fr_4D");
+    init_oineus_kicr_class<PackedCell_64, oin_real>(m, "_KerImCokReduced_Packed_64");
+    init_oineus_kicr_class<PackedCell_128, oin_real>(m, "_KerImCokReduced_Packed_128");
 }
+
+// double pass on the top module (all KICR types are Real-dependent, no reg_indep)
+void init_oineus_kicr(nb::module_& m) { register_oineus_kicr<double>(m, true); }
+
+// float pass is compiled here; the driver calls it into the _f32 submodule
+template void register_oineus_kicr<float>(nb::module_&, bool);
