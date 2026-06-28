@@ -13,6 +13,7 @@
 #ifdef OINEUS_PYTHON_FRIENDS
 namespace nanobind { class module_; }
 void init_oineus_cells(nanobind::module_&);
+template<class Real> void register_oineus_cells(nanobind::module_&, bool);
 #endif
 
 namespace std {
@@ -485,6 +486,7 @@ public:
 
 #ifdef OINEUS_PYTHON_FRIENDS
      friend void ::init_oineus_cells(nanobind::module_&);
+     template<class Real> friend void ::register_oineus_cells(nanobind::module_&, bool);
 #endif
 
 private:

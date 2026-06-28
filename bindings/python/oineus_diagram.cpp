@@ -1,8 +1,14 @@
 #include "oineus_persistence_bindings.h"
 #include <nanobind/stl/variant.h>
 
-void init_oineus_diagram(nb::module_& m)
+// Registered per Real (double on the top module, float32 in the _f32 submodule).
+// `using oin_real = Real` shadows the global alias so the body stays Real-generic
+// with no other edits; the one Real-INDEPENDENT class here (IndexDiagramPoint =
+// Diagrams<size_t>::Point) is registered only when reg_indep is set.
+template<class Real>
+void register_oineus_diagram(nb::module_& m, bool reg_indep)
 {
+    using oin_real = Real;
     using DgmPoint = typename oin::Diagrams<oin_real>::Point;
     using DgmPtVec = typename oin::Diagrams<oin_real>::Dgm;
     using IndexDgmPoint = typename oin::Diagrams<size_t>::Point;
@@ -62,6 +68,8 @@ void init_oineus_diagram(nb::module_& m)
                 p.id = std::get<6>(t);
             });
 
+    // Diagrams<size_t>::Point is Real-independent -- register it once (default real)
+    if (reg_indep)
     nb::class_<IndexDgmPoint>(m, index_dgm_point_name.c_str())
             .def(nb::init<size_t, size_t>())
             .def_rw("birth", &IndexDgmPoint::birth)
@@ -150,3 +158,9 @@ void init_oineus_diagram(nb::module_& m)
             })
             ;
 }
+
+// double pass on the top module (registers the Real-independent IndexDiagramPoint too)
+void init_oineus_diagram(nb::module_& m) { register_oineus_diagram<double>(m, true); }
+
+// float pass is compiled here; the driver calls it into the _f32 submodule
+template void register_oineus_diagram<float>(nb::module_&, bool);

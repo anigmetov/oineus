@@ -793,8 +793,32 @@ oin::KerImCokReduced<C, Real, 2> compute_kernel_image_cokernel_reduction(const o
 }
 
 
+// Real-INDEPENDENT registration (enums, params, the int-templated decomposition
+// stats): registered once on the top module.
 void init_oineus_common(nb::module_& m);
 void init_oineus_dcmp_stats(nb::module_& m);
+
+// Real-DEPENDENT registration, templated on Real and registered per dtype. The
+// double pass targets the top module (so the existing API is byte-identical) with
+// reg_indep=true (it also registers the few Real-INDEPENDENT classes that live
+// alongside, e.g. CombinatorialSimplex / GridDomain / IndexDiagramPoint); the float
+// pass targets the _f32 submodule with reg_indep=false (those shared types are found
+// in nanobind's global registry). The thin init_oineus_* wrappers below drive the
+// double pass so the module driver and the per-file refactors can land incrementally.
+template<class Real> void register_oineus_cells(nb::module_& m, bool reg_indep);
+template<class Real> void register_oineus_diagram(nb::module_& m, bool reg_indep);
+template<class Real> void register_oineus_functions(nb::module_& m, bool reg_indep);
+template<class Real> void register_oineus_filtration(nb::module_& m, bool reg_indep);
+template<class Real> void register_oineus_kicr(nb::module_& m, bool reg_indep);
+template<class Real> void register_oineus_top_optimizer(nb::module_& m, bool reg_indep);
+// Decomposition: the class (VRUDecomposition<Int>) is Real-independent but has
+// Real-dependent ctors/diagram/reduce. The base call registers the class + its
+// Real-independent methods once and returns the handle; the per-Real call adds the
+// Real-dependent overloads to that handle and the per-Real free `reduce` functions.
+nb::class_<oin::VRUDecomposition<oin_int>> register_oineus_decomposition_base(nb::module_& m);
+template<class Real> void register_oineus_decomposition_real(nb::module_& m,
+        nb::class_<oin::VRUDecomposition<oin_int>>& dcmp_cls);
+
 void init_oineus_common_decomposition(nb::module_& m);
 void init_oineus_diagram(nb::module_& m);
 void init_oineus_functions(nb::module_& m);

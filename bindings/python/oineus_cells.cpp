@@ -1,7 +1,14 @@
 #include "oineus_persistence_bindings.h"
 
-void init_oineus_cells(nb::module_& m)
+// Registered per Real (double on the top module, float32 in _f32). `using oin_real =
+// Real` shadows the global alias so the body stays Real-generic. The Real-INDEPENDENT
+// classes here (CombinatorialSimplex / CombinatorialProdSimplex / GridDomain /
+// CombinatorialCube) are registered only when reg_indep is set; the Real-dependent
+// value cells (Simplex / ProdSimplex / Grid / Cube_ND) are registered every time.
+template<class Real>
+void register_oineus_cells(nb::module_& m, bool reg_indep)
 {
+    using oin_real = Real;
     using Simplex = oin::Simplex<oin_int>;
     using SimplexValue = oin::CellWithValue<oin::Simplex<oin_int>, oin_real>;
 
@@ -38,6 +45,7 @@ void init_oineus_cells(nb::module_& m)
                                                   decltype(ProdSimplexValue::cell_)
                                                  >;
 
+    if (reg_indep)
     nb::class_<Simplex>(m, pure_simplex_class_name.c_str())
         .def(nb::init<const Simplex::IdxVector&>(), nb::arg("vertices"))
         .def(nb::init<oin_int, const Simplex::IdxVector&>(), nb::arg("id"), nb::arg("vertices"))
@@ -70,6 +78,7 @@ void init_oineus_cells(nb::module_& m)
           return ss.str();
         });
 
+    if (reg_indep)
     nb::class_<ProdSimplex>(m, pure_prod_simplex_class_name.c_str())
         .def(nb::init<const Simplex::IdxVector&, const Simplex::IdxVector&>(), nb::arg("vertices_1"), nb::arg("vertices_2"))
         .def_prop_rw("id", &ProdSimplex::get_id, &ProdSimplex::set_id)
@@ -105,7 +114,7 @@ void init_oineus_cells(nb::module_& m)
             .def("__getitem__", [](SimplexValue& sigma, size_t i) { return sigma.cell_.get_vertices()[i]; })
             .def_prop_rw("id", &SimplexValue::get_id, &SimplexValue::set_id)
             .def_rw("sorted_id", &SimplexValue::sorted_id_)
-            .def_prop_ro("vertices", &SimplexValue::get_vertices<Simplex>, "simplex vertices")
+            .def_prop_ro("vertices", &SimplexValue::template get_vertices<Simplex>, "simplex vertices")
             .def_prop_ro("uid", &SimplexValue::get_uid)
             .def_rw("value", &SimplexValue::value_)
             .def_prop_ro("dim", &SimplexValue::dim)
@@ -232,10 +241,13 @@ void init_oineus_cells(nb::module_& m)
                 g.wrap_ = std::get<3>(state); \
              }) \
 
-    BIND_GRID_DOMAIN(1);
-    BIND_GRID_DOMAIN(2);
-    BIND_GRID_DOMAIN(3);
-    BIND_GRID_DOMAIN(4);
+    // GridDomain is Real-independent -- register once (default real)
+    if (reg_indep) {
+        BIND_GRID_DOMAIN(1);
+        BIND_GRID_DOMAIN(2);
+        BIND_GRID_DOMAIN(3);
+        BIND_GRID_DOMAIN(4);
+    }
 
     #undef BIND_GRID_DOMAIN
 
@@ -247,10 +259,10 @@ void init_oineus_cells(nb::module_& m)
                     if (data.ndim() != DIM) \
                         throw std::runtime_error("Array must be " #DIM "D"); \
                     oin_real* pdata {static_cast<oin_real*>(data.data())}; \
-                    Grid_##DIM##D::GridPoint shape; \
+                    typename Grid_##DIM##D::GridPoint shape; \
                     for (size_t i = 0; i < DIM; ++i) \
                         shape[i] = data.shape(i); \
-                    Grid_##DIM##D::DataLocation data_loc; \
+                    typename Grid_##DIM##D::DataLocation data_loc; \
                     if (values_on == "cells") \
                         data_loc = Grid_##DIM##D::DataLocation::CELL ; \
                     else if (values_on == "vertices") \
@@ -311,10 +323,13 @@ void init_oineus_cells(nb::module_& m)
                     c.set_id(std::get<1>(state)); \
                 }) \
 
-    BIND_CUBE(1);
-    BIND_CUBE(2);
-    BIND_CUBE(3);
-    BIND_CUBE(4);
+    // CombinatorialCube (FatCube) is Real-independent -- register once (default real)
+    if (reg_indep) {
+        BIND_CUBE(1);
+        BIND_CUBE(2);
+        BIND_CUBE(3);
+        BIND_CUBE(4);
+    }
 
     #undef BIND_CUBE
 
@@ -327,16 +342,16 @@ void init_oineus_cells(nb::module_& m)
             .def("__init__", [](CubeValue_##DIM##D * p, const GridDomain_##DIM##D& g, oin_int x, oin_real value) { \
                     new (p) CubeValue_##DIM##D(Cube_##DIM##D(x, g), value); \
                 }, nb::arg("domain"), nb::arg("x"), nb::arg("value")) \
-            .def("__init__", [](CubeValue_##DIM##D * p, const Cube_##DIM##D::Point& anchor, const std::vector<oin_int>& spanning_dims, const GridDomain_##DIM##D& domain, oin_real value) { \
+            .def("__init__", [](CubeValue_##DIM##D * p, const typename Cube_##DIM##D::Point& anchor, const std::vector<oin_int>& spanning_dims, const GridDomain_##DIM##D& domain, oin_real value) { \
                     new (p) CubeValue_##DIM##D(Cube_##DIM##D(anchor, spanning_dims, domain), value); \
                 }, nb::arg("anchor_vertex"), nb::arg("spanning_dims"), nb::arg("domain"), nb::arg("value")) \
             .def_prop_ro("dim", &CubeValue_##DIM##D::dim) \
             .def_prop_ro("uid", &CubeValue_##DIM##D::get_uid, "Get UID of a cube") \
             .def_rw("value", &CubeValue_##DIM##D::value_) \
-            .def_prop_ro("vertices", &CubeValue_##DIM##D::get_vertices<Cube_##DIM##D>, "Get all vertices of a cube") \
+            .def_prop_ro("vertices", &CubeValue_##DIM##D::template get_vertices<Cube_##DIM##D>, "Get all vertices of a cube") \
             .def("boundary", [](const CubeValue_##DIM##D& c) { return c.boundary(); }, "boundary of a cube") \
-            .def("coboundary", &CubeValue_##DIM##D::coboundary_cubes<Cube_##DIM##D>, "coboundary of a cube") \
-            .def("top_cofaces", &CubeValue_##DIM##D::top_cofaces<Cube_##DIM##D>, "top-dim cofaces of a cube") \
+            .def("coboundary", &CubeValue_##DIM##D::template coboundary_cubes<Cube_##DIM##D>, "coboundary of a cube") \
+            .def("top_cofaces", &CubeValue_##DIM##D::template top_cofaces<Cube_##DIM##D>, "top-dim cofaces of a cube") \
             .def("__repr__", &CubeValue_##DIM##D::pretty_print) \
             .def("__str__", &CubeValue_##DIM##D::pretty_print) \
             .def(nb::self == nb::self) \
@@ -357,3 +372,9 @@ void init_oineus_cells(nb::module_& m)
 
     #undef BIND_CUBE_VALUE
 }
+
+// double pass on the top module (registers the Real-independent combinatorial cells too)
+void init_oineus_cells(nb::module_& m) { register_oineus_cells<double>(m, true); }
+
+// float pass is compiled here; the driver calls it into the _f32 submodule
+template void register_oineus_cells<float>(nb::module_&, bool);
