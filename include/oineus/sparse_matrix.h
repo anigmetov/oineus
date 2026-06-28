@@ -13,6 +13,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <new>
+#include <memory>
 #include <boost/container/small_vector.hpp>
 #include <taskflow/taskflow.hpp>
 #include <taskflow/algorithm/for_each.hpp>
@@ -949,18 +950,75 @@ std::ostream& operator<<(std::ostream& out, const SparseMatrix<Int>& m)
 // Container-generic: works for both std::vector<std::vector<Int>> and the
 // at-rest std::vector<SparseColumn<Int>> (MatrixData). Returns the same
 // matrix/column type as the input so the result assigns straight into d_data.
+//
+// The serial path is a single scatter that emits each column's entries in
+// increasing row order (so result columns come out sorted for free). For
+// cohomology of large packed (VR/alpha) complexes this scatter is the serial
+// bottleneck of coboundary construction (the boundary build around it is
+// parallel), so n_threads>1 runs a lock-free counting-sort transpose instead:
+// count per-result-column degrees, allocate exactly, scatter into preallocated
+// slots via a per-column atomic cursor (distinct slots -> no data race), then
+// sort each (small) column. Same result as the serial path.
 template<typename Matrix>
-Matrix antitranspose(const Matrix& a, size_t n_rows)
+Matrix antitranspose(const Matrix& a, size_t n_rows, int n_threads = 1)
 {
-    using Column = typename Matrix::value_type;
-    using Int = typename Column::value_type;
-    Matrix result(a.size());
-    for(size_t row_idx = 0 ; row_idx < a.size() ; ++row_idx) {
-        for(Int c: a[n_rows - 1 - row_idx]) {
-            size_t col_idx = a.size() - 1 - c;
-            result[col_idx].push_back(row_idx);
+    using Int = typename Matrix::value_type::value_type;
+    const size_t n_cols = a.size();
+    Matrix result(n_cols);
+
+    if (n_threads <= 1 or n_cols < static_cast<size_t>(64) * static_cast<size_t>(n_threads)) {
+        for(size_t row_idx = 0 ; row_idx < n_cols ; ++row_idx) {
+            for(Int c: a[n_rows - 1 - row_idx]) {
+                size_t col_idx = n_cols - 1 - static_cast<size_t>(c);
+                result[col_idx].push_back(static_cast<Int>(row_idx));
+            }
         }
+        return result;
     }
+
+    // deg[j]: first the entry count of result column j, then reused as the
+    // atomic write cursor during scatter.
+    std::unique_ptr<std::atomic<size_t>[]> deg(new std::atomic<size_t>[n_cols]);
+
+    tf::Executor executor(n_threads);
+
+    tf::Taskflow tf_count;
+    tf_count.for_each_index((size_t)0, n_cols, (size_t)1, [&](size_t j) {
+        deg[j].store(0, std::memory_order_relaxed);
+    });
+    executor.run(tf_count).wait();
+
+    tf::Taskflow tf_deg;
+    tf_deg.for_each_index((size_t)0, n_cols, (size_t)1, [&](size_t row_idx) {
+        for(Int c: a[n_rows - 1 - row_idx])
+            deg[n_cols - 1 - static_cast<size_t>(c)].fetch_add(1, std::memory_order_relaxed);
+    });
+    executor.run(tf_deg).wait();
+
+    tf::Taskflow tf_alloc;
+    tf_alloc.for_each_index((size_t)0, n_cols, (size_t)1, [&](size_t j) {
+        result[j].resize(deg[j].load(std::memory_order_relaxed));
+        deg[j].store(0, std::memory_order_relaxed);   // reuse as write cursor
+    });
+    executor.run(tf_alloc).wait();
+
+    tf::Taskflow tf_scatter;
+    tf_scatter.for_each_index((size_t)0, n_cols, (size_t)1, [&](size_t row_idx) {
+        const Int row_val = static_cast<Int>(row_idx);
+        for(Int c: a[n_rows - 1 - row_idx]) {
+            size_t j = n_cols - 1 - static_cast<size_t>(c);
+            size_t pos = deg[j].fetch_add(1, std::memory_order_relaxed);
+            result[j][pos] = row_val;
+        }
+    });
+    executor.run(tf_scatter).wait();
+
+    tf::Taskflow tf_sort;
+    tf_sort.for_each_index((size_t)0, n_cols, (size_t)1, [&](size_t j) {
+        std::sort(result[j].begin(), result[j].end());
+    });
+    executor.run(tf_sort).wait();
+
     return result;
 }
 
