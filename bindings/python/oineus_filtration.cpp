@@ -59,14 +59,15 @@ nb::ndarray<size_t, nb::numpy> extract_simplices_as_numpy(const Fil& fil, dim_ty
 // instantiates it for all eight slim cell types. The fat Simplex/ProdFiltration bindings are a
 // different (self-contained, no-geometry) pattern and stay hand-written below.
 
-template<class Policy>
+template<class Policy, class Real>
 struct SlimFilTraits;   // primary template intentionally undefined: each slim cell specializes it
 
 // --- cubical: slim Cube<Int,D> materializes a FatCube; its uid IS a dense int, so the uid
 // accessors take that int directly (no combinatorial translation). Cube alone has a public
 // ctor-from-fat-cells and boundary_matrix_rel. Geometry is the GridDomain, stored verbatim. ---
-template<unsigned D>
-struct SlimFilTraits<oin::Cube<oin_int, D>> {
+template<unsigned D, class Real>
+struct SlimFilTraits<oin::Cube<oin_int, D>, Real> {
+    using oin_real = Real;
     using Cell = oin::Cube<oin_int, D>;
     using Fil = oin::Filtration<Cell, oin_real>;
     using SlimValue = oin::CellWithValue<Cell, oin_real>;
@@ -124,8 +125,9 @@ struct SlimFilTraits<oin::Cube<oin_int, D>> {
 // Factory-produced only (a fat simplex carries no grid domain). The Python-facing uid is the
 // universal COMBINATORIAL uid, translated to the slim (anchor,type) uid by fr_slim_uid_from_comb_uid.
 // FrGeometry is unpicklable, so the state stores its GridDomain and rebuilds it on unpickle. ---
-template<unsigned D>
-struct SlimFilTraits<oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, D>>> {
+template<unsigned D, class Real>
+struct SlimFilTraits<oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, D>>, Real> {
+    using oin_real = Real;
     using Cell = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, D>>;
     using Fil = oin::Filtration<Cell, oin_real>;
     using SlimValue = oin::CellWithValue<Cell, oin_real>;
@@ -185,8 +187,9 @@ struct SlimFilTraits<oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, D
 // table-bearing geometry to rebuild) and OMITS uid_to_sorted_id (BitPacked uses the hash, which
 // rebuild_uid_index_ regenerates -- the __int128 hash keys cannot cross the pickle boundary). The
 // uid accessors translate the combinatorial uid to the packed Word via packed_word_uid_from_comb_uid. ---
-template<class Word>
-struct SlimFilTraits<oin::Simplex<oin_int, oin::BitPacked<oin_int, Word>>> {
+template<class Word, class Real>
+struct SlimFilTraits<oin::Simplex<oin_int, oin::BitPacked<oin_int, Word>>, Real> {
+    using oin_real = Real;
     using Cell = oin::Simplex<oin_int, oin::BitPacked<oin_int, Word>>;
     using Fil = oin::Filtration<Cell, oin_real>;
     using SlimValue = oin::CellWithValue<Cell, oin_real>;
@@ -243,10 +246,11 @@ struct SlimFilTraits<oin::Simplex<oin_int, oin::BitPacked<oin_int, Word>>> {
 
 // Bind one slim filtration class (Cube / Freudenthal / packed) from the shared method set plus
 // the per-policy SlimFilTraits hooks. Replaces BIND_CUBE/FR/PACKED_FILTRATION.
-template<class Policy>
+template<class Policy, class Real>
 void register_slim_filtration(nb::module_& m)
 {
-    using T = SlimFilTraits<Policy>;
+    using oin_real = Real;
+    using T = SlimFilTraits<Policy, Real>;
     using Fil = typename T::Fil;
     using FatValue = typename T::FatValue;
     using StateTuple = typename T::StateTuple;
@@ -362,8 +366,10 @@ void register_slim_filtration(nb::module_& m)
           "return a tuple (filtration, inds_1, inds_2) where each cell has minimal value from fil_1, fil_2 and inds_1, inds_2 are its indices in fil_1, fil_2");
 }
 
-void init_oineus_filtration(nb::module_& m)
+template<class Real>
+void register_oineus_filtration(nb::module_& m, bool reg_indep)
 {
+    using oin_real = Real;
     using Simplex = oin::Simplex<oin_int>;
     using Filtration = oin::Filtration<Simplex, oin_real>;
 
@@ -400,14 +406,14 @@ void init_oineus_filtration(nb::module_& m)
 
 
     nb::class_<Filtration>(m, filtration_class_name.c_str())
-            .def(nb::init<Filtration::CellVector, bool, int>(),
+            .def(nb::init<typename Filtration::CellVector, bool, int>(),
                     nb::arg("cells"),
                     nb::arg("negate") = false,
                     nb::arg("n_threads") = 1
                     )
             // this ctor accepts the output of Diode directly, list of (vertices, value)
             .def("__init__", [](Filtration* pfil, const std::vector<std::tuple<std::vector<unsigned>, oin_real>>& diode_simplices, int n_threads, bool duplicates_possible) {
-                Filtration::CellVector oin_simplices;
+                typename Filtration::CellVector oin_simplices;
                 oin_simplices.reserve(diode_simplices.size());
 
                 if (duplicates_possible) {
@@ -716,7 +722,7 @@ void init_oineus_filtration(nb::module_& m)
                 oineus_python::SignalGuard guard;
                 nb::gil_scoped_release release;
 
-                Filtration::CellVector cells;
+                typename Filtration::CellVector cells;
                 size_t total = 0;
                 for (const auto& va : vert_arrs)
                     total += va.shape(0);
@@ -750,7 +756,7 @@ void init_oineus_filtration(nb::module_& m)
         "vals_by_dim[d] is an (n_d,) array of filtration values (0 when omitted).");
 
     nb::class_<ProdFiltration>(m, prod_filtration_class_name.c_str())
-            .def(nb::init<ProdFiltration::CellVector, bool, int>(),
+            .def(nb::init<typename ProdFiltration::CellVector, bool, int>(),
                     nb::arg("cells"),
                     nb::arg("negate") = false,
                     nb::arg("n_threads") = 1
@@ -841,7 +847,7 @@ void init_oineus_filtration(nb::module_& m)
             oin::Simplex<oin_int, oin::BitPacked<oin_int, std::uint64_t>>,
             oin::Simplex<oin_int, oin::BitPacked<oin_int, unsigned __int128>>
         >{},
-        [&m]<class Policy>() { register_slim_filtration<Policy>(m); });
+        [&m]<class Policy>() { register_slim_filtration<Policy, oin_real>(m); });
 
     m.def("_mapping_cylinder",
           [](const Filtration& fil_domain, const Filtration& fil_codomain,
@@ -888,3 +894,9 @@ void init_oineus_filtration(nb::module_& m)
     // register_slim_filtration<Policy> (folded over every slim cell type).
 
 }
+
+// double pass on the top module (all filtration types are Real-dependent, no reg_indep)
+void init_oineus_filtration(nb::module_& m) { register_oineus_filtration<double>(m, true); }
+
+// float pass is compiled here; the driver calls it into the _f32 submodule
+template void register_oineus_filtration<float>(nb::module_&, bool);
