@@ -436,7 +436,7 @@ namespace oineus {
                     return result;
                 }
             }
-            return antitranspose(boundary_matrix(n_threads), size());
+            return antitranspose(boundary_matrix(n_threads), size(), n_threads);
         }
 
         // SiRUP support (Giunti-Lazovskis). Coface up-closure ("union of stars")
