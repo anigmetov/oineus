@@ -657,12 +657,16 @@ void init_oineus_filtration(nb::module_& m)
             nb::arg("verts_by_dim"), nb::arg("vals_by_dim") = nb::none(), nb::arg("n_threads") = 1,
             nb::arg("bits") = -1, nb::arg("assume_sorted") = false,
             "Bit-packed (uint64) variant of _filtration_from_arrays (alpha/Delaunay). "
-            "bits>=0 skips the max-id scan; assume_sorted=True skips the per-simplex vertex sort.");
+            "bits>=0 skips the max-id scan; assume_sorted=True skips the per-simplex vertex "
+            "sort -- the caller then OWNS the ascending-row invariant (only a debug assert "
+            "checks it, so unsorted rows silently corrupt in release builds).");
         m.def("_filtration_from_arrays_packed128", make_filtration_from_arrays_packed(W128{}),
             nb::arg("verts_by_dim"), nb::arg("vals_by_dim") = nb::none(), nb::arg("n_threads") = 1,
             nb::arg("bits") = -1, nb::arg("assume_sorted") = false,
             "Bit-packed (unsigned __int128) variant of _filtration_from_arrays (alpha/Delaunay). "
-            "bits>=0 skips the max-id scan; assume_sorted=True skips the per-simplex vertex sort.");
+            "bits>=0 skips the max-id scan; assume_sorted=True skips the per-simplex vertex "
+            "sort -- the caller then OWNS the ascending-row invariant (only a debug assert "
+            "checks it, so unsorted rows silently corrupt in release builds).");
     }
 
     m.def("_filtration_from_arrays",

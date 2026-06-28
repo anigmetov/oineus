@@ -1029,7 +1029,7 @@ def _vr_packed_word_suffix(n_points, max_dim):
     # Smallest packed word that holds a (max_dim)-simplex over n_points vertices:
     # bits = ceil(log2(n_points)) per field (== C++ packed_vertex_bits), (max_dim+1)
     # fields. Returns "64", "128", or None (too wide -> fat fallback).
-    bits = max(1, (int(n_points) - 1).bit_length())
+    bits = _packed_bits(n_points)
     width = (int(max_dim) + 1) * bits
     if width <= 64:
         return "64"
