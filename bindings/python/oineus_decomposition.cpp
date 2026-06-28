@@ -374,6 +374,9 @@ void init_oineus_common_decomposition(nb::module_& m)
             .def_rw("u_data_t", &Decomposition::u_data_t)
             .def_ro("u_timings", &Decomposition::u_timings_,
                     "Per-phase wall-clock breakdown of the last compute_u_* call (UComputeTimings).")
+            .def_ro("restore_thread_times", &Decomposition::dbg_restore_thread_times_,
+                    "Diagnostic: per-worker wall-clock (seconds) of the last parallel ELZ-restore "
+                    "pass, to measure load imbalance of the equal-column-count split.")
             .def_ro("d_data", &Decomposition::d_data)
             .def_ro("is_reduced", &Decomposition::is_reduced)
             .def("has_matrix_v", &Decomposition::has_matrix_v)

@@ -463,6 +463,9 @@ namespace oineus {
         MatrixData u_data_t;
         // Per-phase wall-clock of the last compute_u_* call (see UComputeTimings).
         UComputeTimings u_timings_;
+        // Diagnostic: per-thread wall-clock of the last parallel ELZ-restore pass
+        // (one entry per worker), to measure load imbalance of the contiguous split.
+        std::vector<double> dbg_restore_thread_times_;
         bool is_reduced {false};
         // Whether d_data (the original boundary) is held. The fused
         // reduce_from_filtration path builds R directly and does not keep D, so
@@ -3471,7 +3474,10 @@ namespace oineus {
 
         // Deterministic static partitioning to avoid a hot global fetch_add in tight loops.
 
-        auto run_parallel_cols = [this, n_workers](dim_type dim, const auto& fn) {
+        // thread_times (optional): if given, filled with each worker's wall-clock
+        // so callers can measure load imbalance of the equal-column-count split.
+        auto run_parallel_cols = [this, n_workers](dim_type dim, const auto& fn,
+                                                   std::vector<double>* thread_times = nullptr) {
             if (dualize()) {
                 dim = _dim_first.size() - dim - 1;
             }
@@ -3482,17 +3488,30 @@ namespace oineus {
                 return;
 
             const size_t n_workers_eff = std::min(n_workers, n_cols_in_dim);
+            if (thread_times)
+                thread_times->assign(n_workers_eff, 0.0);
 
+            // Equal-column-count contiguous blocks. This is badly imbalanced on
+            // cohomology (the ELZ violations cluster in one column range, so one
+            // worker does ~all the work), BUT a work-balanced dynamic split is
+            // WORSE: restore_elz_column reads neighbour columns, so processing the
+            // heavy range out of increasing order makes columns read not-yet-
+            // restored neighbours and re-do work, blowing total work up ~Nx. The
+            // in-order contiguous walk of the heavy range is the minimal-work serial
+            // chain; the coh bottleneck is intrinsic order-dependence, not scheduling.
             std::vector<std::thread> workers;
             workers.reserve(n_workers_eff);
 
             for (size_t tid = 0; tid < n_workers_eff; ++tid) {
                 const size_t begin = start_idx + (tid * n_cols_in_dim) / n_workers_eff;
                 const size_t end   = start_idx + ((tid + 1) * n_cols_in_dim) / n_workers_eff;
-                workers.emplace_back([begin, end, &fn]() {
+                workers.emplace_back([begin, end, &fn, thread_times, tid]() {
+                    Timer tm;
                     for (size_t col_idx = begin; col_idx < end; ++col_idx) {
                         fn(col_idx);
                     }
+                    if (thread_times)
+                        (*thread_times)[tid] = tm.elapsed();
                 });
             }
 
@@ -3588,7 +3607,7 @@ namespace oineus {
                 for(dim_type dim: params.dims_to_restore_elz) {
                     run_parallel_cols(dim, [&](size_t col_idx) {
                         restore_elz_column_parallel<Int>(r_v_matrix, col_idx);
-                    });
+                    }, &dbg_restore_thread_times_);
                     // is_elz_in_dim_ uses the internal _dim key (matrix layout).
                     const dim_type _dim = static_cast<dim_type>(_dim_from_dim(dim));
                     set_is_elz_flag(_dim, true);
