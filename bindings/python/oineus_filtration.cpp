@@ -552,7 +552,8 @@ void init_oineus_filtration(nb::module_& m)
         using Word = typename decltype(word_tag)::type;
         using PackedCell = oin::Simplex<oin_int, oin::BitPacked<oin_int, Word>>;
         using PackedFil = oin::Filtration<PackedCell, oin_real>;
-        return [](nb::list verts_by_dim, nb::object vals_by_dim, int n_threads) -> PackedFil {
+        return [](nb::list verts_by_dim, nb::object vals_by_dim, int n_threads,
+                  int bits_arg, bool assume_sorted) -> PackedFil {
             using VertArr = nb::ndarray<oin_int,  nb::ndim<2>, nb::c_contig, nb::device::cpu, nb::ro>;
             using ValArr  = nb::ndarray<oin_real, nb::ndim<1>, nb::c_contig, nb::device::cpu, nb::ro>;
 
@@ -590,15 +591,21 @@ void init_oineus_filtration(nb::module_& m)
                 oineus_python::SignalGuard guard;
                 nb::gil_scoped_release release;
 
-                // bits must hold the largest vertex id seen across all arrays
-                oin_int max_id = 0;
-                for (const auto& va : vert_arrs) {
-                    const oin_int* vp = va.data();
-                    const size_t cnt = static_cast<size_t>(va.shape(0)) * static_cast<size_t>(va.shape(1));
-                    for (size_t k = 0; k < cnt; ++k)
-                        max_id = std::max(max_id, vp[k]);
+                // bits must hold the largest vertex id. The Python alpha/Delaunay
+                // wrappers know n_points and pass bits directly, skipping this full
+                // O(nnz) scan; bits_arg < 0 means "compute it here" (the safe
+                // default for any other caller).
+                int bits = bits_arg;
+                if (bits < 0) {
+                    oin_int max_id = 0;
+                    for (const auto& va : vert_arrs) {
+                        const oin_int* vp = va.data();
+                        const size_t cnt = static_cast<size_t>(va.shape(0)) * static_cast<size_t>(va.shape(1));
+                        for (size_t k = 0; k < cnt; ++k)
+                            max_id = std::max(max_id, vp[k]);
+                    }
+                    bits = oin::packed_vertex_bits(static_cast<size_t>(max_id) + 1);
                 }
-                const int bits = oin::packed_vertex_bits(static_cast<size_t>(max_id) + 1);
 
                 typename PackedFil::CellVector cells;
                 size_t total = 0;
@@ -606,20 +613,33 @@ void init_oineus_filtration(nb::module_& m)
                     total += va.shape(0);
                 cells.reserve(total);
 
+                // Zero-copy view over one numpy row so the sorted path packs
+                // straight from the array (no per-simplex heap temp); begin/end
+                // satisfy BitPacked's is_sorted debug assert.
+                struct RowView {
+                    const oin_int* p; size_t n;
+                    size_t size() const { return n; }
+                    oin_int operator[](size_t i) const { return p[i]; }
+                    const oin_int* begin() const { return p; }
+                    const oin_int* end() const { return p + n; }
+                };
+                std::vector<oin_int> buf;   // reused across simplices on the unsorted path
                 for (size_t d = 0; d < vert_arrs.size(); ++d) {
                     const oin_int* vp = vert_arrs[d].data();
                     const oin_real* valp = have_vals ? val_arrs[d].data() : nullptr;
                     const size_t n = vert_arrs[d].shape(0);
                     const size_t w = vert_arrs[d].shape(1);
                     for (size_t i = 0; i < n; ++i) {
-                        std::vector<oin_int> vs;
-                        vs.reserve(w);
-                        for (size_t j = 0; j < w; ++j)
-                            vs.push_back(vp[i * w + j]);
-                        if (w > 1)
-                            std::sort(vs.begin(), vs.end());
-                        cells.emplace_back(PackedCell(oin::BitPacked<oin_int, Word>(vs, bits)),
-                                           valp ? valp[i] : oin_real(0));
+                        const oin_int* row = vp + i * w;
+                        const oin_real val = valp ? valp[i] : oin_real(0);
+                        if (assume_sorted) {
+                            cells.emplace_back(PackedCell(oin::BitPacked<oin_int, Word>(RowView{row, w}, bits)), val);
+                        } else {
+                            buf.assign(row, row + w);
+                            if (w > 1)
+                                std::sort(buf.begin(), buf.end());
+                            cells.emplace_back(PackedCell(oin::BitPacked<oin_int, Word>(buf, bits)), val);
+                        }
                     }
                 }
 
@@ -635,10 +655,14 @@ void init_oineus_filtration(nb::module_& m)
         struct W128 { using type = unsigned __int128; };
         m.def("_filtration_from_arrays_packed64", make_filtration_from_arrays_packed(W64{}),
             nb::arg("verts_by_dim"), nb::arg("vals_by_dim") = nb::none(), nb::arg("n_threads") = 1,
-            "Bit-packed (uint64) variant of _filtration_from_arrays (alpha/Delaunay).");
+            nb::arg("bits") = -1, nb::arg("assume_sorted") = false,
+            "Bit-packed (uint64) variant of _filtration_from_arrays (alpha/Delaunay). "
+            "bits>=0 skips the max-id scan; assume_sorted=True skips the per-simplex vertex sort.");
         m.def("_filtration_from_arrays_packed128", make_filtration_from_arrays_packed(W128{}),
             nb::arg("verts_by_dim"), nb::arg("vals_by_dim") = nb::none(), nb::arg("n_threads") = 1,
-            "Bit-packed (unsigned __int128) variant of _filtration_from_arrays (alpha/Delaunay).");
+            nb::arg("bits") = -1, nb::arg("assume_sorted") = false,
+            "Bit-packed (unsigned __int128) variant of _filtration_from_arrays (alpha/Delaunay). "
+            "bits>=0 skips the max-id scan; assume_sorted=True skips the per-simplex vertex sort.");
     }
 
     m.def("_filtration_from_arrays",
