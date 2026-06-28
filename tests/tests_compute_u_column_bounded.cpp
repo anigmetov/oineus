@@ -400,6 +400,18 @@ TEST_CASE("compute_partial_u_rows writes only requested rows, hom")
 }
 
 
+// The bauer phase (recovering cleared V columns) is split out of restore_elz in
+// the timings, but must still be part of the comparable reduction_total. Guard
+// the formula so it cannot be silently dropped from the total.
+TEST_CASE("ReductionTimings.reduction_total includes the bauer phase")
+{
+    oineus::ReductionTimings t;
+    t.prepare = 1.0; t.reduce = 2.0; t.bauer = 4.0;
+    t.restore_elz = 8.0; t.copy_back = 16.0; t.copy_pivots = 32.0;
+    REQUIRE(t.reduction_total() == 63.0);  // fails if bauer (4) is dropped
+}
+
+
 // The benchmark drives three full-inversion strategies on the SAME reduced
 // (clearing + restore_elz) decomposition and must get the same U from each,
 // while u_timings records the per-phase split. This guards both invariants:

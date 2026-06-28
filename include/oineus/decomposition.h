@@ -3537,7 +3537,7 @@ namespace oineus {
         std::vector<RVColumn*> r_v_matrix_copy;
 
         if (need_bauer) {
-            Timer timer_restore;
+            Timer timer_bauer;
 
             // Bauer-trick fill for ALL cleared columns across every dim. Both the
             // copy-back below and the kept working form require every column
@@ -3573,8 +3573,10 @@ namespace oineus {
                     throw std::runtime_error("Bauer trick failed while filling V in reduce_parallel_rv");
                 }
             }
+            params.timings.bauer = timer_bauer.elapsed();
 
             if (do_restore) {
+                Timer timer_restore;
                 // snapshot pointers before restore_elz swaps some of them
                 r_v_matrix_copy.assign(n_cols, nullptr);
                 for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
@@ -3591,8 +3593,8 @@ namespace oineus {
                     const dim_type _dim = static_cast<dim_type>(_dim_from_dim(dim));
                     set_is_elz_flag(_dim, true);
                 }
+                params.timings.restore_elz = timer_restore.elapsed();
             }
-            params.timings.restore_elz = timer_restore.elapsed();
         }
 
         Timer timer_copy_back;

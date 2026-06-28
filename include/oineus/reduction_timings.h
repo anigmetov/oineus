@@ -20,6 +20,8 @@ namespace oineus {
 struct ReductionTimings {
     double prepare {0.0};       // build the working atomic-pointer matrix; parallel only
     double reduce {0.0};        // the reduction itself (serial loop or parallel threads)
+    double bauer {0.0};         // Bauer-trick fill of cleared V columns (V[s] = R[piv(s)]);
+                                // only when V is materialized under clearing (do_restore / keep_working)
     double restore_elz {0.0};   // ELZ-restore phase; only if dims_to_restore_elz is set
     double copy_back {0.0};     // move working matrix back into r_data/v_data; parallel only
     double copy_pivots {0.0};   // copy pivots into _pivots; parallel only
@@ -27,7 +29,7 @@ struct ReductionTimings {
     // Total wall-clock of the reduction across every phase -- comparable across paths.
     double reduction_total() const
     {
-        return prepare + reduce + restore_elz + copy_back + copy_pivots;
+        return prepare + reduce + bauer + restore_elz + copy_back + copy_pivots;
     }
 
     // Synonym for reduction_total().
@@ -41,6 +43,7 @@ inline std::ostream& operator<<(std::ostream& out, const ReductionTimings& t)
     out << "ReductionTimings(total = " << t.reduction_total() << "s";
     out << ", prepare = " << t.prepare;
     out << ", reduce = " << t.reduce;
+    out << ", bauer = " << t.bauer;
     out << ", restore_elz = " << t.restore_elz;
     out << ", copy_back = " << t.copy_back;
     out << ", copy_pivots = " << t.copy_pivots << ")";
