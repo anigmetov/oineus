@@ -149,7 +149,7 @@ def fr_simplices_from_origin(cube_dim, dim):
 
 if __name__ == "__main__":
     print("switch (cube_dim) {")
-    for cube_dim in range(1, 4):
+    for cube_dim in range(1, 5):
         print(f"""    case {cube_dim} :
         switch (dim) {{""")
         for dim in range(cube_dim + 1):

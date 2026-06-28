@@ -95,6 +95,11 @@ TEST_CASE("freudenthal cell: compact (anchor,type) cell matches Simplex, 3D")
     check_freudenthal_cell<3>({6, 5, 7});
 }
 
+TEST_CASE("freudenthal cell: compact (anchor,type) cell matches Simplex, 4D")
+{
+    check_freudenthal_cell<4>({4, 3, 4, 3});
+}
+
 // Geometric ground-truth check for the slim (anchor,type) cell: materialize each
 // cell back to its real grid vertex ids (FrGeometry::vertices_of, the slim->fat
 // Freudenthal materializer) and verify, IN VERTEX-SET SPACE, that
@@ -190,6 +195,11 @@ TEST_CASE("freudenthal cell: slim (co)boundary matches materialized fat simplex,
     check_freudenthal_materialization<3>({6, 5, 7});
 }
 
+TEST_CASE("freudenthal cell: slim (co)boundary matches materialized fat simplex, 4D")
+{
+    check_freudenthal_materialization<4>({4, 3, 4, 3});
+}
+
 // Grid builder oracle: the slim Freudenthal filtration built DIRECTLY from the grid
 // (freudenthal_filtration_*_slim) must match the established fat freudenthal_filtration
 // cell-for-cell -- same size, same (co)boundary matrices, same per-cell value/dim, same
@@ -258,6 +268,24 @@ TEST_CASE("freudenthal grid builder: slim filtration matches fat, 2D")
 TEST_CASE("freudenthal grid builder: slim filtration matches fat, 3D")
 {
     check_freudenthal_grid_builder<3>({6, 5, 7});
+}
+
+TEST_CASE("freudenthal grid builder: slim filtration matches fat, 4D")
+{
+    check_freudenthal_grid_builder<4>({4, 3, 4, 3});
+}
+
+// The dense (anchor << type_bits | type) uid must fit a 63-bit signed budget; the
+// FrGeometry ctor guards it. A 16384^4 = 2^56-vertex 4D domain needs 56 anchor bits
+// + 8 type bits = 64 > 63, so construction must throw. The tables are size-independent
+// (150 types), so this builds no actual grid -- the guard fires before any allocation.
+TEST_CASE("freudenthal cell: 4D grid too large for 64-bit uid throws")
+{
+    using Int = long;
+    using Domain = oineus::GridDomain<Int, 4>;
+    typename Domain::GridPoint dims{16384, 16384, 16384, 16384};
+    Domain dom(dims, /*wrap=*/false);
+    REQUIRE_THROWS_AS((oineus::FrGeometry<Int, 4>(dom)), std::runtime_error);
 }
 
 // Hand-worked smallest case: one unit square Kuhn-split into two triangles. The

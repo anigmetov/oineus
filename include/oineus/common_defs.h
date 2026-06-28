@@ -143,6 +143,20 @@ template<typename Real>
         seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
     }
 
+    // Number of bits needed to represent any id in [0, n): the bit-width of the
+    // largest id n-1 (0 for n <= 1). Used to check that a dense slim-cell uid
+    // (grid vertex id packed with face/type bits) fits the 63-bit budget of a
+    // signed 64-bit oin_int before a grid filtration is built.
+    inline int bits_for_count(std::size_t n)
+    {
+        if (n <= 1)
+            return 0;
+        int b = 0;
+        std::size_t m = n - 1;
+        while (m > 0) { m >>= 1; ++b; }
+        return b;
+    }
+
 
 //template<typename Out>
 //void split_by_delim(const std::string& s, char delim, Out result)

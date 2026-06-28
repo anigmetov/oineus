@@ -1164,6 +1164,7 @@ def _cube_filtration_types():
             _oineus._CubeFiltration_1D,
             _oineus._CubeFiltration_2D,
             _oineus._CubeFiltration_3D,
+            _oineus._CubeFiltration_4D,
         )
     except (ImportError, AttributeError):
         return ()

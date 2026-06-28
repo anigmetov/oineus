@@ -201,14 +201,15 @@ def test_freudenthal_default_is_slim():
     assert type(oin.freudenthal_filtration(a, max_dim=2, wrap=True)).__name__ == "_Filtration"
 
 
-def test_freudenthal_4d_unsupported():
-    # Freudenthal is supported only for D=1,2,3 (slim and fat alike -- the C++ builder
-    # knows no higher dimension), so a 4D grid raises cleanly rather than silently
-    # mis-building. This is a pre-existing limitation, unchanged by the default flip; the
-    # flip fallback that matters (wrap -> fat) is covered in test_freudenthal_default_is_slim.
+def test_freudenthal_4d_supported():
+    # 4D Freudenthal is now built end to end: the slim (anchor,type) builder is bound for
+    # D=1,2,3,4, so a non-wrap 4D grid yields _FreudenthalFiltration_4D by default, and
+    # slim=False / wrap=True fall back to the fat universal Filtration. Full slim-vs-fat
+    # diagram parity for 4D is checked in test_grid_4d.py.
     a = np.random.default_rng(0).random((3, 3, 3, 3))
-    with pytest.raises(RuntimeError):
-        oin.freudenthal_filtration(a, max_dim=3)
+    assert type(oin.freudenthal_filtration(a, max_dim=4)).__name__ == "_FreudenthalFiltration_4D"
+    assert type(oin.freudenthal_filtration(a, max_dim=4, slim=False)).__name__ == "_Filtration"
+    assert type(oin.freudenthal_filtration(a, max_dim=4, wrap=True)).__name__ == "_Filtration"
 
 
 @pytest.mark.parametrize("getter", ["get_vertices", "get_edges", "get_triangles"])

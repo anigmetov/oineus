@@ -88,6 +88,14 @@ namespace oineus {
             if (dom.wrap())
                 throw std::runtime_error("Freudenthal cells do not support wrap grids; use the fat Simplex filtration");
             build_tables();
+            // dense uid = anchor_id << type_bits | type; anchor_id is a vertex
+            // linear id in [0, domain.size()). Guard the 63-bit signed-uid budget
+            // (in practice only reachable in 4D, and only past ~10^16 vertices).
+            int needed = bits_for_count(static_cast<std::size_t>(domain.size())) + type_bits;
+            if (needed > 63)
+                throw std::runtime_error("FrGeometry: grid too large for a 64-bit Freudenthal uid "
+                        "(anchor_id << type_bits | type needs " + std::to_string(needed)
+                        + " bits > 63); use the fat Simplex filtration instead");
         }
 
         bool operator==(const FrGeometry& o) const

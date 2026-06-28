@@ -12,6 +12,7 @@ _GRID_CLASS_BY_NDIM = {
     1: _oineus.Grid_1D,
     2: _oineus.Grid_2D,
     3: _oineus.Grid_3D,
+    4: _oineus.Grid_4D,
 }
 
 
@@ -27,7 +28,7 @@ def cube_filtration(data,
     filtration values are gathered back onto the autograd-tracked input.
 
     Args:
-        data: 1D/2D/3D tensor-like (PyTorch/JAX/NumPy) of grid values.
+        data: 1D/2D/3D/4D tensor-like (PyTorch/JAX/NumPy) of grid values.
         negate: Compute upper-star (superlevel) instead of lower-star.
         wrap: Not supported; raises if True.
         max_dim: Maximal cube dimension; defaults to ``data.ndim``.
@@ -45,7 +46,7 @@ def cube_filtration(data,
     grid_cls = _GRID_CLASS_BY_NDIM.get(ndim)
     if grid_cls is None:
         raise RuntimeError(
-            f"cube_filtration: data.ndim={ndim} not supported, must be 1, 2, or 3"
+            f"cube_filtration: data.ndim={ndim} not supported, must be 1, 2, 3, or 4"
         )
 
     if max_dim is None:

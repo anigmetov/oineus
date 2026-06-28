@@ -63,7 +63,8 @@ def test_wrap_rejected():
 
 
 def test_unsupported_ndim_rejected():
-    data = np.zeros((2, 2, 2, 2), dtype=REAL_DTYPE)
+    # grids up to 4D are supported now; 5D still falls through to the error
+    data = np.zeros((2, 2, 2, 2, 2), dtype=REAL_DTYPE)
     with pytest.raises(RuntimeError, match="ndim"):
         od.cube_filtration(data)
 

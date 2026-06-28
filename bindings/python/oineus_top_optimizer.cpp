@@ -319,9 +319,11 @@ void init_oineus_top_optimizer(nb::module_& m)
     using Cube_1D = oin::Cube<oin_int, 1>;
     using Cube_2D = oin::Cube<oin_int, 2>;
     using Cube_3D = oin::Cube<oin_int, 3>;
+    using Cube_4D = oin::Cube<oin_int, 4>;
     using FrCell_1D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 1>>;
     using FrCell_2D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 2>>;
     using FrCell_3D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 3>>;
+    using FrCell_4D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 4>>;
     using PackedCell_64 = oin::Simplex<oin_int, oin::BitPacked<oin_int, std::uint64_t>>;
     using PackedCell_128 = oin::Simplex<oin_int, oin::BitPacked<oin_int, unsigned __int128>>;
 
@@ -338,15 +340,17 @@ void init_oineus_top_optimizer(nb::module_& m)
     init_oineus_top_optimizer_class<Cube_1D>(m, "TopologyOptimizerCube_1D", "IndicesValuesCube_1D");
     init_oineus_top_optimizer_class<Cube_2D>(m, "TopologyOptimizerCube_2D", "IndicesValuesCube_2D");
     init_oineus_top_optimizer_class<Cube_3D>(m, "TopologyOptimizerCube_3D", "IndicesValuesCube_3D");
+    init_oineus_top_optimizer_class<Cube_4D>(m, "TopologyOptimizerCube_4D", "IndicesValuesCube_4D");
     init_oineus_top_optimizer_class<FrCell_1D>(m, "TopologyOptimizerFreudenthal_1D", "IndicesValuesFreudenthal_1D");
     init_oineus_top_optimizer_class<FrCell_2D>(m, "TopologyOptimizerFreudenthal_2D", "IndicesValuesFreudenthal_2D");
     init_oineus_top_optimizer_class<FrCell_3D>(m, "TopologyOptimizerFreudenthal_3D", "IndicesValuesFreudenthal_3D");
+    init_oineus_top_optimizer_class<FrCell_4D>(m, "TopologyOptimizerFreudenthal_4D", "IndicesValuesFreudenthal_4D");
     init_oineus_top_optimizer_class<PackedCell_64>(m, "TopologyOptimizerPacked_64", "IndicesValuesPacked_64");
     init_oineus_top_optimizer_class<PackedCell_128>(m, "TopologyOptimizerPacked_128", "IndicesValuesPacked_128");
 
     // induced matching: one binding per cell type, folded (same order as before)
-    using OptCellList = oineus_python::TypeList<Simp, SimpProd, Cube_1D, Cube_2D, Cube_3D,
-            FrCell_1D, FrCell_2D, FrCell_3D, PackedCell_64, PackedCell_128>;
+    using OptCellList = oineus_python::TypeList<Simp, SimpProd, Cube_1D, Cube_2D, Cube_3D, Cube_4D,
+            FrCell_1D, FrCell_2D, FrCell_3D, FrCell_4D, PackedCell_64, PackedCell_128>;
     oineus_python::for_each_type(OptCellList{}, [&m]<class Cell>() {
         m.def("get_induced_matching", &oin::get_induced_matching<Cell, oin_real>,
                 "Compute induced matching for two filtrations of the same complex",

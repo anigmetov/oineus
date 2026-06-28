@@ -183,21 +183,25 @@ void init_oineus_cells(nb::module_& m)
     using GridDomain_1D = oin::GridDomain<oin_int, 1>;
     using GridDomain_2D = oin::GridDomain<oin_int, 2>;
     using GridDomain_3D = oin::GridDomain<oin_int, 3>;
+    using GridDomain_4D = oin::GridDomain<oin_int, 4>;
 
     using Grid_1D = oin::Grid<oin_int, oin_real, 1>;
     using Grid_2D = oin::Grid<oin_int, oin_real, 2>;
     using Grid_3D = oin::Grid<oin_int, oin_real, 3>;
+    using Grid_4D = oin::Grid<oin_int, oin_real, 4>;
 
     // Python sees the FAT cube (carries its domain, self-contained API). The
     // filtration stores the slim oin::Cube; Python accessors materialize FatCube.
     using Cube_1D = oin::FatCube<oin_int, 1>;
     using Cube_2D = oin::FatCube<oin_int, 2>;
     using Cube_3D = oin::FatCube<oin_int, 3>;
+    using Cube_4D = oin::FatCube<oin_int, 4>;
 
 
     using CubeValue_1D = oin::CellWithValue<oin::FatCube<oin_int, 1>, oin_real>;
     using CubeValue_2D = oin::CellWithValue<oin::FatCube<oin_int, 2>, oin_real>;
     using CubeValue_3D = oin::CellWithValue<oin::FatCube<oin_int, 3>, oin_real>;
+    using CubeValue_4D = oin::CellWithValue<oin::FatCube<oin_int, 4>, oin_real>;
 
     // ============ GridDomain bindings ============
     #define BIND_GRID_DOMAIN(DIM) \
@@ -231,6 +235,7 @@ void init_oineus_cells(nb::module_& m)
     BIND_GRID_DOMAIN(1);
     BIND_GRID_DOMAIN(2);
     BIND_GRID_DOMAIN(3);
+    BIND_GRID_DOMAIN(4);
 
     #undef BIND_GRID_DOMAIN
 
@@ -273,6 +278,7 @@ void init_oineus_cells(nb::module_& m)
     BIND_GRID(1);
     BIND_GRID(2);
     BIND_GRID(3);
+    BIND_GRID(4);
 
     #undef BIND_GRID
 
@@ -308,6 +314,7 @@ void init_oineus_cells(nb::module_& m)
     BIND_CUBE(1);
     BIND_CUBE(2);
     BIND_CUBE(3);
+    BIND_CUBE(4);
 
     #undef BIND_CUBE
 
@@ -346,6 +353,7 @@ void init_oineus_cells(nb::module_& m)
     BIND_CUBE_VALUE(1);
     BIND_CUBE_VALUE(2);
     BIND_CUBE_VALUE(3);
+    BIND_CUBE_VALUE(4);
 
     #undef BIND_CUBE_VALUE
 }

@@ -261,6 +261,12 @@ public:
         if (top_d > dim)
             throw std::runtime_error("bad dimension, top_d = " + std::to_string(top_d) + ", dim = " + std::to_string(dim));
 
+        // dense cube uid = vertex_id << OINEUS_MAX_CUBE_DIM | face_bits; guard the
+        // 63-bit signed-uid budget (only reachable for an unrealistically large grid).
+        if (bits_for_count(static_cast<std::size_t>(size())) + OINEUS_MAX_CUBE_DIM > 63)
+            throw std::runtime_error("cube_filtration: grid too large for a 64-bit cube uid (vertex_id << "
+                    + std::to_string(OINEUS_MAX_CUBE_DIM) + " | face_bits overflows 63 bits)");
+
         GridCubeVec cubes;
 
         size_t total_size = 0;
@@ -372,6 +378,12 @@ public:
         Timer timer;
         if (top_d > dim)
             throw std::runtime_error("bad dimension, top_d = " + std::to_string(top_d) + ", dim = " + std::to_string(dim));
+
+        // dense cube uid = vertex_id << OINEUS_MAX_CUBE_DIM | face_bits; guard the
+        // 63-bit signed-uid budget (only reachable for an unrealistically large grid).
+        if (bits_for_count(static_cast<std::size_t>(size())) + OINEUS_MAX_CUBE_DIM > 63)
+            throw std::runtime_error("cube_filtration: grid too large for a 64-bit cube uid (vertex_id << "
+                    + std::to_string(OINEUS_MAX_CUBE_DIM) + " | face_bits overflows 63 bits)");
 
         GridCubeVec cubes;
         CriticalIndices critical_indices;

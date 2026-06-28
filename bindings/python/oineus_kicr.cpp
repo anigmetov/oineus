@@ -103,9 +103,11 @@ void init_oineus_kicr(nb::module_& m)
     using Cube_1D = oin::Cube<oin_int, 1>;
     using Cube_2D = oin::Cube<oin_int, 2>;
     using Cube_3D = oin::Cube<oin_int, 3>;
+    using Cube_4D = oin::Cube<oin_int, 4>;
     using FrCell_1D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 1>>;
     using FrCell_2D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 2>>;
     using FrCell_3D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 3>>;
+    using FrCell_4D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 4>>;
     using PackedCell_64 = oin::Simplex<oin_int, oin::BitPacked<oin_int, std::uint64_t>>;
     using PackedCell_128 = oin::Simplex<oin_int, oin::BitPacked<oin_int, unsigned __int128>>;
 
@@ -117,9 +119,11 @@ void init_oineus_kicr(nb::module_& m)
     init_oineus_kicr_class<Cube_1D>(m, "_KerImCokReduced_Cube_1D");
     init_oineus_kicr_class<Cube_2D>(m, "_KerImCokReduced_Cube_2D");
     init_oineus_kicr_class<Cube_3D>(m, "_KerImCokReduced_Cube_3D");
+    init_oineus_kicr_class<Cube_4D>(m, "_KerImCokReduced_Cube_4D");
     init_oineus_kicr_class<FrCell_1D>(m, "_KerImCokReduced_Fr_1D");
     init_oineus_kicr_class<FrCell_2D>(m, "_KerImCokReduced_Fr_2D");
     init_oineus_kicr_class<FrCell_3D>(m, "_KerImCokReduced_Fr_3D");
+    init_oineus_kicr_class<FrCell_4D>(m, "_KerImCokReduced_Fr_4D");
     init_oineus_kicr_class<PackedCell_64>(m, "_KerImCokReduced_Packed_64");
     init_oineus_kicr_class<PackedCell_128>(m, "_KerImCokReduced_Packed_128");
 }

@@ -300,10 +300,12 @@ void init_oineus_common_decomposition(nb::module_& m)
     using CubeFiltration_1D = oin::Filtration<oin::Cube<oin_int, 1>, oin_real>;
     using CubeFiltration_2D = oin::Filtration<oin::Cube<oin_int, 2>, oin_real>;
     using CubeFiltration_3D = oin::Filtration<oin::Cube<oin_int, 3>, oin_real>;
+    using CubeFiltration_4D = oin::Filtration<oin::Cube<oin_int, 4>, oin_real>;
     // Slim Freudenthal filtrations (compact (anchor,type) simplex cells, per-dim type).
     using FreudenthalFiltration_1D = oin::Filtration<oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 1>>, oin_real>;
     using FreudenthalFiltration_2D = oin::Filtration<oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 2>>, oin_real>;
     using FreudenthalFiltration_3D = oin::Filtration<oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 3>>, oin_real>;
+    using FreudenthalFiltration_4D = oin::Filtration<oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 4>>, oin_real>;
     // Bit-packed VR/alpha filtrations (two word tiers, shared by VR and alpha).
     using PackedFiltration_64 = oin::Filtration<oin::Simplex<oin_int, oin::BitPacked<oin_int, std::uint64_t>>, oin_real>;
     using PackedFiltration_128 = oin::Filtration<oin::Simplex<oin_int, oin::BitPacked<oin_int, unsigned __int128>>, oin_real>;
@@ -313,14 +315,14 @@ void init_oineus_common_decomposition(nb::module_& m)
     // strongly-typed entry points vary by Filtration<Cell>.
     using DecompFilList = oineus_python::TypeList<
         SimplexFiltration, ProdSimplexFiltration,
-        CubeFiltration_1D, CubeFiltration_2D, CubeFiltration_3D,
-        FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D,
+        CubeFiltration_1D, CubeFiltration_2D, CubeFiltration_3D, CubeFiltration_4D,
+        FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D, FreudenthalFiltration_4D,
         PackedFiltration_64, PackedFiltration_128>;
     // slim self-materializing filtrations: the lean apparent form defers a resolver that closes
     // over the filtration, so the returned decomposition must keep it alive (keep_alive<0,1>).
     using SlimFilList = oineus_python::TypeList<
-        CubeFiltration_1D, CubeFiltration_2D, CubeFiltration_3D,
-        FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D,
+        CubeFiltration_1D, CubeFiltration_2D, CubeFiltration_3D, CubeFiltration_4D,
+        FreudenthalFiltration_1D, FreudenthalFiltration_2D, FreudenthalFiltration_3D, FreudenthalFiltration_4D,
         PackedFiltration_64, PackedFiltration_128>;
     using FatFilList = oineus_python::TypeList<SimplexFiltration, ProdSimplexFiltration>;
 

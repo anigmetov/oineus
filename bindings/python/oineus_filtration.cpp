@@ -833,10 +833,11 @@ void init_oineus_filtration(nb::module_& m)
     // ctor + boundary_matrix_rel). This replaces the former BIND_CUBE/FR/PACKED_FILTRATION macros.
     oineus_python::for_each_type(
         oineus_python::TypeList<
-            oin::Cube<oin_int, 1>, oin::Cube<oin_int, 2>, oin::Cube<oin_int, 3>,
+            oin::Cube<oin_int, 1>, oin::Cube<oin_int, 2>, oin::Cube<oin_int, 3>, oin::Cube<oin_int, 4>,
             oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 1>>,
             oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 2>>,
             oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 3>>,
+            oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 4>>,
             oin::Simplex<oin_int, oin::BitPacked<oin_int, std::uint64_t>>,
             oin::Simplex<oin_int, oin::BitPacked<oin_int, unsigned __int128>>
         >{},

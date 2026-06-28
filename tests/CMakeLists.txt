@@ -99,6 +99,7 @@ else()
             fr-dgm-slim
             fr-dgm-vertebra
             frechet
+            grid-4d
             ind-match
             interrupt
             kicr

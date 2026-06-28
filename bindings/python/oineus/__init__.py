@@ -18,7 +18,7 @@ from ._oineus import DecompositionManipStats
 from ._oineus import ReductionParams, ReductionTimings, KICRParams, KerImCokReduced, KerImCokReducedProd
 from ._oineus import ColumnRepr
 from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizerProd
-from ._oineus import TopologyOptimizerCube_1D, TopologyOptimizerCube_2D, TopologyOptimizerCube_3D
+from ._oineus import TopologyOptimizerCube_1D, TopologyOptimizerCube_2D, TopologyOptimizerCube_3D, TopologyOptimizerCube_4D
 from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise_target, get_induced_matching
 from ._oineus import get_nth_persistence, get_permutation_dtv, get_permutation
 from ._oineus import bottleneck_distance as _bottleneck_distance_cpp
@@ -31,6 +31,7 @@ from ._oineus import frechet_mean as _frechet_mean_cpp
 from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D, Cube_1D
 from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D
+from ._oineus import GridDomain_4D, Grid_4D, CombinatorialCube_4D, Cube_4D
 
 
 # Maps the fat cell-with-value type a user hands to Filtration(...) to the concrete C++
@@ -42,6 +43,7 @@ _FIL_CLASS_BY_CELL_TYPE = {
     _oineus.Cube_1D:      _oineus._CubeFiltration_1D,  # fat cubes (hand-built cubical complexes)
     _oineus.Cube_2D:      _oineus._CubeFiltration_2D,
     _oineus.Cube_3D:      _oineus._CubeFiltration_3D,
+    _oineus.Cube_4D:      _oineus._CubeFiltration_4D,
 }
 
 # Every concrete filtration C++ type, for isinstance(x, oineus.Filtration). Includes the
@@ -49,8 +51,8 @@ _FIL_CLASS_BY_CELL_TYPE = {
 # but should still recognize as filtrations.
 _ALL_FILTRATION_TYPES = (
     _oineus._Filtration, _oineus._ProdFiltration,
-    _oineus._CubeFiltration_1D, _oineus._CubeFiltration_2D, _oineus._CubeFiltration_3D,
-    _oineus._FreudenthalFiltration_1D, _oineus._FreudenthalFiltration_2D, _oineus._FreudenthalFiltration_3D,
+    _oineus._CubeFiltration_1D, _oineus._CubeFiltration_2D, _oineus._CubeFiltration_3D, _oineus._CubeFiltration_4D,
+    _oineus._FreudenthalFiltration_1D, _oineus._FreudenthalFiltration_2D, _oineus._FreudenthalFiltration_3D, _oineus._FreudenthalFiltration_4D,
     _oineus._PackedSimplexFiltration_64, _oineus._PackedSimplexFiltration_128,
 )
 
@@ -203,9 +205,11 @@ _OPT_CLASS_BY_FIL_TYPE = {
     _oineus._CubeFiltration_1D:        _oineus.TopologyOptimizerCube_1D,
     _oineus._CubeFiltration_2D:        _oineus.TopologyOptimizerCube_2D,
     _oineus._CubeFiltration_3D:        _oineus.TopologyOptimizerCube_3D,
+    _oineus._CubeFiltration_4D:        _oineus.TopologyOptimizerCube_4D,
     _oineus._FreudenthalFiltration_1D: _oineus.TopologyOptimizerFreudenthal_1D,
     _oineus._FreudenthalFiltration_2D: _oineus.TopologyOptimizerFreudenthal_2D,
     _oineus._FreudenthalFiltration_3D: _oineus.TopologyOptimizerFreudenthal_3D,
+    _oineus._FreudenthalFiltration_4D: _oineus.TopologyOptimizerFreudenthal_4D,
     _oineus._PackedSimplexFiltration_64:  _oineus.TopologyOptimizerPacked_64,
     _oineus._PackedSimplexFiltration_128: _oineus.TopologyOptimizerPacked_128,
 }
@@ -222,9 +226,11 @@ _KICR_CLASS_BY_FIL_TYPE = {
     _oineus._CubeFiltration_1D:        _oineus._KerImCokReduced_Cube_1D,
     _oineus._CubeFiltration_2D:        _oineus._KerImCokReduced_Cube_2D,
     _oineus._CubeFiltration_3D:        _oineus._KerImCokReduced_Cube_3D,
+    _oineus._CubeFiltration_4D:        _oineus._KerImCokReduced_Cube_4D,
     _oineus._FreudenthalFiltration_1D: _oineus._KerImCokReduced_Fr_1D,
     _oineus._FreudenthalFiltration_2D: _oineus._KerImCokReduced_Fr_2D,
     _oineus._FreudenthalFiltration_3D: _oineus._KerImCokReduced_Fr_3D,
+    _oineus._FreudenthalFiltration_4D: _oineus._KerImCokReduced_Fr_4D,
     _oineus._PackedSimplexFiltration_64:  _oineus._KerImCokReduced_Packed_64,
     _oineus._PackedSimplexFiltration_128: _oineus._KerImCokReduced_Packed_128,
 }
@@ -993,7 +999,7 @@ def max_distance(data: np.ndarray, from_pwdists: bool=False):
         return 1.00001 * np.sqrt(np.min(np.max(squared_distances, axis=1)))
 
 
-_FR_GRID_CLASS_BY_NDIM = {1: Grid_1D, 2: Grid_2D, 3: Grid_3D}
+_FR_GRID_CLASS_BY_NDIM = {1: Grid_1D, 2: Grid_2D, 3: Grid_3D, 4: Grid_4D}
 
 
 def freudenthal_filtration(data: np.ndarray,
@@ -1005,12 +1011,12 @@ def freudenthal_filtration(data: np.ndarray,
                            n_threads: int=1):
     max_dim = min(max_dim, data.ndim)
     # slim (the default) returns the compact (anchor,type) _FreudenthalFiltration_ND (one shared
-    # FrGeometry, fat simplices materialized on access) for D=1,2,3 on non-wrap grids; it reduces,
+    # FrGeometry, fat simplices materialized on access) for D=1,2,3,4 on non-wrap grids; it reduces,
     # produces diagrams, optimizes (oineus.TopologyOptimizer dispatches it) and supports KICR
     # identically to the fat path but with a far smaller boundary-build footprint. wrap grids and
-    # D>=4 always fall back to the fat universal Filtration (FrGeometry rejects wrap; the slim
-    # builder is bound only for D=1,2,3). Pass slim=False to force the fat path.
-    use_slim = slim and (not wrap) and (1 <= data.ndim <= 3)
+    # D>=5 always fall back to the fat universal Filtration (FrGeometry rejects wrap; the slim
+    # builder is bound only for D=1,2,3,4). Pass slim=False to force the fat path.
+    use_slim = slim and (not wrap) and (1 <= data.ndim <= 4)
     if use_slim:
         grid = _FR_GRID_CLASS_BY_NDIM[data.ndim](data, wrap=wrap, values_on="vertices")
         if with_critical_vertices:
@@ -1152,7 +1158,7 @@ def is_reduced(a):
 
 _SLIM_SIMPLEX_FIL_TYPES = (
     _oineus._FreudenthalFiltration_1D, _oineus._FreudenthalFiltration_2D,
-    _oineus._FreudenthalFiltration_3D,
+    _oineus._FreudenthalFiltration_3D, _oineus._FreudenthalFiltration_4D,
     _oineus._PackedSimplexFiltration_64, _oineus._PackedSimplexFiltration_128,
 )
 
@@ -1591,6 +1597,8 @@ def cube_filtration(data: np.ndarray,
         grid = _oineus.Grid_2D(data, wrap=wrap, values_on=values_on)
     elif dim == 3:
         grid = _oineus.Grid_3D(data, wrap=wrap, values_on=values_on)
+    elif dim == 4:
+        grid = _oineus.Grid_4D(data, wrap=wrap, values_on=values_on)
     else:
         raise RuntimeError(f"cube_filtration: dim={data.ndim} not supported, recompile from sources")
     fil = grid.cube_filtration(max_dim=max_dim, n_threads=n_threads, negate=negate)
@@ -1628,6 +1636,7 @@ _PUBLIC_API_NAMES = [
     "TopologyOptimizerCube_1D",
     "TopologyOptimizerCube_2D",
     "TopologyOptimizerCube_3D",
+    "TopologyOptimizerCube_4D",
     "compute_relative_diagrams",
     "get_boundary_matrix",
     "get_denoise_target",
@@ -1647,6 +1656,10 @@ _PUBLIC_API_NAMES = [
     "Grid_3D",
     "CombinatorialCube_3D",
     "Cube_3D",
+    "GridDomain_4D",
+    "Grid_4D",
+    "CombinatorialCube_4D",
+    "Cube_4D",
     "DiagramMatching",
     "BottleneckMatching",
     "InfKind",

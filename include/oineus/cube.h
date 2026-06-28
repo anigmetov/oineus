@@ -9,7 +9,7 @@
 #include <functional>
 #include <utility>
 
-#define OINEUS_MAX_CUBE_DIM 3
+#define OINEUS_MAX_CUBE_DIM 4
 
 #include "common_defs.h"
 #include "log_wrapper.h"
@@ -228,7 +228,7 @@ namespace oineus {
     template<typename Int_, unsigned D>
     class FatCube;
 
-    // Slim cubical cell: a single packed uid (anchor vertex id << 3 | face-bits)
+    // Slim cubical cell: a single packed uid (anchor vertex id << OINEUS_MAX_CUBE_DIM | face-bits)
     // plus a user id. It does NOT store the GridDomain; the geometry is owned once
     // by the Filtration (or supplied by the caller) and passed into the
     // (co)boundary methods. This keeps the per-cell footprint tiny (uid + user_id,
