@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <cstdlib>
@@ -399,54 +400,77 @@ namespace oineus {
         return n_fixes;
     }
 
-    template<class Int>
-    bool restore_elz_column_parallel(typename SimpleRVMatrixTraits<Int, 2>::AMatrix& r_v_matrix, size_t current_col)
+    // Parallel ELZ restore of one column, using a working representative. The
+    // earlier naive version XORed columns with std::set_symmetric_difference, which
+    // reallocates a fresh column on every add and dominated the (serial, dense)
+    // cohomology ELZ restore. This one caches the current R and V into reusable
+    // working columns
+    // (v_work, r_work -- whatever WorkCol the reduction's col_repr picked:
+    // BitTree/Heap/Full/Set), does every XOR in that representation allocation-free,
+    // and materializes once at the end. The caller owns v_work/r_work and reuses
+    // them across its column block, so the O(n) dense buffer is allocated once per
+    // worker, not per column.
+    //
+    // Reformulation of the same algorithm: walk V's entries from the largest index
+    // down (= bottom-up in the sorted column). The current max is the candidate
+    // `added_col`. If it triggers an undo, XOR its column into V and R -- V is
+    // upper-triangular so this removes added_col and toggles only SMALLER entries,
+    // leaving already-recorded larger survivors final. Otherwise the candidate is a
+    // survivor: record it and clear it from the working V. Survivors are produced in
+    // decreasing order, so reverse for the ascending at-rest column.
+    template<class Int, class WorkCol>
+    bool restore_elz_column_parallel_repr(
+            typename SimpleRVMatrixTraits<Int, 2>::AMatrix& r_v_matrix,
+            size_t current_col, WorkCol& v_work, WorkCol& r_work)
     {
-        using SparseTraits = SimpleSparseMatrixTraits<Int, 2>;
-        using RVTraits = SimpleRVMatrixTraits<Int, 2>;
-        using RVColumn = typename RVTraits::Column;
+        using RVColumn = typename SimpleRVMatrixTraits<Int, 2>::Column;
 
         auto current_ptr = r_v_matrix[current_col].load(std::memory_order_relaxed);
         if (current_ptr == nullptr)
             return false;
 
-        RVColumn local_col(*current_ptr);
+        v_work.load(current_ptr->v_column);   // clear + fill (O(nnz), reuses buffers)
+        r_work.load(current_ptr->r_column);
 
-        size_t bottom_offset = 0;
+        SparseColumn<Int> kept_v;             // survivors, pushed in DECREASING order
         bool changed = false;
 
-        // Same bottom-up continuation logic as the serial version, but working on a local copy
-        // of the current column before publishing a new pointer.
-        while (bottom_offset < local_col.v_column.size()) {
-            const size_t v_idx = local_col.v_column.size() - 1 - bottom_offset;
-            const Int added_col = local_col.v_column[v_idx];
+        while (true) {
+            const Int added_col = v_work.low();
+            if (added_col < 0)
+                break;
 
             auto added_ptr = r_v_matrix[added_col].load(std::memory_order_relaxed);
             if (added_ptr == nullptr)
-                return changed;
+                return changed;               // neighbour not materialized: leave column as-is
 
-            const bool is_current_col_death = not local_col.r_column.empty();
+            const bool is_current_col_death = not r_work.is_zero();
             const bool is_added_col_zero = added_ptr->r_column.empty();
-
             const bool added_zero_column = (added_col < static_cast<Int>(current_col) && is_added_col_zero);
             const bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
-                    (local_col.r_column.back() > added_ptr->r_column.back()));
+                    r_work.low() > added_ptr->r_column.back());
 
             if (added_zero_column || added_non_killing_column) {
-                SparseTraits::add_to_column(local_col.v_column, added_ptr->v_column);
-                SparseTraits::add_to_column(local_col.r_column, added_ptr->r_column);
+                v_work.add(added_ptr->v_column);
+                r_work.add(added_ptr->r_column);
                 changed = true;
             } else {
-                ++bottom_offset;
+                kept_v.push_back(added_col);
+                const std::array<Int, 1> one{added_col};
+                v_work.add(one);              // clear the survivor from the working V
             }
         }
 
-        if (changed) {
-            auto* new_col = new RVColumn(std::move(local_col.r_column), std::move(local_col.v_column));
-            r_v_matrix[current_col].store(new_col, std::memory_order_relaxed);
-        }
+        if (not changed)
+            return false;                     // result equals the original column -> don't republish
 
-        return changed;
+        SparseColumn<Int> v_result(kept_v.rbegin(), kept_v.rend());   // descending -> ascending
+        SparseColumn<Int> r_result;
+        r_work.to_vector(r_result);
+
+        auto* new_col = new RVColumn(std::move(r_result), std::move(v_result));
+        r_v_matrix[current_col].store(new_col, std::memory_order_relaxed);
+        return true;
     }
 
     template<typename Int_>
@@ -3605,9 +3629,43 @@ namespace oineus {
                 // ELZ restore over the requested dims (others stay unrestored but
                 // still have valid Bauer-filled V columns).
                 for(dim_type dim: params.dims_to_restore_elz) {
-                    run_parallel_cols(dim, [&](size_t col_idx) {
-                        restore_elz_column_parallel<Int>(r_v_matrix, col_idx);
-                    }, &dbg_restore_thread_times_);
+                    // Dedicated parallel restore: each worker owns one reusable
+                    // (v_work, r_work) WorkCol pair (the col_repr-chosen
+                    // representation) and reuses it across its contiguous column
+                    // block, so the O(n) dense buffer is allocated once per worker
+                    // rather than once per column. Contiguous in-order blocks are
+                    // intentional: restore_elz_column reads neighbour columns, so the
+                    // in-increasing-order walk of the (cohomology) heavy range is the
+                    // minimal-work serial chain -- a balanced/out-of-order split blows
+                    // total work up. Per-thread wall times feed restore_thread_times.
+                    const dim_type _d = dualize()
+                            ? static_cast<dim_type>(_dim_first.size()) - dim - 1 : dim;
+                    const size_t cs = static_cast<size_t>(_dim_first[_d]);
+                    const size_t ce = static_cast<size_t>(_dim_last[_d]) + 1;
+                    const size_t ncol = ce - cs;
+                    if (ncol > 0) {
+                        const size_t nw = std::min(n_workers, ncol);
+                        dbg_restore_thread_times_.assign(nw, 0.0);
+                        std::vector<std::thread> restore_workers;
+                        restore_workers.reserve(nw);
+                        for (size_t tid = 0; tid < nw; ++tid) {
+                            const size_t begin = cs + (tid * ncol) / nw;
+                            const size_t end   = cs + ((tid + 1) * ncol) / nw;
+                            restore_workers.emplace_back(
+                                    [this, &r_v_matrix, begin, end, tid, n_cols]() {
+                                Timer tm;
+                                WorkCol v_work, r_work;
+                                v_work.reserve(n_cols);
+                                r_work.reserve(n_cols);
+                                for (size_t col_idx = begin; col_idx < end; ++col_idx)
+                                    restore_elz_column_parallel_repr<Int, WorkCol>(
+                                            r_v_matrix, col_idx, v_work, r_work);
+                                dbg_restore_thread_times_[tid] = tm.elapsed();
+                            });
+                        }
+                        for (auto& w : restore_workers)
+                            w.join();
+                    }
                     // is_elz_in_dim_ uses the internal _dim key (matrix layout).
                     const dim_type _dim = static_cast<dim_type>(_dim_from_dim(dim));
                     set_is_elz_flag(_dim, true);
