@@ -603,3 +603,8 @@ void init_oineus_common_decomposition(nb::module_& m) { register_oineus_decompos
 
 // float pass is compiled here; the driver calls it (reg_indep=false) into the _f32 submodule
 template void register_oineus_decomposition<float>(nb::module_&, bool);
+
+// Release the shared class handle once both passes are done (end of module init). The
+// Decomposition type stays alive (owned by the module); this just drops the extra ref
+// the static held, so nanobind's shutdown leak check does not flag it.
+void finalize_oineus_decomposition() { g_dcmp_cls.reset(); }

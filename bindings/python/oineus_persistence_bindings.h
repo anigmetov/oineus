@@ -818,6 +818,7 @@ template<class Real> void register_oineus_top_optimizer(nb::module_& m, bool reg
 // Real-dependent ctor/diagram overloads to that one class plus its per-Real free
 // `reduce` functions on the target module.
 template<class Real> void register_oineus_decomposition(nb::module_& m, bool reg_indep);
+void finalize_oineus_decomposition();   // release the shared Decomposition class handle
 
 void init_oineus_common_decomposition(nb::module_& m);
 void init_oineus_diagram(nb::module_& m);
