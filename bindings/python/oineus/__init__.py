@@ -24,10 +24,13 @@ from ._oineus import Decomposition, IndexDiagramPoint
 # reduce is the fused one-shot build+reduce free function; it is Real-templated (registered per
 # backend), so it is re-exposed below as a dtype-routing facade (like the other routed helpers).
 from ._oineus import DecompositionManipStats
-from ._oineus import ReductionParams, ReductionTimings, KICRParams, KerImCokReduced, KerImCokReducedProd
+from ._oineus import ReductionParams, ReductionTimings, KICRParams
 from ._oineus import ColumnRepr
-from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizerProd
-from ._oineus import TopologyOptimizerCube_1D, TopologyOptimizerCube_2D, TopologyOptimizerCube_3D, TopologyOptimizerCube_4D
+# KerImCokReduced(+Prod), IndicesValues(+Prod) and the concrete per-cell-type TopologyOptimizer
+# classes (Prod / Cube_ND) are Real-templated (and several are per-cell-type too); they are
+# re-exposed below as cross-backend markers so isinstance works on float32 / packed / slim results
+# and the direct constructors route by dtype. KICRParams / ReductionParams / ColumnRepr are
+# Real-independent (shared), so the single class is fine as a direct import.
 from ._oineus import get_boundary_matrix
 # compute_relative_diagrams / get_denoise_target / get_induced_matching / get_nth_persistence /
 # get_permutation(_dtv) are dtype- and cell-type-routed Python wrappers defined below: the C++
@@ -40,12 +43,13 @@ from ._oineus import init_frechet_mean_random_diagram as _init_frechet_mean_rand
 from ._oineus import init_frechet_mean_medoid_diagram as _init_frechet_mean_medoid_diagram_cpp
 from ._oineus import init_frechet_mean_diagonal_grid as _init_frechet_mean_diagonal_grid_cpp
 from ._oineus import frechet_mean as _frechet_mean_cpp
-# Cube_ND are Real-templated valued cells (re-exposed below as cross-backend markers); the
-# GridDomain / Grid / CombinatorialCube types are Real-independent, kept as direct imports.
-from ._oineus import GridDomain_1D, Grid_1D, CombinatorialCube_1D
-from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D
-from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D
-from ._oineus import GridDomain_4D, Grid_4D, CombinatorialCube_4D
+# Cube_ND and Grid_ND are Real-templated (re-exposed below as cross-backend markers; Grid carries
+# the Real-typed value array, so its construction routes by dtype). The GridDomain / CombinatorialCube
+# types are Real-independent, kept as direct imports.
+from ._oineus import GridDomain_1D, CombinatorialCube_1D
+from ._oineus import GridDomain_2D, CombinatorialCube_2D
+from ._oineus import GridDomain_3D, CombinatorialCube_3D
+from ._oineus import GridDomain_4D, CombinatorialCube_4D
 
 from ._dtype import (REAL_DTYPE, DEFAULT_REAL_DTYPE, REAL_MODULES, as_real_numpy,
                      detect_real_dtype, real_module_for, module_of_oineus_obj)
@@ -181,9 +185,29 @@ class ProdFiltration(metaclass=_ProdFiltrationMeta):
 # float64 concrete class (these leaf types -- diagram points, valued cells -- carry no input array
 # to route construction on). Mirrors how Filtration / ProdFiltration span the backends; this is
 # the leaf-type analogue of the _ALL_FILTRATION_TYPES marker above.
-def _real_templated_marker(class_name, doc):
-    concrete = tuple(getattr(s, class_name) for s in REAL_MODULES.values())
-    default_cls = getattr(_oineus, class_name)
+def _real_templated_marker(class_name, doc, *, isinstance_names=None, route=None, route_kw=None):
+    """Cross-backend marker for a Real-templated C++ type registered under `class_name` in every
+    Real backend (float64 on the top module, float32 under _f32).
+
+    isinstance / issubclass span the concrete types across both backends. By default the marker
+    covers just `class_name`; pass `isinstance_names` (a name -> bool predicate) to union a whole
+    family of per-encoding concrete types -- needed for results whose concrete class depends on
+    the filtration's cell encoding, not just its dtype (e.g. the optimizer returns an
+    IndicesValuesFreudenthal_2D, the KICR an _KerImCokReduced_Cube_2D).
+
+    Construction builds `class_name` from the float64 top module by default. Pass `route`
+    (a callable mapping the first constructor argument to its backend (sub)module) to route
+    construction by the dtype-bearing argument: real_module_for for a numpy array (Grid_ND),
+    module_of_oineus_obj for an oineus filtration (KerImCokReduced, the concrete optimizers).
+    `route_kw` is the name of that argument so routing also works when it is passed by keyword
+    (e.g. Grid_2D(data=arr)); route(None) falls back to float64, so a missing argument is safe.
+    Leaf types with no dtype-bearing argument (DiagramPoint, Simplex) keep the float64 default.
+    """
+    if isinstance_names is None:
+        concrete = tuple(getattr(s, class_name) for s in REAL_MODULES.values())
+    else:
+        concrete = tuple(getattr(s, n) for s in REAL_MODULES.values() for n in dir(s)
+                         if isinstance_names(n) and isinstance(getattr(s, n, None), type))
 
     class _Meta(type):
         def __instancecheck__(cls, obj):
@@ -193,7 +217,11 @@ def _real_templated_marker(class_name, doc):
             return issubclass(sub, concrete)
 
     def __new__(cls, *args, **kwargs):
-        return default_cls(*args, **kwargs)
+        if route is None:
+            mod = _oineus
+        else:
+            mod = route(args[0] if args else kwargs.get(route_kw))
+        return getattr(mod, class_name)(*args, **kwargs)
 
     return _Meta(class_name, (), {"__doc__": doc, "__new__": __new__})
 
@@ -232,6 +260,71 @@ Cube_3D = _real_templated_marker("Cube_3D",
 Cube_4D = _real_templated_marker("Cube_4D",
     "A 4D cube with a filtration value. isinstance spans both Real backends; construction\n"
     "returns a float64 cube.")
+
+# Grids -- Real-templated (the lower-star value array is the Real dtype). Construction routes by
+# the data array's dtype, so oineus.Grid_2D(float32_array) builds a genuine float32 grid (whose
+# freudenthal_filtration / cube_filtration is then float32), mirroring the freudenthal_filtration
+# facade -- a bare float64 Grid_2D would silently widen the data to float64.
+Grid_1D = _real_templated_marker("Grid_1D",
+    "A 1D regular grid of scalar values. isinstance spans both Real backends; constructing\n"
+    "oineus.Grid_1D(data) routes to the backend matching data's dtype (float32 data -> a\n"
+    "float32 grid).", route=real_module_for, route_kw="data")
+Grid_2D = _real_templated_marker("Grid_2D",
+    "A 2D regular grid of scalar values. isinstance spans both Real backends; construction\n"
+    "routes by the data array's dtype.", route=real_module_for, route_kw="data")
+Grid_3D = _real_templated_marker("Grid_3D",
+    "A 3D regular grid of scalar values. isinstance spans both Real backends; construction\n"
+    "routes by the data array's dtype.", route=real_module_for, route_kw="data")
+Grid_4D = _real_templated_marker("Grid_4D",
+    "A 4D regular grid of scalar values. isinstance spans both Real backends; construction\n"
+    "routes by the data array's dtype.", route=real_module_for, route_kw="data")
+
+# Kernel / image / cokernel reductions. Real-templated AND per-cell-type: the concrete class
+# depends on the filtration encoding, so isinstance must span EVERY KerImCokReduced encoding
+# across both backends (KerImCokReduced / KerImCokReducedProd / the internal _KerImCokReduced_*),
+# so isinstance(compute_kernel_image_cokernel_reduction(...), oineus.KerImCokReduced) holds for
+# packed/slim/cube results too. The direct ctor (simplex K/L) routes by the filtration's dtype.
+KerImCokReduced = _real_templated_marker("KerImCokReduced",
+    "Kernel / image / cokernel persistence of a pair (K, L). isinstance(x, oineus.KerImCokReduced)\n"
+    "is True for the result of compute_kernel_image_cokernel_reduction on any cell encoding, in\n"
+    "either Real backend. The direct constructor KerImCokReduced(K, L, params) (simplicial K, L)\n"
+    "routes by the filtration's dtype.",
+    isinstance_names=lambda n: "KerImCokReduced" in n, route=module_of_oineus_obj, route_kw="K")
+KerImCokReducedProd = _real_templated_marker("KerImCokReducedProd",
+    "Kernel / image / cokernel persistence over product cells (mapping cylinders). isinstance\n"
+    "spans both Real backends; the direct constructor routes by the filtration's dtype.",
+    route=module_of_oineus_obj, route_kw="K")
+
+# Optimizer targets (IndicesValues). Real-templated AND per-cell-type, and return-only (no public
+# constructor). isinstance must span every IndicesValues encoding across both backends so that the
+# result of an optimizer over a packed/slim/cube filtration is recognized as an oineus.IndicesValues.
+IndicesValues = _real_templated_marker("IndicesValues",
+    "(simplex indices, target values) returned by TopologyOptimizer methods. isinstance(x,\n"
+    "oineus.IndicesValues) is True for an optimizer result over any cell encoding, in either Real\n"
+    "backend. It is a result type, not user-constructed.",
+    isinstance_names=lambda n: n.startswith("IndicesValues"))
+IndicesValuesProd = _real_templated_marker("IndicesValuesProd",
+    "Optimizer targets for a product-cell filtration. isinstance spans both Real backends; it is\n"
+    "a result type, not user-constructed.")
+
+# Concrete per-cell-type optimizers. The generic oineus.TopologyOptimizer facade already
+# dispatches by filtration type; these concrete names route construction by the filtration's dtype
+# and span both Real backends for isinstance.
+TopologyOptimizerProd = _real_templated_marker("TopologyOptimizerProd",
+    "TopologyOptimizer for a product-cell filtration. Prefer the generic oineus.TopologyOptimizer\n"
+    "facade; this direct constructor routes by the filtration's dtype.", route=module_of_oineus_obj, route_kw="fil")
+TopologyOptimizerCube_1D = _real_templated_marker("TopologyOptimizerCube_1D",
+    "TopologyOptimizer for a 1D cubical filtration; direct ctor routes by the filtration's dtype.",
+    route=module_of_oineus_obj, route_kw="fil")
+TopologyOptimizerCube_2D = _real_templated_marker("TopologyOptimizerCube_2D",
+    "TopologyOptimizer for a 2D cubical filtration; direct ctor routes by the filtration's dtype.",
+    route=module_of_oineus_obj, route_kw="fil")
+TopologyOptimizerCube_3D = _real_templated_marker("TopologyOptimizerCube_3D",
+    "TopologyOptimizer for a 3D cubical filtration; direct ctor routes by the filtration's dtype.",
+    route=module_of_oineus_obj, route_kw="fil")
+TopologyOptimizerCube_4D = _real_templated_marker("TopologyOptimizerCube_4D",
+    "TopologyOptimizer for a 4D cubical filtration; direct ctor routes by the filtration's dtype.",
+    route=module_of_oineus_obj, route_kw="fil")
 
 
 def reduce(filtration, params=None, dualize=False):
@@ -1135,9 +1228,6 @@ def max_distance(data: np.ndarray, from_pwdists: bool=False):
         diff = data[:, np.newaxis, :] - data[np.newaxis, :, :]
         squared_distances = np.sum(diff**2, axis=2)
         return 1.00001 * np.sqrt(np.min(np.max(squared_distances, axis=1)))
-
-
-_FR_GRID_CLASS_BY_NDIM = {1: Grid_1D, 2: Grid_2D, 3: Grid_3D, 4: Grid_4D}
 
 
 def freudenthal_filtration(data: np.ndarray,

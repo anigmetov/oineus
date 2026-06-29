@@ -305,3 +305,82 @@ def test_float32_mapping_cylinder_accepts_f32_valued_vertex():
     cyl = oin.mapping_cylinder(dom, cod, v_dom, v_cod)
     assert _module_tag(cyl) == "_f32"
     assert isinstance(cyl, oin.ProdFiltration)
+
+
+def test_float32_grid_routes_by_dtype():
+    # P2: Grid_ND is Real-templated; oin.Grid_2D(float32_array) must build a genuine float32 grid
+    # (whose freudenthal_filtration is float32), not silently widen to float64. isinstance spans
+    # both backends.
+    a = np.random.default_rng(0).random((6, 6))
+    g32 = oin.Grid_2D(a.astype(np.float32))
+    g64 = oin.Grid_2D(a)
+    assert _module_tag(g32) == "_f32"
+    assert _module_tag(g64) == "_oineus"
+    assert _module_tag(g32.freudenthal_filtration(negate=False)) == "_f32"
+    assert isinstance(g32, oin.Grid_2D)
+    assert isinstance(g64, oin.Grid_2D)
+    assert not isinstance(a, oin.Grid_2D)
+    # routing must also work when data is passed by keyword (else float32 widens silently)
+    assert _module_tag(oin.Grid_2D(data=a.astype(np.float32))) == "_f32"
+    assert _module_tag(oin.Grid_2D(data=a.astype(np.float32), wrap=True)) == "_f32"
+
+
+def test_float32_kicr_ctor_routes_and_isinstance_marker():
+    # P3: oin.KerImCokReduced direct ctor must route by the filtration dtype (it raised TypeError
+    # on a float32 K before), and isinstance must recognize float32 / per-cell-type KICR results.
+    pts = np.random.default_rng(1).random((12, 3)).astype(np.float32)
+    K = oin.vr_filtration(pts, max_dim=2, max_diameter=0.7, packed=False)
+    L = oin.vr_filtration(pts, max_dim=1, max_diameter=0.7, packed=False)
+    direct = oin.KerImCokReduced(K, L, oin.KICRParams())
+    assert _module_tag(direct) == "_f32"
+    assert isinstance(direct, oin.KerImCokReduced)
+    facade = oin.compute_kernel_image_cokernel_reduction(K, L)
+    assert isinstance(facade, oin.KerImCokReduced)
+    # generic marker: also recognizes the internal per-cell-type KICR encodings (both backends)
+    f32 = oin._dtype.REAL_MODULES[np.dtype("float32")]
+    for mod in (oin._oineus, f32):
+        for nm in ("KerImCokReduced", "KerImCokReducedProd",
+                   "_KerImCokReduced_Cube_2D", "_KerImCokReduced_Packed_64"):
+            assert issubclass(getattr(mod, nm), oin.KerImCokReduced), nm
+    # float64 direct ctor still works
+    K64 = oin.vr_filtration(pts.astype(np.float64), max_dim=2, max_diameter=0.7, packed=False)
+    L64 = oin.vr_filtration(pts.astype(np.float64), max_dim=1, max_diameter=0.7, packed=False)
+    assert _module_tag(oin.KerImCokReduced(K64, L64, oin.KICRParams())) == "_oineus"
+
+
+def test_float32_indices_values_generic_marker():
+    # P3: IndicesValues is Real-templated AND per-cell-type. A default (slim/packed) optimizer over
+    # a float32 filtration returns an IndicesValuesFreudenthal_*/Packed_* (not the bare name); the
+    # generic oineus.IndicesValues marker must still recognize it.
+    a = np.random.default_rng(3).random((8, 8)).astype(np.float32)
+    opt = oin.TopologyOptimizer(oin.freudenthal_filtration(a, max_dim=1))   # slim default
+    iv = opt.simplify(0.1, oin.DenoiseStrategy.BirthBirth, 1)
+    assert _module_tag(iv) == "_f32"
+    assert type(iv).__name__ != "IndicesValues"        # a per-cell-type concrete return type
+    assert isinstance(iv, oin.IndicesValues)
+    # generic coverage across both backends and all encodings
+    f32 = oin._dtype.REAL_MODULES[np.dtype("float32")]
+    for mod in (oin._oineus, f32):
+        for nm in ("IndicesValues", "IndicesValuesProd", "IndicesValuesCube_2D",
+                   "IndicesValuesFreudenthal_2D", "IndicesValuesPacked_64"):
+            assert issubclass(getattr(mod, nm), oin.IndicesValues), nm
+
+
+def test_float32_concrete_optimizer_ctors_route_by_dtype():
+    # P3: the concrete per-cell-type optimizer names route construction by the filtration dtype
+    # (they rejected a float32 filtration before) and span both backends for isinstance. The
+    # generic oineus.TopologyOptimizer facade is the recommended path; these direct names are kept
+    # for API consistency.
+    a = np.random.default_rng(4).random((6, 6)).astype(np.float32)
+    optc = oin.TopologyOptimizerCube_2D(oin.cube_filtration(a, max_dim=2))
+    assert _module_tag(optc) == "_f32"
+    assert isinstance(optc, oin.TopologyOptimizerCube_2D)
+    prod = oin.multiply_filtration(
+        oin.vr_filtration(np.random.default_rng(5).random((8, 3)).astype(np.float32), max_dim=1),
+        oin.CombinatorialSimplex([999]))
+    optp = oin.TopologyOptimizerProd(prod)
+    assert _module_tag(optp) == "_f32"
+    assert isinstance(optp, oin.TopologyOptimizerProd)
+    # float64 still routes correctly
+    assert _module_tag(oin.TopologyOptimizerCube_2D(
+        oin.cube_filtration(a.astype(np.float64), max_dim=2))) == "_oineus"
