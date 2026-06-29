@@ -806,6 +806,7 @@ void init_oineus_dcmp_stats(nb::module_& m);
 // in nanobind's global registry). The thin init_oineus_* wrappers below drive the
 // double pass so the module driver and the per-file refactors can land incrementally.
 template<class Real> void register_oineus_cells(nb::module_& m, bool reg_indep);
+template<class Real> void register_oineus_functions(nb::module_& m, bool reg_indep);
 template<class Real> void register_oineus_diagram(nb::module_& m, bool reg_indep);
 template<class Real> void register_oineus_functions(nb::module_& m, bool reg_indep);
 template<class Real> void register_oineus_filtration(nb::module_& m, bool reg_indep);

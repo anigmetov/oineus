@@ -269,8 +269,18 @@ size_t je_allocated_bytes()
 
 } // namespace
 
-void init_oineus_functions(nb::module_& m)
+// Registered per Real. The array->filtration BUILDERS (get_freudenthal / get_vr
+// family) are Real-dependent and needed for float32, so they run for every Real via
+// the `using oin_real = Real` shadow. Everything after them (Hera distances /
+// matchings / Frechet means and the diagram-conversion utilities) leans on the
+// double-typed file-scope helpers in this file and is numerically dtype-agnostic, so
+// it is compiled and registered for double ONLY (the Python facade upcasts float32
+// diagrams for those). float32 thus gets the builders here and the distances via the
+// top-module (double) functions.
+template<class Real>
+void register_oineus_functions(nb::module_& m, bool reg_indep)
 {
+    using oin_real = Real;
     using Simp = oin::Simplex<oin_int>;
     using SimpProd = oin::ProductCell<Simp, Simp>;
     using oin::VREdge;
@@ -358,6 +368,11 @@ void init_oineus_functions(nb::module_& m)
     m.def(func_name.c_str(), &_get_vr_filtration_naive<oin_int, oin_real>,
             nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
             nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+
+    // ---- everything below is double-only (Hera distances / matchings / Frechet +
+    // diagram utilities; numerically dtype-agnostic, registered once on the top module) ----
+    if constexpr (std::is_same_v<Real, double>) {
+    (void)reg_indep;
 
     // Internal diagnostic: jemalloc allocated-bytes (0 if jemalloc OFF).
     m.def("_je_allocated_bytes", &je_allocated_bytes);
@@ -1012,4 +1027,12 @@ void init_oineus_functions(nb::module_& m)
             nb::arg("custom_initial_barycenter") = nb::none(),
             nb::arg("n_threads") = 1,
             "Compute a Frechet mean (W2 barycenter) of persistence diagrams.");
+
+    } // if constexpr (double): distances / matchings / Frechet
 }
+
+// double pass on the top module (builders + the double-only distances/matchings/Frechet)
+void init_oineus_functions(nb::module_& m) { register_oineus_functions<double>(m, true); }
+
+// float pass: compiled here, registers ONLY the array builders into the _f32 submodule
+template void register_oineus_functions<float>(nb::module_&, bool);

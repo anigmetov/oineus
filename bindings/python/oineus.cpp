@@ -39,6 +39,9 @@ NB_MODULE(_oineus, m)
     register_oineus_diagram<float>(f32, false);
     register_oineus_kicr<float>(f32, false);
     register_oineus_top_optimizer<float>(f32, false);
+    // float32 array->filtration builders (get_vr_filtration / get_freudenthal_filtration
+    // family); the distances/matchings/Frechet stay double-only inside this function.
+    register_oineus_functions<float>(f32, false);
 
     m.attr("real_dtype") = "float64";          // back-compat: the default Real
     f32.attr("real_dtype") = "float32";
