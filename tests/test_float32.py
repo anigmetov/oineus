@@ -190,3 +190,51 @@ def test_float32_delaunay_combinatorics_routes_to_f32():
     f64 = oin._delaunay_combinatorics(pts.astype(np.float64))
     assert _module_tag(f32) == "_f32"
     assert _module_tag(f64) == "_oineus"
+
+
+def test_float32_diagrams_and_points_isinstance_marker():
+    # Diagrams / DiagramPoint are Real-templated, so a float32 diagram is an _f32 class. The
+    # public oineus.Diagrams / oineus.DiagramPoint markers must recognize both backends (like
+    # Filtration / ProdFiltration), so isinstance works and the distance facade's multi-dim
+    # guard fires for float32 too (it previously degraded to a confusing nanobind TypeError).
+    a = np.random.default_rng(0).random((12, 12)).astype(np.float32)
+    fr = oin.freudenthal_filtration(a, max_dim=2)
+    dcmp = oin.Decomposition(fr, False)
+    dcmp.reduce(oin.ReductionParams())
+    dgm32 = dcmp.diagram(fil=fr, include_inf_points=True)
+    assert _module_tag(dgm32) == "_f32"
+    assert isinstance(dgm32, oin.Diagrams)
+    pts = dgm32.in_dimension(1, as_numpy=False)
+    assert all(isinstance(p, oin.DiagramPoint) for p in pts)
+    if len(pts):
+        assert _module_tag(pts[0]) == "_f32"
+
+    # float64 diagrams still recognized; construction defaults to the float64 concrete class
+    fr64 = oin.freudenthal_filtration(a.astype(np.float64), max_dim=2)
+    d64 = oin.Decomposition(fr64, False)
+    d64.reduce(oin.ReductionParams())
+    dgm64 = d64.diagram(fil=fr64, include_inf_points=True)
+    assert isinstance(dgm64, oin.Diagrams)
+    assert isinstance(oin.DiagramPoint(0.0, 1.0), oin.DiagramPoint)
+    assert _module_tag(oin.DiagramPoint(0.0, 1.0)) == "_oineus"
+
+    # the multi-dim Diagrams guard in the distance facade now fires for float32 with the
+    # helpful message; single-dimension float32 diagrams still compute (Hera upcasts to float64)
+    with pytest.raises(TypeError, match="in_dimension"):
+        oin.bottleneck_distance(dgm32, dgm32)
+    assert isinstance(oin.bottleneck_distance(dgm32.in_dimension(1), dgm32.in_dimension(1)), float)
+
+
+def test_float32_alpha_weighted_routes_to_f32():
+    # P2 fix: the weighted / periodic / non-array-exporter alpha fallbacks built a float64
+    # filtration even for float32 input. They must route by dtype like the fast array path.
+    pytest.importorskip("diode")
+    pts = np.random.default_rng(0).random((30, 3)).astype(np.float32)
+    w = np.random.default_rng(1).random(30).astype(np.float32)
+    try:
+        afw32 = oin.alpha_filtration(pts, weights=w)
+        afw64 = oin.alpha_filtration(pts.astype(np.float64), weights=w.astype(np.float64))
+    except (AttributeError, RuntimeError):
+        pytest.skip("diode build lacks weighted alpha shapes")
+    assert _module_tag(afw32) == "_f32"
+    assert _module_tag(afw64) == "_oineus"

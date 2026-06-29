@@ -139,7 +139,6 @@ types are accurate; prose will improve over time.
 
    get_denoise_target
    get_nth_persistence
-   get_ls_wasserstein_matching_target_values
 ```
 
 ## Enums

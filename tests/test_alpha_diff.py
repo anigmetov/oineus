@@ -150,3 +150,22 @@ def test_guard_raises_when_diode_lacks_with_attachment(monkeypatch):
     pts = torch.tensor(UNIT_TET, dtype=torch.float64, requires_grad=False)
     with pytest.raises(RuntimeError, match="with_attachment"):
         od.alpha_filtration(pts)
+
+
+@pytest.mark.skipif(np.dtype("float32") not in oin._dtype.REAL_MODULES,
+                    reason="extension built without the float32 backend")
+def test_diff_alpha_float32_routes_to_f32():
+    # A float32 point cloud must build a genuine float32 under-filtration (not float32 values on
+    # a float64 filtration), mirroring diff.vr / diff.freudenthal and the non-diff alpha facade.
+    rng = np.random.default_rng(2)
+    pts32 = torch.tensor(rng.random((40, 3)), dtype=torch.float32, requires_grad=True)
+    df = od.alpha_filtration(pts32)
+    assert type(df.under_fil).__module__.endswith("._f32")
+    assert df.values.dtype == torch.float32
+    # recomputed values still match diode's per-dim alpha order to float32 precision
+    expected_sorted = _per_dim_sorted_values_from_fil(df.under_fil)
+    np.testing.assert_allclose(df.values.detach().numpy(), expected_sorted, atol=1e-5)
+
+    # float64 still routes to the top module
+    pts64 = torch.tensor(rng.random((40, 3)), dtype=torch.float64, requires_grad=True)
+    assert type(od.alpha_filtration(pts64).under_fil).__module__.endswith("._oineus")

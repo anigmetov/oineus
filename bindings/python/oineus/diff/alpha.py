@@ -14,6 +14,7 @@ import numpy as np
 import torch
 
 from .. import _oineus
+from .._dtype import real_module_for
 from ._tensor_utils import real_buffer_for
 from .alpha_utils import (
     edge_circumradius_sq,
@@ -172,7 +173,12 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
         t0 = time.time()
 
     pairs = [(s, a) for s, a, _ in triples]
-    alpha_fil = _oineus._Filtration(pairs, duplicates_possible=False, n_threads=1)
+    # Route to the backend matching the point dtype so a float32 cloud builds a genuine float32
+    # under-filtration (diode's alpha values are double; the float32 _Filtration ctor narrows
+    # them). The recomputed values below already follow points.dtype, so the whole DiffFiltration
+    # stays single-dtype instead of float32 values on a float64 filtration.
+    sub = real_module_for(points_np)
+    alpha_fil = sub._Filtration(pairs, duplicates_possible=False, n_threads=1)
     alpha_fil.kind = _oineus.FiltrationKind.Alpha
 
     if print_time:

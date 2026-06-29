@@ -12,7 +12,11 @@ from . import _oineus
 from ._oineus import ConflictStrategy, DenoiseStrategy, VREdge, FiltrationKind
 from ._oineus import DiagramPlaneDomain, FrechetMeanInit
 from ._oineus import CombinatorialProdSimplex, CombinatorialSimplex,Simplex, ProdSimplex
-from ._oineus import Decomposition, IndexDiagramPoint, DiagramPoint, Diagrams
+from ._oineus import Decomposition, IndexDiagramPoint
+# Diagrams / DiagramPoint are Real-templated (a float32 build registers distinct classes under
+# _f32), so the bare top-module class would fail isinstance on a float32 diagram. They are
+# re-exposed below as cross-backend markers, mirroring Filtration / ProdFiltration.
+# IndexDiagramPoint is Real-independent (indices are ints), so the single shared class is fine.
 from ._oineus import reduce
 from ._oineus import DecompositionManipStats
 from ._oineus import ReductionParams, ReductionTimings, KICRParams, KerImCokReduced, KerImCokReducedProd
@@ -162,6 +166,55 @@ class ProdFiltration(metaclass=_ProdFiltrationMeta):
         raise TypeError(
             "oineus.ProdFiltration is an isinstance marker, not a constructor. Build a product "
             "filtration with oineus.Filtration([oineus.ProdSimplex(...), ...]).")
+
+
+# Diagrams / DiagramPoint are Real-templated: a float32 build registers distinct classes under
+# _f32, so the bare top-module class fails isinstance on a float32 diagram. These markers make
+# isinstance(x, oineus.Diagrams) / oineus.DiagramPoint True in either backend, mirroring
+# Filtration / ProdFiltration. Construction defaults to the float64 concrete class (birth/death
+# and the dimension count are plain Python numbers, with no input dtype to route on).
+_ALL_DIAGRAMS_TYPES = tuple(s.Diagrams for s in REAL_MODULES.values())
+_ALL_DIAGRAM_POINT_TYPES = tuple(s.DiagramPoint for s in REAL_MODULES.values())
+
+
+class _DiagramsMeta(type):
+    def __instancecheck__(cls, obj):
+        return isinstance(obj, _ALL_DIAGRAMS_TYPES)
+
+    def __subclasscheck__(cls, sub):
+        return issubclass(sub, _ALL_DIAGRAMS_TYPES)
+
+
+class Diagrams(metaclass=_DiagramsMeta):
+    """Persistence diagrams indexed by homology dimension.
+
+    isinstance(x, oineus.Diagrams) is True for a diagram from either Real backend (float64 or
+    float32). Extract one dimension with ``dgm.in_dimension(d)`` (NumPy ``(n, 2)`` array) or
+    ``dgm.in_dimension(d, as_numpy=False)`` (list of DiagramPoint). Constructing
+    ``oineus.Diagrams(max_dim)`` returns a float64 diagram container.
+    """
+
+    def __new__(cls, *args, **kwargs):
+        return _oineus.Diagrams(*args, **kwargs)
+
+
+class _DiagramPointMeta(type):
+    def __instancecheck__(cls, obj):
+        return isinstance(obj, _ALL_DIAGRAM_POINT_TYPES)
+
+    def __subclasscheck__(cls, sub):
+        return issubclass(sub, _ALL_DIAGRAM_POINT_TYPES)
+
+
+class DiagramPoint(metaclass=_DiagramPointMeta):
+    """A single persistence-diagram point with ``birth`` and ``death`` attributes.
+
+    isinstance(x, oineus.DiagramPoint) is True for a point from either Real backend.
+    Constructing ``oineus.DiagramPoint(birth, death)`` returns a float64 point.
+    """
+
+    def __new__(cls, *args, **kwargs):
+        return _oineus.DiagramPoint(*args, **kwargs)
 
 
 # Visualization helpers require matplotlib, an optional extra
@@ -1530,7 +1583,12 @@ def alpha_filtration(points: np.ndarray,
         else:
             fil_diode = diode.fill_alpha_shapes(points, exact=exact)
 
-    fil = _oineus._Filtration(
+    # Route the weighted / periodic / non-array-exporter fallbacks to the backend matching the
+    # points' dtype, like the fast array path above (and vr_filtration / freudenthal_filtration).
+    # diode computes alpha values in double; the float32 _Filtration ctor narrows them, same as
+    # the array path's explicit narrowing.
+    sub = REAL_MODULES[detect_real_dtype(points)]
+    fil = sub._Filtration(
         fil_diode,
         duplicates_possible=periodic,
         n_threads=n_threads,
@@ -1626,20 +1684,6 @@ def compute_diagrams_alpha(points: np.ndarray,
     dcmp = _oineus.Decomposition(fil, dualize)
     dcmp.reduce(params)
     return dcmp.diagram(fil=fil, include_inf_points=include_inf_points, n_threads=params.n_threads)
-
-
-def get_ls_wasserstein_matching_target_values(dgm, fil, rv, d: int, q: float, mip: bool, mdp: bool):
-    func = _oineus.get_ls_wasserstein_matching_target_values
-
-    if type(dgm) is np.ndarray:
-        if len(dgm.shape) != 2 or dgm.shape[1] != 2:
-            raise ValueError("dgm must be a 2D array of shape (n_points, 2)")
-        dgm_1 = []
-        for p in dgm:
-            dgm_1.append(DiagramPoint(p[0], p[1]))
-        dgm = dgm_1
-
-    return func(dgm, fil, rv, d, q, mip, mdp)
 
 
 def list_to_filtration(data: typing.List[typing.Tuple[int, typing.List[int], float]]):
@@ -1842,7 +1886,6 @@ _PUBLIC_API_NAMES = [
     "compute_diagrams_vr",
     "alpha_filtration",
     "compute_diagrams_alpha",
-    "get_ls_wasserstein_matching_target_values",
     "list_to_filtration",
     "compute_kernel_image_cokernel_reduction",
     "compute_ker_cok_reduction_cyl",
