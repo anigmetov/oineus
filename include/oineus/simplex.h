@@ -445,10 +445,18 @@ template<class Int, class Enc> struct UsesDenseUidIndex<Simplex<Int, Enc>> : Use
 
 namespace std {
 
-// libc++ provides std::hash for __int128 as a non-standard extension; libstdc++
-// does not. Without these specializations, Simplex<Int>::UidHasher = std::hash<Uid>
-// would not compile on gcc.
-#if defined(__GLIBCXX__)
+// Simplex<Int>::UidHasher = std::hash<Uid> needs std::hash for __int128 when
+// Uid is __int128 (packed encodings). libc++ provides it as a non-standard
+// extension. libstdc++ provides it in two cases, and defining ours on top then
+// collides (redefinition error):
+//   - GNU mode (-std=gnu++NN): under __GLIBCXX_TYPE_INT_N_0
+//   - strict mode (-std=c++NN) since GCC 16 (_GLIBCXX_RELEASE >= 16): under
+//     __STRICT_ANSI__ && __SIZEOF_INT128__ (bits/functional_hash.h)
+// Older libstdc++ provides neither in strict mode, which is what we build with;
+// supply our own only when libstdc++ provides neither.
+#if defined(__GLIBCXX__) \
+ && !defined(__GLIBCXX_TYPE_INT_N_0) \
+ && !(defined(__STRICT_ANSI__) && defined(__SIZEOF_INT128__) && _GLIBCXX_RELEASE >= 16)
 template<>
 struct hash<unsigned __int128> {
     std::size_t operator()(unsigned __int128 v) const noexcept
