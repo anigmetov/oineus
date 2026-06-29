@@ -12,18 +12,20 @@ NB_MODULE(_oineus, m)
     init_oineus_dcmp_stats(m);
 
     // float64 (the default Real): registered on the TOP module, byte-identical to the
-    // historical single-dtype layout. reg_indep=true also registers the few
-    // Real-INDEPENDENT classes that live alongside the Real-dependent ones
-    // (CombinatorialSimplex / ProdSimplex, GridDomain, CombinatorialCube, the
+    // historical single-dtype layout. The init_oineus_* wrappers drive the double pass
+    // (each calls register_oineus_*<double>(m, reg_indep=true)); reg_indep=true also
+    // registers the few Real-INDEPENDENT classes that live alongside the Real-dependent
+    // ones (CombinatorialSimplex / ProdSimplex, GridDomain, CombinatorialCube, the
     // Decomposition class, UStrategy, IndexDiagramPoint).
-    register_oineus_cells<double>(m, /*reg_indep=*/true);
-    register_oineus_filtration<double>(m, true);
-    register_oineus_decomposition<double>(m, true);
-    register_oineus_diagram<double>(m, true);
-    register_oineus_kicr<double>(m, true);
-    register_oineus_top_optimizer<double>(m, true);
-    // Hera distances / matchings are numerically dtype-agnostic, so this stays
-    // double-only; the Python facade upcasts float32 diagrams for distance calls.
+    init_oineus_cells(m);
+    init_oineus_filtration(m);
+    init_oineus_common_decomposition(m);
+    init_oineus_diagram(m);
+    init_oineus_kicr(m);
+    init_oineus_top_optimizer(m);
+    // Hera distances / matchings are numerically dtype-agnostic, so init_oineus_functions
+    // registers them (and the array builders) for double; the float pass below adds only
+    // the float32 array builders. The Python facade upcasts float32 diagrams for distances.
     init_oineus_functions(m);
 
     // float32: the Real-dependent types are registered into the _f32 submodule with
