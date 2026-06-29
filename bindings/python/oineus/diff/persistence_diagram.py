@@ -118,7 +118,7 @@ def _select_u_moves(idx_t, cur_t, tgt_t, move_t, *, side, negate):
     if not bool(sel.any().item()):
         return [], []
     rows = idx_t[sel].detach().cpu().numpy().astype(np.uintp).tolist()
-    bounds = tgt_t[sel].detach().cpu().to(torch.float64).numpy().tolist()
+    bounds = tgt_t[sel].detach().cpu().numpy().tolist()
     return rows, bounds
 
 
@@ -178,7 +178,7 @@ def _backward_crit_sets(ctx, grad_output):
         return (grad_vals,) + (None,) * 7
 
     flat_idx_np = flat_idx.detach().cpu().numpy().astype(np.uintp).tolist()
-    flat_tgt_np = flat_tgt.detach().cpu().to(torch.float64).numpy().tolist()
+    flat_tgt_np = flat_tgt.detach().cpu().numpy().tolist()
 
     # crit_sets_apply handles the dispatch reduction (ensure_hom_reduced)
     # internally and raises if the optimizer is dgm-loss only.
