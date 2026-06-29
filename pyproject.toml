@@ -159,8 +159,10 @@ dev = [
     # (~1 GB on macOS arm64). All py-diff-* tests need it.
     "torch",
     # CGAL alpha-shape filtration tests (py-plot-gradient,
-    # diff/cech_delaunay).
-    "diode",
+    # diff/cech_delaunay). 1.2.1+ ships the structured-array exporters
+    # (fill_*_arrays) that the bit-packed alpha path and py-packed-alpha need;
+    # older builds silently downgrade packed=True to the fat filtration.
+    "diode>=1.2.1",
     # Pretty-printer used in a few example scripts.
     "icecream>=2.2.0",
 ]
