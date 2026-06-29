@@ -38,6 +38,7 @@ def _dgms_equal(dp, fp, df, ff, max_dim):
         assert np.allclose(a, b, atol=1e-6), f"dim {d}"
 
 
+@requires_arrays
 @pytest.mark.parametrize("ambient", [2, 3])
 def test_packed_alpha_matches_fat(ambient):
     pts = np.ascontiguousarray(np.random.default_rng(0).random((40, ambient)))
