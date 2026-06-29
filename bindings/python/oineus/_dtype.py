@@ -60,6 +60,16 @@ def real_module_for(x):
     return REAL_MODULES[detect_real_dtype(x)]
 
 
+def module_of_oineus_obj(obj):
+    """The C++ (sub)module that owns ``obj``'s class -- ``_oineus._f32`` for a
+    float32 filtration/diagram/optimizer, else the top ``_oineus`` module. Used to
+    route Real-dependent free functions (e.g. _mapping_cylinder, _min_filtration) to
+    the backend matching an already-built C++ object."""
+    if type(obj).__module__.endswith("._f32") and _F32 in REAL_MODULES:
+        return _oineus._f32
+    return _oineus
+
+
 def as_real_numpy(arr, dtype=None):
     """C-contiguous view of ``arr`` in a Real dtype (default float64).
 

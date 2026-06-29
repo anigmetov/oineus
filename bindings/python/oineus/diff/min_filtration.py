@@ -2,6 +2,7 @@ import numpy as np
 import eagerpy as epy
 
 from .. import _oineus
+from .._dtype import module_of_oineus_obj
 from .diff_filtration import DiffFiltration
 
 
@@ -12,7 +13,9 @@ def min_filtration(fil_1: DiffFiltration, fil_2: DiffFiltration) -> DiffFiltrati
     if fil_1_under.negate != fil_2_under.negate:
         raise ValueError("min_filtration: fil_1 and fil_2 must agree on negate")
 
-    min_fil_under, _, _ = _oineus._min_filtration_with_indices(fil_1_under, fil_2_under)
+    # route to the float32 / float64 backend matching the (already-built) filtrations
+    sub = module_of_oineus_obj(fil_1_under)
+    min_fil_under, _, _ = sub._min_filtration_with_indices(fil_1_under, fil_2_under)
 
     # The indices returned by _min_filtration_with_indices reflect the
     # pre-sort order used inside the C++ helper, not the final sort order

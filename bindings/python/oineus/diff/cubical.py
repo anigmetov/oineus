@@ -4,16 +4,9 @@ import numpy as np
 import eagerpy as epy
 
 from .. import _oineus
+from .._dtype import real_module_for
 from .diff_filtration import DiffFiltration
 from ._tensor_utils import tensor_to_real_numpy, gather_values
-
-
-_GRID_CLASS_BY_NDIM = {
-    1: _oineus.Grid_1D,
-    2: _oineus.Grid_2D,
-    3: _oineus.Grid_3D,
-    4: _oineus.Grid_4D,
-}
 
 
 def cube_filtration(data,
@@ -43,7 +36,9 @@ def cube_filtration(data,
     np_data = tensor_to_real_numpy(tensor)
     ndim = np_data.ndim
 
-    grid_cls = _GRID_CLASS_BY_NDIM.get(ndim)
+    # a float32 tensor builds a genuine float32 cubical filtration
+    sub = real_module_for(np_data)
+    grid_cls = {1: sub.Grid_1D, 2: sub.Grid_2D, 3: sub.Grid_3D, 4: sub.Grid_4D}.get(ndim)
     if grid_cls is None:
         raise RuntimeError(
             f"cube_filtration: data.ndim={ndim} not supported, must be 1, 2, 3, or 4"

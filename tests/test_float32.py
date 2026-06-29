@@ -112,3 +112,28 @@ def test_distance_across_float32_diagrams():
     b = _dgms(g32, 2)[1]
     dist = oin.wasserstein_distance(a, b, q=2)
     assert dist >= 0.0
+
+
+def test_diff_float32_end_to_end():
+    # a float32 torch tensor builds a genuine float32 differentiable filtration; the
+    # persistence diagram is float32 and the gradient flows back as float32
+    torch = pytest.importorskip("torch")
+    import oineus.diff as od
+
+    x = torch.rand((8, 8), dtype=torch.float32, requires_grad=True)
+    df = od.cubical.cube_filtration(x)
+    assert _module_tag(df.under_fil) == "_f32"
+    assert df.values.dtype == torch.float32
+
+    dgms = od.persistence_diagram(df, include_inf_points=False)
+    d1 = dgms.in_dimension(1)
+    assert d1.dtype == torch.float32
+    loss = (d1[:, 1] - d1[:, 0]).pow(2).sum()
+    loss.backward()
+    assert x.grad.dtype == torch.float32
+    assert bool((x.grad.abs() > 0).any())
+
+    # a float64 tensor still routes to the top (float64) module
+    y = torch.rand((8, 8), dtype=torch.float64, requires_grad=True)
+    df64 = od.cubical.cube_filtration(y)
+    assert _module_tag(df64.under_fil) == "_oineus"

@@ -2,6 +2,7 @@ import numpy as np
 import eagerpy as epy
 
 from .. import _oineus, _SLIM_SIMPLEX_FIL_TYPES
+from .._dtype import module_of_oineus_obj
 from .diff_filtration import DiffFiltration
 
 
@@ -54,7 +55,9 @@ def mapping_cylinder_filtration(fil_domain: DiffFiltration, fil_codomain: DiffFi
     if v_codomain_value is None:
         v_codomain_value = under_fil_cod.neg_infinity()
 
-    under_cyl_fil, cyl_val_inds = _oineus._mapping_cylinder_with_indices(
+    # route to the backend matching the (fattened) under-filtrations' dtype
+    sub = module_of_oineus_obj(under_fil_dom)
+    under_cyl_fil, cyl_val_inds = sub._mapping_cylinder_with_indices(
         under_fil_dom, under_fil_cod, v_domain, v_codomain, v_domain_value, v_codomain_value
     )
 
