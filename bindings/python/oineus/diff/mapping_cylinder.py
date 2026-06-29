@@ -1,7 +1,7 @@
 import numpy as np
 import eagerpy as epy
 
-from .. import _oineus, _SLIM_SIMPLEX_FIL_TYPES
+from .. import _oineus, _SLIM_SIMPLEX_FIL_TYPES, Simplex
 from .._dtype import module_of_oineus_obj
 from .diff_filtration import DiffFiltration
 
@@ -38,10 +38,12 @@ def mapping_cylinder_filtration(fil_domain: DiffFiltration, fil_codomain: DiffFi
     assert type(fil_domain) is DiffFiltration
     assert type(fil_codomain) is DiffFiltration
 
-    if isinstance(v_domain, _oineus.Simplex):
+    # Simplex is the cross-backend marker, so a valued vertex from a float32 filtration is
+    # recognized and stripped to its (shared) combinatorial cell too.
+    if isinstance(v_domain, Simplex):
         v_domain = v_domain.combinatorial_cell
 
-    if isinstance(v_codomain, _oineus.Simplex):
+    if isinstance(v_codomain, Simplex):
         v_codomain = v_codomain.combinatorial_cell
 
     # The cylinder is a fat ProductCell<Simplex, Simplex> filtration, so materialize slim/packed

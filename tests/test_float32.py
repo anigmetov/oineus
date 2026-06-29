@@ -238,3 +238,70 @@ def test_float32_alpha_weighted_routes_to_f32():
         pytest.skip("diode build lacks weighted alpha shapes")
     assert _module_tag(afw32) == "_f32"
     assert _module_tag(afw64) == "_oineus"
+
+
+def test_float32_reduce_routes_to_f32():
+    # P1: the free oin.reduce (fused build+reduce) is Real-templated; it must accept float32
+    # filtrations (it raised TypeError before the facade routed by dtype). The Decomposition class
+    # itself is Real-independent (shared), so we route on the filtration, not on the result type.
+    a = np.random.default_rng(0).random((10, 10)).astype(np.float32)
+    f32 = oin.freudenthal_filtration(a, max_dim=2)
+    f64 = oin.freudenthal_filtration(a.astype(np.float64), max_dim=2)
+    assert _module_tag(f32) == "_f32"
+    d32 = oin.reduce(f32, oin.ReductionParams())
+    d64 = oin.reduce(f64)                       # default params path
+    for dim in (0, 1):
+        g32 = _finite_sorted(np.asarray(d32.diagram(f32).in_dimension(dim)))
+        g64 = _finite_sorted(np.asarray(d64.diagram(f64).in_dimension(dim)))
+        assert g32.shape == g64.shape
+        if g32.size:
+            assert np.allclose(g32, g64, atol=1e-5)
+
+
+def test_float32_valued_cells_isinstance_marker():
+    # P2: Simplex / ProdSimplex / Cube_ND are Real-templated valued cells; the public markers must
+    # recognize float32 instances (so isinstance and the multiply/cylinder wrappers work) while
+    # construction defaults to float64.
+    pts = np.random.default_rng(1).random((10, 3)).astype(np.float32)
+    fvr32 = oin.vr_filtration(pts, max_dim=2)
+    fvr64 = oin.vr_filtration(pts.astype(np.float64), max_dim=2)
+    assert _module_tag(fvr32[0]) == "_f32"
+    assert isinstance(fvr32[0], oin.Simplex)         # float32 valued simplex recognized
+    assert isinstance(fvr64[0], oin.Simplex)         # float64 still recognized
+    assert not isinstance(5, oin.Simplex)
+
+    a = np.random.default_rng(2).random((8, 8)).astype(np.float32)
+    assert isinstance(oin.cube_filtration(a, max_dim=2)[0], oin.Cube_2D)
+    assert isinstance(oin.multiply_filtration(fvr32, oin.CombinatorialSimplex([99]))[0],
+                      oin.ProdSimplex)
+
+    # construction defaults to the float64 concrete class
+    s = oin.Simplex([0, 1], 0.5)
+    assert _module_tag(s) == "_oineus"
+    assert isinstance(s, oin.Simplex)
+
+
+def test_float32_multiply_filtration_accepts_f32_valued_cell():
+    # P2 regression: passing a valued cell from a float32 filtration as the auxiliary simplex
+    # raised a nanobind TypeError (the wrapper's isinstance check was float64-only, so the value
+    # was never stripped to the shared combinatorial cell).
+    pts = np.random.default_rng(3).random((10, 3)).astype(np.float32)
+    fvr32 = oin.vr_filtration(pts, max_dim=1)
+    prod = oin.multiply_filtration(fvr32, fvr32[0])   # fvr32[0] is an _f32 valued Simplex
+    assert _module_tag(prod) == "_f32"
+    assert isinstance(prod, oin.ProdFiltration)
+
+
+def test_float32_mapping_cylinder_accepts_f32_valued_vertex():
+    # P2 regression (same mechanism as multiply_filtration): a valued vertex from the float32
+    # backend must be accepted -- and stripped -- by mapping_cylinder. Domain = 1-skeleton,
+    # codomain = full 2-complex on the same points (a genuine subcomplex inclusion).
+    f32_mod = oin._dtype.REAL_MODULES[np.dtype("float32")]
+    pts = np.random.default_rng(4).random((8, 2)).astype(np.float32)
+    dom = oin.vr_filtration(pts, max_dim=1, max_diameter=0.6)
+    cod = oin.vr_filtration(pts, max_dim=2, max_diameter=0.6)
+    v_dom = f32_mod.Simplex([100], 0.0)               # float32 valued vertices, non-colliding ids
+    v_cod = f32_mod.Simplex([200], 0.0)
+    cyl = oin.mapping_cylinder(dom, cod, v_dom, v_cod)
+    assert _module_tag(cyl) == "_f32"
+    assert isinstance(cyl, oin.ProdFiltration)
