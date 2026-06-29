@@ -19,8 +19,11 @@ from ._oineus import ReductionParams, ReductionTimings, KICRParams, KerImCokRedu
 from ._oineus import ColumnRepr
 from ._oineus import IndicesValues, IndicesValuesProd, TopologyOptimizerProd
 from ._oineus import TopologyOptimizerCube_1D, TopologyOptimizerCube_2D, TopologyOptimizerCube_3D, TopologyOptimizerCube_4D
-from ._oineus import compute_relative_diagrams, get_boundary_matrix, get_denoise_target, get_induced_matching
-from ._oineus import get_nth_persistence, get_permutation_dtv, get_permutation
+from ._oineus import get_boundary_matrix
+# compute_relative_diagrams / get_denoise_target / get_induced_matching / get_nth_persistence /
+# get_permutation(_dtv) are dtype- and cell-type-routed Python wrappers defined below: the C++
+# overloads live per-Real (top module for float64, _f32 for float32) and per cell type, so the
+# bare top-module symbol would reject the now-default packed/slim and any float32 filtration.
 from ._oineus import bottleneck_distance as _bottleneck_distance_cpp
 from ._oineus import wasserstein_distance as _wasserstein_distance_cpp
 from ._oineus import init_frechet_mean_first_diagram as _init_frechet_mean_first_diagram_cpp
@@ -122,6 +125,45 @@ class Filtration(metaclass=_FiltrationMeta):
                 f"Filtration(cells): unsupported cell type {type(first).__name__}; expected one "
                 f"of {[t.__name__ for t in _FIL_CLASS_BY_CELL_TYPE]} or (vertices, value) tuples.")
         return fil_cls(cells, *args, **kwargs)
+
+
+# Product-cell filtrations: those whose cells are oineus.ProdSimplex (ProductCell), i.e. the
+# output of mapping_cylinder / multiply_filtration and of Filtration([ProdSimplex, ...]). Both
+# Real backends register the concrete C++ type under the private name _ProdFiltration.
+_PROD_FILTRATION_TYPES = tuple(s._ProdFiltration for s in REAL_MODULES.values())
+
+
+class _ProdFiltrationMeta(type):
+    # isinstance(x, oineus.ProdFiltration) is True for any product-cell filtration, in either
+    # Real backend. ProdFiltration is a marker only -- it never instantiates (see __new__).
+    def __instancecheck__(cls, obj):
+        return isinstance(obj, _PROD_FILTRATION_TYPES)
+
+    def __subclasscheck__(cls, sub):
+        return issubclass(sub, _PROD_FILTRATION_TYPES)
+
+
+class ProdFiltration(metaclass=_ProdFiltrationMeta):
+    """Marker for product-cell filtrations -- those whose cells are oineus.ProdSimplex
+    (ProductCell), e.g. the result of mapping_cylinder or multiply_filtration.
+
+    Use it for membership tests only::
+
+        isinstance(fil, oineus.ProdFiltration)   # True for any product-cell filtration
+
+    It is a cell-type marker, distinct from the filtration's FiltrationKind (which records how
+    the filtration was built). It is NOT a constructor; build a product filtration through the
+    unified facade::
+
+        oineus.Filtration([oineus.ProdSimplex([0], [0], 0.0), ...])
+    """
+
+    def __new__(cls, *args, **kwargs):
+        raise TypeError(
+            "oineus.ProdFiltration is an isinstance marker, not a constructor. Build a product "
+            "filtration with oineus.Filtration([oineus.ProdSimplex(...), ...]).")
+
+
 # Visualization helpers require matplotlib, an optional extra
 # (`pip install oineus[vis]`). When it is absent, the plot_* helpers and
 # style constants are simply unavailable; the rest of oineus works normally.
@@ -1021,6 +1063,7 @@ def freudenthal_filtration(data: np.ndarray,
                            wrap: bool=False,
                            max_dim: int = 3,
                            with_critical_vertices: bool=False,
+                           *,
                            slim: bool=True,
                            n_threads: int=1):
     # route to the float32 or float64 backend by the input dtype (float32 numpy/torch
@@ -1075,6 +1118,7 @@ def vr_filtration(data: np.ndarray,
                   max_dim: int = -1,
                   max_diameter: float = -1.0,
                   with_critical_edges: bool = False,
+                  *,
                   packed: bool = True,
                   n_threads: int = 1):
     """Build a Vietoris-Rips filtration from points or pairwise distances.
@@ -1268,6 +1312,52 @@ def min_filtration(fil_1, fil_2, with_indices=False):
     else:
         return sub._min_filtration(fil_1, fil_2)
 
+
+# The five helpers below take a filtration argument and were historically bound only for the
+# fat float64 Simplex. The C++ overloads are now folded over every cell type and registered in
+# both Real backends; these wrappers route each call to the (sub)module matching the
+# filtration's dtype, so they work on the now-default packed VR / slim Freudenthal / cube
+# filtrations and on float32 filtrations -- mirroring min_filtration / mapping_cylinder.
+
+def get_nth_persistence(fil, rv_matrix, dim, n):
+    """The n-th largest persistence value in the given homology dimension."""
+    return module_of_oineus_obj(fil).get_nth_persistence(fil, rv_matrix, dim, n)
+
+
+def get_denoise_target(dim, fil, rv_matrix, eps, strategy):
+    """Target values for topological denoising (DiagramToValues)."""
+    return module_of_oineus_obj(fil).get_denoise_target(dim, fil, rv_matrix, eps, strategy)
+
+
+def get_permutation(target_matching, fil):
+    """Permutation realizing the requested simplex-to-value targets (warm starts)."""
+    return module_of_oineus_obj(fil).get_permutation(target_matching, fil)
+
+
+def get_permutation_dtv(diagram_to_values, fil):
+    """Permutation realizing the requested diagram-to-value targets (warm starts)."""
+    return module_of_oineus_obj(fil).get_permutation_dtv(diagram_to_values, fil)
+
+
+def compute_relative_diagrams(fil, rel, include_inf_points=True):
+    """Relative persistence diagrams of the pair (fil, rel). fil and rel must share
+    the same cell type and Real dtype."""
+    return module_of_oineus_obj(fil).compute_relative_diagrams(
+        fil, rel, include_inf_points=include_inf_points)
+
+
+def get_induced_matching(included_filtration, containing_filtration, dim=-1, n_threads=1):
+    """Induced matching between the diagrams of two filtrations on the same complex.
+
+    dim < 0 (the default) matches across all homology dimensions."""
+    sub = module_of_oineus_obj(included_filtration)
+    # dim_type is unsigned in C++; -1 ("all dims") is its SIZE_MAX default, which a Python -1
+    # cannot convert to -- so omit the argument and let the C++ default apply.
+    if dim is None or dim < 0:
+        return sub.get_induced_matching(included_filtration, containing_filtration, n_threads=n_threads)
+    return sub.get_induced_matching(
+        included_filtration, containing_filtration, dim=dim, n_threads=n_threads)
+
 def remove_simplices(fil, dcmp, seeds, *, close_star=True, stats=None, n_threads=1):
     """SiRUP: remove a coface-closed set of cells from a reduced decomposition.
 
@@ -1338,6 +1428,7 @@ def alpha_filtration(points: np.ndarray,
                      compute_bounding_box: bool=True,
                      bbox_min=None,
                      bbox_max=None,
+                     *,
                      packed: bool=True,
                      n_threads: int=1):
     """Build an alpha-shape filtration from a 2D or 3D point cloud.
@@ -1415,6 +1506,13 @@ def alpha_filtration(points: np.ndarray,
             # arrays, avoiding one Python tuple per simplex. Same combinatorics
             # and values as fill_alpha_shapes.
             verts_by_dim, vals_by_dim = diode.fill_alpha_shapes_arrays(points, exact=exact)
+            # Route the filtration to the backend matching the points' dtype (float32 points ->
+            # a genuine float32 alpha filtration, like vr_filtration / freudenthal_filtration).
+            # CGAL/diode compute the alpha values in double, so narrow them to the target Real.
+            dt = detect_real_dtype(points)
+            sub = REAL_MODULES[dt]
+            if dt != DEFAULT_REAL_DTYPE:
+                vals_by_dim = [np.ascontiguousarray(v, dtype=dt) for v in vals_by_dim]
             # packed (the default) returns a bit-packed PackedSimplexFiltration when the vertex
             # ids fit a 64/128-bit word (only this fast array path supports it; the
             # weighted/periodic/list fallbacks below stay fat). Reduces and produces
@@ -1423,10 +1521,10 @@ def alpha_filtration(points: np.ndarray,
             if suffix is not None:
                 # bits passed directly (skips the C++ max-id scan); diode rows are
                 # not vertex-sorted, so assume_sorted stays False.
-                fil = getattr(_oineus, "_filtration_from_arrays_packed" + suffix)(
+                fil = getattr(sub, "_filtration_from_arrays_packed" + suffix)(
                     verts_by_dim, vals_by_dim, n_threads=n_threads, bits=_packed_bits(points.shape[0]))
             else:
-                fil = _oineus._filtration_from_arrays(verts_by_dim, vals_by_dim, n_threads=n_threads)
+                fil = sub._filtration_from_arrays(verts_by_dim, vals_by_dim, n_threads=n_threads)
             fil.kind = _oineus.FiltrationKind.Alpha
             return fil
         else:
@@ -1466,11 +1564,16 @@ def _delaunay_combinatorics(points: np.ndarray, exact: bool=False, packed: bool=
     """
     if _HAS_DIODE_ARRAYS:
         verts_by_dim = diode.fill_delaunay_arrays(points, exact=exact)
+        # route to the backend matching the points' dtype so a float32 point cloud yields a
+        # float32 Delaunay filtration (the differentiable cech/weak paths then set float32
+        # values into it via real_buffer_for). Only the vertex arrays are used here; the
+        # caller overwrites the values, so no value-array dtype handling is needed.
+        sub = real_module_for(points)
         suffix = _vr_packed_word_suffix(points.shape[0], points.shape[1]) if packed else None
         if suffix is not None:
-            return getattr(_oineus, "_filtration_from_arrays_packed" + suffix)(
+            return getattr(sub, "_filtration_from_arrays_packed" + suffix)(
                 verts_by_dim, None, n_threads=n_threads, bits=_packed_bits(points.shape[0]))
-        return _oineus._filtration_from_arrays(verts_by_dim, None, n_threads=n_threads)
+        return sub._filtration_from_arrays(verts_by_dim, None, n_threads=n_threads)
     return alpha_filtration(points, exact=exact, packed=packed, n_threads=n_threads)
 
 
@@ -1655,6 +1758,7 @@ _PUBLIC_API_NAMES = [
     "Simplex",
     "ProdSimplex",
     "Filtration",
+    "ProdFiltration",
     "Decomposition",
     "IndexDiagramPoint",
     "DiagramPoint",

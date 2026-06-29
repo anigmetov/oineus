@@ -15,20 +15,12 @@ def min_filtration(fil_1: DiffFiltration, fil_2: DiffFiltration) -> DiffFiltrati
 
     # route to the float32 / float64 backend matching the (already-built) filtrations
     sub = module_of_oineus_obj(fil_1_under)
-    min_fil_under, _, _ = sub._min_filtration_with_indices(fil_1_under, fil_2_under)
-
-    # The indices returned by _min_filtration_with_indices reflect the
-    # pre-sort order used inside the C++ helper, not the final sort order
-    # imposed by the Filtration constructor on the result. Re-derive the
-    # source positions via uid so that vals_*[i] aligns with min_fil_under
-    # at sorted_id i.
-    n = min_fil_under.size()
-    inds_1 = np.empty(n, dtype=np.int64)
-    inds_2 = np.empty(n, dtype=np.int64)
-    for i in range(n):
-        uid = min_fil_under.cell(i).uid
-        inds_1[i] = fil_1_under.sorted_id_by_uid(uid)
-        inds_2[i] = fil_2_under.sorted_id_by_uid(uid)
+    # _min_filtration_with_indices returns, for each cell of the result in its FINAL sorted_id
+    # order, the source sorted_id in fil_1 / fil_2 -- so inds_k[i] already aligns vals_k with
+    # min_fil_under at sorted_id i (no per-cell uid re-derivation needed).
+    min_fil_under, inds_1, inds_2 = sub._min_filtration_with_indices(fil_1_under, fil_2_under)
+    inds_1 = np.asarray(inds_1, dtype=np.int64)
+    inds_2 = np.asarray(inds_2, dtype=np.int64)
 
     vals_1 = epy.astensor(fil_1.values)[inds_1]
     vals_2 = epy.astensor(fil_2.values)[inds_2]

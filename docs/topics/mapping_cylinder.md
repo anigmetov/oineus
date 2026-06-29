@@ -29,11 +29,15 @@ fil_cyl = oin.mapping_cylinder(fil_L, fil_K, v_top, v_bottom)
 ```
 
 `mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain)` returns
-a {py:class}`oineus.ProdFiltration` of product cells. The two auxiliary
+an {py:class}`oineus.Filtration` of product (`ProdSimplex`) cells. The two auxiliary
 vertices need IDs that don't collide with the vertices already in either
 filtration. Their values default to the filtration's $-\infty$ sentinel
 (so they enter the filtration before any real cell); pass
 `v_domain_value=...` / `v_codomain_value=...` to override.
+
+Test for a product-cell filtration with
+`isinstance(fil, oineus.ProdFiltration)` (a cell-type marker; it is not a
+constructor -- build product filtrations via `oineus.Filtration([...])`).
 
 ## When to use this
 

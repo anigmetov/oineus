@@ -156,3 +156,37 @@ def test_diff_float32_end_to_end():
     y = torch.rand((8, 8), dtype=torch.float64, requires_grad=True)
     df64 = od.cubical.cube_filtration(y)
     assert _module_tag(df64.under_fil) == "_oineus"
+
+
+def test_float32_alpha_filtration_routes_to_f32():
+    # P2a regression: alpha_filtration hardcoded the float64 module, so a float32 point cloud
+    # silently produced a float64 alpha filtration. It must now route by dtype like
+    # vr_filtration / freudenthal_filtration, and the float32 diagrams must match float64.
+    pytest.importorskip("diode")
+    if not getattr(oin, "_HAS_DIODE_ARRAYS", False):
+        pytest.skip("alpha float32 routing uses the diode array exporters")
+    pts = np.random.default_rng(0).random((40, 2))
+    af64 = oin.alpha_filtration(pts.astype(np.float64))
+    af32 = oin.alpha_filtration(pts.astype(np.float32))
+    assert _module_tag(af64) == "_oineus"
+    assert _module_tag(af32) == "_f32"
+    for dim in (0, 1):
+        g64 = _finite_sorted(_dgms(af64, 2)[dim])
+        g32 = _finite_sorted(_dgms(af32, 2)[dim])
+        assert g64.shape == g32.shape
+        if g64.size:
+            assert np.allclose(g64, g32, atol=1e-4)
+
+
+def test_float32_delaunay_combinatorics_routes_to_f32():
+    # the differentiable cech/weak-alpha paths build their combinatorics via
+    # _delaunay_combinatorics; a float32 point cloud must yield a float32 Delaunay filtration
+    # so the recomputed float32 values stay float32 end-to-end.
+    pytest.importorskip("diode")
+    if not getattr(oin, "_HAS_DIODE_ARRAYS", False):
+        pytest.skip("requires the diode array exporters")
+    pts = np.random.default_rng(1).random((30, 2))
+    f32 = oin._delaunay_combinatorics(pts.astype(np.float32))
+    f64 = oin._delaunay_combinatorics(pts.astype(np.float64))
+    assert _module_tag(f32) == "_f32"
+    assert _module_tag(f64) == "_oineus"

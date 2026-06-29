@@ -173,7 +173,7 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False):
     return centers, min_radii_sq
 
 
-def cech_delaunay_filtration(points, eps: float = 0.0, packed: bool = False, print_time: bool = False):
+def cech_delaunay_filtration(points, eps: float = 0.0, *, packed: bool = False, print_time: bool = False):
     """Build a differentiable Cech-Delaunay filtration from a point cloud.
 
     The combinatorics of the alpha complex are computed via diode (CGAL); the

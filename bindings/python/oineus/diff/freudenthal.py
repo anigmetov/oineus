@@ -7,7 +7,7 @@ from .diff_filtration import DiffFiltration
 from ._tensor_utils import tensor_to_real_numpy, gather_values
 
 
-def freudenthal_filtration(data, negate=False, wrap=False, max_dim=3, slim=False, n_threads=1):
+def freudenthal_filtration(data, negate=False, wrap=False, max_dim=3, *, slim=False, n_threads=1):
     tensor = epy.astensor(data)
     np_data = tensor_to_real_numpy(tensor)
     # a float32 tensor builds a genuine float32 filtration (its diagram and the C++

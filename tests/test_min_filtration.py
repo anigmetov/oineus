@@ -101,3 +101,30 @@ def test_min_filtration_rejects_mismatched_sizes_packed(with_indices):
     assert A.size() != B.size()
     with pytest.raises(RuntimeError):
         oin.min_filtration(A, B, with_indices=with_indices)
+
+
+def test_min_filtration_with_indices_aligned_to_result_order():
+    # Regression: min_filtration_with_indices built the source-index permutations in the
+    # (value, dim) order used internally, but the Filtration constructor re-sorts the cells
+    # into (dim, value, id) order. The returned indices must index the SAME cell as the
+    # returned filtration at each sorted position. This bites whenever a lower-dim cell has a
+    # higher value than some higher-dim cell elsewhere (so value-first and dim-first orders
+    # differ): here vertex [2] (value 3) sorts after edge [0,1] (value 2) by value, but before
+    # it by dimension.
+    cells = [oin.Simplex([0], 0.0), oin.Simplex([1], 0.0), oin.Simplex([2], 3.0),
+             oin.Simplex([0, 1], 2.0), oin.Simplex([0, 2], 3.0), oin.Simplex([1, 2], 3.0)]
+    A = oin.Filtration(cells, False, 1)
+    cells2 = [oin.Simplex([0], 1.0), oin.Simplex([1], 0.0), oin.Simplex([2], 1.0),
+              oin.Simplex([0, 1], 5.0), oin.Simplex([0, 2], 4.0), oin.Simplex([1, 2], 3.0)]
+    B = oin.Filtration(cells2, False, 1)
+
+    fil, i1, i2 = oin.min_filtration(A, B, with_indices=True)
+    assert fil.size() == A.size() == len(i1) == len(i2)
+    va, vb = _value_by_uid(A), _value_by_uid(B)
+    for k in range(fil.size()):
+        uid = fil.cell(k).uid
+        # index k must point to the SAME cell (by uid) in both source filtrations
+        assert A.cell(i1[k]).uid == uid
+        assert B.cell(i2[k]).uid == uid
+        # and the result value is the per-cell filtration-min of the two sources
+        assert fil.cell_value_by_sorted_id(k) == pytest.approx(min(va[uid], vb[uid]))

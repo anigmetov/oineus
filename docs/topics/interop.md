@@ -77,7 +77,7 @@ the diff case, with autograd attached).
 
 All major Oineus classes are picklable, including the heavy ones:
 
-- {py:class}`oineus.Filtration`, {py:class}`oineus.ProdFiltration`
+- {py:class}`oineus.Filtration` (including product-cell filtrations built from `ProdSimplex`)
 - {py:class}`oineus.Decomposition`
 - {py:class}`oineus.Diagrams`, {py:class}`oineus.DiagramPoint`
 - {py:class}`oineus.KerImCokReduced`, {py:class}`oineus.KerImCokReducedProd`

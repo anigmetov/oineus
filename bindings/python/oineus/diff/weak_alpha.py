@@ -16,7 +16,7 @@ from ._tensor_utils import real_buffer_for
 from .diff_filtration import DiffFiltration
 
 
-def weak_alpha_filtration(points, packed: bool = False, print_time: bool = False):
+def weak_alpha_filtration(points, *, packed: bool = False, print_time: bool = False):
     """Build a differentiable weak-alpha filtration from a point cloud.
 
     Args:

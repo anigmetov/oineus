@@ -74,6 +74,7 @@ else()
             api-dcmp
             api-dgm
             api-fil
+            api-functions
             api-kicr
             api-reduce
             bot-match
