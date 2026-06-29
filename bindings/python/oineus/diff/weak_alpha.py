@@ -12,6 +12,7 @@ import numpy as np
 import torch
 
 from .. import _delaunay_combinatorics, _oineus
+from ._tensor_utils import real_buffer_for
 from .diff_filtration import DiffFiltration
 
 
@@ -83,8 +84,8 @@ def weak_alpha_filtration(points, packed: bool = False, print_time: bool = False
     if print_time:
         start = time.time()
     cd_vals = torch.cat(values_in_dim)
-    cd_vals_list = [float(x) for x in cd_vals.clone().detach().cpu()]
-    alpha_fil.set_values(cd_vals_list)
+    # contiguous buffer in the filtration's Real dtype -- read directly by set_values
+    alpha_fil.set_values(real_buffer_for(alpha_fil, cd_vals))
     if print_time:
         elapsed = time.time() - start
         print(f"set values elapsed: {elapsed:.3f}")

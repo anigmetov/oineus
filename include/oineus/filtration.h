@@ -857,15 +857,26 @@ namespace oineus {
             return fv;
         }
 
-        void set_values(const std::vector<Real>& new_values, int n_threads=1)
+        // Bulk-assign every cell value from a contiguous buffer of length cells_.size(),
+        // then re-sort. The buffer is consumed synchronously -- values are copied into the
+        // cells and the pointer is not retained -- so a borrowed buffer (e.g. a numpy array
+        // kept alive only for the duration of a binding call) is safe to pass. The numeric
+        // type of the buffer must already be Real; the Python ndarray overload of set_values
+        // routes here so no per-element conversion or intermediate vector is built.
+        void set_values_from_buffer(const Real* new_values, size_t n, int n_threads=1)
         {
-            if (new_values.size() != cells_.size())
+            if (n != cells_.size())
                 throw std::runtime_error("new_values.size() != cells_.size()");
 
-            for(size_t i = 0; i < new_values.size(); ++i)
+            for(size_t i = 0; i < n; ++i)
                 cells_[i].value_ = new_values[i];
 
             sort_and_set(n_threads);
+        }
+
+        void set_values(const std::vector<Real>& new_values, int n_threads=1)
+        {
+            set_values_from_buffer(new_values.data(), new_values.size(), n_threads);
         }
 
         // return true, if it's a subfiltration (subset) of a true filtration

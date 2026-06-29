@@ -3,6 +3,7 @@ import numpy as np
 import torch
 
 from .. import _delaunay_combinatorics, _oineus
+from ._tensor_utils import real_buffer_for
 from .diff_filtration import DiffFiltration
 
 def triangle_meb(p0, p1, p2, eps=1e-12):
@@ -303,15 +304,16 @@ def cech_delaunay_filtration(points, eps: float = 0.0, packed: bool = False, pri
 
     if print_time:
         start = time.time()
-    cd_vals_list = [ float(x) for x in cd_vals.clone().detach().cpu() ]
+    # contiguous buffer in the filtration's Real dtype -- read directly by set_values
+    cd_vals_np = real_buffer_for(alpha_fil, cd_vals)
     if print_time:
         elapsed = time.time() - start
-        print(f"convert values to list elapsed: {elapsed:.3f}")
+        print(f"convert values to buffer elapsed: {elapsed:.3f}")
 
     # set non-differentiable internal Oineus values:
     if print_time:
         start = time.time()
-    alpha_fil.set_values(cd_vals_list)
+    alpha_fil.set_values(cd_vals_np)
     if print_time:
         elapsed = time.time() - start
         print(f"set alpha_fil values elapsed: {elapsed:.3f}")

@@ -2,7 +2,7 @@
 import numpy as np
 import eagerpy as epy
 
-from .._dtype import REAL_DTYPE, DEFAULT_REAL_DTYPE, REAL_MODULES
+from .._dtype import REAL_DTYPE, DEFAULT_REAL_DTYPE, REAL_MODULES, as_real_numpy, dtype_of_oineus_obj
 
 _F32 = np.dtype("float32")
 
@@ -28,6 +28,19 @@ def tensor_to_real_numpy(tensor, dtype=None):
         dtype = real_dtype_for_tensor(tensor)
     casted = tensor.float32() if np.dtype(dtype) == _F32 else tensor.float64()
     return np.array(casted.numpy(), dtype=dtype, order="C")
+
+
+def real_buffer_for(oineus_obj, tensor):
+    """Contiguous Real-dtype numpy buffer from a torch ``tensor``, matching the
+    backend Real of an already-built oineus object (filtration/diagram/optimizer).
+
+    Feed it straight to set_values and friends: the dtype matches the object's C++
+    Real, so nanobind's ndarray overload reads it directly -- no per-element
+    conversion and no intermediate Python list. float64 (the common case) is a
+    zero-copy view of the tensor; a float32 tensor against a float64 backend is
+    widened once.
+    """
+    return as_real_numpy(tensor.detach().cpu().numpy(), dtype=dtype_of_oineus_obj(oineus_obj))
 
 
 def gather_values(tensor, critical_indices):

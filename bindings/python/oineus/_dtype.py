@@ -60,14 +60,22 @@ def real_module_for(x):
     return REAL_MODULES[detect_real_dtype(x)]
 
 
+def dtype_of_oineus_obj(obj):
+    """The numpy Real dtype of an oineus C++ object's backend -- float32 for a
+    float32 filtration/diagram/optimizer (when a float32 build is present), else
+    float64. For shaping a buffer (e.g. set_values input) to match an already-built
+    object's Real type; module_of_oineus_obj is the module-valued counterpart."""
+    if type(obj).__module__.endswith("._f32") and _F32 in REAL_MODULES:
+        return _F32
+    return DEFAULT_REAL_DTYPE
+
+
 def module_of_oineus_obj(obj):
     """The C++ (sub)module that owns ``obj``'s class -- ``_oineus._f32`` for a
     float32 filtration/diagram/optimizer, else the top ``_oineus`` module. Used to
     route Real-dependent free functions (e.g. _mapping_cylinder, _min_filtration) to
     the backend matching an already-built C++ object."""
-    if type(obj).__module__.endswith("._f32") and _F32 in REAL_MODULES:
-        return _oineus._f32
-    return _oineus
+    return REAL_MODULES[dtype_of_oineus_obj(obj)]
 
 
 def as_real_numpy(arr, dtype=None):

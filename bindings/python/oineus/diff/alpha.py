@@ -14,6 +14,7 @@ import numpy as np
 import torch
 
 from .. import _oineus
+from ._tensor_utils import real_buffer_for
 from .alpha_utils import (
     edge_circumradius_sq,
     tetrahedron_circumradius_sq,
@@ -216,7 +217,8 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
         t0 = time.time()
 
     cd_vals = torch.cat(values_in_dim)
-    alpha_fil.set_values([float(x) for x in cd_vals.detach().cpu()])
+    # contiguous buffer in the filtration's Real dtype -- read directly by set_values
+    alpha_fil.set_values(real_buffer_for(alpha_fil, cd_vals))
     sorted_vals = torch.cat([torch.sort(v)[0] for v in values_in_dim])
 
     if print_time:

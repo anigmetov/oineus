@@ -330,6 +330,14 @@ void register_slim_filtration(nb::module_& m)
         .def("without_cells", &Fil::without_cells, nb::arg("cells_to_remove"), nb::rv_policy::move,
                 "Subfiltration with the given cells (sorted_ids) removed; survivors keep order.")
         .def("reset_ids_to_sorted_ids", &Fil::reset_ids_to_sorted_ids)
+        // Fast path: a contiguous Real-dtype buffer (numpy/torch) is read directly into the
+        // cells, no per-element Python conversion and no intermediate vector. Registered before
+        // the std::vector overload so a matching-dtype array binds here; lists fall through.
+        .def("set_values",
+             [](Fil& self, nb::ndarray<oin_real, nb::ndim<1>, nb::c_contig, nb::device::cpu, nb::ro> vals, int n_threads) {
+                 self.set_values_from_buffer(vals.data(), static_cast<size_t>(vals.shape(0)), n_threads);
+             },
+             nb::arg("new_values"), nb::arg("n_threads") = 1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
         .def("set_values", &Fil::set_values, nb::arg("new_values"), nb::arg("n_threads") = 1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
         .def(nb::self == nb::self)
         .def(nb::self != nb::self)
@@ -492,6 +500,14 @@ void register_oineus_filtration(nb::module_& m, bool reg_indep)
             .def("without_cells", &Filtration::without_cells, nb::arg("cells_to_remove"), nb::rv_policy::move,
                     "Subfiltration with the given cells (sorted_ids) removed; survivors keep order.")
             .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids)
+            // Fast path: a contiguous Real-dtype buffer (numpy/torch) is read directly into the
+            // cells, no per-element Python conversion and no intermediate vector. Registered before
+            // the std::vector overload so a matching-dtype array binds here; lists fall through.
+            .def("set_values",
+                 [](Filtration& self, nb::ndarray<oin_real, nb::ndim<1>, nb::c_contig, nb::device::cpu, nb::ro> vals, int n_threads) {
+                     self.set_values_from_buffer(vals.data(), static_cast<size_t>(vals.shape(0)), n_threads);
+                 },
+                 nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("set_values", &Filtration::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("subfiltration", [](Filtration& self, const
                 std::function<bool(const Simplex&)>& py_pred) -> Filtration {
