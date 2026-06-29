@@ -808,7 +808,6 @@ void init_oineus_dcmp_stats(nb::module_& m);
 template<class Real> void register_oineus_cells(nb::module_& m, bool reg_indep);
 template<class Real> void register_oineus_functions(nb::module_& m, bool reg_indep);
 template<class Real> void register_oineus_diagram(nb::module_& m, bool reg_indep);
-template<class Real> void register_oineus_functions(nb::module_& m, bool reg_indep);
 template<class Real> void register_oineus_filtration(nb::module_& m, bool reg_indep);
 template<class Real> void register_oineus_kicr(nb::module_& m, bool reg_indep);
 template<class Real> void register_oineus_top_optimizer(nb::module_& m, bool reg_indep);

@@ -28,7 +28,8 @@ def _fatten_under_with_values(under_fil, values):
     """
     if not isinstance(under_fil, _SLIM_SIMPLEX_FIL_TYPES):
         return under_fil, values
-    return _oineus._Filtration(under_fil.cells(), under_fil.negate), values
+    # rebuild the fat _Filtration in under_fil's own (float32/float64) backend
+    return module_of_oineus_obj(under_fil)._Filtration(under_fil.cells(), under_fil.negate), values
 
 
 def mapping_cylinder_filtration(fil_domain: DiffFiltration, fil_codomain: DiffFiltration,

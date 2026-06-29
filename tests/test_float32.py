@@ -114,6 +114,25 @@ def test_distance_across_float32_diagrams():
     assert dist >= 0.0
 
 
+def test_min_and_multiply_filtration_float32():
+    # min_filtration / multiply_filtration / mapping_cylinder route the Real-dependent
+    # free functions to the float32 backend (they used to hardcode float64)
+    pts = np.random.default_rng(5).random((18, 2)).astype(np.float32)
+    f1 = oin.vr_filtration(pts, max_dim=1)
+    f2 = oin.vr_filtration((pts + 0.05).astype(np.float32), max_dim=1)
+
+    mf = oin.min_filtration(f1, f2)
+    assert _module_tag(mf) == "_f32"
+
+    sigma = oin.CombinatorialSimplex([0])
+    mult = oin.multiply_filtration(f1, sigma)
+    assert _module_tag(mult) == "_f32"
+
+    # float64 inputs still route to the top module
+    g1 = oin.vr_filtration(pts.astype(np.float64), max_dim=1)
+    assert _module_tag(oin.min_filtration(g1, g1)) == "_oineus"
+
+
 def test_diff_float32_end_to_end():
     # a float32 torch tensor builds a genuine float32 differentiable filtration; the
     # persistence diagram is float32 and the gradient flows back as float32

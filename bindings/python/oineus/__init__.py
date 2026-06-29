@@ -34,7 +34,7 @@ from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D
 from ._oineus import GridDomain_4D, Grid_4D, CombinatorialCube_4D, Cube_4D
 
 from ._dtype import (REAL_DTYPE, DEFAULT_REAL_DTYPE, REAL_MODULES, as_real_numpy,
-                     detect_real_dtype, real_module_for)
+                     detect_real_dtype, real_module_for, module_of_oineus_obj)
 
 
 def _merge_over_reals(per_module):
@@ -1200,7 +1200,9 @@ def _to_fat_simplex_filtration(fil):
     anything else) is returned as-is so the C++ overload rejects it as before.
     """
     if isinstance(fil, _SLIM_SIMPLEX_FIL_TYPES):
-        return _oineus._Filtration(fil.cells(), fil.negate)
+        # fil.cells() materializes fat Simplex cells in fil's own (float32/float64)
+        # submodule, so build the fat _Filtration from the matching backend
+        return module_of_oineus_obj(fil)._Filtration(fil.cells(), fil.negate)
     return fil
 
 
@@ -1232,12 +1234,14 @@ def mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain,
         v_domain_value = fil_domain.neg_infinity()
     if v_codomain_value is None:
         v_codomain_value = fil_codomain.neg_infinity()
+    # route to the backend matching the (fattened) filtrations' dtype
+    sub = module_of_oineus_obj(fil_domain)
     if with_indices:
-        return _oineus._mapping_cylinder_with_indices(fil_domain, fil_codomain, v_domain, v_codomain,
-                                                      v_domain_value, v_codomain_value)
+        return sub._mapping_cylinder_with_indices(fil_domain, fil_codomain, v_domain, v_codomain,
+                                                  v_domain_value, v_codomain_value)
     else:
-        return _oineus._mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain,
-                                         v_domain_value, v_codomain_value)
+        return sub._mapping_cylinder(fil_domain, fil_codomain, v_domain, v_codomain,
+                                     v_domain_value, v_codomain_value)
 
 def multiply_filtration(fil, sigma, sigma_value=None):
     """Multiply every cell in fil by the auxiliary simplex sigma.
@@ -1254,13 +1258,15 @@ def multiply_filtration(fil, sigma, sigma_value=None):
         sigma = sigma.combinatorial_cell
     if sigma_value is None:
         sigma_value = fil.neg_infinity()
-    return _oineus._multiply_filtration(fil, sigma, sigma_value)
+    return module_of_oineus_obj(fil)._multiply_filtration(fil, sigma, sigma_value)
 
 def min_filtration(fil_1, fil_2, with_indices=False):
+    # route to the backend matching the input filtrations' dtype
+    sub = module_of_oineus_obj(fil_1)
     if with_indices:
-        return _oineus._min_filtration_with_indices(fil_1, fil_2)
+        return sub._min_filtration_with_indices(fil_1, fil_2)
     else:
-        return _oineus._min_filtration(fil_1, fil_2)
+        return sub._min_filtration(fil_1, fil_2)
 
 def remove_simplices(fil, dcmp, seeds, *, close_star=True, stats=None, n_threads=1):
     """SiRUP: remove a coface-closed set of cells from a reduced decomposition.
@@ -1602,7 +1608,8 @@ def compute_ker_cok_reduction_cyl(fil_2, fil_3):
     params.kernel = params.cokernel = True
     params.image = False
 
-    kicr_reduction = _oineus.KerImCokReducedProd(fil_cyl, fil_3_prod, params)
+    # route the product KICR to the backend matching the cylinder's dtype
+    kicr_reduction = module_of_oineus_obj(fil_cyl).KerImCokReducedProd(fil_cyl, fil_3_prod, params)
 
     return kicr_reduction
 
