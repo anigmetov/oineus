@@ -33,28 +33,43 @@ from ._oineus import GridDomain_2D, Grid_2D, CombinatorialCube_2D, Cube_2D
 from ._oineus import GridDomain_3D, Grid_3D, CombinatorialCube_3D, Cube_3D
 from ._oineus import GridDomain_4D, Grid_4D, CombinatorialCube_4D, Cube_4D
 
+from ._dtype import (REAL_DTYPE, DEFAULT_REAL_DTYPE, REAL_MODULES, as_real_numpy,
+                     detect_real_dtype, real_module_for)
+
+
+def _merge_over_reals(per_module):
+    """Merge a per-submodule dict over every compiled Real (float64 = the top
+    module, float32 = _f32 when present). Class names are identical across
+    submodules, but a float32 _Filtration is a distinct Python class from the
+    float64 one, so the merged map dispatches both dtypes from one lookup."""
+    merged = {}
+    for sub in REAL_MODULES.values():
+        merged.update(per_module(sub))
+    return merged
+
 
 # Maps the fat cell-with-value type a user hands to Filtration(...) to the concrete C++
 # filtration class that consumes it. The per-encoding internal filtrations are distinct C++
 # types (cube vs simplex vs product), but the user sees one Filtration.
-_FIL_CLASS_BY_CELL_TYPE = {
-    _oineus.Simplex:      _oineus._Filtration,        # fat Simplex (VR / alpha / user-built)
-    _oineus.ProdSimplex:  _oineus._ProdFiltration,    # product cells (mapping cylinders)
-    _oineus.Cube_1D:      _oineus._CubeFiltration_1D,  # fat cubes (hand-built cubical complexes)
-    _oineus.Cube_2D:      _oineus._CubeFiltration_2D,
-    _oineus.Cube_3D:      _oineus._CubeFiltration_3D,
-    _oineus.Cube_4D:      _oineus._CubeFiltration_4D,
-}
+_FIL_CLASS_BY_CELL_TYPE = _merge_over_reals(lambda s: {
+    s.Simplex:      s._Filtration,        # fat Simplex (VR / alpha / user-built)
+    s.ProdSimplex:  s._ProdFiltration,    # product cells (mapping cylinders)
+    s.Cube_1D:      s._CubeFiltration_1D,  # fat cubes (hand-built cubical complexes)
+    s.Cube_2D:      s._CubeFiltration_2D,
+    s.Cube_3D:      s._CubeFiltration_3D,
+    s.Cube_4D:      s._CubeFiltration_4D,
+})
 
-# Every concrete filtration C++ type, for isinstance(x, oineus.Filtration). Includes the
-# factory-produced slim Freudenthal / bit-packed ones, which a user never constructs by hand
-# but should still recognize as filtrations.
-_ALL_FILTRATION_TYPES = (
-    _oineus._Filtration, _oineus._ProdFiltration,
-    _oineus._CubeFiltration_1D, _oineus._CubeFiltration_2D, _oineus._CubeFiltration_3D, _oineus._CubeFiltration_4D,
-    _oineus._FreudenthalFiltration_1D, _oineus._FreudenthalFiltration_2D, _oineus._FreudenthalFiltration_3D, _oineus._FreudenthalFiltration_4D,
-    _oineus._PackedSimplexFiltration_64, _oineus._PackedSimplexFiltration_128,
-)
+# Every concrete filtration C++ type (both dtypes), for isinstance(x, oineus.Filtration).
+# Includes the factory-produced slim Freudenthal / bit-packed ones, which a user never
+# constructs by hand but should still recognize as filtrations.
+_ALL_FILTRATION_TYPES = tuple(
+    f for s in REAL_MODULES.values() for f in (
+        s._Filtration, s._ProdFiltration,
+        s._CubeFiltration_1D, s._CubeFiltration_2D, s._CubeFiltration_3D, s._CubeFiltration_4D,
+        s._FreudenthalFiltration_1D, s._FreudenthalFiltration_2D, s._FreudenthalFiltration_3D, s._FreudenthalFiltration_4D,
+        s._PackedSimplexFiltration_64, s._PackedSimplexFiltration_128,
+    ))
 
 
 class _FiltrationMeta(type):
@@ -179,7 +194,6 @@ from .sliced_wasserstein import (
     sliced_wasserstein_distance,
     sliced_wasserstein_distance_diag_corrected,
 )
-from ._dtype import REAL_DTYPE, as_real_numpy
 # from ._oineus import Z2_Column, Z2_Matrix
 
 try:
@@ -199,20 +213,20 @@ _HAS_DIODE_ARRAYS = _HAS_DIODE and hasattr(diode, "fill_delaunay_arrays") \
 # reduction core is cell-agnostic, but the optimizer is templated on the cell type, so
 # there is one bound class per encoding (universal Simplex, product, slim cube, slim
 # Freudenthal, bit-packed VR/alpha). Single source of truth: oineus.diff reuses it.
-_OPT_CLASS_BY_FIL_TYPE = {
-    _oineus._Filtration:               _oineus.TopologyOptimizer,
-    _oineus._ProdFiltration:           _oineus.TopologyOptimizerProd,
-    _oineus._CubeFiltration_1D:        _oineus.TopologyOptimizerCube_1D,
-    _oineus._CubeFiltration_2D:        _oineus.TopologyOptimizerCube_2D,
-    _oineus._CubeFiltration_3D:        _oineus.TopologyOptimizerCube_3D,
-    _oineus._CubeFiltration_4D:        _oineus.TopologyOptimizerCube_4D,
-    _oineus._FreudenthalFiltration_1D: _oineus.TopologyOptimizerFreudenthal_1D,
-    _oineus._FreudenthalFiltration_2D: _oineus.TopologyOptimizerFreudenthal_2D,
-    _oineus._FreudenthalFiltration_3D: _oineus.TopologyOptimizerFreudenthal_3D,
-    _oineus._FreudenthalFiltration_4D: _oineus.TopologyOptimizerFreudenthal_4D,
-    _oineus._PackedSimplexFiltration_64:  _oineus.TopologyOptimizerPacked_64,
-    _oineus._PackedSimplexFiltration_128: _oineus.TopologyOptimizerPacked_128,
-}
+_OPT_CLASS_BY_FIL_TYPE = _merge_over_reals(lambda s: {
+    s._Filtration:               s.TopologyOptimizer,
+    s._ProdFiltration:           s.TopologyOptimizerProd,
+    s._CubeFiltration_1D:        s.TopologyOptimizerCube_1D,
+    s._CubeFiltration_2D:        s.TopologyOptimizerCube_2D,
+    s._CubeFiltration_3D:        s.TopologyOptimizerCube_3D,
+    s._CubeFiltration_4D:        s.TopologyOptimizerCube_4D,
+    s._FreudenthalFiltration_1D: s.TopologyOptimizerFreudenthal_1D,
+    s._FreudenthalFiltration_2D: s.TopologyOptimizerFreudenthal_2D,
+    s._FreudenthalFiltration_3D: s.TopologyOptimizerFreudenthal_3D,
+    s._FreudenthalFiltration_4D: s.TopologyOptimizerFreudenthal_4D,
+    s._PackedSimplexFiltration_64:  s.TopologyOptimizerPacked_64,
+    s._PackedSimplexFiltration_128: s.TopologyOptimizerPacked_128,
+})
 
 
 # Maps each filtration cell encoding to its C++ KerImCokReduced (kernel/image/cokernel)
@@ -220,20 +234,20 @@ _OPT_CLASS_BY_FIL_TYPE = {
 # fat classes keep their public names, the rest are hidden underscore names. Keyed by the
 # filtration type (type(K)) -- NOT by K[0], whose materialized fat cell would misdispatch
 # slim/packed filtrations into the fat ctor.
-_KICR_CLASS_BY_FIL_TYPE = {
-    _oineus._Filtration:               _oineus.KerImCokReduced,
-    _oineus._ProdFiltration:           _oineus.KerImCokReducedProd,
-    _oineus._CubeFiltration_1D:        _oineus._KerImCokReduced_Cube_1D,
-    _oineus._CubeFiltration_2D:        _oineus._KerImCokReduced_Cube_2D,
-    _oineus._CubeFiltration_3D:        _oineus._KerImCokReduced_Cube_3D,
-    _oineus._CubeFiltration_4D:        _oineus._KerImCokReduced_Cube_4D,
-    _oineus._FreudenthalFiltration_1D: _oineus._KerImCokReduced_Fr_1D,
-    _oineus._FreudenthalFiltration_2D: _oineus._KerImCokReduced_Fr_2D,
-    _oineus._FreudenthalFiltration_3D: _oineus._KerImCokReduced_Fr_3D,
-    _oineus._FreudenthalFiltration_4D: _oineus._KerImCokReduced_Fr_4D,
-    _oineus._PackedSimplexFiltration_64:  _oineus._KerImCokReduced_Packed_64,
-    _oineus._PackedSimplexFiltration_128: _oineus._KerImCokReduced_Packed_128,
-}
+_KICR_CLASS_BY_FIL_TYPE = _merge_over_reals(lambda s: {
+    s._Filtration:               s.KerImCokReduced,
+    s._ProdFiltration:           s.KerImCokReducedProd,
+    s._CubeFiltration_1D:        s._KerImCokReduced_Cube_1D,
+    s._CubeFiltration_2D:        s._KerImCokReduced_Cube_2D,
+    s._CubeFiltration_3D:        s._KerImCokReduced_Cube_3D,
+    s._CubeFiltration_4D:        s._KerImCokReduced_Cube_4D,
+    s._FreudenthalFiltration_1D: s._KerImCokReduced_Fr_1D,
+    s._FreudenthalFiltration_2D: s._KerImCokReduced_Fr_2D,
+    s._FreudenthalFiltration_3D: s._KerImCokReduced_Fr_3D,
+    s._FreudenthalFiltration_4D: s._KerImCokReduced_Fr_4D,
+    s._PackedSimplexFiltration_64:  s._KerImCokReduced_Packed_64,
+    s._PackedSimplexFiltration_128: s._KerImCokReduced_Packed_128,
+})
 
 
 class TopologyOptimizer:
@@ -1009,6 +1023,11 @@ def freudenthal_filtration(data: np.ndarray,
                            with_critical_vertices: bool=False,
                            slim: bool=True,
                            n_threads: int=1):
+    # route to the float32 or float64 backend by the input dtype (float32 numpy/torch
+    # arrays build a genuine float32 filtration; everything else defaults to float64)
+    dt = detect_real_dtype(data)
+    sub = REAL_MODULES[dt]
+    data = as_real_numpy(data, dtype=dt)
     max_dim = min(max_dim, data.ndim)
     # slim (the default) returns the compact (anchor,type) _FreudenthalFiltration_ND (one shared
     # FrGeometry, fat simplices materialized on access) for D=1,2,3,4 on non-wrap grids; it reduces,
@@ -1018,17 +1037,18 @@ def freudenthal_filtration(data: np.ndarray,
     # builder is bound only for D=1,2,3,4). Pass slim=False to force the fat path.
     use_slim = slim and (not wrap) and (1 <= data.ndim <= 4)
     if use_slim:
-        grid = _FR_GRID_CLASS_BY_NDIM[data.ndim](data, wrap=wrap, values_on="vertices")
+        grid_cls = {1: sub.Grid_1D, 2: sub.Grid_2D, 3: sub.Grid_3D, 4: sub.Grid_4D}[data.ndim]
+        grid = grid_cls(data, wrap=wrap, values_on="vertices")
         if with_critical_vertices:
             fil, vertices = grid.freudenthal_filtration_and_critical_vertices_slim(max_dim=max_dim, negate=negate, n_threads=n_threads)
             vertices = np.array(vertices, dtype=np.int64)
             return fil, vertices
         return grid.freudenthal_filtration_slim(max_dim=max_dim, negate=negate, n_threads=n_threads)
     if with_critical_vertices:
-        fil, vertices = _oineus.get_freudenthal_filtration_and_crit_vertices(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
+        fil, vertices = sub.get_freudenthal_filtration_and_crit_vertices(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
         vertices = np.array(vertices, dtype=np.int64)
         return fil, vertices
-    return _oineus.get_freudenthal_filtration(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
+    return sub.get_freudenthal_filtration(data=data, negate=negate, wrap=wrap, max_dim=max_dim, n_threads=n_threads)
 
 
 def _vr_packed_word_suffix(n_points, max_dim):
@@ -1085,6 +1105,12 @@ def vr_filtration(data: np.ndarray,
         Threads used for the (parallel) sort inside the Filtration ctor.
         Enumeration itself is single-threaded.
     """
+    # route to the float32 or float64 backend by the input dtype, then coerce the
+    # point/distance array to that Real so the matching get_vr_* builder accepts it
+    dt = detect_real_dtype(data)
+    sub = REAL_MODULES[dt]
+    data = as_real_numpy(data, dtype=dt)
+
     if data.ndim != 2:
         raise ValueError("data must be a 2D array")
 
@@ -1111,19 +1137,19 @@ def vr_filtration(data: np.ndarray,
     if from_pwdists:
         if suffix is not None:
             base = "get_vr_filtration_and_critical_edges_packed" if with_critical_edges else "get_vr_filtration_packed"
-            func = getattr(_oineus, base + suffix + "_from_pwdists")
+            func = getattr(sub, base + suffix + "_from_pwdists")
         elif with_critical_edges:
-            func = _oineus.get_vr_filtration_and_critical_edges_from_pwdists
+            func = sub.get_vr_filtration_and_critical_edges_from_pwdists
         else:
-            func = _oineus.get_vr_filtration_from_pwdists
+            func = sub.get_vr_filtration_from_pwdists
     else:
         if suffix is not None:
             base = "get_vr_filtration_and_critical_edges_packed" if with_critical_edges else "get_vr_filtration_packed"
-            func = getattr(_oineus, base + suffix)
+            func = getattr(sub, base + suffix)
         elif with_critical_edges:
-            func = _oineus.get_vr_filtration_and_critical_edges
+            func = sub.get_vr_filtration_and_critical_edges
         else:
-            func = _oineus.get_vr_filtration
+            func = sub.get_vr_filtration
 
     result = func(data, max_dim=max_dim, max_diameter=max_diameter, n_threads=n_threads)
     if with_critical_edges:
@@ -1156,11 +1182,12 @@ def is_reduced(a):
             lowest_ones.append(np.max(np.where(a[:, col_idx] % 2 == 1)))
     return len(lowest_ones) == len(set(lowest_ones))
 
-_SLIM_SIMPLEX_FIL_TYPES = (
-    _oineus._FreudenthalFiltration_1D, _oineus._FreudenthalFiltration_2D,
-    _oineus._FreudenthalFiltration_3D, _oineus._FreudenthalFiltration_4D,
-    _oineus._PackedSimplexFiltration_64, _oineus._PackedSimplexFiltration_128,
-)
+_SLIM_SIMPLEX_FIL_TYPES = tuple(
+    f for s in REAL_MODULES.values() for f in (
+        s._FreudenthalFiltration_1D, s._FreudenthalFiltration_2D,
+        s._FreudenthalFiltration_3D, s._FreudenthalFiltration_4D,
+        s._PackedSimplexFiltration_64, s._PackedSimplexFiltration_128,
+    ))
 
 
 def _to_fat_simplex_filtration(fil):
@@ -1588,17 +1615,21 @@ def cube_filtration(data: np.ndarray,
                     n_threads: int=1,):
     if wrap:
         raise RuntimeError("cube_filtration: wrap=True is not implemented yet")
+    # route to the float32 or float64 backend by the input dtype
+    dt = detect_real_dtype(data)
+    sub = REAL_MODULES[dt]
+    data = as_real_numpy(data, dtype=dt)
     if max_dim is None:
         max_dim = data.ndim
     dim = data.ndim
     if dim == 1:
-        grid = _oineus.Grid_1D(data, wrap=wrap, values_on=values_on)
+        grid = sub.Grid_1D(data, wrap=wrap, values_on=values_on)
     elif dim == 2:
-        grid = _oineus.Grid_2D(data, wrap=wrap, values_on=values_on)
+        grid = sub.Grid_2D(data, wrap=wrap, values_on=values_on)
     elif dim == 3:
-        grid = _oineus.Grid_3D(data, wrap=wrap, values_on=values_on)
+        grid = sub.Grid_3D(data, wrap=wrap, values_on=values_on)
     elif dim == 4:
-        grid = _oineus.Grid_4D(data, wrap=wrap, values_on=values_on)
+        grid = sub.Grid_4D(data, wrap=wrap, values_on=values_on)
     else:
         raise RuntimeError(f"cube_filtration: dim={data.ndim} not supported, recompile from sources")
     fil = grid.cube_filtration(max_dim=max_dim, n_threads=n_threads, negate=negate)
