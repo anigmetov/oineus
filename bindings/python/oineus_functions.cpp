@@ -1,4 +1,5 @@
 #include "oineus_persistence_bindings.h"
+#include "oineus_type_list.h"
 #include <hera/bottleneck.h>
 #include <hera/wasserstein.h>
 #include <cstdint>
@@ -285,6 +286,25 @@ void register_oineus_functions(nb::module_& m, bool reg_indep)
     using SimpProd = oin::ProductCell<Simp, Simp>;
     using oin::VREdge;
 
+    // Every fat-materializable cell type a user-facing filtration can carry, so the
+    // diagram-target / permutation / relative-diagram helpers below work on the now-default
+    // packed VR / slim Freudenthal / cube filtrations, not just the fat Simplex. Mirrors the
+    // OptCellList fold in oineus_top_optimizer.cpp (get_induced_matching).
+    using Cube_1D = oin::Cube<oin_int, 1>;
+    using Cube_2D = oin::Cube<oin_int, 2>;
+    using Cube_3D = oin::Cube<oin_int, 3>;
+    using Cube_4D = oin::Cube<oin_int, 4>;
+    using FrCell_1D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 1>>;
+    using FrCell_2D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 2>>;
+    using FrCell_3D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 3>>;
+    using FrCell_4D = oin::Simplex<oin_int, oin::FreudenthalAnchorType<oin_int, 4>>;
+    using PackedCell_64 = oin::Simplex<oin_int, oin::BitPacked<oin_int, std::uint64_t>>;
+    using PackedCell_128 = oin::Simplex<oin_int, oin::BitPacked<oin_int, unsigned __int128>>;
+    using FuncCellList = oineus_python::TypeList<Simp, SimpProd,
+            Cube_1D, Cube_2D, Cube_3D, Cube_4D,
+            FrCell_1D, FrCell_2D, FrCell_3D, FrCell_4D,
+            PackedCell_64, PackedCell_128>;
+
     std::string func_name;
 
     // Lower-star Freudenthal filtration
@@ -369,6 +389,22 @@ void register_oineus_functions(nb::module_& m, bool reg_indep)
             nb::arg("points"), nb::arg("max_dim"), nb::arg("max_diameter")=std::numeric_limits<oin_real>::max(), nb::arg("n_threads")=1,
             nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
 
+    // target values / warm-start permutations / relative diagrams. Dtype-dependent (they take
+    // Filtration<Cell, Real>), so registered in EVERY Real backend -- must stay OUTSIDE the
+    // double-only block below. Folded over every cell type (not just fat Simplex) so they accept
+    // the now-default packed VR / slim Freudenthal / cube filtrations; nanobind dispatches each
+    // call on the filtration's concrete type. The Python facade routes by dtype via
+    // module_of_oineus_obj so oineus.get_nth_persistence(...) finds the float32 overloads here.
+    oineus_python::for_each_type(FuncCellList{}, [&m]<class Cell>() {
+        m.def("get_denoise_target", &oin::get_denoise_target<Cell, oin_real>);
+        m.def("get_nth_persistence", &oin::get_nth_persistence<Cell, oin_real>);
+        // permutation for Warm Starts
+        m.def("get_permutation", &oin::targets_to_permutation<Cell, oin_real>);
+        m.def("get_permutation_dtv", &oin::targets_to_permutation_dtv<Cell, oin_real>);
+        m.def("compute_relative_diagrams", &compute_relative_diagrams<Cell, oin_real>,
+                nb::arg("fil"), nb::arg("rel"), nb::arg("include_inf_points")=true);
+    });
+
     // ---- everything below is double-only (Hera distances / matchings / Frechet +
     // diagram utilities; numerically dtype-agnostic, registered once on the top module) ----
     if constexpr (std::is_same_v<Real, double>) {
@@ -380,26 +416,6 @@ void register_oineus_functions(nb::module_& m, bool reg_indep)
     // boundary matrix as vector of columns
     func_name = "get_boundary_matrix";
     m.def(func_name.c_str(), &get_boundary_matrix<oin_int, oin_real>);
-
-    // target values
-    func_name = "get_denoise_target";
-    m.def(func_name.c_str(), &oin::get_denoise_target<Simp, oin_real>);
-
-    func_name = "get_nth_persistence";
-    m.def(func_name.c_str(), &oin::get_nth_persistence<Simp, oin_real>);
-
-    // to get permutation for Warm Starts
-    func_name = "get_permutation";
-    m.def(func_name.c_str(), &oin::targets_to_permutation<Simp, oin_real>);
-
-    func_name = "get_permutation_dtv";
-    m.def(func_name.c_str(), &oin::targets_to_permutation_dtv<Simp, oin_real>);
-
-    func_name = "compute_relative_diagrams";
-    m.def(func_name.c_str(), &compute_relative_diagrams<Simp, oin_real>, nb::arg("fil"), nb::arg("rel"), nb::arg("include_inf_points")=true);
-
-    func_name = "compute_relative_diagrams";
-    m.def(func_name.c_str(), &compute_relative_diagrams<SimpProd, oin_real>, nb::arg("fil"), nb::arg("rel"), nb::arg("include_inf_points")=true);
 
     // persistence diagram distances via Hera
     func_name = "bottleneck_distance";

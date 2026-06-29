@@ -388,9 +388,19 @@ namespace oineus {
                     auto& col = result[col_idx];
                     col.reserve(d + 1);
 
-                    for(const auto& tau_vertices: sigma.boundary(geometry_)) {
-                        if (relative.find(tau_vertices) == relative.end())
-                            col.push_back(sorted_id_by_uid_at_(tau_vertices));
+                    // Emit each facet's sorted_id, skipping facets that are in `relative`.
+                    // Mirror emit_boundary_col_'s dispatch: packed/slim cells (Freudenthal,
+                    // bit-packed) expose only boundary_into; fat cells the uid-returning
+                    // boundary(geometry_). Both yield facet uids (Cell::UidSet keys on uids).
+                    auto emit_rel = [this, &relative, &col](const CellUid& fuid) {
+                        if (relative.find(fuid) == relative.end())
+                            col.push_back(sorted_id_by_uid_at_(fuid));
+                    };
+                    if constexpr (HasPackedBoundary<UnderCell_>::value) {
+                        sigma.get_cell().boundary_into(geometry_, emit_rel);
+                    } else {
+                        for(const auto& fuid: sigma.boundary(geometry_))
+                            emit_rel(fuid);
                     }
 
                     if (col_idx % 100 == 0 && oineus::interrupted())
@@ -1200,18 +1210,28 @@ namespace oineus {
 
         min_cells.reserve(fil_1.size());
 
-        std::vector<size_t> perm_1, perm_2;
-
         for(const auto& [value, dim, index_1, index_2] : to_sort) {
             min_cells.emplace_back(cells[index_1]);
             min_cells.back().set_value(negate ? -value : value);
-
-            perm_1.push_back(index_1);
-            perm_2.push_back(index_2);
         }
 
         Filtration<C, R> new_fil(std::move(min_cells), negate);
         new_fil.set_geometry(fil_1.geometry());
+
+        // The Filtration ctor re-sorts the cells into (dim, value, id) order, which is NOT
+        // the (value, dim, index) order in which min_cells (and to_sort) were built. Derive
+        // the source-index permutations from new_fil's FINAL order via uid, so that perm_k[i]
+        // is the sorted_id, in fil_k, of new_fil's cell at sorted_id i. Building perm_k in the
+        // pre-sort loop above instead returns indices aligned with the pre-sort order, which
+        // the constructor then permutes away -- the with_indices=True misalignment bug.
+        std::vector<size_t> perm_1, perm_2;
+        perm_1.reserve(new_fil.size());
+        perm_2.reserve(new_fil.size());
+        for(const auto& cell : new_fil.cells()) {
+            const auto uid = cell.get_uid();
+            perm_1.push_back(fil_1.get_sorted_id_by_uid(uid));
+            perm_2.push_back(fil_2.get_sorted_id_by_uid(uid));
+        }
 
         return { new_fil, perm_1, perm_2 };
     }
