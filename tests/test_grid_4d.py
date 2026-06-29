@@ -88,6 +88,36 @@ def test_cube_and_freudenthal_4d_agree_on_components():
     assert cube_ess == fr_ess == 1
 
 
+def test_grid_borrowed_data_outlives_two_call_build():
+    # Regression for a use-after-free: the C++ Grid stores a NON-owning const Real*
+    # into the numpy buffer. The slim builders read it in a SECOND call after the
+    # Grid ctor returns. When the input dtype != Real, nanobind materializes a
+    # converted temporary for the ctor argument; without keep_alive<1,2> on the ctor
+    # that temporary is freed when __init__ returns, and the slim build reads dangling
+    # memory. Pass a float32 array to the (float64) Grid_3D to force the conversion,
+    # then deterministically recycle the just-freed region with same-size garbage
+    # before building. keep_alive pins the temporary, so the result stays correct.
+    a32 = np.random.default_rng(7).random((20, 18, 16)).astype(np.float32)
+    n = a32.size
+
+    def h0(fil):
+        d = oin.Decomposition(fil, False)
+        d.reduce(oin.ReductionParams())
+        x = np.asarray(d.diagram(fil=fil, include_inf_points=True).in_dimension(0))
+        x[x == np.inf] = 1e9
+        return x[np.lexsort((x[:, 1], x[:, 0]))]
+
+    ref = h0(oin._oineus.Grid_3D(a32.astype(np.float64), False, "vertices")
+             .freudenthal_filtration_slim(3, False, 1))
+
+    for _ in range(10):
+        g = oin._oineus.Grid_3D(a32, False, "vertices")   # float32 -> float64 temp
+        churn = [np.full(n, -1.0e30, dtype=np.float64) for _ in range(200)]
+        cur = h0(g.freudenthal_filtration_slim(3, False, 1))
+        del churn
+        assert cur.shape == ref.shape and np.allclose(cur, ref, atol=1e-3)
+
+
 def test_facade_dispatch_4d():
     # the Python facade must route 4D filtrations to their 4D optimizer classes
     a = np.random.default_rng(3).random((4, 4, 4, 4)).astype(np.float64)

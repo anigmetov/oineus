@@ -270,7 +270,12 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
                     else \
                         throw std::runtime_error("values_on must be either 'vertices' or 'cells'"); \
                     new (p) Grid_##DIM##D(shape, wrap, pdata, data_loc); \
-                }), nb::arg("data"), nb::arg("wrap") = false, nb::arg("values_on") = "vertices") \
+                }), nb::arg("data"), nb::arg("wrap") = false, nb::arg("values_on") = "vertices", \
+                    /* Grid borrows data.data() (it stores a non-owning const Real*), and the slim \
+                       builders read it in a SECOND call after __init__ returns. Pin the array (the \
+                       converted temporary, when a dtype conversion happens) to the Grid's lifetime so \
+                       it cannot be freed between Grid(data) and grid.freudenthal_filtration_slim(). */ \
+                    nb::keep_alive<1, 2>()) \
             /*.def_prop_ro("shape", [](const Grid_##DIM##D& g) { return g.domain().shape(); }) */ \
             .def_prop_ro("data_location", &Grid_##DIM##D::data_location_as_string) \
             .def("cube_filtration", &Grid_##DIM##D::cube_filtration, \
