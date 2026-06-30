@@ -141,3 +141,84 @@ def test_prod_filtration_marker_float32():
     assert type(cyl32).__module__.endswith("._f32")
     assert isinstance(cyl32, oin.ProdFiltration)
     assert isinstance(cyl32, oin.Filtration)
+
+
+def test_compute_relative_diagrams_slim_freudenthal_matches_fat():
+    # The B1 C++ change added a HasPackedBoundary boundary_into dispatch to
+    # boundary_matrix_in_dimension_rel so compute_relative_diagrams works on slim/packed/cube
+    # cells. The committed oracle test only covers packed VR; this pins the SLIM Freudenthal
+    # path against the fat-Simplex oracle (slim uses boundary_into, fat the uid-returning
+    # boundary -- the two must agree). K = full 2-complex, L = 1-skeleton on the same grid, a
+    # genuine subcomplex sharing uids and values.
+    a = np.random.default_rng(21).random((7, 8))
+    out = {}
+    for enc, slim in (("slim", True), ("fat", False)):
+        K = oin.freudenthal_filtration(a, max_dim=2, slim=slim)
+        L = oin.freudenthal_filtration(a, max_dim=1, slim=slim)
+        rel = oin.compute_relative_diagrams(K, L)
+        out[enc] = {d: np.asarray(rel.in_dimension(d)) for d in (1, 2)}
+    assert "Freudenthal" in type(oin.freudenthal_filtration(a, max_dim=2, slim=True)).__name__
+    for d in (1, 2):
+        s, f = out["slim"][d], out["fat"][d]
+        s = s[np.lexsort(s.T)] if s.size else s
+        f = f[np.lexsort(f.T)] if f.size else f
+        assert s.shape == f.shape
+        if s.size:
+            assert np.allclose(s, f, atol=1e-9)
+    # H_2(K, L) of a 2-complex relative to its 1-skeleton is non-trivial: actually exercise
+    # the slim boundary_into rel dispatch, not an empty diagram
+    assert out["slim"][2].shape[0] > 0
+
+
+def test_compute_relative_diagrams_cube_dispatch_nonempty():
+    # Cube cells also go through the new boundary_into rel dispatch. There is no "fat cube"
+    # oracle (cubes always carry a packed boundary), so this pins the cube path by building a
+    # genuine subcomplex (drop the top cells) and asserting the relative diagram is computed
+    # without raising and is non-trivial -- i.e. the dispatch actually ran.
+    a = np.random.default_rng(22).random((7, 8))
+    K = oin.cube_filtration(a, max_dim=2)
+    L = K.without_cells([i for i in range(K.size()) if K.cell(i).dim == 2])
+    rel = oin.compute_relative_diagrams(K, L)
+    assert np.asarray(rel.in_dimension(2)).shape[0] > 0
+
+
+def test_get_permutation_slim_matches_fat():
+    # get_permutation / get_permutation_dtv (warm-start permutations) were folded over every
+    # cell type in B1 and routed by dtype in the facade, but had NO test on any encoding. A
+    # per-type binding regression or a facade-routing typo would be silent. The permutation is
+    # a function of the (shared) complex and the targets, so slim and fat must agree exactly.
+    a = np.random.default_rng(23).random((6, 7))
+    fr_slim = oin.freudenthal_filtration(a, max_dim=2, slim=True)
+    fr_fat = oin.freudenthal_filtration(a, max_dim=2, slim=False)
+    target_matching = [(0, 5.0)]   # TargetMatching: list of (sorted_id, new_value)
+    ps = oin.get_permutation(target_matching, fr_slim)
+    pf = oin.get_permutation(target_matching, fr_fat)
+    assert isinstance(ps, dict)
+    assert ps == pf
+
+    # get_permutation_dtv chains a denoise target (DiagramToValues) -> permutation; must accept
+    # the slim filtration (the folded overload + the module_of_oineus_obj routing)
+    d = _reduce(fr_slim)
+    dtv = oin.get_denoise_target(1, fr_slim, d, 0.1, oin.DenoiseStrategy.BirthBirth)
+    perm = oin.get_permutation_dtv(dtv, fr_slim)
+    assert isinstance(perm, dict)
+
+
+@pytest.mark.skipif(not _HAS_F32, reason="extension built without the float32 backend")
+def test_get_permutation_float32_routes():
+    # the facade wrapper routes get_permutation to the _f32 overload via module_of_oineus_obj
+    a = np.random.default_rng(24).random((6, 7)).astype(np.float32)
+    fr = oin.freudenthal_filtration(a, max_dim=2)
+    assert type(fr).__module__.endswith("._f32")
+    perm = oin.get_permutation([(0, 5.0)], fr)
+    assert isinstance(perm, dict)
+
+
+def test_alpha_filtration_packed_is_keyword_only():
+    # B4: the packed= toggle in alpha_filtration is keyword-only, so a positional argument at
+    # its old slot (now n_threads-adjacent) raises loudly instead of silently rebinding. The
+    # signature rejects the extra positional before any diode work, so no diode dep is needed.
+    pts = np.random.default_rng(25).random((10, 3))
+    with pytest.raises(TypeError):
+        # 8th positional was `packed` (after points..bbox_max)
+        oin.alpha_filtration(pts, None, False, False, True, None, None, True)

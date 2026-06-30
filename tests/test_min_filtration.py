@@ -105,18 +105,31 @@ def test_min_filtration_rejects_mismatched_sizes_packed(with_indices):
 
 def test_min_filtration_with_indices_aligned_to_result_order():
     # Regression: min_filtration_with_indices built the source-index permutations in the
-    # (value, dim) order used internally, but the Filtration constructor re-sorts the cells
-    # into (dim, value, id) order. The returned indices must index the SAME cell as the
-    # returned filtration at each sorted position. This bites whenever a lower-dim cell has a
-    # higher value than some higher-dim cell elsewhere (so value-first and dim-first orders
-    # differ): here vertex [2] (value 3) sorts after edge [0,1] (value 2) by value, but before
-    # it by dimension.
-    cells = [oin.Simplex([0], 0.0), oin.Simplex([1], 0.0), oin.Simplex([2], 3.0),
-             oin.Simplex([0, 1], 2.0), oin.Simplex([0, 2], 3.0), oin.Simplex([1, 2], 3.0)]
+    # (value, dim) presort order used internally, but the Filtration constructor re-sorts the
+    # cells into (dim, value, id) order. The returned indices must index the SAME cell as the
+    # returned filtration at each sorted position. The two orders diverge only when, IN THE
+    # RESULT (min) filtration, a lower-dim cell out-values a higher-dim cell. That is the
+    # configuration this input is built for: after min(), vertex [2] = min(10, 12) = 10 still
+    # exceeds edge [0,1] = min(2, 5) = 2, so the presort order (value-first) puts the edge
+    # before the vertex while the final order (dim-first) puts the vertex first -- the buggy
+    # permutation misaligns at exactly those positions. (An earlier version of this test used an
+    # input whose result had NO such inversion, so the presort and final orders coincided and
+    # the buggy code passed it; the values below restore a genuine guard.)
+    cells = [oin.Simplex([0], 0.0), oin.Simplex([1], 0.0), oin.Simplex([2], 10.0),
+             oin.Simplex([0, 1], 2.0), oin.Simplex([0, 2], 11.0), oin.Simplex([1, 2], 11.0)]
     A = oin.Filtration(cells, False, 1)
-    cells2 = [oin.Simplex([0], 1.0), oin.Simplex([1], 0.0), oin.Simplex([2], 1.0),
-              oin.Simplex([0, 1], 5.0), oin.Simplex([0, 2], 4.0), oin.Simplex([1, 2], 3.0)]
+    cells2 = [oin.Simplex([0], 1.0), oin.Simplex([1], 0.0), oin.Simplex([2], 12.0),
+              oin.Simplex([0, 1], 5.0), oin.Simplex([0, 2], 11.0), oin.Simplex([1, 2], 13.0)]
     B = oin.Filtration(cells2, False, 1)
+
+    # guard the guard: the result must actually contain the dim/value inversion this test
+    # relies on, else it would silently degrade into a non-guard again (as the earlier input
+    # did). The buggy permutation only diverges from the correct one when some dim-0 cell
+    # out-values some dim-1 cell in the result.
+    res = oin.min_filtration(A, B)
+    dim0_max = max(res.cell_value_by_sorted_id(k) for k in range(res.size()) if res.cell(k).dim == 0)
+    dim1_min = min(res.cell_value_by_sorted_id(k) for k in range(res.size()) if res.cell(k).dim == 1)
+    assert dim0_max > dim1_min, "input no longer triggers the dim/value inversion it guards"
 
     fil, i1, i2 = oin.min_filtration(A, B, with_indices=True)
     assert fil.size() == A.size() == len(i1) == len(i2)

@@ -372,3 +372,27 @@ def test_compute_ker_cok_reduction_cyl_with_negative_values():
     ])
     kicr = oin.compute_ker_cok_reduction_cyl(fil_2, fil_3)
     assert kicr is not None
+
+
+# ---------------------------------------------------------------------------
+# B4 -- the slim/packed toggles are keyword-only in the diff constructors
+# ---------------------------------------------------------------------------
+
+# Inserting `packed`/`slim` mid-signature and making them keyword-only turns a stray positional
+# n_threads (which used to silently rebind to the toggle -> a silent single-threaded run) into a
+# loud TypeError. The non-diff vr/freudenthal are guarded in test_api_functions.py; here we pin
+# the four differentiable constructors. The signature rejects the extra positional before any
+# diode/CGAL work, so cech/weak need no diode dependency.
+def test_diff_constructors_toggles_are_keyword_only():
+    t = torch.tensor(np.random.default_rng(0).random((8, 3)),
+                     dtype=TORCH_DTYPE, requires_grad=True)
+    g = torch.tensor(np.random.default_rng(1).random((6, 6)),
+                     dtype=TORCH_DTYPE, requires_grad=True)
+    with pytest.raises(TypeError):
+        od.vr_filtration(t, False, 1, 10.0, 1e-6, True)        # 6th positional was packed
+    with pytest.raises(TypeError):
+        od.freudenthal_filtration(g, False, False, 2, True)    # 5th positional was slim
+    with pytest.raises(TypeError):
+        od.cech_delaunay_filtration(t, 0.0, True)              # 3rd positional was packed
+    with pytest.raises(TypeError):
+        od.weak_alpha_filtration(t, True)                      # 2nd positional was packed

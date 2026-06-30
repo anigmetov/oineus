@@ -323,6 +323,17 @@ def test_float32_grid_routes_by_dtype():
     # routing must also work when data is passed by keyword (else float32 widens silently)
     assert _module_tag(oin.Grid_2D(data=a.astype(np.float32))) == "_f32"
     assert _module_tag(oin.Grid_2D(data=a.astype(np.float32), wrap=True)) == "_f32"
+    # both grid->filtration methods (freudenthal AND cube) must stay float32 AND carry the same
+    # values as the float64 grid (to float32 precision) -- routing to _f32 is not enough if the
+    # values were silently widened/narrowed wrong.
+    for meth in ("freudenthal_filtration", "cube_filtration"):
+        f32 = getattr(g32, meth)(negate=False)
+        f64 = getattr(g64, meth)(negate=False)
+        assert _module_tag(f32) == "_f32"
+        v32 = np.sort([f32.cell_value_by_sorted_id(i) for i in range(f32.size())])
+        v64 = np.sort([f64.cell_value_by_sorted_id(i) for i in range(f64.size())])
+        assert v32.shape == v64.shape
+        np.testing.assert_allclose(v32, v64, atol=1e-6)
 
 
 def test_float32_kicr_ctor_routes_and_isinstance_marker():
