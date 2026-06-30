@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-__version__ = "0.9.31"
+__version__ = "0.9.32"
 
 import typing
 from concurrent.futures import ThreadPoolExecutor
