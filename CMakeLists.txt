@@ -89,8 +89,18 @@ if (oin_use_jemalloc)
                     "${JEMALLOC_BUILDDIR}/oin_configure.log). Pass -Doin_use_jemalloc=OFF "
                     "to build with the system allocator instead.")
         endif()
+        # Build jemalloc in parallel. This runs at CONFIGURE time via execute_process, so
+        # CMAKE_BUILD_PARALLEL_LEVEL / `cmake --build -j` does NOT reach it -- the job count
+        # must be passed to make explicitly. Otherwise every (re)configure rebuilds jemalloc
+        # single-threaded, which in the cibuildwheel matrix means a serial jemalloc build per
+        # wheel (it dominated the per-wheel time alongside the serial extension compile).
+        include(ProcessorCount)
+        ProcessorCount(JEMALLOC_JOBS)
+        if (JEMALLOC_JOBS EQUAL 0)
+            set(JEMALLOC_JOBS 2)
+        endif()
         execute_process(
-                COMMAND make build_lib_static install_lib_static install_include
+                COMMAND make -j${JEMALLOC_JOBS} build_lib_static install_lib_static install_include
                 WORKING_DIRECTORY "${JEMALLOC_BUILDDIR}"
                 RESULT_VARIABLE jem_make
                 OUTPUT_FILE "${JEMALLOC_BUILDDIR}/oin_make.log"

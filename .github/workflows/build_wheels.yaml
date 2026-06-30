@@ -11,12 +11,20 @@ on:
 
 jobs:
   build_wheels:
-    name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    # One job per (Python version, platform/arch) so the wheels build on
+    # separate runners in parallel instead of serially on a single macOS /
+    # Linux runner. Wall-clock collapses from "sum of all wheels" to "one
+    # wheel". Each job builds exactly one wheel via CIBW_BUILD + CIBW_ARCHS.
+    name: ${{ matrix.python }} ${{ matrix.leg.os }} ${{ matrix.leg.archs }}
+    runs-on: ${{ matrix.leg.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        python: [cp310, cp311, cp312, cp313, cp314]
+        leg:
+          - { os: ubuntu-latest, archs: x86_64 }
+          - { os: macos-latest,  archs: arm64 }
+          - { os: macos-latest,  archs: x86_64 }
 
     steps:
       - uses: actions/checkout@v4
@@ -37,15 +45,26 @@ jobs:
           path: |
             ~/.cache/cibuildwheel
             ~/Library/Caches/cibuildwheel
-          key: cibw-${{ runner.os }}-${{ hashFiles('pyproject.toml', '.github/workflows/build_wheels.yaml') }}
+          key: cibw-${{ runner.os }}-${{ matrix.leg.archs }}-${{ hashFiles('pyproject.toml', '.github/workflows/build_wheels.yaml') }}
           restore-keys: |
+            cibw-${{ runner.os }}-${{ matrix.leg.archs }}-
             cibw-${{ runner.os }}-
+
+      - name: Set parallel build level
+        # Ensure the per-wheel C++ compile uses every core. scikit-build-core normally
+        # builds with Ninja (auto-parallel), so this is mainly insurance against a Unix
+        # Makefiles fallback (serial without it); `cmake --build` honours
+        # CMAKE_BUILD_PARALLEL_LEVEL either way. The vendored jemalloc build is
+        # parallelised separately in CMakeLists.txt -- it runs at configure time via
+        # execute_process, which CMAKE_BUILD_PARALLEL_LEVEL does not reach.
+        shell: bash
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.logicalcpu)" >> "$GITHUB_ENV"
 
       - name: Print selected wheel identifiers
         run: python -m cibuildwheel --print-build-identifiers
         env:
-          CIBW_ARCHS_MACOS: "x86_64 arm64"
-          CIBW_ARCHS_LINUX: "x86_64"
+          CIBW_BUILD: "${{ matrix.python }}-*"
+          CIBW_ARCHS: "${{ matrix.leg.archs }}"
           CIBW_SKIP: "*musllinux*"
           CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
           CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux_2_28"
@@ -66,20 +85,24 @@ jobs:
             sleep "$sleep_seconds"
           done
         env:
-          CIBW_ARCHS_MACOS: "x86_64 arm64"
-          CIBW_ARCHS_LINUX: "x86_64"
+          CIBW_BUILD: "${{ matrix.python }}-*"
+          CIBW_ARCHS: "${{ matrix.leg.archs }}"
           CIBW_SKIP: "*musllinux*"
           CIBW_BEFORE_ALL_LINUX: "dnf install -y boost-devel || yum install -y boost-devel"
           CIBW_BEFORE_ALL_MACOS: "brew install boost"
           CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
           CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux_2_28"
+          # Linux builds run inside the manylinux container; forward the parallel
+          # level computed on the host (same core count) into it. On macOS the
+          # build runs on the host and inherits the env var directly.
+          CIBW_ENVIRONMENT_PASS_LINUX: "CMAKE_BUILD_PARALLEL_LEVEL"
 
       - name: List built wheels
         run: ls -l wheelhouse
 
       - uses: actions/upload-artifact@v4
         with:
-          name: built-wheels-${{ matrix.os }}
+          name: built-wheels-${{ matrix.leg.os }}-${{ matrix.leg.archs }}-${{ matrix.python }}
           path: wheelhouse/*.whl
 
   make_sdist:
