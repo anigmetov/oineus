@@ -3705,6 +3705,27 @@ namespace oineus {
         }
 
         Timer timer_copy_back;
+        // Shared error capture for the parallel copy-back branches: worker tasks
+        // must not throw (that would std::terminate), so record the first invariant
+        // violation and throw on the joining thread afterwards.
+        std::atomic<bool> cb_error{false};
+        std::atomic<Int> cb_err_col{-1};
+        std::atomic<int> cb_err_code{0};   // 1=pivot mismatch, 2=V not 1-diag, 3=null column
+        auto cb_record = [&](int code, Int col) {
+            cb_err_code.store(code, std::memory_order_relaxed);
+            cb_err_col.store(col, std::memory_order_relaxed);
+            cb_error.store(true, std::memory_order_relaxed);
+        };
+        auto cb_throw_if_error = [&]() {
+            if (not cb_error.load(std::memory_order_relaxed))
+                return;
+            const std::string col = std::to_string(cb_err_col.load(std::memory_order_relaxed));
+            switch (cb_err_code.load(std::memory_order_relaxed)) {
+                case 3: throw std::runtime_error("NULL column after restore_elz in reduce_parallel_rv (col " + col + ")");
+                case 1: throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx (col " + col + ")");
+                default: throw std::runtime_error("V column is not 1-diag (col " + col + ")");
+            }
+        };
         if (keep_working) {
             // Free the pre-restore versions that restore_elz replaced; the current
             // (live) pointers move into working_rv_. r_data/v_data stay empty and
@@ -3720,70 +3741,75 @@ namespace oineus {
             working_rv_ = std::move(r_v_matrix);
             has_working_rv_ = true;
         } else if (do_restore) {
-            // copy-back (restore branch): every column non-null after Bauer fill.
-            for(int dim_idx = _dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
-                for(Int col_idx = _dim_first[dim_idx]; col_idx <= _dim_last[dim_idx]; ++col_idx) {
+            // Restore branch: every column is non-null (restore_elz already
+            // Bauer-filled), so the move has no cross-column dependency -> flat
+            // parallel pass over all columns, then a parallel free pass.
+            {
+                tf::Taskflow tf_move;
+                tf_move.for_each_index((size_t) 0, n_cols, (size_t) 1, [&](size_t col_idx) {
                     auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
                     if (p == nullptr) {
-                        throw std::runtime_error("NULL column after restore_elz in reduce_parallel_rv");
+                        cb_record(3, static_cast<Int>(col_idx));
+                        return;
                     }
                     r_data[col_idx] = std::move(p->r_column);
                     v_data[col_idx] = std::move(p->v_column);
-                    if (r_data[col_idx].size() > 0) {
-                        if (pivots[r_data[col_idx].back()] != col_idx) {
-                            IC(col_idx);
-                            IC(pivots[r_data[col_idx].back()]);
-                            IC(r_data[col_idx]);
-                            throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx");
-                        }
-                    }
-                    if (v_data[col_idx].empty() or v_data[col_idx].back() != col_idx) {
-                        IC(col_idx);
-                        IC(v_data[col_idx]);
-                        throw std::runtime_error("V column is not 1-diag");
-                    }
-                }
+                    if (r_data[col_idx].size() > 0
+                        and pivots[r_data[col_idx].back()] != static_cast<Int>(col_idx))
+                        cb_record(1, static_cast<Int>(col_idx));
+                    if (v_data[col_idx].empty() or v_data[col_idx].back() != static_cast<Int>(col_idx))
+                        cb_record(2, static_cast<Int>(col_idx));
+                });
+                executor.run(tf_move).get();
             }
-            for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
-                auto p_current = r_v_matrix[col_idx].load(std::memory_order_relaxed);
-                auto p_original = r_v_matrix_copy[col_idx];
-                if (p_current == p_original) {
-                    delete p_current;
-                } else {
-                    delete p_current;
-                    delete p_original;
-                }
+            {
+                tf::Taskflow tf_free;
+                tf_free.for_each_index((size_t) 0, n_cols, (size_t) 1, [&](size_t col_idx) {
+                    auto p_current = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+                    auto p_original = r_v_matrix_copy[col_idx];
+                    if (p_current == p_original) {
+                        delete p_current;
+                    } else {
+                        delete p_current;
+                        delete p_original;
+                    }
+                });
+                executor.run(tf_free).get();
             }
+            cb_throw_if_error();
         } else {
-            for(int dim_idx = _dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
-                for(Int col_idx = _dim_first[dim_idx]; col_idx <= _dim_last[dim_idx]; ++col_idx) {
+            // Plain branch: cleared columns Bauer-fill V from r_data[pivots[col]],
+            // which is a HIGHER-dim column already moved (loop is high->low). So the
+            // dim loop stays serial and only the inner column loop is parallel; within
+            // a dim every column writes its own r_data/v_data and reads only
+            // already-finished higher dims.
+            for (int dim_idx = int(_dim_first.size()) - 1; dim_idx >= 0; --dim_idx) {
+                const Int lo = _dim_first[dim_idx];
+                const Int hi = _dim_last[dim_idx];   // inclusive
+                if (hi < lo)
+                    continue;
+                tf::Taskflow tf_cb;
+                tf_cb.for_each_index(static_cast<size_t>(lo), static_cast<size_t>(hi) + 1, (size_t) 1,
+                        [&](size_t col_idx) {
                     auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
                     if (p) {
                         r_data[col_idx] = std::move(p->r_column);
                         v_data[col_idx] = std::move(p->v_column);
-                        if (r_data[col_idx].size() > 0) {
-                            if (pivots[r_data[col_idx].back()] != col_idx) {
-                                IC(col_idx);
-                                IC(pivots[r_data[col_idx].back()]);
-                                IC(r_data[col_idx]);
-                                throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx");
-                            }
-                        }
+                        if (r_data[col_idx].size() > 0
+                            and pivots[r_data[col_idx].back()] != static_cast<Int>(col_idx))
+                            cb_record(1, static_cast<Int>(col_idx));
                         delete p;
                     } else {
-                        // column was cleared
+                        // cleared column: Bauer's trick fills V from the higher-dim R
                         r_data[col_idx].clear();
-                        // Bauer's trick with filling V
-                        v_data[col_idx] = r_data.at(pivots.at(col_idx));
+                        v_data[col_idx] = r_data[pivots[col_idx]];
                     }
-                    if (v_data[col_idx].empty() or v_data[col_idx].back() != col_idx) {
-                        IC(col_idx);
-                        IC(pivots.at(col_idx));
-                        IC(v_data[col_idx]);
-                        throw std::runtime_error("V column is not 1-diag");
-                    }
-                } // loop over columns
-            } // loop over dimensions
+                    if (v_data[col_idx].empty() or v_data[col_idx].back() != static_cast<Int>(col_idx))
+                        cb_record(2, static_cast<Int>(col_idx));
+                });
+                executor.run(tf_cb).get();
+            }
+            cb_throw_if_error();
         }
         params.timings.copy_back = timer_copy_back.elapsed();
 
