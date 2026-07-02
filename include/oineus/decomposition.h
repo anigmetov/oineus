@@ -1462,10 +1462,24 @@ namespace oineus {
         bool is_R_column_zero(size_t col_idx) const { return r_is_zero(col_idx); }
         bool is_V_column_zero(size_t col_idx) const { return v_col(col_idx).empty(); }
 
-        IntSparseColumn compute_u_column(size_t col_idx) const;
+        IntSparseColumn compute_u_column(size_t col_idx, BitTreeColumn<Int_>& residual) const;
+        // Convenience overload for single-column callers: allocates a fresh residual.
+        IntSparseColumn compute_u_column(size_t col_idx) const
+        {
+            BitTreeColumn<Int_> residual;
+            residual.reserve(n_cols_total());
+            return compute_u_column(col_idx, residual);
+        }
         void compute_u_from_v(dim_type dim, size_t n_threads=1, bool verbose=false);
 
-        IntSparseColumn compute_u_column_1(size_t col_idx) const;
+        IntSparseColumn compute_u_column_1(size_t col_idx, BitTreeColumn<Int_>& residual) const;
+        // Convenience overload for single-column callers: allocates a fresh residual.
+        IntSparseColumn compute_u_column_1(size_t col_idx) const
+        {
+            BitTreeColumn<Int_> residual;
+            residual.reserve(n_cols_total());
+            return compute_u_column_1(col_idx, residual);
+        }
         void compute_u_from_v_1(dim_type dim, size_t n_threads=1, bool verbose=false);
 
         // Row-form U primitives. Solves (row r of U) V = e_r^T in
@@ -1487,7 +1501,23 @@ namespace oineus {
                                               const MatrixData& vt_data,
                                               Real value_bound,
                                               ValueAt&& value_at,
-                                              CmpOp&& cmp_op) const;
+                                              CmpOp&& cmp_op,
+                                              BitTreeColumn<Int_>& residual) const;
+
+        // Convenience overload for single-row callers: allocates a fresh residual.
+        template<typename Real, typename ValueAt, typename CmpOp>
+        IntSparseColumn compute_u_row_bounded(size_t row_idx,
+                                              const MatrixData& vt_data,
+                                              Real value_bound,
+                                              ValueAt&& value_at,
+                                              CmpOp&& cmp_op) const
+        {
+            BitTreeColumn<Int_> residual;
+            residual.reserve(n_cols_total());
+            return compute_u_row_bounded(row_idx, vt_data, value_bound,
+                                         std::forward<ValueAt>(value_at),
+                                         std::forward<CmpOp>(cmp_op), residual);
+        }
 
         // Parallel partial-rows driver. Builds vt_data internally for
         // `dim`, then runs n_threads row solves on the rows list.
@@ -4281,10 +4311,8 @@ namespace oineus {
 
     template<typename Int_>
     typename VRUDecomposition<Int_>::IntSparseColumn
-    VRUDecomposition<Int_>::compute_u_column(size_t col_idx) const
+    VRUDecomposition<Int_>::compute_u_column(size_t col_idx, BitTreeColumn<Int_>& residual) const
     {
-        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
-
         if (not is_reduced)
             throw std::runtime_error("Cannot compute U column from non-reduced decomposisition");
 
@@ -4293,13 +4321,15 @@ namespace oineus {
 
         IntSparseColumn result;
 
-        auto residual = MatrixTraits::load_to_cache(d_data.at(col_idx));
+        // Reduce the residual with the reduction's fast working column (BitTree),
+        // reused across columns by the caller -- not a std::set. load() clears it.
+        residual.load(d_data.at(col_idx));
 
-        while (not MatrixTraits::is_zero(residual)) {
-            auto low_idx = MatrixTraits::low(residual);
+        while (not residual.is_zero()) {
+            auto low_idx = residual.low();
             auto piv_col_idx = _pivots.at(low_idx);
             result.push_back(piv_col_idx);
-            MatrixTraits::add_to_cached(r_data[piv_col_idx], residual);
+            residual.add(r_data[piv_col_idx]);
         }
 
         std::sort(result.begin(), result.end());
@@ -4315,10 +4345,8 @@ namespace oineus {
 
     template<typename Int_>
     typename VRUDecomposition<Int_>::IntSparseColumn
-    VRUDecomposition<Int_>::compute_u_column_1(size_t col_idx) const
+    VRUDecomposition<Int_>::compute_u_column_1(size_t col_idx, BitTreeColumn<Int_>& residual) const
     {
-        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
-
         if (not is_reduced)
             throw std::runtime_error("Cannot compute U column from non-reduced decomposisition");
 
@@ -4327,13 +4355,16 @@ namespace oineus {
 
         IntSparseColumn result;
 
-        auto residual = MatrixTraits::cached_identity_column(col_idx);
+        // Fast BitTree residual (reused by the caller), seeded with the identity
+        // column {col_idx}.
+        residual.clear();
+        residual.flip(static_cast<Int_>(col_idx));
 
-        while (not MatrixTraits::is_zero(residual)) {
+        while (not residual.is_zero()) {
             // V is upper triangular: low and pivot of a column are equal
-            auto piv_col_idx = MatrixTraits::low(residual);
+            auto piv_col_idx = residual.low();
             result.push_back(piv_col_idx);
-            MatrixTraits::add_to_cached(v_data[piv_col_idx], residual);
+            residual.add(v_data[piv_col_idx]);
         }
 
         if (result.empty()) {
@@ -4372,11 +4403,13 @@ namespace oineus {
 
         for(size_t tid = 0; tid < n_threads; ++tid) {
             workers.emplace_back([this, &u_data, &next_free_column, col_end]() {
+                BitTreeColumn<Int_> residual;
+                residual.reserve(v_data.size());   // V column indices < v_data.size()
                 while(true) {
                     const size_t col_idx = next_free_column.fetch_add(1, std::memory_order_relaxed);
                     if (col_idx >= col_end)
                         break;
-                    u_data[col_idx] = compute_u_column_1(col_idx);
+                    u_data[col_idx] = compute_u_column_1(col_idx, residual);
                 }
             });
         }
@@ -4413,11 +4446,13 @@ namespace oineus {
 
         for(size_t tid = 0; tid < n_threads; ++tid) {
             workers.emplace_back([this, &u_data, &next_free_column, col_end]() {
+                BitTreeColumn<Int_> residual;
+                residual.reserve(r_data.size());   // max row index < r_data.size()
                 while(true) {
                     const size_t col_idx = next_free_column.fetch_add(1, std::memory_order_relaxed);
                     if (col_idx >= col_end)
                         break;
-                    u_data[col_idx] = compute_u_column(col_idx);
+                    u_data[col_idx] = compute_u_column(col_idx, residual);
                 }
             });
         }
@@ -4441,7 +4476,8 @@ namespace oineus {
                                                   const MatrixData& vt_data,
                                                   Real value_bound,
                                                   ValueAt&& value_at,
-                                                  CmpOp&& cmp_op) const
+                                                  CmpOp&& cmp_op,
+                                                  BitTreeColumn<Int_>& residual) const
     {
         // Row-form analogue of compute_u_column_1_bounded. Solves
         // (row r of U) * V = e_r^T via residual-style forward
@@ -4449,7 +4485,6 @@ namespace oineus {
         // strictly increase in matrix index because vt_data[p]'s
         // smallest entry is p (V[p][p] = 1) and XOR cancels it; the
         // remaining entries are all > p.
-        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
 
         if (not is_reduced)
             throw std::runtime_error("Cannot compute U row from non-reduced decomposition");
@@ -4457,10 +4492,13 @@ namespace oineus {
             throw std::runtime_error("Cannot compute U row from non-reduced decomposition");
 
         IntSparseColumn result;
-        auto residual = MatrixTraits::cached_identity_column(row_idx);
+        // Fast BitTree residual (reused by the caller), seeded with identity {row}.
+        // top() gives the smallest index -> forward substitution up the triangle.
+        residual.clear();
+        residual.flip(static_cast<Int_>(row_idx));
 
-        while (not MatrixTraits::is_zero(residual)) {
-            auto piv_col_idx = MatrixTraits::top(residual);
+        while (not residual.is_zero()) {
+            auto piv_col_idx = residual.top();
             if (cmp_op(value_at(piv_col_idx), value_bound)) {
                 break;
             }
@@ -4486,7 +4524,7 @@ namespace oineus {
                     + dbg.str());
             }
             result.push_back(piv_col_idx);
-            MatrixTraits::add_to_cached(vt_data[piv_col_idx], residual);
+            residual.add(vt_data[piv_col_idx]);
         }
 
         if (result.empty()) {
@@ -4582,13 +4620,15 @@ namespace oineus {
         workers.reserve(n_threads);
 
         for (size_t tid = 0; tid < n_threads; ++tid) {
-            workers.emplace_back([this, &rows, &bounds, &vt_data,
+            workers.emplace_back([this, &rows, &bounds, &vt_data, nc,
                                   &next_free, &value_at, &cmp_op]() {
+                BitTreeColumn<Int_> residual;
+                residual.reserve(nc);   // V^T column indices < nc
                 while (true) {
                     const size_t i = next_free.fetch_add(1, std::memory_order_relaxed);
                     if (i >= rows.size()) break;
                     u_data_t[rows[i]] = compute_u_row_bounded(
-                            rows[i], vt_data, bounds[i], value_at, cmp_op);
+                            rows[i], vt_data, bounds[i], value_at, cmp_op, residual);
                 }
             });
         }

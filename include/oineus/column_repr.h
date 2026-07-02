@@ -331,6 +331,24 @@ struct BitTreeColumn {
         return Int(pos);
     }
 
+    // Smallest set index, -1 if empty. Mirror of low() using the lowest set bit
+    // (__builtin_ctzll) at each level. Used by the row-form U solve, whose
+    // forward substitution against lower-unit-triangular V^T consumes the
+    // residual from the top (smallest index up).
+    Int top() const
+    {
+        if (nnz_ == 0)
+            return Int(-1);
+        int L = int(levels_.size()) - 1;
+        uint64_t topword = levels_[L][0];
+        size_t pos = __builtin_ctzll(topword);
+        for (int lev = L; lev > 0; --lev) {
+            uint64_t word = levels_[lev - 1][pos];
+            pos = pos * 64 + __builtin_ctzll(word);
+        }
+        return Int(pos);
+    }
+
     template<class Col>
     void to_vector(Col& out) const
     {
