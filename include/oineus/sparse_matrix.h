@@ -321,7 +321,8 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
 
     static Matrix col_to_row_format_parallel(const Matrix& col_format, int
         n_threads, size_t col_start = 0,
-        size_t col_end = std::numeric_limits<size_t>::max(), Int num_rows = -1)
+        size_t col_end = std::numeric_limits<size_t>::max(), Int num_rows = -1,
+        bool prefer_row_scatter = false)
     {
         if (col_format.empty()) {
             return {};
@@ -387,10 +388,9 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
         }
 
         // Per-row exclusive prefix-sum across threads (so each worker knows where to
-        // write within each row), allocate each output row, and accumulate nnz.
-        // Parallelized over rows (independent); the previous serial loop here was an
+        // write within each row) and allocate each output row. Parallelized over
+        // rows (independent); the previous serial loop here was an
         // O(num_rows * n_workers) term that grew with the thread count.
-        std::vector<size_t> nnz_partial(n_workers, 0);
         {
             std::vector<std::thread> prefix_workers;
             prefix_workers.reserve(n_workers);
@@ -398,8 +398,7 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
                 const size_t r_begin = (wid * static_cast<size_t>(num_rows)) / n_workers;
                 const size_t r_end = ((wid + 1) * static_cast<size_t>(num_rows)) / n_workers;
                 prefix_workers.emplace_back(
-                    [&per_thread_positions, &row_format, &nnz_partial, n_workers, wid, r_begin, r_end]() {
-                        size_t local_nnz = 0;
+                    [&per_thread_positions, &row_format, n_workers, r_begin, r_end]() {
                         for (size_t r = r_begin; r < r_end; ++r) {
                             size_t prefix = 0;
                             for (size_t tid = 0; tid < n_workers; ++tid) {
@@ -408,43 +407,33 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
                                 prefix += count;
                             }
                             row_format[r].resize(prefix);
-                            local_nnz += prefix;
                         }
-                        nnz_partial[wid] = local_nnz;
                     });
             }
             for (auto& t : prefix_workers) t.join();
         }
-        size_t nnz = 0;
-        for (size_t v : nnz_partial) nnz += v;
 
         workers.clear();
 
-        // Scatter -- two strategies with identical output, chosen by row density.
+        // Scatter -- two strategies with identical output; the caller picks via
+        // prefer_row_scatter (see the (side,dim) routing in compute_u_from_v /
+        // compute_partial_u_rows).
         //
-        // Sparse default: COLUMN-partitioned. Each worker owns a column range and
-        // writes each entry to row_format[row][pos++]. Reads every column once; best
-        // when rows have low degree (few threads touch any given row, so little write
-        // contention and a small random-write working set).
+        // COLUMN-partitioned (default): each worker owns a column range and writes
+        // each entry to row_format[row][pos++]. Reads every column once; best when
+        // rows have low degree (little write contention, small random-write set).
         //
-        // Dense: ROW-partitioned. Each worker owns a DISJOINT output-row range and
-        // writes only its own row_format[] buffers -- zero cross-thread write
-        // contention, cache-warm writes -- binary-searching each sorted column for
-        // its range (columns are sorted ascending: compute_u_column sorts its result,
-        // V columns are 1-diagonal). Best when rows are dense: there the
-        // column-partitioned scatter degenerates into a random-DRAM-write storm that
-        // does not scale (measured flat 1->16 threads on dense cohomology transposes;
-        // this scales ~4x). The row path rescans column headers per worker, so it
-        // only pays off once columns are long enough. Discriminate by AVERAGE COLUMN
-        // LENGTH (nnz / n_cols), not average row degree (nnz / num_rows): num_rows
-        // counts rows in every dimension, so for a dim-restricted transpose the row
-        // degree is diluted by empty rows and its crossover drifts with problem size.
-        // Column length is undiluted and separates cleanly and size-invariantly --
-        // measured on 64^3 and 49M grids (both complexes), column-favoring transposes
-        // have avg column length ~10-37 and row-favoring ones ~48-54, so switch at 42.
-        // Both paths produce identical output, so a mis-pick only costs a little time,
-        // never correctness. (42 is tuned on grids; point clouds may want retuning.)
-        const bool dense = nnz >= static_cast<size_t>(42) * n_cols;
+        // ROW-partitioned: each worker owns a DISJOINT output-row range and writes
+        // only its own row_format[] buffers -- zero cross-thread contention,
+        // cache-warm writes -- binary-searching each sorted column for its range
+        // (columns are sorted ascending: compute_u_column sorts, V is 1-diagonal).
+        // Wins when the column scatter would degenerate into a random-DRAM-write
+        // storm (measured flat 1->16 threads on the dense cohomology dim-1
+        // transposes, where this scales ~4x). No scalar density metric predicts the
+        // crossover across filtration/dim/side (characterized on LS/alpha/VR, dims
+        // 0/1/2 -- e.g. VR hom-V^T at collen 47 wants column while LS coh at collen
+        // 33 wants row, and dim-2 inverts per filtration), so the caller decides.
+        const bool dense = prefer_row_scatter;
         if (dense) {
             for (size_t wid = 0; wid < n_workers; ++wid) {
                 const size_t r_begin = (wid * static_cast<size_t>(num_rows)) / n_workers;

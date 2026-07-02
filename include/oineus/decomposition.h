@@ -4445,7 +4445,12 @@ namespace oineus {
 
         u_timings_.col_solve = timer.elapsed_reset();
 
-        u_data_t = MatrixTraits::col_to_row_format_parallel(u_data, n_threads, col_start, col_end, v_data.size());
+        // (side,dim) scatter routing: row-partitioned only for the dense cohomology
+        // dim-1 transpose, column-partitioned otherwise (characterized on LS/alpha/VR,
+        // dims 0/1/2; no scalar metric generalizes, so route by side+dim).
+        u_data_t = MatrixTraits::col_to_row_format_parallel(
+                u_data, n_threads, col_start, col_end, v_data.size(),
+                /*prefer_row_scatter=*/(dim == 1 && dualize_));
 
         u_timings_.col_to_row = timer.elapsed_reset();
 
@@ -4488,7 +4493,12 @@ namespace oineus {
 
         u_timings_.col_solve = timer.elapsed_reset();
 
-        u_data_t = MatrixTraits::col_to_row_format_parallel(u_data, n_threads, col_start, col_end, v_data.size());
+        // (side,dim) scatter routing: row-partitioned only for the dense cohomology
+        // dim-1 transpose, column-partitioned otherwise (characterized on LS/alpha/VR,
+        // dims 0/1/2; no scalar metric generalizes, so route by side+dim).
+        u_data_t = MatrixTraits::col_to_row_format_parallel(
+                u_data, n_threads, col_start, col_end, v_data.size(),
+                /*prefer_row_scatter=*/(dim == 1 && dualize_));
 
         u_timings_.col_to_row = timer.elapsed_reset();
 
@@ -4630,11 +4640,13 @@ namespace oineus {
                 v_dim[c] = working_rv_[c].load(std::memory_order_relaxed)->v_column;
             vt_data = MatrixTraits::col_to_row_format_parallel(
                     v_dim, static_cast<int>(n_threads), cs, ce,
-                    static_cast<typename MatrixTraits::Int>(nc));
+                    static_cast<typename MatrixTraits::Int>(nc),
+                    /*prefer_row_scatter=*/(dim == 1 && dualize_));
         } else {
             vt_data = MatrixTraits::col_to_row_format_parallel(
                     v_data, static_cast<int>(n_threads), cs, ce,
-                    static_cast<typename MatrixTraits::Int>(v_data.size()));
+                    static_cast<typename MatrixTraits::Int>(v_data.size()),
+                    /*prefer_row_scatter=*/(dim == 1 && dualize_));
         }
 
         u_timings_.transpose_v = timer.elapsed_reset();
