@@ -497,6 +497,11 @@ namespace oineus {
         // ordinary ctor+reduce path.
         bool has_d_data_ {true};
         bool dualize_ {false};
+        // Working-column representation the last reduce() ran with. The U-solve
+        // reads it so its residual uses the same data structure as the reduction
+        // (BitTree by default; Set/Heap/Full for the ablation study), rather than
+        // hardcoding BitTree. Set in reduce(); carried by copy/move.
+        ColumnRepr col_repr_ {ColumnRepr::BitTree};
         // True iff R, V are known to be in ELZ form. Maintained by the
         // reduction drivers and by restore_elz; consulted by
         // compute_partial_u_rows which requires V to be ELZ. A full
@@ -594,6 +599,7 @@ namespace oineus {
             is_reduced = other.is_reduced;
             has_d_data_ = other.has_d_data_;
             dualize_ = other.dualize_;
+            col_repr_ = other.col_repr_;
             is_elz_in_dim_ = other.is_elz_in_dim_;
             _pivots = other._pivots;
             ri_r_ = other.ri_r_;
@@ -621,6 +627,7 @@ namespace oineus {
             is_reduced = other.is_reduced;
             has_d_data_ = other.has_d_data_;
             dualize_ = other.dualize_;
+            col_repr_ = other.col_repr_;
             is_elz_in_dim_ = std::move(other.is_elz_in_dim_);
             _pivots = std::move(other._pivots);
             ri_r_ = std::move(other.ri_r_);
@@ -1169,6 +1176,19 @@ namespace oineus {
         template<class WorkCol> void reduce_parallel_r_only_impl(Params& params);
         template<class WorkCol> void reduce_parallel_rv_impl(Params& params);
 
+        // Templated U-solve kernels. The public compute_u_from_v / _1 /
+        // compute_partial_u_rows dispatch on col_repr_ and call these with the
+        // matching WorkCol residual (same set of column types as the reduction).
+        // The row form (compute_partial_u_rows) needs top(), so Heap is excluded
+        // there (see the dispatcher).
+        template<class WorkCol> void compute_u_from_v_impl(dim_type dim, size_t n_threads, bool verbose);
+        template<class WorkCol> void compute_u_from_v_1_impl(dim_type dim, size_t n_threads, bool verbose);
+        template<class WorkCol, typename Real, typename ValueAt, typename CmpOp>
+        void compute_partial_u_rows_impl(const std::vector<size_t>& rows,
+                                         const std::vector<Real>& bounds,
+                                         dim_type dim, ValueAt&& value_at,
+                                         CmpOp&& cmp_op, size_t n_threads, bool verbose);
+
         // Parallel reduction "cores": everything after the prepare phase (thread
         // spawn/join, interrupt, stats, copy-back, copy-pivots, teardown). The
         // working column array and the pivots are built by the caller -- either the
@@ -1462,7 +1482,11 @@ namespace oineus {
         bool is_R_column_zero(size_t col_idx) const { return r_is_zero(col_idx); }
         bool is_V_column_zero(size_t col_idx) const { return v_col(col_idx).empty(); }
 
-        IntSparseColumn compute_u_column(size_t col_idx, BitTreeColumn<Int_>& residual) const;
+        // Column-form U solve (R u_c = D_c). WorkCol is the residual data
+        // structure -- any of the four ColumnRepr types; the driver picks it
+        // from col_repr_.
+        template<class WorkCol>
+        IntSparseColumn compute_u_column(size_t col_idx, WorkCol& residual) const;
         // Convenience overload for single-column callers: allocates a fresh residual.
         IntSparseColumn compute_u_column(size_t col_idx) const
         {
@@ -1472,7 +1496,8 @@ namespace oineus {
         }
         void compute_u_from_v(dim_type dim, size_t n_threads=1, bool verbose=false);
 
-        IntSparseColumn compute_u_column_1(size_t col_idx, BitTreeColumn<Int_>& residual) const;
+        template<class WorkCol>
+        IntSparseColumn compute_u_column_1(size_t col_idx, WorkCol& residual) const;
         // Convenience overload for single-column callers: allocates a fresh residual.
         IntSparseColumn compute_u_column_1(size_t col_idx) const
         {
@@ -1496,13 +1521,13 @@ namespace oineus {
         //   coh (dualize=true), decrease_birth walker:
         //     cmp_op(piv_value, bound) = (piv_value < bound)  ["below"]
         // Negate flips both directions; not yet supported.
-        template<typename Real, typename ValueAt, typename CmpOp>
+        template<class WorkCol, typename Real, typename ValueAt, typename CmpOp>
         IntSparseColumn compute_u_row_bounded(size_t row_idx,
                                               const MatrixData& vt_data,
                                               Real value_bound,
                                               ValueAt&& value_at,
                                               CmpOp&& cmp_op,
-                                              BitTreeColumn<Int_>& residual) const;
+                                              WorkCol& residual) const;
 
         // Convenience overload for single-row callers: allocates a fresh residual.
         template<typename Real, typename ValueAt, typename CmpOp>
@@ -1908,6 +1933,10 @@ namespace oineus {
 
         invalidate_dynamic_();   // R, V are rebuilt; any row index is now stale
         params.timings.reset();
+
+        // Record the working-column repr so a later compute_u_* uses the same
+        // residual data structure (not a hardcoded BitTree).
+        col_repr_ = params.col_repr;
 
         if (r_data.empty()) {
             is_reduced = true;
@@ -4336,8 +4365,9 @@ namespace oineus {
     }
 
     template<typename Int_>
+    template<class WorkCol>
     typename VRUDecomposition<Int_>::IntSparseColumn
-    VRUDecomposition<Int_>::compute_u_column(size_t col_idx, BitTreeColumn<Int_>& residual) const
+    VRUDecomposition<Int_>::compute_u_column(size_t col_idx, WorkCol& residual) const
     {
         if (not is_reduced)
             throw std::runtime_error("Cannot compute U column from non-reduced decomposisition");
@@ -4370,8 +4400,9 @@ namespace oineus {
     }
 
     template<typename Int_>
+    template<class WorkCol>
     typename VRUDecomposition<Int_>::IntSparseColumn
-    VRUDecomposition<Int_>::compute_u_column_1(size_t col_idx, BitTreeColumn<Int_>& residual) const
+    VRUDecomposition<Int_>::compute_u_column_1(size_t col_idx, WorkCol& residual) const
     {
         if (not is_reduced)
             throw std::runtime_error("Cannot compute U column from non-reduced decomposisition");
@@ -4405,6 +4436,20 @@ namespace oineus {
     template<typename Int_>
     void VRUDecomposition<Int_>::compute_u_from_v_1(dim_type dim, size_t n_threads, bool verbose)
     {
+        // Pick the residual data structure from the reduction's col_repr (all
+        // four are valid for the column form).
+        switch (col_repr_) {
+            case ColumnRepr::Set:     compute_u_from_v_1_impl<SetColumn<Int_>>(dim, n_threads, verbose); break;
+            case ColumnRepr::Heap:    compute_u_from_v_1_impl<HeapColumn<Int_>>(dim, n_threads, verbose); break;
+            case ColumnRepr::Full:    compute_u_from_v_1_impl<FullColumn<Int_>>(dim, n_threads, verbose); break;
+            case ColumnRepr::BitTree: compute_u_from_v_1_impl<BitTreeColumn<Int_>>(dim, n_threads, verbose); break;
+        }
+    }
+
+    template<typename Int_>
+    template<class WorkCol>
+    void VRUDecomposition<Int_>::compute_u_from_v_1_impl(dim_type dim, size_t n_threads, bool verbose)
+    {
         Timer timer;
         u_timings_.reset();
         using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
@@ -4429,7 +4474,7 @@ namespace oineus {
 
         for(size_t tid = 0; tid < n_threads; ++tid) {
             workers.emplace_back([this, &u_data, &next_free_column, col_end]() {
-                BitTreeColumn<Int_> residual;
+                WorkCol residual;
                 residual.reserve(v_data.size());   // V column indices < v_data.size()
                 while(true) {
                     const size_t col_idx = next_free_column.fetch_add(1, std::memory_order_relaxed);
@@ -4460,6 +4505,20 @@ namespace oineus {
     template<typename Int_>
     void VRUDecomposition<Int_>::compute_u_from_v(dim_type dim, size_t n_threads, bool verbose)
     {
+        // Pick the residual data structure from the reduction's col_repr (all
+        // four are valid for the column form).
+        switch (col_repr_) {
+            case ColumnRepr::Set:     compute_u_from_v_impl<SetColumn<Int_>>(dim, n_threads, verbose); break;
+            case ColumnRepr::Heap:    compute_u_from_v_impl<HeapColumn<Int_>>(dim, n_threads, verbose); break;
+            case ColumnRepr::Full:    compute_u_from_v_impl<FullColumn<Int_>>(dim, n_threads, verbose); break;
+            case ColumnRepr::BitTree: compute_u_from_v_impl<BitTreeColumn<Int_>>(dim, n_threads, verbose); break;
+        }
+    }
+
+    template<typename Int_>
+    template<class WorkCol>
+    void VRUDecomposition<Int_>::compute_u_from_v_impl(dim_type dim, size_t n_threads, bool verbose)
+    {
         Timer timer;
         u_timings_.reset();
         using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
@@ -4477,7 +4536,7 @@ namespace oineus {
 
         for(size_t tid = 0; tid < n_threads; ++tid) {
             workers.emplace_back([this, &u_data, &next_free_column, col_end]() {
-                BitTreeColumn<Int_> residual;
+                WorkCol residual;
                 residual.reserve(r_data.size());   // max row index < r_data.size()
                 while(true) {
                     const size_t col_idx = next_free_column.fetch_add(1, std::memory_order_relaxed);
@@ -4506,14 +4565,14 @@ namespace oineus {
     }
 
     template<typename Int_>
-    template<typename Real, typename ValueAt, typename CmpOp>
+    template<class WorkCol, typename Real, typename ValueAt, typename CmpOp>
     typename VRUDecomposition<Int_>::IntSparseColumn
     VRUDecomposition<Int_>::compute_u_row_bounded(size_t row_idx,
                                                   const MatrixData& vt_data,
                                                   Real value_bound,
                                                   ValueAt&& value_at,
                                                   CmpOp&& cmp_op,
-                                                  BitTreeColumn<Int_>& residual) const
+                                                  WorkCol& residual) const
     {
         // Row-form analogue of compute_u_column_1_bounded. Solves
         // (row r of U) * V = e_r^T via residual-style forward
@@ -4579,6 +4638,40 @@ namespace oineus {
     template<typename Int_>
     template<typename Real, typename ValueAt, typename CmpOp>
     void VRUDecomposition<Int_>::compute_partial_u_rows(
+            const std::vector<size_t>& rows,
+            const std::vector<Real>& bounds,
+            dim_type dim,
+            ValueAt&& value_at,
+            CmpOp&& cmp_op,
+            size_t n_threads,
+            bool verbose)
+    {
+        // Row form needs top() (min index). A max-heap cannot expose it cheaply,
+        // so Heap is unsupported here; Set/Full/BitTree all work.
+        switch (col_repr_) {
+            case ColumnRepr::Set:
+                compute_partial_u_rows_impl<SetColumn<Int_>>(rows, bounds, dim,
+                        std::forward<ValueAt>(value_at), std::forward<CmpOp>(cmp_op), n_threads, verbose);
+                break;
+            case ColumnRepr::Full:
+                compute_partial_u_rows_impl<FullColumn<Int_>>(rows, bounds, dim,
+                        std::forward<ValueAt>(value_at), std::forward<CmpOp>(cmp_op), n_threads, verbose);
+                break;
+            case ColumnRepr::BitTree:
+                compute_partial_u_rows_impl<BitTreeColumn<Int_>>(rows, bounds, dim,
+                        std::forward<ValueAt>(value_at), std::forward<CmpOp>(cmp_op), n_threads, verbose);
+                break;
+            case ColumnRepr::Heap:
+                throw std::runtime_error(
+                    "compute_partial_u_rows (row-form U solve) does not support "
+                    "ColumnRepr::Heap: a max-heap has no efficient top(). Use "
+                    "Set, Full, or BitTree.");
+        }
+    }
+
+    template<typename Int_>
+    template<class WorkCol, typename Real, typename ValueAt, typename CmpOp>
+    void VRUDecomposition<Int_>::compute_partial_u_rows_impl(
             const std::vector<size_t>& rows,
             const std::vector<Real>& bounds,
             dim_type dim,
@@ -4660,7 +4753,7 @@ namespace oineus {
         for (size_t tid = 0; tid < n_threads; ++tid) {
             workers.emplace_back([this, &rows, &bounds, &vt_data, nc,
                                   &next_free, &value_at, &cmp_op]() {
-                BitTreeColumn<Int_> residual;
+                WorkCol residual;
                 residual.reserve(nc);   // V^T column indices < nc
                 while (true) {
                     const size_t i = next_free.fetch_add(1, std::memory_order_relaxed);
