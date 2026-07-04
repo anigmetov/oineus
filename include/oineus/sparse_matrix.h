@@ -377,7 +377,7 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
                 auto [begin, end] = worker_range(tid);
                 auto& local_counts = per_thread_positions[tid];
                 for (size_t col_idx = begin; col_idx < end; ++col_idx) {
-                    for (int row_idx : col_format[col_idx]) {
+                    for (Int row_idx : col_format[col_idx]) {
                         ++local_counts[static_cast<size_t>(row_idx)];
                     }
                 }
@@ -451,7 +451,7 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
                             auto it = std::lower_bound(col.begin(), col.end(), lo);
                             for (; it != col.end() && *it < hi; ++it) {
                                 const size_t r = static_cast<size_t>(*it);
-                                row_format[r][cursor[r - r_begin]++] = static_cast<int>(col_idx);
+                                row_format[r][cursor[r - r_begin]++] = static_cast<Int>(col_idx);
                             }
                         }
                     });
@@ -462,9 +462,9 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
                     auto [begin, end] = worker_range(tid);
                     auto& local_pos = per_thread_positions[tid];
                     for (size_t col_idx = begin; col_idx < end; ++col_idx) {
-                        for (int row_idx : col_format[col_idx]) {
+                        for (Int row_idx : col_format[col_idx]) {
                             const size_t r = static_cast<size_t>(row_idx);
-                            row_format[r][local_pos[r]++] = static_cast<int>(col_idx);
+                            row_format[r][local_pos[r]++] = static_cast<Int>(col_idx);
                         }
                     }
                 });
