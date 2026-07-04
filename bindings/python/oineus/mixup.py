@@ -75,8 +75,17 @@ def compute_mixup_triples(kicr, fil_K, fil_L, max_dim):
     dom_dgms = kicr.domain_diagrams()
     im_dgms = kicr.image_diagrams()
 
+    # the C++ diagrams only carry dimensions up to the max cell dimension of
+    # the respective filtration; degrees above L's have no bars at all
+    avail_dim = int(fil_L.max_dim) if fil_L.size() > 0 else -1
+
     out = {}
     for dim in range(max_dim + 1):
+        if dim > avail_dim:
+            out[dim] = (np.empty((0, 3), dtype=np.float64),
+                        np.empty((0, 3), dtype=np.int64),
+                        np.empty((0, 3), dtype=np.float64))
+            continue
         dom_val = np.asarray(dom_dgms.in_dimension(dim), dtype=np.float64).reshape(-1, 2)
         dom_idx = np.asarray(dom_dgms.index_diagram_in_dimension(dim, as_numpy=True),
                              dtype=np.uint64).reshape(-1, 2)

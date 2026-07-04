@@ -15,6 +15,7 @@ frechet_mean
 differentiable
 optimization
 kicr
+mixup
 mapping_cylinder
 relative_homology
 performance

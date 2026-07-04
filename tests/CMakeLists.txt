@@ -43,16 +43,19 @@ if(NOT ${PYTEST_result} EQUAL 0)
     message(WARNING "Pytest package not available: executable ${Python_EXECUTABLE}, ${PYTEST_error}, Python tests will be ignored. Use pip install [--user] pytest to run them.")
 else()
     file(GLOB VERTEBRA_NPY_FILES "${CMAKE_CURRENT_SOURCE_DIR}/*vertebra*.npy")
+    file(GLOB MIXUP_REF_FILES "${CMAKE_CURRENT_SOURCE_DIR}/mixup_ref*.npz")
     file(GLOB TEST_PY_FILES "${CMAKE_CURRENT_SOURCE_DIR}/*.py")
 
     file(COPY ${VERTEBRA_NPY_FILES} DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+    file(COPY ${MIXUP_REF_FILES} DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
     file(COPY ${TEST_PY_FILES} DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
     # Keep copied Python tests/data in sync on every build (without reconfigure).
     set(COPY_PY_TEST_FILES_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/copy_py_test_files.cmake")
     file(WRITE "${COPY_PY_TEST_FILES_SCRIPT}" "file(GLOB VERTEBRA_NPY_FILES \"${CMAKE_CURRENT_SOURCE_DIR}/*vertebra*.npy\")\n")
+    file(APPEND "${COPY_PY_TEST_FILES_SCRIPT}" "file(GLOB MIXUP_REF_FILES \"${CMAKE_CURRENT_SOURCE_DIR}/mixup_ref*.npz\")\n")
     file(APPEND "${COPY_PY_TEST_FILES_SCRIPT}" "file(GLOB TEST_PY_FILES \"${CMAKE_CURRENT_SOURCE_DIR}/*.py\")\n")
-    file(APPEND "${COPY_PY_TEST_FILES_SCRIPT}" "foreach(src IN LISTS VERTEBRA_NPY_FILES TEST_PY_FILES)\n")
+    file(APPEND "${COPY_PY_TEST_FILES_SCRIPT}" "foreach(src IN LISTS VERTEBRA_NPY_FILES MIXUP_REF_FILES TEST_PY_FILES)\n")
     file(APPEND "${COPY_PY_TEST_FILES_SCRIPT}" "  file(COPY \"\${src}\" DESTINATION \"${CMAKE_CURRENT_BINARY_DIR}\")\n")
     file(APPEND "${COPY_PY_TEST_FILES_SCRIPT}" "endforeach()\n")
 
@@ -94,6 +97,7 @@ else()
             diff-jax-f32
             diff-jax-grad
             diff-kicr
+            diff-mixup
             diff-torch-optional
             diff-torch-vs-jax
             diff-vr-packed
@@ -114,6 +118,7 @@ else()
             kicr-reference
             match-rv-policy
             min-filtration
+            mixup-barcodes
             packed-alpha
             packed-vr
             parallel-dgm
@@ -140,6 +145,7 @@ else()
             example-diff-cyl
             example-kernel
             example-kicr-cyl
+            example-mixup
             example-opt-fr
             example-opt-vr
             example-opt-wass)
