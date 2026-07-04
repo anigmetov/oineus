@@ -600,6 +600,8 @@ namespace oineus {
             has_d_data_ = other.has_d_data_;
             dualize_ = other.dualize_;
             col_repr_ = other.col_repr_;
+            u_timings_ = other.u_timings_;
+            dbg_restore_thread_times_ = other.dbg_restore_thread_times_;
             is_elz_in_dim_ = other.is_elz_in_dim_;
             _pivots = other._pivots;
             ri_r_ = other.ri_r_;
@@ -628,6 +630,8 @@ namespace oineus {
             has_d_data_ = other.has_d_data_;
             dualize_ = other.dualize_;
             col_repr_ = other.col_repr_;
+            u_timings_ = other.u_timings_;
+            dbg_restore_thread_times_ = std::move(other.dbg_restore_thread_times_);
             is_elz_in_dim_ = std::move(other.is_elz_in_dim_);
             _pivots = std::move(other._pivots);
             ri_r_ = std::move(other.ri_r_);
