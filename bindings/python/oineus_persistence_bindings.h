@@ -574,7 +574,6 @@ compute_diagrams_from_fil(const oineus::Filtration<Cell, Real>& fil, int n_threa
 
     oineus::Params params;
 
-    params.sort_dgms = false;
     params.clearing_opt = true;
     params.n_threads = n_threads;
 
@@ -599,7 +598,6 @@ compute_relative_diagrams(const oineus::Filtration<Cell, Real>& fil, const oineu
 
     oineus::Params params;
 
-    params.sort_dgms = false;
     params.clearing_opt = true;
     params.n_threads = 1;
 
@@ -778,7 +776,6 @@ oin::KerImCokReduced<C, Real, 2> compute_kernel_image_cokernel_reduction(const o
 {
     using KICR = oin::KerImCokReduced<C, Real, 2>;
 
-    params.sort_dgms = false;
     params.clearing_opt = false;
 
     oin::KICRParams kicr_params;

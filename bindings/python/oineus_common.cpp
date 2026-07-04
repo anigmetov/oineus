@@ -49,10 +49,7 @@ void init_oineus_common(nb::module_& m)
 
     using RedParamsTuple = std::tuple<int,    // n_threads
                                       int,    //chunk_size
-                                      bool,   // write_dgms
-                                      bool,   // sort_dgms
                                       bool,   // clearing_opt
-                                      bool,   // acq_rel
                                       bool,   // print_time
                                       bool,   // compute_v
                                       bool,   // compute_u
@@ -135,6 +132,11 @@ void init_oineus_common(nb::module_& m)
                 t.col_to_row  = std::get<3>(s);
             });
 
+    // kwargs ctor defaults are read off a default-constructed instance so the
+    // C++ in-class defaults stay the single source of truth (they used to
+    // silently differ from the no-arg ctor: n_threads 8 vs 1, chunk_size 256 vs 128)
+    const ReductionParams def_rp{};
+
     nb::class_<ReductionParams>(m, "ReductionParams")
             .def(nb::init<>())
             .def("__init__",
@@ -149,13 +151,10 @@ void init_oineus_common(nb::module_& m)
                     p->col_repr = col_repr;
                     p->verbose = verbose;
                     p->apparent_opt = apparent_opt;
-                }, nb::arg("n_threads")=8, nb::arg("chunk_size")=256, nb::arg("clearing_opt")=true, nb::arg("compute_v")=false, nb::arg("compute_u")=false, nb::arg("dims_to_restore_elz")=std::vector<dim_type>{}, nb::arg("col_repr")=oin::ColumnRepr::BitTree, nb::arg("verbose")=false, nb::arg("apparent_opt")=false)
+                }, nb::arg("n_threads")=def_rp.n_threads, nb::arg("chunk_size")=def_rp.chunk_size, nb::arg("clearing_opt")=def_rp.clearing_opt, nb::arg("compute_v")=def_rp.compute_v, nb::arg("compute_u")=def_rp.compute_u, nb::arg("dims_to_restore_elz")=def_rp.dims_to_restore_elz, nb::arg("col_repr")=def_rp.col_repr, nb::arg("verbose")=def_rp.verbose, nb::arg("apparent_opt")=def_rp.apparent_opt)
             .def_rw("n_threads", &ReductionParams::n_threads)
             .def_rw("chunk_size", &ReductionParams::chunk_size)
-            .def_rw("write_dgms", &ReductionParams::write_dgms)
-            .def_rw("sort_dgms", &ReductionParams::sort_dgms)
             .def_rw("clearing_opt", &ReductionParams::clearing_opt)
-            .def_rw("acq_rel", &ReductionParams::acq_rel)
             .def_rw("print_time", &ReductionParams::print_time)
             .def_rw("elapsed", &ReductionParams::elapsed)
             .def_rw("compute_v", &ReductionParams::compute_v)
@@ -174,10 +173,10 @@ void init_oineus_common(nb::module_& m)
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def("__getstate__", [](const ReductionParams& p) {
-                      return std::make_tuple(p.n_threads, p.chunk_size, p.write_dgms,
-                              p.sort_dgms, p.clearing_opt, p.acq_rel, p.print_time, p.compute_v, p.compute_u,
-                              p.dims_to_restore_elz, p.do_sanity_check, p.elapsed, p
-                              .elapsed_restore_elz,
+                      return std::make_tuple(p.n_threads, p.chunk_size,
+                              p.clearing_opt, p.print_time, p.compute_v, p.compute_u,
+                              p.dims_to_restore_elz, p.do_sanity_check, p.elapsed,
+                              p.elapsed_restore_elz,
                               p.elapsed_copy_back, p.elapsed_copy_pivots, p.verbose, static_cast<int>(p.spdlog_level),
                               static_cast<int>(p.col_repr), p.apparent_opt);
                     })
@@ -185,23 +184,20 @@ void init_oineus_common(nb::module_& m)
                     new (&p) ReductionParams();
                       p.n_threads       = std::get<0>(t);
                       p.chunk_size      = std::get<1>(t);
-                      p.write_dgms      = std::get<2>(t);
-                      p.sort_dgms       = std::get<3>(t);
-                      p.clearing_opt    = std::get<4>(t);
-                      p.acq_rel         = std::get<5>(t);
-                      p.print_time      = std::get<6>(t);
-                      p.compute_v       = std::get<7>(t);
-                      p.compute_u       = std::get<8>(t);
-                      p.dims_to_restore_elz  = std::get<9>(t);
-                      p.do_sanity_check = std::get<10>(t);
-                      p.elapsed         = std::get<11>(t);
-                      p.elapsed_restore_elz = std::get<12>(t);
-                      p.elapsed_copy_back = std::get<13>(t);
-                      p.elapsed_copy_pivots = std::get<14>(t);
-                      p.verbose         = std::get<15>(t);
-                      p.spdlog_level    = static_cast<spd::level::level_enum>(std::get<16>(t));
-                      p.col_repr        = static_cast<oin::ColumnRepr>(std::get<17>(t));
-                      p.apparent_opt    = std::get<18>(t);
+                      p.clearing_opt    = std::get<2>(t);
+                      p.print_time      = std::get<3>(t);
+                      p.compute_v       = std::get<4>(t);
+                      p.compute_u       = std::get<5>(t);
+                      p.dims_to_restore_elz  = std::get<6>(t);
+                      p.do_sanity_check = std::get<7>(t);
+                      p.elapsed         = std::get<8>(t);
+                      p.elapsed_restore_elz = std::get<9>(t);
+                      p.elapsed_copy_back = std::get<10>(t);
+                      p.elapsed_copy_pivots = std::get<11>(t);
+                      p.verbose         = std::get<12>(t);
+                      p.spdlog_level    = static_cast<spd::level::level_enum>(std::get<13>(t));
+                      p.col_repr        = static_cast<oin::ColumnRepr>(std::get<14>(t));
+                      p.apparent_opt    = std::get<15>(t);
                     })
     ;
 

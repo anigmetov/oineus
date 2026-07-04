@@ -19,10 +19,7 @@ def test_reduction_params_api():
     params = oin.ReductionParams()
     params.n_threads = 1
     params.chunk_size = 16
-    params.write_dgms = False
-    params.sort_dgms = False
     params.clearing_opt = True
-    params.acq_rel = False
     params.print_time = False
     params.elapsed = 0.0
     params.compute_v = True
@@ -41,6 +38,21 @@ def test_reduction_params_api():
 
     params_back = pickle.loads(pickle.dumps(params))
     assert params_back.n_threads == params.n_threads
+
+
+def test_reduction_params_ctor_defaults_agree():
+    # the kwargs ctor must default every field to the C++ in-class defaults,
+    # i.e. agree with the no-arg ctor (they used to silently differ)
+    default = oin.ReductionParams()
+    kwargs_default = oin.ReductionParams(verbose=False)
+    assert kwargs_default.n_threads == default.n_threads
+    assert kwargs_default.chunk_size == default.chunk_size
+    assert kwargs_default.clearing_opt == default.clearing_opt
+    assert kwargs_default.compute_v == default.compute_v
+    assert kwargs_default.compute_u == default.compute_u
+    assert kwargs_default.col_repr == default.col_repr
+    assert kwargs_default.verbose == default.verbose
+    assert kwargs_default == default
 
 
 def test_kicr_params_api():

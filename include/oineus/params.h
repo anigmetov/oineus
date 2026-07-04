@@ -41,10 +41,7 @@ namespace oineus {
 
         int n_threads{1};
         int chunk_size{128};
-        bool write_dgms{false};
-        bool sort_dgms{false};
         bool clearing_opt{true};
-        bool acq_rel{false};
         bool print_time{false};
         bool compute_v{false};
         bool compute_u{false};
@@ -91,10 +88,7 @@ namespace oineus {
     {
         out << "Params(n_threads = " << p.n_threads;
         out << ", chunk_size = " << p.chunk_size;
-        out << ", write_dgms = " << p.write_dgms;
-        out << ", sort_dgms = " << p.sort_dgms;
         out << ", clearing_opt = " << p.clearing_opt;
-        out << ", acq_rel = " << p.acq_rel;
         out << ", print_time = " << p.print_time;
         out << ", compute_v = " << p.compute_v;
         out << ", compute_u = " << p.compute_u;
@@ -113,10 +107,7 @@ namespace oineus {
     {
         return a.n_threads == b.n_threads
             && a.chunk_size == b.chunk_size
-            && a.write_dgms == b.write_dgms
-            && a.sort_dgms == b.sort_dgms
             && a.clearing_opt == b.clearing_opt
-            && a.acq_rel == b.acq_rel
             && a.print_time == b.print_time
             && a.compute_v == b.compute_v
             && a.compute_u == b.compute_u

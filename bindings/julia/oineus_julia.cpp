@@ -133,8 +133,6 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
             .method("set_compute_u!", [](ReductionParams& p, bool value) { p.compute_u = value; })
             .method("restore_elz", [](const ReductionParams& p) { return p.restore_elz; })
             .method("set_restore_elz!", [](ReductionParams& p, bool value) { p.restore_elz = value; })
-            .method("sort_dgms", [](const ReductionParams& p) { return p.sort_dgms; })
-            .method("set_sort_dgms!", [](ReductionParams& p, bool value) { p.sort_dgms = value; })
             .method("verbose", [](const ReductionParams& p) { return p.verbose; })
             .method("set_verbose!", [](ReductionParams& p, bool value) { p.verbose = value; })
             .method("repr", [](const ReductionParams& p) { return reduction_params_repr(p); });

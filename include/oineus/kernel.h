@@ -303,8 +303,12 @@ public:
             throw std::runtime_error("second argument L must be a subcomplex of the first argument K");
 
         if (params_.n_threads > 1) {
-            params_.params_f.n_threads = params_.params_g.n_threads = params_.n_threads;
-            params_.params_ker.n_threads = params_.params_cok.n_threads = params_.params_im.n_threads = params_.n_threads;
+            // propagate the top-level thread count only into nested params the user
+            // left at the default, so an explicit per-stage n_threads survives
+            const int default_n_threads = Params{}.n_threads;
+            for(Params* p: {&params_.params_f, &params_.params_g, &params_.params_ker, &params_.params_im, &params_.params_cok})
+                if (p->n_threads == default_n_threads)
+                    p->n_threads = params_.n_threads;
         }
 
         CALI_MARK_BEGIN("sorted_L_to_sorted_K");

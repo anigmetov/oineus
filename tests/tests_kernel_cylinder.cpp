@@ -31,7 +31,6 @@ decltype(auto) compute_diagrams_and_v_ls_freudenthal(const typename oineus::Grid
 
     oineus::Params params;
 
-    params.sort_dgms = false;
     params.clearing_opt = false;
     params.n_threads = n_threads;
     if (n_threads == 1)
@@ -56,7 +55,6 @@ TEST_CASE("Kernel")
 
     oineus::Params params;
 
-    params.sort_dgms = false;
     params.clearing_opt = false;
     params.compute_v = true;
     params.compute_u = true;

@@ -136,15 +136,17 @@ int main(int argc, char** argv)
     bool bdry_matrix_only {false};
     bool wrap {false};
     bool negate {false};
+    bool sort_dgms {false};
+    bool acq_rel {false};
 
     Params params;
     ops
             >> Option('d', "dim", top_d, "top dimension")
             >> Option('c', "chunk-size", params.chunk_size, "chunk_size")
             >> Option('t', "threads", params.n_threads, "number of threads")
-            >> Option('s', "sort", params.sort_dgms, "sort diagrams")
+            >> Option('s', "sort", sort_dgms, "sort diagrams")
             >> Option("clear", params.clearing_opt, "clearing optimization")
-            >> Option("acq-rel", params.acq_rel, "use acquire-release memory orders")
+            >> Option("acq-rel", acq_rel, "use acquire-release memory orders")
             >> Option('w', "wrap", wrap, "wrap (periodic boundary conditions)")
             >> Option('n', "negate", negate, "negate function")
             >> Option('m', "matrix-only", bdry_matrix_only, "read boundary matrix w/o filtration")
@@ -188,7 +190,7 @@ int main(int argc, char** argv)
 
         auto dgm = decmp.diagram(fil, true);
 
-        if (params.sort_dgms)
+        if (sort_dgms)
             dgm.sort();
 
         dgm.save_as_txt(fname_dgm);
