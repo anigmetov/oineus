@@ -17,8 +17,8 @@ import pytest
 import oineus as oin
 
 
-def _reduce(a, dualize, apparent, values_on="vertices", n_threads=4):
-    fil = oin.cube_filtration(a, n_threads=n_threads, values_on=values_on)
+def _reduce(a, dualize, apparent, values_on="vertices", n_threads=4, negate=False):
+    fil = oin.cube_filtration(a, n_threads=n_threads, values_on=values_on, negate=negate)
     p = oin.ReductionParams()
     p.n_threads = n_threads
     p.compute_v = True
@@ -27,11 +27,11 @@ def _reduce(a, dualize, apparent, values_on="vertices", n_threads=4):
     return fil, dcmp
 
 
-def _reduce_fr(a, dualize, apparent, n_threads=4, max_dim=None):
+def _reduce_fr(a, dualize, apparent, n_threads=4, max_dim=None, negate=False):
     # slim Freudenthal (the default builder for non-wrap grids up to 4D)
     if max_dim is None:
         max_dim = a.ndim
-    fil = oin.freudenthal_filtration(a, max_dim=max_dim, n_threads=n_threads)
+    fil = oin.freudenthal_filtration(a, max_dim=max_dim, n_threads=n_threads, negate=negate)
     p = oin.ReductionParams()
     p.n_threads = n_threads
     p.compute_v = True
@@ -86,12 +86,15 @@ def test_apparent_matches_plain_2d(shape, dualize, values_on):
 
 @pytest.mark.parametrize("shape", SHAPES_3D)
 @pytest.mark.parametrize("dualize", [False, True])
-def test_apparent_matches_plain_3d(shape, dualize):
+@pytest.mark.parametrize("negate", [False, True])
+def test_apparent_matches_plain_3d(shape, dualize, negate):
+    # negate=True is the upper-star filtration: sorted order (and hence the
+    # apparent pairing) is built on descending values
     a = np.random.default_rng(abs(hash((shape, dualize))) % 2**31)
     a = a.standard_normal(shape).astype(np.float64)
-    _, ref = _reduce(a, dualize, apparent=False)
-    fil, test = _reduce(a, dualize, apparent=True)
-    ctx = f"3d shape={shape} dualize={dualize}"
+    _, ref = _reduce(a, dualize, apparent=False, negate=negate)
+    fil, test = _reduce(a, dualize, apparent=True, negate=negate)
+    ctx = f"3d shape={shape} dualize={dualize} negate={negate}"
     _assert_dgms_equal(_dgms(ref, fil, len(shape)), _dgms(test, fil, len(shape)), ctx)
     _assert_dgms_equal(_zero_pers(ref, fil, len(shape)), _zero_pers(test, fil, len(shape)), ctx + " [zero-pers]")
 
@@ -162,24 +165,27 @@ def test_apparent_clone_is_self_contained(dualize):
 # --- slim Freudenthal (kind == Freudenthal now takes the apparent path too) ---
 
 FR_CASES = [
-    # (shape, seed, max_dim); max_dim=None means full dimension
-    ((8, 8), 101, None),
-    ((13, 9), 102, None),
-    ((5, 6, 4), 103, None),
-    ((8, 7, 6), 104, None),
-    ((5, 5, 5), 105, 2),   # truncated: 3D grid, cells only up to dim 2
+    # (shape, seed, max_dim, negate); max_dim=None means full dimension,
+    # negate=True is the upper-star filtration
+    ((8, 8), 101, None, False),
+    ((13, 9), 102, None, False),
+    ((5, 6, 4), 103, None, False),
+    ((8, 7, 6), 104, None, False),
+    ((5, 5, 5), 105, 2, False),   # truncated: 3D grid, cells only up to dim 2
+    ((9, 8), 107, None, True),
+    ((6, 5, 4), 108, None, True),
 ]
 
 
-@pytest.mark.parametrize("shape,seed,max_dim", FR_CASES)
+@pytest.mark.parametrize("shape,seed,max_dim,negate", FR_CASES)
 @pytest.mark.parametrize("dualize", [False, True])
 @pytest.mark.parametrize("n_threads", [1, 4])
-def test_apparent_fr_matches_plain(shape, seed, max_dim, dualize, n_threads):
+def test_apparent_fr_matches_plain(shape, seed, max_dim, negate, dualize, n_threads):
     # n_threads=1 cannot fuse, so use_apparent_pairs must be a silent no-op there
     a = np.random.default_rng(seed).standard_normal(shape).astype(np.float64)
-    _, ref = _reduce_fr(a, dualize, apparent=False, n_threads=n_threads, max_dim=max_dim)
-    fil, test = _reduce_fr(a, dualize, apparent=True, n_threads=n_threads, max_dim=max_dim)
-    ctx = f"fr shape={shape} max_dim={max_dim} dualize={dualize} n_threads={n_threads}"
+    _, ref = _reduce_fr(a, dualize, apparent=False, n_threads=n_threads, max_dim=max_dim, negate=negate)
+    fil, test = _reduce_fr(a, dualize, apparent=True, n_threads=n_threads, max_dim=max_dim, negate=negate)
+    ctx = f"fr shape={shape} max_dim={max_dim} negate={negate} dualize={dualize} n_threads={n_threads}"
     _assert_dgms_equal(_dgms(ref, fil, len(shape)), _dgms(test, fil, len(shape)), ctx)
     _assert_dgms_equal(_zero_pers(ref, fil, len(shape)), _zero_pers(test, fil, len(shape)), ctx + " [zero-pers]")
 
@@ -220,18 +226,20 @@ def test_apparent_fr_materialize_is_valid_decomposition(dualize):
 def test_apparent_activation_telemetry(dualize):
     # guard against a silent gate regression: with the flag ON on the fused
     # multi-threaded path, both the cube and the slim Freudenthal grid
-    # filtrations must actually take the apparent path
-    a = np.random.default_rng(7).standard_normal((12, 11)).astype(np.float64)
-    for reducer in (_reduce, _reduce_fr):
-        name = reducer.__name__
-        fil, on = reducer(a, dualize, apparent=True)
-        assert on.n_apparent_pairs() > 0, f"{name}: apparent path fell back silently"
-        assert on.n_apparent_pairs() < fil.size()
-        _, off = reducer(a, dualize, apparent=False)
-        assert off.n_apparent_pairs() == 0, f"{name}: OFF path reports apparent pairs"
-        # serial reduction cannot fuse, so the flag is a no-op there
-        _, serial = reducer(a, dualize, apparent=True, n_threads=1)
-        assert serial.n_apparent_pairs() == 0, f"{name}: serial path took apparent"
-        # a materializing access consumes the lean state and resets the counter
-        assert on.r_as_csc().nnz > 0
-        assert on.n_apparent_pairs() == 0, f"{name}: counter survived materialize"
+    # filtrations must actually take the apparent path, on 2D and 3D grids
+    arrays = [np.random.default_rng(7).standard_normal((12, 11)).astype(np.float64),
+              np.random.default_rng(8).standard_normal((8, 7, 6)).astype(np.float64)]
+    for a in arrays:
+        for reducer in (_reduce, _reduce_fr):
+            name = f"{reducer.__name__} {a.shape}"
+            fil, on = reducer(a, dualize, apparent=True)
+            assert on.n_apparent_pairs() > 0, f"{name}: apparent path fell back silently"
+            assert on.n_apparent_pairs() < fil.size()
+            _, off = reducer(a, dualize, apparent=False)
+            assert off.n_apparent_pairs() == 0, f"{name}: OFF path reports apparent pairs"
+            # serial reduction cannot fuse, so the flag is a no-op there
+            _, serial = reducer(a, dualize, apparent=True, n_threads=1)
+            assert serial.n_apparent_pairs() == 0, f"{name}: serial path took apparent"
+            # a materializing access consumes the lean state and resets the counter
+            assert on.r_as_csc().nnz > 0
+            assert on.n_apparent_pairs() == 0, f"{name}: counter survived materialize"

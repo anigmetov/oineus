@@ -921,9 +921,12 @@ namespace oineus {
                         // space via the filtration's single-source column emitters
                         // (buffer (co)boundary + uid->sorted_id index), so the resolved
                         // columns match the fused build column-for-column. Closes over
-                        // the filtration, which must outlive any deferred materialize.
-                        // Runs on worker threads: the column lives in the caller's
-                        // frame, no shared scratch.
+                        // the filtration, which must outlive any deferred materialize
+                        // AND stay immutable meanwhile: re-sorting it (set_values)
+                        // between this reduce and a deferred materialization
+                        // (r_data/clone/pickle) makes the resolver emit columns in the
+                        // new order -- silently wrong. Runs on worker threads: the
+                        // column lives in the caller's frame, no shared scratch.
                         const auto* fil_ptr = &fil;
                         const bool dual = dualize;
                         dcmp.apparent_resolve_fn_ = [fil_ptr, dual](Int mc) -> SparseColumn<Int> {
