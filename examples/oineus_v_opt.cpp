@@ -87,7 +87,6 @@ int main(int argc, char** argv)
     bool wrap {false};
     bool negate {false};
     bool sort_dgms {false};
-    bool acq_rel {false};
 
     ReductionParams params;
     params.n_threads = 10;
@@ -97,7 +96,6 @@ int main(int argc, char** argv)
             >> Option('t', "threads", params.n_threads, "number of threads")
             >> Option('s', "sort", sort_dgms, "sort diagrams")
             >> Option("clear", params.use_clearing, "clearing optimization")
-            >> Option("acq-rel", acq_rel, "use acquire-release memory orders")
             >> Option('w', "wrap", wrap, "wrap (periodic boundary conditions)")
             >> Option('n', "negate", negate, "negate function")
             >> Option('m', "matrix-only", bdry_matrix_only, "read boundary matrix w/o filtration")
