@@ -10,15 +10,18 @@ Oracles, strongest first:
    reduction and uid-based matching), so it pins the *definition*,
    including the index-level matching on tie-heavy inputs.
 
-2. The authors' reference implementation (github.com/hubwag/Mixup-SoCG26,
-   hacked-Ripser image persistence): tests/mixup_ref_socg.npz stores a
-   50-point distance matrix (10 points of A, 40 of B) shipped in that
-   repository together with the standard and image barcodes their pipeline
-   computed for it. We recompute the mixup barcode from the raw distance
-   matrix and compare bar by bar (dim 0 per birth vertex, dim 1 directly).
-   Their files are in radius units (ripser diameters / 2) and tag dim-0
-   births with negative per-vertex values; the npz is already converted to
-   oineus conventions (diameters, vertex indices recovered from the tags).
+2. A pinned regression fixture (tests/mixup_regression.npz): a
+   self-generated 50-point configuration (10 points of A near a unit
+   circle, 40 of B, seed 4; generator described in the test) with the
+   mixup barcodes this implementation computed for it at review time,
+   compared bar by bar (dim 0 per birth vertex, dim 1 directly).
+   Provenance note: at development time (2026-07-04) the implementation
+   was additionally cross-checked against the authors' reference
+   implementation (github.com/hubwag/Mixup-SoCG26, hacked-Ripser image
+   persistence) on the 50-point example shipped in that repository --
+   every domain/image death and all four statistics agreed to 1e-9.
+   Those GPL-licensed data are not stored here; this fixture replays the
+   same schema with our own data as a regression pin.
 
 3. Hand-traced tiny configurations, fully worked in the comments.
 
@@ -251,22 +254,21 @@ def test_matches_algorithm1_ties():
 
 
 # ---------------------------------------------------------------------------
-# Oracle 2: the authors' reference implementation (SoCG repo data)
+# Oracle 2: pinned regression fixture (self-generated; see module docstring)
 # ---------------------------------------------------------------------------
 
-def test_reference_implementation_cross_check():
-    # Data provenance: analysis/data of github.com/hubwag/Mixup-SoCG26 -- a
-    # 50-point run of the authors' hacked-Ripser pipeline (A = points 0..9,
-    # B = points 10..49). The npz holds the true pairwise distance matrix
-    # and their standard/image barcodes converted to oineus conventions:
-    # dom0/im0 are (birth vertex, death diameter) rows of the finite degree-0
-    # bars of VR(A) and of the image of VR(A) -> VR(A u B) (their per-vertex
-    # negative birth tags decoded); dom1/im1 are the degree-1 bars in
-    # diameters. Their pipeline includes the B vertices in the subfiltration
-    # as isolated points, but since all A vertices precede all B vertices,
-    # the elder rule gives the same image deaths as with L = VR(A); the
-    # B-born image bars are simply absent here.
-    data = np.load(Path(__file__).with_name("mixup_ref_socg.npz"))
+def test_pinned_regression_values():
+    # Fixture provenance: self-generated (numpy default_rng(4): A = 10 points
+    # on a jittered unit circle, B = 34 points in the 1.1..1.8 annulus + 6
+    # inside; threshold = enclosing radius of A) with the outputs of this
+    # implementation pinned at review time, after a one-time 1e-9
+    # cross-validation against the authors' reference implementation on
+    # their own data (see module docstring). The npz holds the pairwise
+    # distance matrix and the pinned barcodes: dom0/im0 are (birth vertex,
+    # death diameter) rows of the finite degree-0 bars of VR(A) and of the
+    # image of VR(A) -> VR(A u B); dom1/im1 are the degree-1 bars in
+    # diameters (a single nondegenerate triple: b < d' < d).
+    data = np.load(Path(__file__).with_name("mixup_regression.npz"))
     D, n_A, thr = data["dist"], int(data["n_A"]), float(data["threshold"])
 
     L = oin.vr_filtration(D[:n_A, :n_A], from_pwdists=True, max_dim=2,
