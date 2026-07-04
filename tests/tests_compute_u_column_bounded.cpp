@@ -565,6 +565,59 @@ TEST_CASE("compute_full_u_rows honors col_repr (row form: Set/Full/BitTree)")
 }
 
 
+// The parallel ELZ restore (restore_elz_column_parallel_repr) is templated on
+// the col_repr-chosen working column; force each of the four instantiations
+// to actually RUN under a parallel reduce, on both sides. Unlike the row-form
+// U solve, the restore only needs low()/add()/is_zero()/to_vector(), all of
+// which HeapColumn provides, so Heap must work here (no throw).
+TEST_CASE("parallel restore_elz runs with every col_repr (Set/Heap/Full/BitTree)")
+{
+    using Int = long;
+    using Real = double;
+    auto fil = make_test_filtration<Int, Real>(20, 20, /*seed=*/42);
+
+    for (bool dualize : {false, true}) {
+        // serial reference: plain ELZ reduction, no clearing
+        oineus::VRUDecomposition<Int> ref(fil, dualize);
+        oineus::Params ref_params;
+        ref_params.compute_v = true;
+        ref_params.clearing_opt = false;
+        ref_params.n_threads = 1;
+        ref.reduce(ref_params);
+        auto ref_dgms = ref.diagram(fil, /*include_inf_points=*/true);
+
+        for (auto cr : {oineus::ColumnRepr::Set, oineus::ColumnRepr::Heap,
+                        oineus::ColumnRepr::Full, oineus::ColumnRepr::BitTree}) {
+            oineus::VRUDecomposition<Int> decmp(fil, dualize);
+            oineus::Params params;
+            params.compute_v = true;
+            params.clearing_opt = true;
+            params.n_threads = 4;
+            params.col_repr = cr;
+            params.dims_to_restore_elz = {0, 1};
+            decmp.reduce(params);
+
+            // the parallel restore actually ran (it fills the per-worker times)
+            REQUIRE(not decmp.dbg_restore_thread_times_.empty());
+
+            // R = DV, low-uniqueness, V upper-triangular after the typed restore
+            REQUIRE(decmp.sanity_check());
+
+            // pairing unchanged by the restore: diagrams match the serial reference
+            auto dgms = decmp.diagram(fil, /*include_inf_points=*/true);
+            REQUIRE(dgms.n_dims() == ref_dgms.n_dims());
+            for (dim_type d = 0; d < ref_dgms.n_dims(); ++d) {
+                auto got = dgms.get_diagram_in_dimension(d);
+                auto expected = ref_dgms.get_diagram_in_dimension(d);
+                std::sort(got.begin(), got.end());
+                std::sort(expected.begin(), expected.end());
+                REQUIRE(got == expected);
+            }
+        }
+    }
+}
+
+
 TEST_CASE("compute_partial_u_rows is deterministic across thread counts")
 {
     using Int = long;
