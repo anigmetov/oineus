@@ -461,6 +461,11 @@ from .sliced_wasserstein import (
     sliced_wasserstein_distance,
     sliced_wasserstein_distance_diag_corrected,
 )
+from .mixup import (
+    MixupBarcodes,
+    mixup_barcodes,
+    mixup_barcodes_of_filtrations,
+)
 # from ._oineus import Z2_Column, Z2_Matrix
 
 try:
@@ -2063,6 +2068,9 @@ _PUBLIC_API_NAMES = [
     "list_to_filtration",
     "compute_kernel_image_cokernel_reduction",
     "compute_ker_cok_reduction_cyl",
+    "MixupBarcodes",
+    "mixup_barcodes",
+    "mixup_barcodes_of_filtrations",
     "cube_filtration",
     "plot_diagram",
     "plot_diagram_gradient",

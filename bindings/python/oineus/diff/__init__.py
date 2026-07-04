@@ -11,6 +11,7 @@ from .mapping_cylinder import mapping_cylinder_filtration
 from .min_filtration import min_filtration
 from .persistence_diagram import PersistenceDiagrams, persistence_diagram
 from .kicr import KICRDiagrams, KICRFamilyDiagrams, kicr_diagrams
+from .mixup import DiffMixupBarcodes, mixup_barcodes
 from .alpha import alpha_filtration
 from .alpha_utils import edge_circumradius_sq, triangle_circumradius_sq, tetrahedron_circumradius_sq
 from .weak_alpha import weak_alpha_filtration
