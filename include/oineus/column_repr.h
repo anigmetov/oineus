@@ -489,6 +489,11 @@ struct GenericSparseMatrixTraits {
     static void add_to_cached(const Column& pivot, CachedColumn& reduced) { reduced.add(pivot); }
     static void add_to_cached(const Column* pivot, CachedColumn& reduced) { if (pivot) reduced.add(*pivot); }
 
+    // Wrap a resolver-regenerated apparent R column as a stored column (see the
+    // apparent-resolver hook in parallel_reduction). R-only: the R column IS the
+    // stored column; an apparent column's V is the identity and is not carried.
+    static Column make_resolved(SparseColumn<Int>&& r, Int) { return Column(std::move(r)); }
+
     static PColumn load_from_cache(const CachedColumn& col)
     {
         if (col.is_zero())
@@ -562,6 +567,14 @@ struct GenericRVMatrixTraits {
     }
 
     static void add_to_cached(const Column* pivot, CachedColumn& reduced) { add_to_cached(*pivot, reduced); }
+
+    // Wrap a resolver-regenerated apparent R column as a stored column (see the
+    // apparent-resolver hook in parallel_reduction). RV: an apparent column is
+    // already reduced, so its V is the identity {col_idx}.
+    static Column make_resolved(SparseColumn<Int>&& r, Int col_idx)
+    {
+        return Column(std::move(r), typename Column::Column{col_idx});
+    }
 
     static CachedColumn load_to_cache(const Column& col)
     {

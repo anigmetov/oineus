@@ -166,6 +166,48 @@ TEST_CASE("apparent: generic == local == brute force on slim Freudenthal, subset
     }
 }
 
+TEST_CASE("apparent: R-only fused reduce matches classic pivots (cube + Freudenthal, hom + coh)")
+{
+    // compute_v=false path: no V exists, so R = D V cannot be checked; the
+    // oracle is the pivot array (the pivot function of reduced R is canonical)
+    // of a classic serial reduce of the same filtration
+    using Int = int;
+    using Real = double;
+    constexpr size_t D = 3;
+    using Grid = oineus::Grid<Int, Real, D>;
+
+    std::mt19937_64 gen(2026);
+    std::uniform_real_distribution<Real> dist(0.0, 1.0);
+
+    typename Grid::GridPoint dims{6, 5, 4};
+    std::vector<Real> data(120);
+    for(auto& x : data) x = dist(gen);
+
+    Grid grid(dims, /*wrap=*/false, data.data(), Grid::DataLocation::VERTEX);
+
+    auto check = [](const auto& fil) {
+        for(bool dualize : {false, true}) {
+            ReductionParams p_ref;
+            p_ref.n_threads = 1;
+            p_ref.compute_v = false;
+            auto ref = VRUDecomposition<Int>::reduce_from_filtration_fused(fil, p_ref, dualize);
+            REQUIRE(ref.n_apparent_pairs() == 0);
+
+            ReductionParams p_app;
+            p_app.n_threads = 4;
+            p_app.compute_v = false;
+            p_app.use_apparent_pairs = true;
+            auto test = VRUDecomposition<Int>::reduce_from_filtration_fused(fil, p_app, dualize);
+
+            REQUIRE(test.n_apparent_pairs() > 0);
+            REQUIRE(test._pivots == ref._pivots);
+        }
+    };
+
+    check(grid.cube_filtration(/*top_d=*/D, /*negate=*/false, /*n_threads=*/1));
+    check(grid.freudenthal_filtration_slim(/*top_d=*/D, /*negate=*/false, /*n_threads=*/1));
+}
+
 TEST_CASE("apparent: generic == local on 3D slim Freudenthal, serial and parallel")
 {
     using Int = int;

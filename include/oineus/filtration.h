@@ -606,6 +606,39 @@ namespace oineus {
             return result;
         }
 
+        // R-only (no V) apparent variant of boundary_matrix_for_par: the same
+        // null-marked build as boundary_matrix_for_par_with_v_apparent, but each
+        // materialized column is a plain heap SparseColumn (the working-column
+        // type reduce_parallel_r_only_core_ consumes). An apparent column's V is
+        // the identity, so nothing is lost by not carrying V. `out` receives the
+        // matching in matrix-index space (== sorted_id space) for the _pivots
+        // pre-seed. Requires a complete complex: callers gate on
+        // !is_subfiltration().
+        RWorkingMatrix boundary_matrix_for_par_apparent(int n_threads, ApparentMatching<Int>& out) const
+        {
+            CALI_CXX_MARK_FUNCTION;
+            out = detect_apparent_matrix(*this, /*dualize=*/false, n_threads);
+
+            RWorkingMatrix result(size());
+            bool missing_ok = is_subfiltration();
+
+            tf::Executor executor(n_threads);
+            tf::Taskflow taskflow;
+            taskflow.for_each_index((size_t)0, size(), (size_t)1,
+                    [this, missing_ok, &result, &out](size_t col_idx) {
+                        if (out.is_apparent_col[col_idx]) {
+                            result[col_idx].store(nullptr, std::memory_order_relaxed);
+                            return;
+                        }
+                        auto* col = new SparseColumn<Int>();
+                        if (col_idx > static_cast<size_t>(dim_last(0)))
+                            emit_boundary_col_(cells_[col_idx], missing_ok, *col);
+                        result[col_idx].store(col, std::memory_order_relaxed);
+                    });
+            executor.run(taskflow).get();
+            return result;
+        }
+
         // Coboundary variants. coboundary_matrix() builds the at-rest cohomology
         // matrix -- directly for packed cells on a complete complex, else via the
         // antitranspose scatter -- and we then move each column into a heap working
@@ -726,6 +759,36 @@ namespace oineus {
                         result[col_idx].store(
                                 new RVColumn<Int, 2>(std::move(col), std::move(v_column)),
                                 std::memory_order_relaxed);
+                    });
+            executor.run(taskflow).get();
+            return result;
+        }
+
+        // R-only (no V) apparent variant of coboundary_matrix_for_par_with_v_apparent:
+        // same direct null-marked cohomology build (no antitranspose of the full
+        // boundary), plain heap SparseColumn working columns. `out` is in cohomology
+        // matrix-index space (birth/death swapped), ready for a _pivots pre-seed.
+        // Requires a complete complex: callers gate on !is_subfiltration().
+        RWorkingMatrix coboundary_matrix_for_par_apparent(int n_threads, ApparentMatching<Int>& out) const
+        {
+            CALI_CXX_MARK_FUNCTION;
+            out = detect_apparent_matrix(*this, /*dualize=*/true, n_threads);
+
+            const size_t n = size();
+            RWorkingMatrix result(n);
+            tf::Executor executor(n_threads);
+            tf::Taskflow taskflow;
+            taskflow.for_each_index((size_t)0, n, (size_t)1,
+                    [this, &result, &out](size_t col_idx) {
+                        if (out.is_apparent_col[col_idx]) {
+                            result[col_idx].store(nullptr, std::memory_order_relaxed);
+                            return;
+                        }
+                        // matrix column col_idx == cell with sorted_id N-1-col_idx;
+                        // emit its coboundary, reindexed into antitranspose row space
+                        auto* col = new SparseColumn<Int>();
+                        emit_cohomology_col_(col_idx, *col);
+                        result[col_idx].store(col, std::memory_order_relaxed);
                     });
             executor.run(taskflow).get();
             return result;

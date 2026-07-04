@@ -43,17 +43,6 @@ namespace oineus {
 template<class Cell>
 struct SupportsApparent : std::conjunction<HasPackedBoundary<Cell>, HasDirectCoboundary<Cell>> {};
 
-// Detects the fused RV working-column type (RVColumn<Int,2>, which carries both an
-// r_column and a v_column) so the reducer's apparent-resolver hook is compiled only
-// for the RV path -- the R-only reduction never builds a decorated matrix, and its
-// column type has no nested ::Column.
-template<class T, class = void>
-struct IsRVColumn : std::false_type {};
-
-template<class T>
-struct IsRVColumn<T, std::void_t<decltype(std::declval<T&>().r_column),
-                                 decltype(std::declval<T&>().v_column)>> : std::true_type {};
-
 // partner record for an index-space [0,N). Index space is the matrix's own
 // order: sorted_id for the homology boundary, the antitransposed/reversed order
 // for the cohomology coboundary. The detectors below are agnostic to which.

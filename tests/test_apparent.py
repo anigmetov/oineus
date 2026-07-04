@@ -6,35 +6,36 @@ matrix and resolves them on demand. It must be a pure optimization: the diagram
 cohomology) must be identical to the unoptimized reduction, and a matrix access
 must reconstruct a valid R = D V.
 
-Activation requires the fused compute_v path (params.compute_v=True,
-params.n_threads > 1) on a complete cubical or slim Freudenthal grid complex;
-oin.reduce(...) is that entry point.
+Activation requires the fused parallel path (params.n_threads > 1, both
+compute_v=True and the R-only compute_v=False variant) on a complete cubical or
+slim Freudenthal grid complex; oin.reduce(...) is that entry point.
 """
 import gc
+import zlib
 
 import numpy as np
 import pytest
 import oineus as oin
 
 
-def _reduce(a, dualize, apparent, values_on="vertices", n_threads=4, negate=False):
+def _reduce(a, dualize, apparent, values_on="vertices", n_threads=4, negate=False, compute_v=True):
     fil = oin.cube_filtration(a, n_threads=n_threads, values_on=values_on, negate=negate)
     p = oin.ReductionParams()
     p.n_threads = n_threads
-    p.compute_v = True
+    p.compute_v = compute_v
     p.use_apparent_pairs = apparent
     dcmp = oin.reduce(fil, p, dualize)
     return fil, dcmp
 
 
-def _reduce_fr(a, dualize, apparent, n_threads=4, max_dim=None, negate=False):
+def _reduce_fr(a, dualize, apparent, n_threads=4, max_dim=None, negate=False, compute_v=True):
     # slim Freudenthal (the default builder for non-wrap grids up to 4D)
     if max_dim is None:
         max_dim = a.ndim
     fil = oin.freudenthal_filtration(a, max_dim=max_dim, n_threads=n_threads, negate=negate)
     p = oin.ReductionParams()
     p.n_threads = n_threads
-    p.compute_v = True
+    p.compute_v = compute_v
     p.use_apparent_pairs = apparent
     dcmp = oin.reduce(fil, p, dualize)
     return fil, dcmp
@@ -220,6 +221,42 @@ def test_apparent_fr_materialize_is_valid_decomposition(dualize):
 
     after = _dgms(dcmp, fil, a.ndim)
     _assert_dgms_equal(before, after, f"fr diagram stability across materialize (dualize={dualize})")
+
+
+# --- R-only (compute_v=False) fused path: the pivots-only post-state must
+# --- carry the same diagram, with the apparent columns never materialized ---
+
+@pytest.mark.parametrize("kind", ["cube", "fr"])
+@pytest.mark.parametrize("dualize", [False, True])
+@pytest.mark.parametrize("n_threads", [2, 8])
+@pytest.mark.parametrize("negate", [False, True])
+def test_apparent_r_only_matches_plain(kind, dualize, n_threads, negate):
+    reducer = _reduce if kind == "cube" else _reduce_fr
+    # crc32, not hash(): string hashing is salted per process, and a failure
+    # must be replayable with the same grid
+    seed = zlib.crc32(repr((kind, dualize, n_threads, negate)).encode())
+    a = np.random.default_rng(seed).standard_normal((8, 7, 6)).astype(np.float64)
+    _, ref = reducer(a, dualize, apparent=False, n_threads=n_threads, negate=negate, compute_v=False)
+    fil, test = reducer(a, dualize, apparent=True, n_threads=n_threads, negate=negate, compute_v=False)
+    assert test.n_apparent_pairs() > 0, f"{kind}: R-only apparent path fell back silently"
+    assert ref.n_apparent_pairs() == 0
+    ctx = f"r-only kind={kind} dualize={dualize} n_threads={n_threads} negate={negate}"
+    _assert_dgms_equal(_dgms(ref, fil, a.ndim), _dgms(test, fil, a.ndim), ctx)
+    _assert_dgms_equal(_zero_pers(ref, fil, a.ndim), _zero_pers(test, fil, a.ndim), ctx + " [zero-pers]")
+
+
+@pytest.mark.parametrize("kind", ["cube", "fr"])
+@pytest.mark.parametrize("dualize", [False, True])
+def test_apparent_r_only_serial_inert(kind, dualize):
+    # serial reduction cannot fuse, so the flag stays a silent no-op at 1 thread
+    reducer = _reduce if kind == "cube" else _reduce_fr
+    a = np.random.default_rng(3).standard_normal((8, 7, 6)).astype(np.float64)
+    fil, serial = reducer(a, dualize, apparent=True, n_threads=1, compute_v=False)
+    assert serial.n_apparent_pairs() == 0, f"{kind}: serial R-only path took apparent"
+    _, ref = reducer(a, dualize, apparent=False, n_threads=1, compute_v=False)
+    ctx = f"r-only serial kind={kind} dualize={dualize}"
+    _assert_dgms_equal(_dgms(ref, fil, a.ndim), _dgms(serial, fil, a.ndim), ctx)
+    _assert_dgms_equal(_zero_pers(ref, fil, a.ndim), _zero_pers(serial, fil, a.ndim), ctx + " [zero-pers]")
 
 
 @pytest.mark.parametrize("dualize", [False, True])
