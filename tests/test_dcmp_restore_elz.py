@@ -30,7 +30,7 @@ def test_restore_elz_serial_matches_serial_no_clearing(dualize):
 
     params_parallel = oin.ReductionParams()
     params_parallel.n_threads = 4
-    params_parallel.clearing_opt = True
+    params_parallel.use_clearing = True
     params_parallel.compute_v = True
     params_parallel.dims_to_restore_elz = []
 
@@ -39,7 +39,7 @@ def test_restore_elz_serial_matches_serial_no_clearing(dualize):
 
     params_serial = oin.ReductionParams()
     params_serial.n_threads = 1
-    params_serial.clearing_opt = False
+    params_serial.use_clearing = False
     params_serial.compute_v = True
     params_serial.dims_to_restore_elz = []
 
@@ -55,7 +55,7 @@ def test_restore_elz_parallel_matches_serial_restore_and_serial_no_clearing(dual
 
     params_parallel_restore = oin.ReductionParams()
     params_parallel_restore.n_threads = 4
-    params_parallel_restore.clearing_opt = True
+    params_parallel_restore.use_clearing = True
     params_parallel_restore.compute_v = True
     params_parallel_restore.dims_to_restore_elz = [0, 1, 2]
 
@@ -64,7 +64,7 @@ def test_restore_elz_parallel_matches_serial_restore_and_serial_no_clearing(dual
 
     params_parallel_then_serial_restore = oin.ReductionParams()
     params_parallel_then_serial_restore.n_threads = 4
-    params_parallel_then_serial_restore.clearing_opt = True
+    params_parallel_then_serial_restore.use_clearing = True
     params_parallel_then_serial_restore.compute_v = True
     params_parallel_then_serial_restore.dims_to_restore_elz = []
 
@@ -76,7 +76,7 @@ def test_restore_elz_parallel_matches_serial_restore_and_serial_no_clearing(dual
 
     params_serial = oin.ReductionParams()
     params_serial.n_threads = 1
-    params_serial.clearing_opt = False
+    params_serial.use_clearing = False
     params_serial.compute_v = True
     params_serial.dims_to_restore_elz = []
 
@@ -104,7 +104,7 @@ def test_parallel_reduction_timing_fields():
 
     params_no_restore = oin.ReductionParams()
     params_no_restore.n_threads = 4
-    params_no_restore.clearing_opt = True
+    params_no_restore.use_clearing = True
     params_no_restore.compute_v = True
     params_no_restore.dims_to_restore_elz = []
 
@@ -118,7 +118,7 @@ def test_parallel_reduction_timing_fields():
 
     params_with_restore = oin.ReductionParams()
     params_with_restore.n_threads = 4
-    params_with_restore.clearing_opt = True
+    params_with_restore.use_clearing = True
     params_with_restore.compute_v = True
     params_with_restore.dims_to_restore_elz = [0, 1, 2]
 
@@ -132,7 +132,7 @@ def test_parallel_reduction_timing_fields():
 
     params_r_only = oin.ReductionParams()
     params_r_only.n_threads = 4
-    params_r_only.clearing_opt = True
+    params_r_only.use_clearing = True
     params_r_only.compute_v = False
     params_r_only.dims_to_restore_elz = []
 
@@ -151,7 +151,7 @@ def test_serial_without_clearing_ignores_restore_elz():
 
     params = oin.ReductionParams()
     params.n_threads = 1
-    params.clearing_opt = False
+    params.use_clearing = False
     params.compute_v = False
     params.dims_to_restore_elz = [0, 1, 2]
 

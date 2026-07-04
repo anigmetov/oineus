@@ -41,7 +41,7 @@ dcmp = oin.Decomposition(fil, dualize)
 
 # reduction parameters
 # relevant members:
-# rp.clearing_opt --- whether you want to use clearing, True by default
+# rp.use_clearing --- whether you want to use clearing, True by default
 # rp.compute_v: True by default
 # rp.n_threads: number of threads to use, default is 1
 # rp. compute_u: False by default (cannot do it in multi-threaded mode, so switch off just to be on the safe side)

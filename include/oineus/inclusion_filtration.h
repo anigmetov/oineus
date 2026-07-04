@@ -284,16 +284,16 @@ auto get_induced_matching(const Filtration<Cell, Real>& fil_domain, const Filtra
     Decomposition dcmp_dom(fil_domain, dualize);
     Decomposition dcmp_cod(fil_codomain, dualize);
 
-    Params params;
+    ReductionParams params;
     params.n_threads = n_threads;
-    params.clearing_opt = true;
+    params.use_clearing = true;
     params.compute_v = params.compute_u = false;
 
     dcmp_dom.reduce(params);
     dcmp_cod.reduce(params);
 
     Decomposition dcmp_image(ifil.boundary_matrix_full(), fil_domain.size());
-    params.clearing_opt = false;
+    params.use_clearing = false;
 
     dcmp_image.reduce(params);
 

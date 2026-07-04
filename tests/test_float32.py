@@ -389,7 +389,7 @@ def test_float32_full_u_rows_and_u_timings():
         assert _module_tag(fil) == tag
         dcmp = oin.Decomposition(fil, False)
         # serial without clearing leaves V in ELZ form, which the row solver requires
-        dcmp.reduce(oin.ReductionParams(compute_v=True, n_threads=1, clearing_opt=False))
+        dcmp.reduce(oin.ReductionParams(compute_v=True, n_threads=1, use_clearing=False))
         dcmp.compute_full_u_rows(fil, dim=0, n_threads=2)
         assert type(dcmp.u_timings).__name__ == "UComputeTimings"
         assert dcmp.u_timings.total > 0

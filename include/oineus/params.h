@@ -36,12 +36,11 @@ namespace oineus {
         return out;
     }
 
-    struct Params {
+    struct ReductionParams {
 
         int n_threads{1};
         int chunk_size{128};
-        bool clearing_opt{true};
-        bool print_time{false};
+        bool use_clearing{true};
         bool compute_v{false};
         bool compute_u{false};
         // Apparent-pairs optimization (Bauer/Ripser): skip building + storing the
@@ -49,48 +48,49 @@ namespace oineus {
         // unchanged. Honored only on the fused path for supported, complete
         // filtrations (Cubical/Freudenthal, not subfiltrations); silently ignored
         // otherwise. See include/oineus/apparent.h.
-        bool apparent_opt{false};
+        bool use_apparent_pairs{false};
         ColumnRepr col_repr{ColumnRepr::BitTree};
         DimVec dims_to_restore_elz;
-        bool do_sanity_check{false};
+        bool sanity_check{false};
         bool verbose{false};
         spd::level::level_enum spdlog_level {spd::level::level_enum::info};
     };
 
-    inline std::ostream& operator<<(std::ostream& out, const Params& p)
+    // back-compat alias for the historical C++ name
+    using Params = ReductionParams;
+
+    inline std::ostream& operator<<(std::ostream& out, const ReductionParams& p)
     {
-        out << "Params(n_threads = " << p.n_threads;
+        out << "ReductionParams(n_threads = " << p.n_threads;
         out << ", chunk_size = " << p.chunk_size;
-        out << ", clearing_opt = " << p.clearing_opt;
-        out << ", print_time = " << p.print_time;
+        out << ", use_clearing = " << p.use_clearing;
         out << ", compute_v = " << p.compute_v;
         out << ", compute_u = " << p.compute_u;
-        out << ", apparent_opt = " << p.apparent_opt;
+        out << ", use_apparent_pairs = " << p.use_apparent_pairs;
         out << ", col_repr = " << p.col_repr;
         // out << ", dims_to_restore_elz = " << p.dims_to_restore_elz;
-        out << ", do_sanity_check = " << p.do_sanity_check;
+        out << ", sanity_check = " << p.sanity_check;
         out << ", verbose = " << p.verbose;
         out << ")";
         return out;
     }
 
-    inline bool operator==(const Params& a, const Params& b)
+    inline bool operator==(const ReductionParams& a, const ReductionParams& b)
     {
         return a.n_threads == b.n_threads
             && a.chunk_size == b.chunk_size
-            && a.clearing_opt == b.clearing_opt
-            && a.print_time == b.print_time
+            && a.use_clearing == b.use_clearing
             && a.compute_v == b.compute_v
             && a.compute_u == b.compute_u
-            && a.apparent_opt == b.apparent_opt
+            && a.use_apparent_pairs == b.use_apparent_pairs
             && a.col_repr == b.col_repr
             && a.dims_to_restore_elz == b.dims_to_restore_elz
-            && a.do_sanity_check == b.do_sanity_check
+            && a.sanity_check == b.sanity_check
             && a.verbose == b.verbose
             && a.spdlog_level == b.spdlog_level;
     }
 
-    inline bool operator!=(const Params& a, const Params& b)
+    inline bool operator!=(const ReductionParams& a, const ReductionParams& b)
     {
         return !(a == b);
     }

@@ -89,14 +89,14 @@ int main(int argc, char** argv)
     bool sort_dgms {false};
     bool acq_rel {false};
 
-    Params params;
+    ReductionParams params;
     params.n_threads = 10;
     ops
             >> Option('d', "dim", top_d, "top dimension")
             >> Option('c', "chunk-size", params.chunk_size, "chunk_size")
             >> Option('t', "threads", params.n_threads, "number of threads")
             >> Option('s', "sort", sort_dgms, "sort diagrams")
-            >> Option("clear", params.clearing_opt, "clearing optimization")
+            >> Option("clear", params.use_clearing, "clearing optimization")
             >> Option("acq-rel", acq_rel, "use acquire-release memory orders")
             >> Option('w', "wrap", wrap, "wrap (periodic boundary conditions)")
             >> Option('n', "negate", negate, "negate function")
@@ -123,8 +123,8 @@ int main(int argc, char** argv)
     fname_dgm = fname_in + "_t_" + std::to_string(params.n_threads) + "_c_" + std::to_string(params.chunk_size);
 
     rv.reduce(params);
-    if (params.print_time)
-       std::cerr << fname_in << ";" << params.n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << rv.timings_.reduction_total() << std::endl;
+    if (params.verbose)
+       std::cerr << fname_in << ";" << params.n_threads << ";" << params.use_clearing << ";" << params.chunk_size << ";" << rv.timings_.reduction_total() << std::endl;
 
      auto dgm = rv.diagram(fil, false);
 

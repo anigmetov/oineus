@@ -78,7 +78,7 @@ static void check_freudenthal_cell(const std::array<int, D>& dims)
 
     // the new cell type reduces to a valid decomposition (R = D V)
     VRUDecomposition<Int> dcmp(fr, /*dualize=*/false);
-    Params p;
+    ReductionParams p;
     p.compute_v = true;
     p.n_threads = 1;
     dcmp.reduce(p);
@@ -248,7 +248,7 @@ static void check_freudenthal_grid_builder(const std::array<int, D>& dims)
 
         // the slim filtration reduces to a valid R = D V
         oineus::VRUDecomposition<Int> dcmp(slim, /*dualize=*/false);
-        oineus::Params p;
+        oineus::ReductionParams p;
         p.compute_v = true;
         p.n_threads = 1;
         dcmp.reduce(p);

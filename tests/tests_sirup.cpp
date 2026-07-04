@@ -76,9 +76,9 @@ static MatrixData compact_boundary(const MatrixData& D, const std::vector<size_t
 static MatrixData reduce_pairing_only(const MatrixData& D)
 {
     Decomp dc(D);
-    oineus::Params p;
+    oineus::ReductionParams p;
     p.compute_v = true;
-    p.clearing_opt = false;
+    p.use_clearing = false;
     p.n_threads = 1;
     dc.reduce(p);
     return dc.r_data;
@@ -87,9 +87,9 @@ static MatrixData reduce_pairing_only(const MatrixData& D)
 static Decomp reduced(const MatrixData& D, bool clearing)
 {
     Decomp dc(D);
-    oineus::Params p;
+    oineus::ReductionParams p;
     p.compute_v = true;
-    p.clearing_opt = clearing;
+    p.use_clearing = clearing;
     p.n_threads = 1;
     dc.reduce(p);
     return dc;
@@ -134,9 +134,9 @@ static Fil grid_filtration(size_t side, unsigned seed)
 static Decomp reduced_fil(const Fil& fil, bool clearing)
 {
     Decomp dc(fil, false);                 // per-dimension blocks, like real usage
-    oineus::Params p;
+    oineus::ReductionParams p;
     p.compute_v = true;
-    p.clearing_opt = clearing;
+    p.use_clearing = clearing;
     p.n_threads = 1;
     dc.reduce(p);
     return dc;

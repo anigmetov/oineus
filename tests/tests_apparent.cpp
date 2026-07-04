@@ -75,7 +75,7 @@ TEST_CASE("apparent: generic == local == brute force on cubical, subset of persi
 
     // every apparent pair must be a true persistence pair of the full reduction
     VRUDecomposition<Int> dcmp(fil, /*dualize=*/false);
-    Params p;
+    ReductionParams p;
     p.compute_v = true;
     p.n_threads = 1;
     dcmp.reduce(p);

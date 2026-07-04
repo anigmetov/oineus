@@ -341,21 +341,21 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
     using FatFilList = oineus_python::TypeList<SimplexFiltration, ProdSimplexFiltration>;
 
     {
-        auto reduce_fil = [](const auto& fil, const oin::Params& params, bool dualize) {
+        auto reduce_fil = [](const auto& fil, const oin::ReductionParams& params, bool dualize) {
             return Decomposition::reduce_from_filtration_fused(fil, params, dualize);
         };
         // fat Simplex / product: no keep_alive (no deferred resolver over the filtration)
         oineus_python::for_each_type(FatFilList{}, [&m, reduce_fil]<class Fil>() {
-            m.def("reduce", [reduce_fil](const Fil& fil, const oin::Params& params, bool dualize)
+            m.def("reduce", [reduce_fil](const Fil& fil, const oin::ReductionParams& params, bool dualize)
                     { return reduce_fil(fil, params, dualize); },
-                    nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
+                    nb::arg("filtration"), nb::arg("params")=oin::ReductionParams(), nb::arg("dualize")=false,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
         });
         // slim cube / Freudenthal / packed: keep_alive<0, 1> (see SlimFilList note above)
         oineus_python::for_each_type(SlimFilList{}, [&m, reduce_fil]<class Fil>() {
-            m.def("reduce", [reduce_fil](const Fil& fil, const oin::Params& params, bool dualize)
+            m.def("reduce", [reduce_fil](const Fil& fil, const oin::ReductionParams& params, bool dualize)
                     { return reduce_fil(fil, params, dualize); },
-                    nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
+                    nb::arg("filtration"), nb::arg("params")=oin::ReductionParams(), nb::arg("dualize")=false,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     nb::keep_alive<0, 1>());
         });
@@ -412,7 +412,7 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
             .def_prop_ro("dualize", &Decomposition::dualize)
             .def_ro("dim_first", &Decomposition::dim_first)
             .def_ro("dim_last", &Decomposition::dim_last)
-            .def("reduce", &Decomposition::reduce, nb::arg("params")=oin::Params(), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def("reduce", &Decomposition::reduce, nb::arg("params")=oin::ReductionParams(), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             // -- decomposition manipulation (vineyards / moves / warm starts) --
             // Homology only; require a reduced decomposition with V. The
             // optional `stats` (a DecompositionManipStats) collects per-phase

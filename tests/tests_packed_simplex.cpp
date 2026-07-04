@@ -99,7 +99,7 @@ void check_packed_vr_builder(const std::vector<oineus::Point<Real, D>>& points,
     // the packed filtration reduces to a valid R = D V (exercises the packed-boundary +
     // hash-uid-index + antitranspose-coboundary path, newly for the __int128 hash)
     VRUDecomposition<Int> dcmp(packed, /*dualize=*/false);
-    Params p;
+    ReductionParams p;
     p.compute_v = true;
     p.n_threads = 1;
     dcmp.reduce(p);
@@ -253,7 +253,7 @@ TEST_CASE("bit-packed simplex: filtration matches fat VR master + materializatio
 
     // (b) reduces to a valid decomposition
     VRUDecomposition<Int> dcmp(fil, /*dualize=*/false);
-    Params p;
+    ReductionParams p;
     p.compute_v = true;
     p.n_threads = 1;
     dcmp.reduce(p);

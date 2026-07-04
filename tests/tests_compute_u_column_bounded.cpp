@@ -43,10 +43,10 @@ reduce_with_params(const Fil& fil, bool clearing, bool compute_u,
                    bool restore_elz, int n_threads = 1)
 {
     oineus::VRUDecomposition<Int> decmp(fil, /*dualize=*/false);
-    oineus::Params params;
+    oineus::ReductionParams params;
     params.compute_v = true;
     params.compute_u = compute_u;
-    params.clearing_opt = clearing;
+    params.use_clearing = clearing;
     if (restore_elz)
         for (oineus::dim_type d = 0; d < static_cast<oineus::dim_type>(decmp.n_dims()); ++d)
             params.dims_to_restore_elz.push_back(d);
@@ -62,10 +62,10 @@ reduce_with_params_dualize(const Fil& fil, bool dualize, bool clearing,
                            int n_threads = 1)
 {
     oineus::VRUDecomposition<Int> decmp(fil, dualize);
-    oineus::Params params;
+    oineus::ReductionParams params;
     params.compute_v = true;
     params.compute_u = compute_u;
-    params.clearing_opt = clearing;
+    params.use_clearing = clearing;
     if (restore_elz)
         for (oineus::dim_type d = 0; d < static_cast<oineus::dim_type>(decmp.n_dims()); ++d)
             params.dims_to_restore_elz.push_back(d);
@@ -488,9 +488,9 @@ reduce_col_repr(const Fil& fil, bool dualize, oineus::ColumnRepr cr,
                 int n_threads = 1)
 {
     oineus::VRUDecomposition<Int> decmp(fil, dualize);
-    oineus::Params params;
+    oineus::ReductionParams params;
     params.compute_v = true;
-    params.clearing_opt = true;
+    params.use_clearing = true;
     params.col_repr = cr;
     for (oineus::dim_type d = 0;
          d < static_cast<oineus::dim_type>(decmp.n_dims()); ++d)
@@ -579,9 +579,9 @@ TEST_CASE("parallel restore_elz runs with every col_repr (Set/Heap/Full/BitTree)
     for (bool dualize : {false, true}) {
         // serial reference: plain ELZ reduction, no clearing
         oineus::VRUDecomposition<Int> ref(fil, dualize);
-        oineus::Params ref_params;
+        oineus::ReductionParams ref_params;
         ref_params.compute_v = true;
-        ref_params.clearing_opt = false;
+        ref_params.use_clearing = false;
         ref_params.n_threads = 1;
         ref.reduce(ref_params);
         auto ref_dgms = ref.diagram(fil, /*include_inf_points=*/true);
@@ -589,9 +589,9 @@ TEST_CASE("parallel restore_elz runs with every col_repr (Set/Heap/Full/BitTree)
         for (auto cr : {oineus::ColumnRepr::Set, oineus::ColumnRepr::Heap,
                         oineus::ColumnRepr::Full, oineus::ColumnRepr::BitTree}) {
             oineus::VRUDecomposition<Int> decmp(fil, dualize);
-            oineus::Params params;
+            oineus::ReductionParams params;
             params.compute_v = true;
-            params.clearing_opt = true;
+            params.use_clearing = true;
             params.n_threads = 4;
             params.col_repr = cr;
             params.dims_to_restore_elz = {0, 1};

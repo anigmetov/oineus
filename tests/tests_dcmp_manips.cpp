@@ -94,9 +94,9 @@ static MatrixData permute_boundary(const MatrixData& d, const std::vector<size_t
 static Decomp reduce_from_scratch(const MatrixData& d)
 {
     Decomp dc(d);
-    oineus::Params p;
+    oineus::ReductionParams p;
     p.compute_v = true;
-    p.clearing_opt = false;
+    p.use_clearing = false;
     p.n_threads = 1;
     dc.reduce(p);
     return dc;
@@ -140,9 +140,9 @@ static Decomp grid_decomp(size_t side, unsigned seed)
     auto fil = grid.freudenthal_filtration(2, false, 1);
 
     Decomp dc(fil, false);
-    oineus::Params p;
+    oineus::ReductionParams p;
     p.compute_v = true;
-    p.clearing_opt = false;
+    p.use_clearing = false;
     p.n_threads = 1;
     dc.reduce(p);
     return dc;

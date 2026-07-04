@@ -19,17 +19,16 @@ def test_reduction_params_api():
     params = oin.ReductionParams()
     params.n_threads = 1
     params.chunk_size = 16
-    params.clearing_opt = True
-    params.print_time = False
+    params.use_clearing = True
     params.compute_v = True
     params.compute_u = True
     params.dims_to_restore_elz = []
-    params.do_sanity_check = False
+    params.sanity_check = False
     params.verbose = False
 
     _ = repr(params)
 
-    params_alt = oin.ReductionParams(n_threads=2, chunk_size=32, clearing_opt=True, compute_v=False, compute_u=False, dims_to_restore_elz=[], verbose=False)
+    params_alt = oin.ReductionParams(n_threads=2, chunk_size=32, use_clearing=True, compute_v=False, compute_u=False, dims_to_restore_elz=[], verbose=False)
     _ = repr(params_alt)
 
     params_back = pickle.loads(pickle.dumps(params))
@@ -43,12 +42,52 @@ def test_reduction_params_ctor_defaults_agree():
     kwargs_default = oin.ReductionParams(verbose=False)
     assert kwargs_default.n_threads == default.n_threads
     assert kwargs_default.chunk_size == default.chunk_size
-    assert kwargs_default.clearing_opt == default.clearing_opt
+    assert kwargs_default.use_clearing == default.use_clearing
     assert kwargs_default.compute_v == default.compute_v
     assert kwargs_default.compute_u == default.compute_u
     assert kwargs_default.col_repr == default.col_repr
     assert kwargs_default.verbose == default.verbose
     assert kwargs_default == default
+
+
+def test_reduction_params_renamed_field_aliases():
+    # old field names keep working as read/write aliases of the new ones
+    params = oin.ReductionParams()
+
+    params.clearing_opt = False
+    assert params.use_clearing is False
+    params.use_clearing = True
+    assert params.clearing_opt is True
+
+    params.apparent_opt = True
+    assert params.use_apparent_pairs is True
+    params.use_apparent_pairs = False
+    assert params.apparent_opt is False
+
+    params.do_sanity_check = True
+    assert params.sanity_check is True
+    params.sanity_check = False
+    assert params.do_sanity_check is False
+
+    # repr shows the new names only
+    r = repr(params)
+    assert "use_clearing" in r
+    assert "use_apparent_pairs" in r
+    assert "sanity_check" in r
+    assert "clearing_opt" not in r
+    assert "apparent_opt" not in r
+    assert "do_sanity_check" not in r
+    assert r.startswith("ReductionParams(")
+
+
+def test_kicr_params_repr_uses_attribute_names():
+    # repr labels must match the actual attribute names (kernel, image, ...)
+    r = repr(oin.KICRParams())
+    assert "kernel = " in r
+    assert "image = " in r
+    assert "cokernel = " in r
+    assert "codomain = " in r
+    assert "compute_kernel" not in r
 
 
 def test_kicr_params_api():

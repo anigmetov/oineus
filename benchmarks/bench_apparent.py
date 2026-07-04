@@ -1,8 +1,8 @@
 """Benchmark the apparent-pairs (decorated-matrix) optimization on cubical
-filtrations: build time, reduction time, and peak RSS, apparent_opt ON vs OFF,
+filtrations: build time, reduction time, and peak RSS, use_apparent_pairs ON vs OFF,
 for cohomology (dualize=True) and homology (dualize=False).
 
-The win lives in the BUILD phase (dcmp.timings.prepare): with apparent_opt the
+The win lives in the BUILD phase (dcmp.timings.prepare): with use_apparent_pairs the
 cohomology builder emits each non-apparent column directly from cube.coboundary()
 and never forms the full antitransposed matrix, so build time and peak working
 memory drop with the apparent fraction (typically ~90%+ on smooth volumes). The
@@ -57,7 +57,7 @@ def run_one(dualize, apparent, n, reps, n_threads=8):
         p = oin.ReductionParams()
         p.n_threads = n_threads
         p.compute_v = True
-        p.apparent_opt = apparent
+        p.use_apparent_pairs = apparent
         t0 = time.perf_counter()
         dcmp = oin.reduce(fil, p, dualize)
         wall = time.perf_counter() - t0

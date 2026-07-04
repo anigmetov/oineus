@@ -38,7 +38,7 @@ int run_bench(const Fil& fil, bool fused, bool dualize, const std::vector<int>& 
     const size_t n_cols = fil.size();
     std::cout << "n_cols (filtration size): " << n_cols << "\n";
 
-    oineus::Params params;
+    oineus::ReductionParams params;
     params.n_threads = reduce_threads;
     params.compute_v = false;
 

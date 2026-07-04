@@ -10,7 +10,7 @@ void init_oineus_common(nb::module_& m)
     using oin::DiagramPlaneDomain;
     using oin::FrechetMeanInit;
     using oin::FiltrationKind;
-    using ReductionParams = oin::Params;
+    using ReductionParams = oin::ReductionParams;
     using KICRParams = oin::KICRParams;
     std::string vr_edge_name = "VREdge";
 
@@ -49,16 +49,15 @@ void init_oineus_common(nb::module_& m)
 
     using RedParamsTuple = std::tuple<int,    // n_threads
                                       int,    //chunk_size
-                                      bool,   // clearing_opt
-                                      bool,   // print_time
+                                      bool,   // use_clearing
                                       bool,   // compute_v
                                       bool,   // compute_u
                                       decltype (ReductionParams::dims_to_restore_elz),
-                                      bool,   // do_sanity_check
+                                      bool,   // sanity_check
                                       bool,   // verbose
                                       int,    // spdlog_level
                                       int,    // col_repr
-                                      bool    // apparent_opt
+                                      bool    // use_apparent_pairs
                                     >;
 
     nb::enum_<oin::ColumnRepr>(m, "ColumnRepr", "Working-column data structure used during reduction")
@@ -136,28 +135,40 @@ void init_oineus_common(nb::module_& m)
     nb::class_<ReductionParams>(m, "ReductionParams")
             .def(nb::init<>())
             .def("__init__",
-                [](ReductionParams* p, int n_threads, int chunk_size, bool clearing_opt, bool compute_v, bool compute_u, std::vector<dim_type> dims_to_restore_elz, oin::ColumnRepr col_repr, bool verbose, bool apparent_opt) {
+                [](ReductionParams* p, int n_threads, int chunk_size, bool use_clearing, bool compute_v, bool compute_u, std::vector<dim_type> dims_to_restore_elz, oin::ColumnRepr col_repr, bool verbose, bool use_apparent_pairs) {
                     new (p) ReductionParams();
                     p->n_threads = n_threads;
                     p->chunk_size = chunk_size;
-                    p->clearing_opt = clearing_opt;
+                    p->use_clearing = use_clearing;
                     p->compute_v = compute_v;
                     p->compute_u = compute_u;
                     p->dims_to_restore_elz = dims_to_restore_elz;
                     p->col_repr = col_repr;
                     p->verbose = verbose;
-                    p->apparent_opt = apparent_opt;
-                }, nb::arg("n_threads")=def_rp.n_threads, nb::arg("chunk_size")=def_rp.chunk_size, nb::arg("clearing_opt")=def_rp.clearing_opt, nb::arg("compute_v")=def_rp.compute_v, nb::arg("compute_u")=def_rp.compute_u, nb::arg("dims_to_restore_elz")=def_rp.dims_to_restore_elz, nb::arg("col_repr")=def_rp.col_repr, nb::arg("verbose")=def_rp.verbose, nb::arg("apparent_opt")=def_rp.apparent_opt)
+                    p->use_apparent_pairs = use_apparent_pairs;
+                }, nb::arg("n_threads")=def_rp.n_threads, nb::arg("chunk_size")=def_rp.chunk_size, nb::arg("use_clearing")=def_rp.use_clearing, nb::arg("compute_v")=def_rp.compute_v, nb::arg("compute_u")=def_rp.compute_u, nb::arg("dims_to_restore_elz")=def_rp.dims_to_restore_elz, nb::arg("col_repr")=def_rp.col_repr, nb::arg("verbose")=def_rp.verbose, nb::arg("use_apparent_pairs")=def_rp.use_apparent_pairs)
             .def_rw("n_threads", &ReductionParams::n_threads)
             .def_rw("chunk_size", &ReductionParams::chunk_size)
-            .def_rw("clearing_opt", &ReductionParams::clearing_opt)
-            .def_rw("print_time", &ReductionParams::print_time)
+            .def_rw("use_clearing", &ReductionParams::use_clearing)
             .def_rw("compute_v", &ReductionParams::compute_v)
             .def_rw("compute_u", &ReductionParams::compute_u)
-            .def_rw("apparent_opt", &ReductionParams::apparent_opt)
+            .def_rw("use_apparent_pairs", &ReductionParams::use_apparent_pairs)
             .def_rw("col_repr", &ReductionParams::col_repr)
             .def_rw("dims_to_restore_elz", &ReductionParams::dims_to_restore_elz)
-            .def_rw("do_sanity_check", &ReductionParams::do_sanity_check)
+            .def_rw("sanity_check", &ReductionParams::sanity_check)
+            // back-compat aliases for the renamed fields (read+write, no warning)
+            .def_prop_rw("clearing_opt",
+                    [](const ReductionParams& p) { return p.use_clearing; },
+                    [](ReductionParams& p, bool value) { p.use_clearing = value; },
+                    "Deprecated alias for use_clearing.")
+            .def_prop_rw("apparent_opt",
+                    [](const ReductionParams& p) { return p.use_apparent_pairs; },
+                    [](ReductionParams& p, bool value) { p.use_apparent_pairs = value; },
+                    "Deprecated alias for use_apparent_pairs.")
+            .def_prop_rw("do_sanity_check",
+                    [](const ReductionParams& p) { return p.sanity_check; },
+                    [](ReductionParams& p, bool value) { p.sanity_check = value; },
+                    "Deprecated alias for sanity_check.")
             // timing outputs moved off the params: fail loudly with a pointer to the
             // new location instead of an AttributeError
             .def_prop_ro("elapsed", [](const ReductionParams&) -> double {
@@ -176,25 +187,24 @@ void init_oineus_common(nb::module_& m)
             .def(nb::self != nb::self)
             .def("__getstate__", [](const ReductionParams& p) {
                       return std::make_tuple(p.n_threads, p.chunk_size,
-                              p.clearing_opt, p.print_time, p.compute_v, p.compute_u,
-                              p.dims_to_restore_elz, p.do_sanity_check,
+                              p.use_clearing, p.compute_v, p.compute_u,
+                              p.dims_to_restore_elz, p.sanity_check,
                               p.verbose, static_cast<int>(p.spdlog_level),
-                              static_cast<int>(p.col_repr), p.apparent_opt);
+                              static_cast<int>(p.col_repr), p.use_apparent_pairs);
                     })
             .def("__setstate__", [](ReductionParams& p, const RedParamsTuple& t) {
                     new (&p) ReductionParams();
                       p.n_threads       = std::get<0>(t);
                       p.chunk_size      = std::get<1>(t);
-                      p.clearing_opt    = std::get<2>(t);
-                      p.print_time      = std::get<3>(t);
-                      p.compute_v       = std::get<4>(t);
-                      p.compute_u       = std::get<5>(t);
-                      p.dims_to_restore_elz  = std::get<6>(t);
-                      p.do_sanity_check = std::get<7>(t);
-                      p.verbose         = std::get<8>(t);
-                      p.spdlog_level    = static_cast<spd::level::level_enum>(std::get<9>(t));
-                      p.col_repr        = static_cast<oin::ColumnRepr>(std::get<10>(t));
-                      p.apparent_opt    = std::get<11>(t);
+                      p.use_clearing    = std::get<2>(t);
+                      p.compute_v       = std::get<3>(t);
+                      p.compute_u       = std::get<4>(t);
+                      p.dims_to_restore_elz  = std::get<5>(t);
+                      p.sanity_check    = std::get<6>(t);
+                      p.verbose         = std::get<7>(t);
+                      p.spdlog_level    = static_cast<spd::level::level_enum>(std::get<8>(t));
+                      p.col_repr        = static_cast<oin::ColumnRepr>(std::get<9>(t));
+                      p.use_apparent_pairs = std::get<10>(t);
                     })
     ;
 

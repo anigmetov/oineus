@@ -16,7 +16,7 @@ def reduce_params(clearing):
     p = oin.ReductionParams()
     p.compute_v = True
     p.n_threads = 1
-    p.clearing_opt = clearing
+    p.use_clearing = clearing
     return p
 
 

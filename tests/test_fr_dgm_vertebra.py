@@ -37,11 +37,11 @@ def test_vertebra():
     for dualize in [True, False]:
         for n_threads in [1, 7]:
             for negate in [False, True]:
-                for clearing_opt in [True]:
-                    print(f"{dualize=}, {negate=}, {n_threads=}, {clearing_opt=}")
+                for use_clearing in [True]:
+                    print(f"{dualize=}, {negate=}, {n_threads=}, {use_clearing=}")
                     rp = oin.ReductionParams()
                     rp.n_threads = n_threads
-                    rp.clearing_opt = clearing_opt
+                    rp.use_clearing = use_clearing
                     oin_dgms = oin.compute_diagrams_ls(a, negate, wrap, top_dim-1, rp, include_inf_points=True, dualize=dualize)
                     for dim in range(top_dim):
                         if negate:

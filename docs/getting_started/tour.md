@@ -40,7 +40,7 @@ See [filtration types](../topics/filtrations.md) for when to pick which.
 ```{code-block} python
 fil = oineus.vr_filtration(points, max_dim=2, max_diameter=2.0)
 dcmp = oineus.Decomposition(fil, dualize=True)
-dcmp.reduce(oineus.ReductionParams(n_threads=8, clearing_opt=True))
+dcmp.reduce(oineus.ReductionParams(n_threads=8, use_clearing=True))
 dgms = dcmp.diagram(fil)
 ```
 

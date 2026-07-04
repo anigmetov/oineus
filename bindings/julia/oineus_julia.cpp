@@ -19,7 +19,7 @@ using OinInt = long int;
 using OinReal = double;
 
 using VREdge = oineus::VREdge<OinInt>;
-using ReductionParams = oineus::Params;
+using ReductionParams = oineus::ReductionParams;
 
 using CombinatorialSimplex = oineus::Simplex<OinInt>;
 using Simplex = oineus::CellWithValue<CombinatorialSimplex, OinReal>;
@@ -99,7 +99,7 @@ template<>
 struct IsMirroredType<oineus::VREdge<long int>> : std::false_type { };
 
 template<>
-struct IsMirroredType<oineus::Params> : std::false_type { };
+struct IsMirroredType<oineus::ReductionParams> : std::false_type { };
 
 template<>
 struct IsMirroredType<oineus::DgmPoint<double>> : std::false_type { };
@@ -125,8 +125,8 @@ JLCXX_MODULE define_julia_module(jlcxx::Module& mod)
             .method("set_n_threads!", [](ReductionParams& p, int value) { p.n_threads = value; })
             .method("chunk_size", [](const ReductionParams& p) { return p.chunk_size; })
             .method("set_chunk_size!", [](ReductionParams& p, int value) { p.chunk_size = value; })
-            .method("clearing_opt", [](const ReductionParams& p) { return p.clearing_opt; })
-            .method("set_clearing_opt!", [](ReductionParams& p, bool value) { p.clearing_opt = value; })
+            .method("use_clearing", [](const ReductionParams& p) { return p.use_clearing; })
+            .method("set_use_clearing!", [](ReductionParams& p, bool value) { p.use_clearing = value; })
             .method("compute_v", [](const ReductionParams& p) { return p.compute_v; })
             .method("set_compute_v!", [](ReductionParams& p, bool value) { p.compute_v = value; })
             .method("compute_u", [](const ReductionParams& p) { return p.compute_u; })

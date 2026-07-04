@@ -100,7 +100,7 @@ void test_ls_3()
 
     std::cerr << "boundary ok" << std::endl;
 
-    Params params;
+    ReductionParams params;
     params.n_threads = 4;
 
     m_D.reduce(params);
@@ -139,13 +139,13 @@ int main(int argc, char** argv)
     bool sort_dgms {false};
     bool acq_rel {false};
 
-    Params params;
+    ReductionParams params;
     ops
             >> Option('d', "dim", top_d, "top dimension")
             >> Option('c', "chunk-size", params.chunk_size, "chunk_size")
             >> Option('t', "threads", params.n_threads, "number of threads")
             >> Option('s', "sort", sort_dgms, "sort diagrams")
-            >> Option("clear", params.clearing_opt, "clearing optimization")
+            >> Option("clear", params.use_clearing, "clearing optimization")
             >> Option("acq-rel", acq_rel, "use acquire-release memory orders")
             >> Option('w', "wrap", wrap, "wrap (periodic boundary conditions)")
             >> Option('n', "negate", negate, "negate function")
@@ -165,7 +165,7 @@ int main(int argc, char** argv)
 
     if (bdry_matrix_only) {
         MatrixData d_matrix;
-//        read_phat_boundary_matrix(fname_in, d_matrix, params.clearing_opt);
+//        read_phat_boundary_matrix(fname_in, d_matrix, params.use_clearing);
         VRUDecomposition<Int> decmp {d_matrix};
 
     } else {
@@ -181,12 +181,9 @@ int main(int argc, char** argv)
 
         fname_dgm = fname_in + "_t_" + std::to_string(params.n_threads) + "_c_" + std::to_string(params.chunk_size);
 
-        params.print_time = true;
-
         decmp.reduce(params);
 
-        if (params.print_time)
-            std::cerr << fname_in << ";" << params.n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << decmp.timings_.reduction_total() << std::endl;
+        std::cerr << fname_in << ";" << params.n_threads << ";" << params.use_clearing << ";" << params.chunk_size << ";" << decmp.timings_.reduction_total() << std::endl;
 
         auto dgm = decmp.diagram(fil, true);
 

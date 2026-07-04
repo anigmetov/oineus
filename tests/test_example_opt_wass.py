@@ -52,7 +52,7 @@ dim = 1
 rp = oin.ReductionParams()
 rp.compute_u = False
 rp.compute_v = False
-rp.clearing_opt = True
+rp.use_clearing = True
 
 template_dgms = oin.compute_diagrams_ls(f_template, negate=negate, wrap=wrap, max_dim=dim, include_inf_points=False, params=rp)
 template_dgm = template_dgms.in_dimension(dim, as_numpy=False)

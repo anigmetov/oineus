@@ -109,7 +109,7 @@ namespace oineus {
 
     template<class MatrixTraits, class Int, class MemoryReclaimC>
     void parallel_reduction(typename MatrixTraits::AMatrix& rv, AtomicIdxVector& pivots, std::atomic<int>& next_free_chunk,
-            const Params params, int thread_idx, MemoryReclaimC* mm, ThreadStats& stats,
+            const ReductionParams params, int thread_idx, MemoryReclaimC* mm, ThreadStats& stats,
             std::vector<std::atomic<int>>& next_free_chunks, std::vector<Int>& dim_first, std::vector<Int>& dim_last,
             const ApparentResolver<Int>* resolver = nullptr)
     {
@@ -151,11 +151,11 @@ namespace oineus {
         std::unordered_map<Int, ResolvedColumn> apparent_cache;
 
         int my_chunk, chunk_begin, chunk_end;
-        Int current_dim = params.clearing_opt ? dim_first.size() - 1 : 0;
+        Int current_dim = params.use_clearing ? dim_first.size() - 1 : 0;
         bool done;
 
         do {
-            get_next_chunk(params.clearing_opt, next_free_chunk, params.chunk_size, n_cols,
+            get_next_chunk(params.use_clearing, next_free_chunk, params.chunk_size, n_cols,
                         my_chunk, chunk_begin, chunk_end, done, logger,
                         // the following are only used if clearing is true
                         next_free_chunks, dim_first, dim_last, current_dim);
@@ -201,7 +201,7 @@ namespace oineus {
                 unprocessed_cols.erase(current_column_idx);
 #endif
 
-                if (params.clearing_opt) {
+                if (params.use_clearing) {
                     if (!MatrixTraits::is_zero(cached_reduced_col)) {
                         int c_pivot_idx = pivots[current_column_idx].load(acq);
                         if (c_pivot_idx >= 0) {
@@ -548,13 +548,13 @@ namespace oineus {
         bool has_working_rv_ {false};
 
         // Apparent-pairs (decorated-matrix) state, present only on the lean fused path
-        // built with params.apparent_opt. `apparent_` records which working_rv_ slots
+        // built with params.use_apparent_pairs. `apparent_` records which working_rv_ slots
         // were left null (the apparent columns) and their pre-seeded pivots;
         // `apparent_resolve_fn_` regenerates an apparent column's R on demand (it
         // closes over the source filtration, so that filtration must outlive any
         // deferred matrix access / materialize). Both are cleared by
         // materialize_from_working_ once the at-rest R, V are reconstructed, and never
-        // set on the default (apparent_opt OFF) path. diagram(fil) reads _pivots and
+        // set on the default (use_apparent_pairs OFF) path. diagram(fil) reads _pivots and
         // needs neither.
         std::unique_ptr<ApparentMatching<Int>> apparent_;
         std::function<SparseColumn<Int>(Int)> apparent_resolve_fn_;
@@ -793,7 +793,7 @@ namespace oineus {
         // Run the parallel RV / R-only core, dispatching on params.col_repr exactly
         // like reduce_parallel_rv / reduce_parallel_r_only do. The working array is
         // already built; the col_repr choice flows in as the per-thread scratch.
-        void run_rv_core_dispatch_(const Params& params, tf::Executor& executor,
+        void run_rv_core_dispatch_(const ReductionParams& params, tf::Executor& executor,
                 RVWorkingMatrix& rv, AtomicIdxVector& pivots, size_t n_cols,
                 int n_threads, bool keep_working)
         {
@@ -804,7 +804,7 @@ namespace oineus {
                 case ColumnRepr::BitTree: reduce_parallel_rv_core_<BitTreeColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, keep_working); break;
             }
         }
-        void run_r_only_core_dispatch_(const Params& params, tf::Executor& executor,
+        void run_r_only_core_dispatch_(const ReductionParams& params, tf::Executor& executor,
                 RWorkingMatrix& ar, AtomicIdxVector& pivots, size_t n_cols,
                 int n_threads, bool copy_back_to_r)
         {
@@ -842,7 +842,7 @@ namespace oineus {
         // decomposition. diagram(fil) works as usual; sanity_check needs D passed
         // (e.g. fil.boundary_matrix()).
         template<class C, class R>
-        static VRUDecomposition reduce_from_filtration(const Filtration<C, R>& fil, const Params& params, bool dualize = false)
+        static VRUDecomposition reduce_from_filtration(const Filtration<C, R>& fil, const ReductionParams& params, bool dualize = false)
         {
             VRUDecomposition dcmp;
             dcmp.init_fused_(fil, dualize, params.n_threads);
@@ -860,7 +860,7 @@ namespace oineus {
         // R-only-with-restore-ELZ fall back to the classic fused path
         // (init_fused_ + reduce), which handles them correctly.
         template<class C, class R>
-        static VRUDecomposition reduce_from_filtration_fused(const Filtration<C, R>& fil, const Params& params, bool dualize = false)
+        static VRUDecomposition reduce_from_filtration_fused(const Filtration<C, R>& fil, const ReductionParams& params, bool dualize = false)
         {
             VRUDecomposition dcmp;
             const size_t n_cols = fil.size();
@@ -898,7 +898,7 @@ namespace oineus {
                     // The apparent lean form skips the eager Bauer fill, which also
                     // hosts the ELZ-restore pass; refuse the combination so a
                     // requested ELZ restore is never silently dropped.
-                    const bool apparent_active = params.apparent_opt
+                    const bool apparent_active = params.use_apparent_pairs
                             and params.dims_to_restore_elz.empty()
                             and fil.kind() == FiltrationKind::Cubical
                             and not fil.is_subfiltration();
@@ -968,7 +968,7 @@ namespace oineus {
         // boundary ctor + reduce for serial / compute_u / empty / R-only+restoreELZ.
         static VRUDecomposition reduce_from_boundary_fused(const MatrixData& bdry,
                 std::vector<Int> dim_first_, std::vector<Int> dim_last_,
-                bool dualize, const Params& params, bool keep_working)
+                bool dualize, const ReductionParams& params, bool keep_working)
         {
             VRUDecomposition dcmp;
             const size_t n_cols = bdry.size();
@@ -1168,19 +1168,19 @@ namespace oineus {
 
         void set_is_elz_flag(dim_type _dim, bool new_value);
 
-        void reduce(const Params& params);
+        void reduce(const ReductionParams& params);
 
         // Public dispatchers: select the working-column representation from
         // params.col_repr and forward to the templated *_impl below.
-        void reduce_serial(const Params& params);
-        void reduce_parallel_r_only(const Params& params);
-        void reduce_parallel_rv(const Params& params);
+        void reduce_serial(const ReductionParams& params);
+        void reduce_parallel_r_only(const ReductionParams& params);
+        void reduce_parallel_rv(const ReductionParams& params);
 
         // Templated reduction kernels, one instantiation per working-column type
         // (WorkCol = SetColumn<Int>, HeapColumn<Int>, FullColumn<Int>, BitTreeColumn<Int>).
-        template<class WorkCol> void reduce_serial_impl(const Params& params);
-        template<class WorkCol> void reduce_parallel_r_only_impl(const Params& params);
-        template<class WorkCol> void reduce_parallel_rv_impl(const Params& params);
+        template<class WorkCol> void reduce_serial_impl(const ReductionParams& params);
+        template<class WorkCol> void reduce_parallel_r_only_impl(const ReductionParams& params);
+        template<class WorkCol> void reduce_parallel_rv_impl(const ReductionParams& params);
 
         // Templated U-solve kernels. The public compute_u_from_v / _1 /
         // compute_partial_u_rows dispatch on col_repr_ and call these with the
@@ -1201,12 +1201,12 @@ namespace oineus {
         // classic *_impl prepare (from r_data) or a fused from-filtration builder --
         // and handed in. parallel_reduction itself is untouched. n_cols is sourced
         // from the working array (never size(), which is r_data.size()).
-        template<class WorkCol> void reduce_parallel_r_only_core_(const Params& params,
+        template<class WorkCol> void reduce_parallel_r_only_core_(const ReductionParams& params,
                 tf::Executor& executor,
                 typename GenericSparseMatrixTraits<Int, WorkCol>::AMatrix& ar_matrix,
                 AtomicIdxVector& pivots, size_t n_cols, int n_threads,
                 bool copy_back_to_r);
-        template<class WorkCol> void reduce_parallel_rv_core_(const Params& params,
+        template<class WorkCol> void reduce_parallel_rv_core_(const ReductionParams& params,
                 tf::Executor& executor,
                 typename GenericRVMatrixTraits<Int, WorkCol>::AMatrix& r_v_matrix,
                 AtomicIdxVector& pivots, size_t n_cols, int n_threads,
@@ -1930,7 +1930,7 @@ namespace oineus {
     }
 
     template<class Int>
-    void VRUDecomposition<Int>::reduce(const Params& params)
+    void VRUDecomposition<Int>::reduce(const ReductionParams& params)
     {
         CALI_CXX_MARK_FUNCTION;
 
@@ -1950,7 +1950,7 @@ namespace oineus {
             throw std::runtime_error("Cannot compute U matrix in parallel");
 
         // Serial + no clearing already produces ELZ, so restore_elz is ignored there.
-        const bool serial_without_clearing = (params.n_threads == 1 && !params.clearing_opt);
+        const bool serial_without_clearing = (params.n_threads == 1 && !params.use_clearing);
         if (not params.dims_to_restore_elz.empty() and not params.compute_v and not serial_without_clearing)
             throw std::runtime_error("Cannot restore ELZ during reduction without V matrix");
 
@@ -1965,7 +1965,7 @@ namespace oineus {
     // ---- working-column dispatchers: pick WorkCol from params.col_repr ----
 
     template<class Int>
-    void VRUDecomposition<Int>::reduce_serial(const Params& params)
+    void VRUDecomposition<Int>::reduce_serial(const ReductionParams& params)
     {
         switch (params.col_repr) {
             case ColumnRepr::Set:     reduce_serial_impl<SetColumn<Int>>(params); break;
@@ -1976,7 +1976,7 @@ namespace oineus {
     }
 
     template<class Int>
-    void VRUDecomposition<Int>::reduce_parallel_r_only(const Params& params)
+    void VRUDecomposition<Int>::reduce_parallel_r_only(const ReductionParams& params)
     {
         switch (params.col_repr) {
             case ColumnRepr::Set:     reduce_parallel_r_only_impl<SetColumn<Int>>(params); break;
@@ -1987,7 +1987,7 @@ namespace oineus {
     }
 
     template<class Int>
-    void VRUDecomposition<Int>::reduce_parallel_rv(const Params& params)
+    void VRUDecomposition<Int>::reduce_parallel_rv(const ReductionParams& params)
     {
         switch (params.col_repr) {
             case ColumnRepr::Set:     reduce_parallel_rv_impl<SetColumn<Int>>(params); break;
@@ -1999,12 +1999,12 @@ namespace oineus {
 
     template<class Int>
     template<class WorkCol>
-    void VRUDecomposition<Int>::reduce_serial_impl(const Params& params)
+    void VRUDecomposition<Int>::reduce_serial_impl(const ReductionParams& params)
     {
         CALI_CXX_MARK_FUNCTION;
 
         // If clearing is off, serial reduction is already ELZ and restore_elz is ignored.
-        if (not params.dims_to_restore_elz.empty() and params.clearing_opt and not params.compute_v) {
+        if (not params.dims_to_restore_elz.empty() and params.use_clearing and not params.compute_v) {
             throw std::runtime_error("Cannot restore ELZ during serial reduction without V matrix");
         }
 
@@ -2044,7 +2044,7 @@ namespace oineus {
 
         for(int dim = _dim_first.size() - 1; dim >= 0; --dim) {
             for(Int i = _dim_first[dim]; i <= _dim_last[dim]; ++i) {
-                if (params.clearing_opt and not is_zero(r_data[i])) {
+                if (params.use_clearing and not is_zero(r_data[i])) {
                     // simplex i is pivot -> i is positive -> its column is 0
                     if (_pivots[i] >= 0) {
                         r_data[i].clear();
@@ -2101,11 +2101,11 @@ namespace oineus {
         timings_.reduce = timer_reduction.elapsed();
 
         // Serial reduction with clearing off produces ELZ by construction.
-        if (not params.clearing_opt) {
+        if (not params.use_clearing) {
             set_is_elz_flag(k_all_dims, true);
         }
 
-        if (params.dims_to_restore_elz.size() > 0 and params.clearing_opt) {
+        if (params.dims_to_restore_elz.size() > 0 and params.use_clearing) {
             Timer timer_restore;
             for(auto dim : params.dims_to_restore_elz) {
                 if (dim >= dim_first.size())
@@ -2115,9 +2115,9 @@ namespace oineus {
             timings_.restore_elz = timer_restore.elapsed();
         }
 
-        if (params.print_time or params.verbose) {
+        if (params.verbose) {
             std::cerr << "reduce_serial, matrix_size = " << r_data.size()
-                      << ", clearing_opt = " << params.clearing_opt
+                      << ", use_clearing = " << params.use_clearing
                       << ", n_cleared = " << n_cleared
                       << ", reduction elapsed: " << timings_.reduce
                       << ", restore_elz elapsed: " << timings_.restore_elz
@@ -3215,7 +3215,7 @@ namespace oineus {
 
     template<class Int>
     template<class WorkCol>
-    void VRUDecomposition<Int>::reduce_parallel_r_only_impl(const Params& params)
+    void VRUDecomposition<Int>::reduce_parallel_r_only_impl(const ReductionParams& params)
     {
         CALI_CXX_MARK_FUNCTION;
         using namespace std::placeholders;
@@ -3269,7 +3269,7 @@ namespace oineus {
     // copy-pivots, and teardown. parallel_reduction itself is untouched.
     template<class Int>
     template<class WorkCol>
-    void VRUDecomposition<Int>::reduce_parallel_r_only_core_(const Params& params,
+    void VRUDecomposition<Int>::reduce_parallel_r_only_core_(const ReductionParams& params,
             tf::Executor& executor,
             typename GenericSparseMatrixTraits<Int, WorkCol>::AMatrix& ar_matrix,
             AtomicIdxVector& pivots, size_t n_cols, int n_threads,
@@ -3333,7 +3333,7 @@ namespace oineus {
 
         timings_.reduce = timer_reduction.elapsed();
 
-        if (params.print_time) {
+        if (params.verbose) {
             long total_cleared = 0;
             for(const auto& s: stats) {
                 total_cleared += s.n_cleared;
@@ -3408,7 +3408,7 @@ namespace oineus {
 
     template<class Int>
     template<class WorkCol>
-    void VRUDecomposition<Int>::reduce_parallel_rv_impl(const Params& params)
+    void VRUDecomposition<Int>::reduce_parallel_rv_impl(const ReductionParams& params)
     {
         CALI_CXX_MARK_FUNCTION;
         using namespace std::placeholders;
@@ -3463,7 +3463,7 @@ namespace oineus {
     // n_cols by the caller. parallel_reduction itself is untouched.
     template<class Int>
     template<class WorkCol>
-    void VRUDecomposition<Int>::reduce_parallel_rv_core_(const Params& params,
+    void VRUDecomposition<Int>::reduce_parallel_rv_core_(const ReductionParams& params,
             tf::Executor& executor,
             typename GenericRVMatrixTraits<Int, WorkCol>::AMatrix& r_v_matrix,
             AtomicIdxVector& pivots, size_t n_cols, int n_threads,
@@ -3490,7 +3490,7 @@ namespace oineus {
         stats.reserve(n_threads);
 
         // Apparent-pairs resolver (decorated matrix): non-null only on the lean fused
-        // path built with apparent_opt. The local view outlives the worker threads
+        // path built with use_apparent_pairs. The local view outlives the worker threads
         // (they join below). nullptr => the reducer's hook is a no-op branch.
         ApparentResolver<Int> resolver_view{ apparent_.get(), &apparent_resolve_fn_ };
         const ApparentResolver<Int>* resolver = resolver_view.active() ? &resolver_view : nullptr;
@@ -3528,7 +3528,7 @@ namespace oineus {
 
         timings_.reduce = timer_reduction.elapsed();
 
-        if (params.print_time) {
+        if (params.verbose) {
             long total_cleared = 0;
             for(const auto& s: stats) {
                 total_cleared += s.n_cleared;

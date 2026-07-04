@@ -39,7 +39,7 @@ params = oin.ReductionParams()
 params.n_threads = 2          # parallel reduction
 params.compute_v = True       # we want matrix V (cycle representatives)
 params.compute_u = False      # cannot directly compute U with parallel reduction
-params.clearing_opt = True
+params.use_clearing = True
 dcmp.reduce(params)
 
 # 4. Extract the diagram
@@ -116,7 +116,7 @@ will silently use a single thread if you set both.
 
 - `n_threads` -- threads for the parallel column reduction. Set to `1`
   for deterministic ordering or to debug.
-- `clearing_opt` -- skip columns whose row was already paired in a
+- `use_clearing` -- skip columns whose row was already paired in a
   lower dimension. Usually a big win; turn it off only to compare with
   literature timings that don't use it.
 - `compute_v`, `compute_u` -- see above.

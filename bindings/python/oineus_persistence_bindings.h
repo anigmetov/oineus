@@ -572,9 +572,9 @@ compute_diagrams_from_fil(const oineus::Filtration<Cell, Real>& fil, int n_threa
     using Int = typename Cell::Int;
     oineus::VRUDecomposition<Int> d_matrix {fil, false};
 
-    oineus::Params params;
+    oineus::ReductionParams params;
 
-    params.clearing_opt = true;
+    params.use_clearing = true;
     params.n_threads = n_threads;
 
     d_matrix.reduce_parallel(params);
@@ -596,9 +596,9 @@ compute_relative_diagrams(const oineus::Filtration<Cell, Real>& fil, const oineu
     auto rel_matrix = fil.boundary_matrix_rel(relative_);
     oineus::VRUDecomposition<Int> d_matrix {rel_matrix, false};
 
-    oineus::Params params;
+    oineus::ReductionParams params;
 
-    params.clearing_opt = true;
+    params.use_clearing = true;
     params.n_threads = 1;
 
     d_matrix.reduce(params);
@@ -751,7 +751,7 @@ get_coboundary_matrix(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> d
 
 template<class Int, class Real>
 PyOineusDiagrams<Real>
-compute_diagrams_ls_freudenthal(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> data, bool negate, bool wrap, dim_type max_dim, oin::Params& params, bool include_inf_points, bool dualize)
+compute_diagrams_ls_freudenthal(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> data, bool negate, bool wrap, dim_type max_dim, oin::ReductionParams& params, bool include_inf_points, bool dualize)
 {
     // for diagram in dimension d, we need (d+1)-cells
     Timer timer;
@@ -760,23 +760,23 @@ compute_diagrams_ls_freudenthal(nb::ndarray<Real, nb::c_contig, nb::device::cpu,
     oin::VRUDecomposition<Int> decmp {fil, dualize};
     auto elapsed_decmp_ctor = timer.elapsed_reset();
 
-    if (params.print_time)
+    if (params.verbose)
         std::cerr << "Filtration: " << elapsed_fil << ", decomposition ctor: " << elapsed_decmp_ctor << std::endl;
 
     decmp.reduce(params);
 
-    if (params.do_sanity_check and not decmp.sanity_check())
+    if (params.sanity_check and not decmp.sanity_check())
         throw std::runtime_error("sanity check failed");
     return PyOineusDiagrams<Real>(decmp.diagram(fil, include_inf_points));
 }
 
 
 template<typename C, typename Real>
-oin::KerImCokReduced<C, Real, 2> compute_kernel_image_cokernel_reduction(const oin::Filtration<C, Real>& K, const oin::Filtration<C, Real>& L, oin::Params& params)
+oin::KerImCokReduced<C, Real, 2> compute_kernel_image_cokernel_reduction(const oin::Filtration<C, Real>& K, const oin::Filtration<C, Real>& L, oin::ReductionParams& params)
 {
     using KICR = oin::KerImCokReduced<C, Real, 2>;
 
-    params.clearing_opt = false;
+    params.use_clearing = false;
 
     oin::KICRParams kicr_params;
     kicr_params.verbose = params.verbose;

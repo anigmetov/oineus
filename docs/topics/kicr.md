@@ -90,7 +90,7 @@ Other useful `KICRParams` fields:
   same settings.
 
 ```{code-block} python
-rp = oin.ReductionParams(n_threads=8, clearing_opt=True)
+rp = oin.ReductionParams(n_threads=8, use_clearing=True)
 kicr = oin.compute_kernel_image_cokernel_reduction(K, L, reduction_params=rp)
 ```
 

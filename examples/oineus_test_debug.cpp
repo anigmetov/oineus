@@ -20,9 +20,9 @@ decltype(auto) compute_diagrams_and_v_ls_freudenthal(const typename oineus::Grid
     auto fil = grid.freudenthal_filtration(top_d + 1, negate, n_threads);
     auto decmp = oineus::VRUDecomposition<Int>(fil, false);
 
-    oineus::Params params;
+    oineus::ReductionParams params;
 
-    params.clearing_opt = false;
+    params.use_clearing = false;
     params.n_threads = n_threads;
     params.compute_u = true;
 

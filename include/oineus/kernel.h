@@ -30,19 +30,19 @@ struct KICRParams {
     bool verbose {false};
     bool sanity_check {false};
     int n_threads {1};
-    Params params_f;
-    Params params_g;
-    Params params_ker;
-    Params params_im;
-    Params params_cok;
+    ReductionParams params_f;
+    ReductionParams params_g;
+    ReductionParams params_ker;
+    ReductionParams params_im;
+    ReductionParams params_cok;
 };
 
 inline std::ostream& operator<<(std::ostream& out, const KICRParams& p)
 {
-    out << "KICRParams(compute_kernel = " << p.kernel;
-    out << ", compute_image = " << p.image;
-    out << ", compute_cokernel = " << p.cokernel;
-    out << ", compute_codomain = " << p.codomain;
+    out << "KICRParams(kernel = " << p.kernel;
+    out << ", image = " << p.image;
+    out << ", cokernel = " << p.cokernel;
+    out << ", codomain = " << p.codomain;
     out << ", include_zero_persistence = " << p.include_zero_persistence;
     out << ", verbose = " << p.verbose;
     out << ", n_threads = " << p.n_threads;
@@ -305,8 +305,8 @@ public:
         if (params_.n_threads > 1) {
             // propagate the top-level thread count only into nested params the user
             // left at the default, so an explicit per-stage n_threads survives
-            const int default_n_threads = Params{}.n_threads;
-            for(Params* p: {&params_.params_f, &params_.params_g, &params_.params_ker, &params_.params_im, &params_.params_cok})
+            const int default_n_threads = ReductionParams{}.n_threads;
+            for(ReductionParams* p: {&params_.params_f, &params_.params_g, &params_.params_ker, &params_.params_im, &params_.params_cok})
                 if (p->n_threads == default_n_threads)
                     p->n_threads = params_.n_threads;
         }
@@ -389,7 +389,7 @@ public:
         // step 2 of the algorithm
         CALI_MARK_BEGIN("dcmp_im");
         // TODO: add clearing here; requires more refined L-before-K order (partitioned by dimension)
-        params_.params_im.clearing_opt = false;
+        params_.params_im.use_clearing = false;
         // if user wants to compute v, keep it, but if we need ker, we must compute it anyway
         params_.params_im.compute_v = params_.params_im.compute_v or params_.kernel;
         auto d_im = compute_d_im();
@@ -403,7 +403,7 @@ public:
         if (params_.verbose) std::cerr << "starting dcmp_ker" << std::endl;
         if (params_.kernel) {
             CALI_MARK_BEGIN("dcmp_ker");
-            params_.params_ker.clearing_opt = false;
+            params_.params_ker.use_clearing = false;
             Matrix d_ker = compute_d_ker();
             // NB: d_ker is not a square matrix, has fewer columns that rows. We must give the number of rows (#cells in K) to VRUDecomp ctor.
             dcmp_ker_ = VRUDecomp(d_ker, fil_K_.size());
@@ -416,7 +416,7 @@ public:
             // step 4 of the algorithm
             if (params_.verbose) std::cerr << "starting dcmp_cok" << std::endl;
             CALI_MARK_BEGIN("dcmp_cok");
-            params_.params_cok.clearing_opt = false;
+            params_.params_cok.use_clearing = false;
             Matrix d_cok = compute_d_cok();
             // NB: d_cok is not a square matrix, has fewer columns that rows. We must give the number of rows to VRUDecomp ctor.
             dcmp_cok_ = VRUDecomp(d_cok, fil_K_.size());

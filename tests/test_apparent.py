@@ -1,6 +1,6 @@
 """Oracle tests for the apparent-pairs (decorated-matrix) optimization.
 
-params.apparent_opt leaves the apparent (Bauer) columns out of the working
+params.use_apparent_pairs leaves the apparent (Bauer) columns out of the working
 matrix and resolves them on demand. It must be a pure optimization: the diagram
 (finite + essential + zero-persistence, every dimension, homology and
 cohomology) must be identical to the unoptimized reduction, and a matrix access
@@ -22,7 +22,7 @@ def _reduce(a, dualize, apparent, values_on="vertices", n_threads=4):
     p = oin.ReductionParams()
     p.n_threads = n_threads
     p.compute_v = True
-    p.apparent_opt = apparent
+    p.use_apparent_pairs = apparent
     dcmp = oin.reduce(fil, p, dualize)
     return fil, dcmp
 
@@ -126,7 +126,7 @@ def test_apparent_resolver_survives_filtration_gc(dualize):
     p = oin.ReductionParams()
     p.n_threads = 4
     p.compute_v = True
-    p.apparent_opt = True
+    p.use_apparent_pairs = True
     dcmp = oin.reduce(fil, p, dualize)
     del fil
     gc.collect()

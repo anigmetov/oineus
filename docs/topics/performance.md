@@ -13,7 +13,7 @@ import oineus as oin
 params = oin.ReductionParams(
     n_threads=8,        # default
     chunk_size=256,     # default; rarely worth tuning
-    clearing_opt=True,  # default; turn off only to compare with literature
+    use_clearing=True,  # default; turn off only to compare with literature
     compute_v=False,    # default; True if you need cycle reps
     compute_u=False,    # default; cannot be combined with n_threads > 1
 )
@@ -33,7 +33,7 @@ What actually matters:
   {py:func}`oineus.compute_diagrams_vr` defaults to `dualize=True` for
   exactly this reason. For grid filtrations the choice is less clear-cut;
   both run.
-- **`clearing_opt`** -- on by default. Skip columns paired in lower
+- **`use_clearing`** -- on by default. Skip columns paired in lower
   dimensions. The Morozov-Nigmetov SPAA 2020 paper has the details. Turn
   off only for benchmark comparisons with codes that do not implement it.
 - **`compute_v` / `compute_u`.** Each one significantly increases the

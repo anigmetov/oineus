@@ -76,7 +76,7 @@ fil = oin.vr_filtration(pts, max_dim=2, max_diameter=2.0, n_threads=4)
 
 dcmp = oin.Decomposition(fil, dualize=True)
 
-params = oin.ReductionParams(n_threads=8, compute_v=True, clearing_opt=True)
+params = oin.ReductionParams(n_threads=8, compute_v=True, use_clearing=True)
 dcmp.reduce(params)
 
 dgms = dcmp.diagram(fil, include_inf_points=True)

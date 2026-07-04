@@ -164,8 +164,8 @@ public:
     //     params_coh_.compute_v = true;
     //     params_hom_.compute_u = true;
     //     params_coh_.compute_u = true;
-    //     params_hom_.clearing_opt = false;
-    //     params_coh_.clearing_opt = false;
+    //     params_hom_.use_clearing = false;
+    //     params_coh_.use_clearing = false;
     // }
     //
     // TopologyOptimizer(const Fil& fil, const ComputeFlags& hints)
@@ -177,8 +177,8 @@ public:
     // {
     //     params_hom_.compute_u = hints.compute_homology_u;
     //     params_coh_.compute_u = hints.compute_cohomology_u;
-    //     params_hom_.clearing_opt = false;
-    //     params_coh_.clearing_opt = false;
+    //     params_hom_.use_clearing = false;
+    //     params_coh_.use_clearing = false;
     // }
 
     // Recipe is decided here at construction time and stays fixed
@@ -219,7 +219,7 @@ public:
         }
 
         // Mirror constructor inputs into both params; reduction
-        // drivers read from Params.
+        // drivers read from ReductionParams.
         params_hom_.n_threads = legacy_in_band ? 1 : n_threads_;
         params_coh_.n_threads = legacy_in_band ? 1 : n_threads_;
         // ELZ restoration only happens when V is being built, so the
@@ -233,8 +233,8 @@ public:
             params_coh_.compute_v = false;
             params_hom_.compute_u = false;
             params_coh_.compute_u = false;
-            params_hom_.clearing_opt = true;
-            params_coh_.clearing_opt = true;
+            params_hom_.use_clearing = true;
+            params_coh_.use_clearing = true;
             params_hom_.dims_to_restore_elz.clear();
             params_coh_.dims_to_restore_elz.clear();
         } else if (legacy_in_band) {
@@ -244,8 +244,8 @@ public:
             params_coh_.compute_v = true;
             params_hom_.compute_u = true;
             params_coh_.compute_u = true;
-            params_hom_.clearing_opt = false;
-            params_coh_.clearing_opt = false;
+            params_hom_.use_clearing = false;
+            params_coh_.use_clearing = false;
         } else {
             // crit-sets default: V is built; U is computed on demand
             // via ensure_has_u_* from a known-ELZ V.
@@ -253,8 +253,8 @@ public:
             params_coh_.compute_v = true;
             params_hom_.compute_u = false;
             params_coh_.compute_u = false;
-            params_hom_.clearing_opt = true;
-            params_coh_.clearing_opt = true;
+            params_hom_.use_clearing = true;
+            params_coh_.use_clearing = true;
         }
     }
 
@@ -277,13 +277,13 @@ public:
     //     }
     // };
     //
-    // SideStatus side_status(const Decomposition& dcmp, const Params& params) const
+    // SideStatus side_status(const Decomposition& dcmp, const ReductionParams& params) const
     // {
     //     SideStatus s;
     //     s.is_reduced = dcmp.is_reduced;
     //     s.has_v = dcmp.is_reduced and params.compute_v;
     //     s.has_u = dcmp.has_matrix_u();
-    //     s.clearing_opt_used = params.clearing_opt;
+    //     s.clearing_opt_used = params.use_clearing;
     //     return s;
     // }
     //
@@ -692,7 +692,7 @@ public:
     //
     // The per-side reduction recipe (compute_v/compute_u, clearing, ELZ dims,
     // thread count) is decided at construction and stays valid across a value
-    // change, so it is preserved here. Resetting params to a default Params()
+    // change, so it is preserved here. Resetting params to a default ReductionParams()
     // instead would silently drop the crit-sets recipe and make the next
     // ensure_*_reduced rebuild a V-less decomposition, crashing the
     // change_*/crit-set walkers. (Timings live on the decompositions, which
@@ -1057,13 +1057,13 @@ public:
         // before reducing them.
         ensure_hom_built();
         ensure_coh_built();
-        params_hom_.clearing_opt = false;
+        params_hom_.use_clearing = false;
         params_hom_.compute_u = params_hom_.compute_v = true;
         if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u())) {
             decmp_hom_.reduce_serial(params_hom_);
         }
 
-        params_coh_.clearing_opt = false;
+        params_coh_.use_clearing = false;
         params_coh_.compute_u = params_coh_.compute_v = true;
         if (!decmp_coh_.is_reduced or (params_coh_.compute_u and not decmp_coh_.has_matrix_u())) {
             decmp_coh_.reduce_serial(params_coh_);
@@ -1259,8 +1259,8 @@ public:
     bool decmp_hom_built_ {false};
     bool decmp_coh_built_ {false};
 
-    Params params_hom_;
-    Params params_coh_;
+    ReductionParams params_hom_;
+    ReductionParams params_coh_;
 
     // True iff we are set up to drive crit-sets backward (V on the
     // forward side, U recoverable via ensure_has_u_*). False = the
