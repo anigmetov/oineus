@@ -15,6 +15,12 @@ jax = pytest.importorskip("jax")
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
+try:
+    import diode
+    HAS_DIODE = True
+except ImportError:
+    HAS_DIODE = False
+
 import oineus.diff as od
 
 
@@ -136,3 +142,47 @@ def test_crit_sets_other_directions_grads_equal(direction):
         return ((d1[:, 0] - target) ** 2).sum()
 
     _assert_same_grads(loss, pts_np)
+
+
+# ---------------------------------------------------------------------------
+# weak-alpha longest-edge ties: gradient must split evenly among tied edges
+# ---------------------------------------------------------------------------
+
+# Isoceles triangle: the triangle's longest edge is tied (|p0-p2|^2 ==
+# |p1-p2|^2 == 26). torch.amax / jnp.max split the tie gradient evenly;
+# eagerpy's torch max used to send it all to the first tied edge.
+TIE_PTS = np.array([[0.0, 0.0], [2.0, 0.0], [1.0, 5.0]])
+TIE_GRAD = np.array([[-7.0, -15.0], [7.0, -15.0], [0.0, 30.0]])
+
+
+@pytest.mark.skipif(not HAS_DIODE, reason="requires diode")
+def test_weak_alpha_tie_gradient_splits_evenly():
+    def loss(x, backend):
+        return od.weak_alpha_filtration(x).values.sum()
+
+    g_torch = _torch_grad(loss, TIE_PTS)
+    g_jax = _jax_grad(loss, TIE_PTS)
+    np.testing.assert_allclose(g_torch, TIE_GRAD, atol=1e-12, rtol=0)
+    np.testing.assert_allclose(g_jax, TIE_GRAD, atol=1e-12, rtol=0)
+
+
+@pytest.mark.skipif(not HAS_DIODE, reason="requires diode")
+def test_weak_alpha_tie_gradient_matches_finite_difference_torch():
+    # central differences at a tie average the two one-sided derivatives,
+    # which is exactly the even-split (amax) gradient
+    def f(x_np):
+        x = torch.tensor(x_np, dtype=torch.float64)
+        return float(od.weak_alpha_filtration(x).values.sum())
+
+    eps = 1e-6
+    g_fd = np.zeros_like(TIE_PTS)
+    for idx in np.ndindex(TIE_PTS.shape):
+        hi = TIE_PTS.copy()
+        hi[idx] += eps
+        lo = TIE_PTS.copy()
+        lo[idx] -= eps
+        g_fd[idx] = (f(hi) - f(lo)) / (2 * eps)
+
+    g_torch = _torch_grad(lambda x, backend: od.weak_alpha_filtration(x).values.sum(),
+                          TIE_PTS)
+    np.testing.assert_allclose(g_torch, g_fd, atol=1e-5, rtol=1e-5)

@@ -13,9 +13,24 @@ import numpy as np
 import eagerpy as epy
 
 from .. import _delaunay_combinatorics, _oineus
-from ._backend import concrete_numpy
+from ._backend import concrete_numpy, infer_backend
 from ._tensor_utils import real_buffer_for
 from .diff_filtration import DiffFiltration
+
+
+def even_ties_max(stacked):
+    """Max over axis 0 of an eagerpy tensor, gradient split evenly among ties.
+
+    eagerpy's max lowers to torch.Tensor.max(dim) on the torch path, whose
+    backward sends the whole gradient to the first tied maximum; torch.amax
+    and jnp.max (the jax path) split it evenly among ties. Dispatch torch to
+    amax so tie gradients match both the pre-eagerpy torch behavior and the
+    jax path.
+    """
+    if infer_backend(stacked.raw) == "torch":
+        import torch
+        return epy.astensor(torch.amax(stacked.raw, dim=0))
+    return epy.max(stacked, axis=0)
 
 
 def weak_alpha_filtration(points, *, packed: bool = False, print_time: bool = False):
@@ -60,7 +75,7 @@ def weak_alpha_filtration(points, *, packed: bool = False, print_time: bool = Fa
             d01 = ((p0 - p1) ** 2).sum(axis=1)
             d02 = ((p0 - p2) ** 2).sum(axis=1)
             d12 = ((p1 - p2) ** 2).sum(axis=1)
-            values = epy.max(epy.stack([d01, d02, d12], axis=0), axis=0)
+            values = even_ties_max(epy.stack([d01, d02, d12], axis=0))
         elif dim == 3:
             tet = alpha_fil.get_tetrahedra().astype(np.int64)
             p0 = tensor[tet[:, 0]]
@@ -73,7 +88,7 @@ def weak_alpha_filtration(points, *, packed: bool = False, print_time: bool = Fa
             d12 = ((p1 - p2) ** 2).sum(axis=1)
             d13 = ((p1 - p3) ** 2).sum(axis=1)
             d23 = ((p2 - p3) ** 2).sum(axis=1)
-            values = epy.max(epy.stack([d01, d02, d03, d12, d13, d23], axis=0), axis=0)
+            values = even_ties_max(epy.stack([d01, d02, d03, d12, d13, d23], axis=0))
         else:
             raise RuntimeError(f"weak_alpha_filtration: dim={dim} not supported")
 
