@@ -93,6 +93,7 @@ else()
             diff-inf-points-raises
             diff-jax-f32
             diff-jax-grad
+            diff-kicr
             diff-torch-optional
             diff-torch-vs-jax
             diff-vr-packed
