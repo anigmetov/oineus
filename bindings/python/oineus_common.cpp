@@ -141,7 +141,7 @@ void init_oineus_common(nb::module_& m)
             "dcmp.reduce(chunk_size=256) routes here.")
             .def(nb::init<>())
             .def("__init__",
-                [def_rp](RPAdvanced* p, int chunk_size, oin::ColumnRepr col_repr, std::vector<dim_type> dims_to_restore_elz) {
+                [](RPAdvanced* p, int chunk_size, oin::ColumnRepr col_repr, std::vector<dim_type> dims_to_restore_elz) {
                     new (p) RPAdvanced();
                     p->chunk_size = chunk_size;
                     p->col_repr = col_repr;
