@@ -45,6 +45,10 @@
 #include "timer.h"
 #include "dcmp_stats.h"
 
+#ifdef OINEUS_COLUMN_TRACE
+#include "column_trace.h"
+#endif
+
 namespace oineus {
 
     template<typename Cell, typename Real>
@@ -70,6 +74,15 @@ namespace oineus {
             rv[current_column_idx].store(new_col, std::memory_order_seq_cst);
 
             mm->retire(orig_col);
+
+#ifdef OINEUS_COLUMN_TRACE
+            if (g_column_trace) {
+                if (new_col == nullptr)
+                    g_column_trace->record_free(static_cast<size_t>(current_column_idx), CT_ZEROED);
+                else
+                    g_column_trace->record_touch(static_cast<size_t>(current_column_idx));
+            }
+#endif
         }
         needs_update = false;
     }
@@ -200,6 +213,10 @@ namespace oineus {
 
                 MatrixTraits::load_to_cache(orig_col, cached_reduced_col);
 
+#ifdef OINEUS_COLUMN_TRACE
+                if (g_column_trace) g_column_trace->record_touch(static_cast<size_t>(current_column_idx));
+#endif
+
 #ifndef NDEBUG
                 unprocessed_cols.erase(current_column_idx);
 #endif
@@ -218,6 +235,10 @@ namespace oineus {
 
                             rv[current_column_idx].store(nullptr, rel);
                             mm->retire(orig_col);
+
+#ifdef OINEUS_COLUMN_TRACE
+                            if (g_column_trace) g_column_trace->record_free(static_cast<size_t>(current_column_idx), CT_CLEARED);
+#endif
 
                             stats.n_cleared++;
 
@@ -256,6 +277,15 @@ namespace oineus {
 
                     logger->debug("thread {}, column = {}, loaded pivot column, pivot_idx = {}", thread_idx, current_column_idx, pivot_idx);
 
+#ifdef OINEUS_COLUMN_TRACE
+                    // reading a materialized pivot column (its low was already
+                    // dereferenced in the loop condition above) is a touch.
+                    // pivot_idx >= 0 is required: the loop can exit with
+                    // pivot_idx == -1 while pivot_col holds a stale non-null
+                    // pointer from an earlier iteration.
+                    if (g_column_trace && pivot_idx >= 0 && pivot_col != nullptr) g_column_trace->record_touch(static_cast<size_t>(pivot_idx));
+#endif
+
                     // Apparent (decorated-matrix) resolver hook: pivots[current_low]
                     // points at an apparent column whose working slot was left null
                     // (so pivot_col loaded as nullptr above). Regenerate it on demand
@@ -276,6 +306,12 @@ namespace oineus {
                                             static_cast<Int>(pivot_idx))).first;
                         }
                         MatrixTraits::add_to_cached(&cache_it->second, cached_reduced_col);
+#ifdef OINEUS_COLUMN_TRACE
+                        // apparent-null pivot used as a left-reducer: record the touch
+                        // (its working-matrix cost is 0 -- regenerated into a per-thread
+                        // cache -- but the touch pattern is telemetry we want)
+                        if (g_column_trace) g_column_trace->record_touch(static_cast<size_t>(pivot_idx));
+#endif
                         needs_update = true;
                         continue;
                     }
@@ -313,6 +349,9 @@ namespace oineus {
                             current_column_idx = pivot_idx;
                             orig_col = rv[current_column_idx].load(acq);
                             MatrixTraits::load_to_cache(orig_col, cached_reduced_col);
+#ifdef OINEUS_COLUMN_TRACE
+                            if (g_column_trace && orig_col != nullptr) g_column_trace->record_touch(static_cast<size_t>(current_column_idx));
+#endif
                             logger->debug("Pivot to the right, CAS okay, set current_column_idx = {}, next_column = {}", current_column_idx, next_column);
                         } else {
                             logger->debug("Pivot to the right, CAS failed, set start_over = TRUE");
@@ -1013,7 +1052,54 @@ namespace oineus {
                                  : fil.boundary_matrix_for_par(params.n_threads);
                 }
                 dcmp.timings_.prepare = timer_build.elapsed();
+
+#ifdef OINEUS_COLUMN_TRACE
+                // Direction A (oracle ceiling) experiment: record per-column
+                // build sizes -- including the WOULD-BE size of every
+                // apparent-null slot, reconstructed through the same emitters
+                // the resolver uses, so the offline EAGER policy can price the
+                // plain (non-null-marked) working matrix honestly -- then arm
+                // the global trace context for the reduction and dump one
+                // binary record per column afterwards. Trace overhead is
+                // irrelevant; only the event structure matters.
+                std::unique_ptr<ColumnTraceCtx> trace_ctx;
+                if (const char* trace_path = std::getenv("OINEUS_COLUMN_TRACE_FILE")) {
+                    trace_ctx = std::make_unique<ColumnTraceCtx>(n_cols);
+                    ColumnTraceCtx* ctx = trace_ctx.get();
+                    const auto* fil_ptr = &fil;
+                    const bool dual = dualize;
+                    tf::Taskflow tf_trace_build;
+                    tf_trace_build.for_each_index((size_t)0, n_cols, (size_t)1,
+                            [&ar, ctx, fil_ptr, dual](size_t c) {
+                                auto* p = ar[c].load(std::memory_order_relaxed);
+                                if (p != nullptr) {
+                                    ctx->record_build(c, static_cast<uint32_t>(p->size()), 0);
+                                } else {
+                                    // null slots exist only on the apparent build, which is
+                                    // gated on SupportsApparent -- same emitters as the resolver
+                                    if constexpr (SupportsApparent<C>::value) {
+                                        SparseColumn<Int> r;
+                                        if (not dual)
+                                            fil_ptr->emit_boundary_col_(fil_ptr->cells()[c], /*missing_ok=*/false, r);
+                                        else
+                                            fil_ptr->emit_cohomology_col_(c, r);
+                                        ctx->record_build(c, static_cast<uint32_t>(r.size()), CT_APPARENT_NULL);
+                                    }
+                                }
+                            });
+                    executor.run(tf_trace_build).get();
+                    g_column_trace = ctx;
+                }
+#endif
+
                 dcmp.run_r_only_core_dispatch_(params, executor, ar, pivots, n_cols, n_threads, /*copy_back_to_r=*/false);
+
+#ifdef OINEUS_COLUMN_TRACE
+                if (trace_ctx) {
+                    g_column_trace = nullptr;
+                    trace_ctx->dump(std::getenv("OINEUS_COLUMN_TRACE_FILE")); // same var that armed the ctx
+                }
+#endif
                 // The R-only post-state is pivots-only: nothing can ever call the
                 // resolver again, so drop the closure over `fil` now instead of
                 // leaving a dormant dangling pointer around (apparent_ stays as
