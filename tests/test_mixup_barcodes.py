@@ -371,7 +371,7 @@ def test_subsampling_property():
 def test_b_empty_means_zero_mixup():
     rng = np.random.default_rng(6)
     A = rng.random((9, 3))
-    for B in (None, np.empty((0, 3))):
+    for B in (None, [], np.empty((0, 3)), np.empty((0, 0))):
         mb = oin.mixup_barcodes(A, B, max_dim=1)
         for dim in (0, 1):
             t = mb.in_dimension(dim)
@@ -421,6 +421,32 @@ def test_truncation_essential_bars():
     mb = oin.mixup_barcodes(A, B, max_dim=0, max_diameter=6.0)
     assert mb.in_dimension(0).shape == (0, 3)
     assert_rows_equal(mb.essential_in_dimension(0), [[0.0, 5.0, INF], [0.0, INF, INF]])
+
+
+def test_truncated_essential_with_zero_image_bar():
+    # A = unit square, B = center, truncated between 1 and sqrt(2): the
+    # square cycle of L is born at 1 but its death at sqrt(2) is cut off,
+    # so it is essential in L -- while in K the center triangles fill it at
+    # exactly its birth value 1, a zero-persistence image pair. The
+    # essential triple must report the true premature death (= the birth),
+    # not +inf.
+    A = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+    B = np.array([[0.5, 0.5]])
+    mb = oin.mixup_barcodes(A, B, max_dim=1, max_diameter=1.2)
+    assert mb.in_dimension(1).shape == (0, 3)
+    assert_rows_equal(mb.essential_in_dimension(1), [[1.0, 1.0, INF]])
+
+
+def test_negative_filtration_values():
+    # mixup_barcodes_of_filtrations accepts general sublevel filtrations;
+    # negative values must not trip the sign-sensitive tolerance in the
+    # image-death sanity check. K == L, so every image death equals the
+    # domain death exactly (zero mixup).
+    cells = [[0, [0], -3.0], [1, [1], -3.0], [2, [0, 1], -2.0]]
+    K = oin.list_to_filtration(cells)
+    mb = oin.mixup_barcodes_of_filtrations(K, K, max_dim=0)
+    assert_rows_equal(mb.in_dimension(0), [[-3.0, -2.0, -2.0]])
+    assert mb.total_mixup(0) == 0.0
 
 
 def test_input_validation():

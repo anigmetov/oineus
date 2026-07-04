@@ -29,22 +29,24 @@ from . import pd_core
 
 
 def gather_diagram(values, index_dgm, backend):
-    """Tensor values[index_dgm] of shape (n_d, 2) in the given framework.
+    """Tensor values[index_dgm] of the same shape as index_dgm in the given
+    framework.
 
-    index_dgm is an (n_d, 2) int64 numpy array of sorted ids into values.
-    Empty index diagrams produce an empty (0, 2) constant of the right
-    dtype (and device, for torch). The native VJP of the gather is the
-    scatter-add, so no custom backward is needed.
+    index_dgm is an (n_d, k) int64 numpy array of sorted ids into values
+    (k = 2 for diagrams, k = 3 for mixup triples). Empty index arrays
+    produce an empty constant of the same shape and the right dtype (and
+    device, for torch). The native VJP of the gather is the scatter-add,
+    so no custom backward is needed.
     """
     if backend == "torch":
         import torch
         if index_dgm.size == 0:
-            return torch.zeros((0, 2), dtype=values.dtype, device=values.device)
+            return torch.zeros(index_dgm.shape, dtype=values.dtype, device=values.device)
         return values[torch.from_numpy(index_dgm).to(values.device)]
     if backend == "jax":
         import jax.numpy as jnp
         if index_dgm.size == 0:
-            return jnp.zeros((0, 2), dtype=values.dtype)
+            return jnp.zeros(index_dgm.shape, dtype=values.dtype)
         return values[jnp.asarray(index_dgm)]
     raise RuntimeError(f"unknown backend {backend!r}")
 

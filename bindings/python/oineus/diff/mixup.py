@@ -33,25 +33,10 @@ import numpy as np
 from .. import mixup as _mixup
 from ._backend import infer_backend
 from ._tensor_utils import tensor_to_real_numpy
+from .kicr import gather_diagram
 from .vietoris_rips import vr_filtration as diff_vr_filtration
 
 __all__ = ["DiffMixupBarcodes", "mixup_barcodes"]
-
-
-def _gather_triples(values, index_triples, backend):
-    """Tensor values[index_triples] of shape (n, 3) in the given framework;
-    an empty index array yields an empty (0, 3) constant."""
-    if backend == "torch":
-        import torch
-        if index_triples.size == 0:
-            return torch.zeros((0, 3), dtype=values.dtype, device=values.device)
-        return values[torch.from_numpy(index_triples).to(values.device)]
-    if backend == "jax":
-        import jax.numpy as jnp
-        if index_triples.size == 0:
-            return jnp.zeros((0, 3), dtype=values.dtype)
-        return values[jnp.asarray(index_triples)]
-    raise RuntimeError(f"unknown backend {backend!r}")
 
 
 class DiffMixupBarcodes:
@@ -77,15 +62,11 @@ class DiffMixupBarcodes:
     statistics agree in value.
     """
 
-    def __init__(self, diagrams, index_triples, backend, max_dim, ref_dtype, ref_device=None):
+    def __init__(self, diagrams, index_triples, backend, max_dim):
         self._diagrams = diagrams
         self._index_triples = index_triples
         self._backend = backend
         self.max_dim = max_dim
-        # dtype (and device, for torch) of the zero constants returned by the
-        # statistics of empty degrees
-        self._ref_dtype = ref_dtype
-        self._ref_device = ref_device
 
     def in_dimension(self, dim):
         """Finite mixup triples in the given degree as an (n, 3) tensor."""
@@ -111,28 +92,23 @@ class DiffMixupBarcodes:
                            f"available: {sorted(self._index_triples)}")
         return self._index_triples[dim].copy()
 
-    def _zero(self):
-        if self._backend == "torch":
-            import torch
-            return torch.zeros((), dtype=self._ref_dtype, device=self._ref_device)
-        import jax.numpy as jnp
-        return jnp.zeros((), dtype=self._ref_dtype)
+    # no special zero constants are needed for empty degrees: a sum over an
+    # empty tensor is already a differentiable zero scalar of the right
+    # dtype (and device, for torch)
 
     def total_persistence(self, dim):
         """Sum of death - birth over the finite triples (differentiable scalar)."""
         t = self.in_dimension(dim)
-        return (t[:, 2] - t[:, 0]).sum() if len(t) else self._zero()
+        return (t[:, 2] - t[:, 0]).sum()
 
     def total_mixup(self, dim):
         """Sum of the mixups death - image_death (differentiable scalar)."""
         t = self.in_dimension(dim)
-        return (t[:, 2] - t[:, 1]).sum() if len(t) else self._zero()
+        return (t[:, 2] - t[:, 1]).sum()
 
     def total_mixup_percentage(self, dim):
         """Sum of the per-bar mixup percentages (differentiable scalar)."""
         t = self.in_dimension(dim)
-        if not len(t):
-            return self._zero()
         return ((t[:, 2] - t[:, 1]) / (t[:, 2] - t[:, 0])).sum()
 
     def mean_mixup_percentage(self, dim):
@@ -140,7 +116,7 @@ class DiffMixupBarcodes:
         a zero constant if the barcode is empty."""
         t = self.in_dimension(dim)
         if not len(t):
-            return self._zero()
+            return t.sum()  # zero scalar of the right dtype/device
         return ((t[:, 2] - t[:, 1]) / (t[:, 2] - t[:, 0])).mean()
 
     def __repr__(self):
@@ -180,7 +156,7 @@ def mixup_barcodes(A, B, max_dim=1, max_diameter=None, eps=1e-6, n_threads=1):
     diagram sizes are data-dependent, so do not jit/vmap through this call;
     use it inside the function passed to jax.grad.
     """
-    from .. import compute_kernel_image_cokernel_reduction, max_distance, vr_filtration, _oineus
+    from .. import max_distance, vr_filtration
     import eagerpy as epy
 
     backend = infer_backend(A)
@@ -195,16 +171,19 @@ def mixup_barcodes(A, B, max_dim=1, max_diameter=None, eps=1e-6, n_threads=1):
     if max_dim < 0:
         raise ValueError("max_dim must be non-negative")
 
-    A_np = tensor_to_real_numpy(epy.astensor(A), dtype=np.float64)
+    # no dtype override: A_np carries the tensor's matching Real (float32
+    # tensors build a float32 L, matching the float32 K that
+    # diff_vr_filtration builds for the union)
+    A_np = tensor_to_real_numpy(epy.astensor(A))
     if A_np.ndim != 2:
         raise ValueError("A must be a 2D tensor of shape (n, d)")
 
     if A_np.shape[0] == 0:
-        empty_t = {d: _gather_triples(A.reshape(-1), np.empty((0, 3), dtype=np.int64), backend)
+        empty_idx = _mixup.empty_dim_triples()[1]
+        empty_t = {d: gather_diagram(A.reshape(-1), empty_idx, backend)
                    for d in range(max_dim + 1)}
-        empty_i = {d: np.empty((0, 3), dtype=np.int64) for d in range(max_dim + 1)}
-        device = A.device if backend == "torch" else None
-        return DiffMixupBarcodes(empty_t, empty_i, backend, max_dim, A.dtype, device)
+        empty_i = {d: empty_idx.copy() for d in range(max_dim + 1)}
+        return DiffMixupBarcodes(empty_t, empty_i, backend, max_dim)
 
     if max_diameter is None:
         max_diameter = float(max_distance(A_np)) if len(A_np) >= 2 else 0.0
@@ -228,22 +207,16 @@ def mixup_barcodes(A, B, max_dim=1, max_diameter=None, eps=1e-6, n_threads=1):
     L = vr_filtration(A_np, max_dim=max_dim + 1, max_diameter=max_diameter,
                       packed=False, n_threads=n_threads)
 
-    params = _oineus.KICRParams()
-    params.kernel = False
-    params.image = True
-    params.cokernel = False
-    params.codomain = False
-    params.include_zero_persistence = False
-    params.n_threads = max(1, int(n_threads))
-
-    kicr = compute_kernel_image_cokernel_reduction(K.under_fil, L, params)
-    triples = _mixup.compute_mixup_triples(kicr, K.under_fil, L, max_dim)
+    # the non-diff core runs the KICR reduction and the birth-cell matching;
+    # only its index triples are used here -- the values are re-gathered
+    # from the differentiable filtration of the union
+    mb = _mixup.mixup_barcodes_of_filtrations(K.under_fil, L, max_dim=max_dim,
+                                              n_threads=n_threads)
 
     diagrams, index_triples = {}, {}
-    for dim, (_finite_vals, finite_idx, _essential) in triples.items():
-        diagrams[dim] = _gather_triples(K.values, finite_idx, backend)
+    for dim in range(max_dim + 1):
+        finite_idx = mb.index_triples_in_dimension(dim)
+        diagrams[dim] = gather_diagram(K.values, finite_idx, backend)
         index_triples[dim] = finite_idx
 
-    device = K.values.device if backend == "torch" else None
-    return DiffMixupBarcodes(diagrams, index_triples, backend, max_dim,
-                             K.values.dtype, device)
+    return DiffMixupBarcodes(diagrams, index_triples, backend, max_dim)

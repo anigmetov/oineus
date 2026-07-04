@@ -34,6 +34,15 @@ def make_clouds(seed=7, n_A=7, n_B=3, d=2):
     return rng.random((n_A, d)), rng.random((n_B, d))
 
 
+def sorted_by_rows(a):
+    # row-lexicographic sort, dtype-preserving (works for the float triples
+    # and the int64 index triples alike)
+    a = np.asarray(a)
+    if a.size == 0:
+        return a
+    return a[np.lexsort(a.T[::-1])]
+
+
 def total_loss(dmb):
     return (dmb.total_mixup(0) + dmb.total_mixup(1)
             + dmb.total_mixup_percentage(0) + dmb.total_mixup_percentage(1)
@@ -59,24 +68,13 @@ def test_values_match_nondiff_torch():
         # the sqrt(dist^2 + eps) shift, negligible for eps = 1e-12
         assert t.shape == nt.shape
         assert np.allclose(sorted_by_rows(t), sorted_by_rows(nt), atol=1e-5)
-        assert np.array_equal(sorted_idx(dmb.index_triples_in_dimension(dim)),
-                              sorted_idx(mb.index_triples_in_dimension(dim)))
+        assert np.array_equal(sorted_by_rows(dmb.index_triples_in_dimension(dim)),
+                              sorted_by_rows(mb.index_triples_in_dimension(dim)))
         assert float(dmb.total_mixup(dim)) == pytest.approx(mb.total_mixup(dim), abs=1e-5)
         assert float(dmb.total_mixup_percentage(dim)) == pytest.approx(
             mb.total_mixup_percentage(dim), abs=1e-4)
         assert float(dmb.mean_mixup_percentage(dim)) == pytest.approx(
             mb.mean_mixup_percentage(dim), abs=1e-4)
-
-
-def sorted_by_rows(a):
-    a = np.asarray(a, dtype=float)
-    if a.size == 0:
-        return a
-    return a[np.lexsort(a.T[::-1])]
-
-
-def sorted_idx(a):
-    return sorted_by_rows(np.asarray(a, dtype=np.int64))
 
 
 def test_torch_gradients_match_finite_differences():
@@ -161,6 +159,22 @@ def test_empty_A_and_empty_degree():
     assert dmb2[2].shape == (0, 3)
     assert float(dmb2.total_mixup(2)) == 0.0
     assert float(dmb2.mean_mixup_percentage(2)) == 0.0
+
+
+def test_float32_inputs():
+    # torch's default dtype: the whole pipeline (K, L, KICR) must run in
+    # float32 and gradients must flow
+    A_np, B_np = make_clouds(seed=31)
+    A = torch.tensor(A_np, dtype=torch.float32, requires_grad=True)
+    B = torch.tensor(B_np, dtype=torch.float32, requires_grad=True)
+    dmb = od.mixup_barcodes(A, B, max_dim=1)
+    assert dmb[0].dtype == torch.float32
+    loss = dmb.total_mixup(0) + dmb.total_mixup(1)
+    loss.backward()
+    assert A.grad.abs().sum() > 0 and B.grad.abs().sum() > 0
+    mb = oin.mixup_barcodes(A_np, B_np, max_dim=1)
+    expected = mb.total_mixup(0) + mb.total_mixup(1)
+    assert float(loss.detach()) == pytest.approx(expected, abs=5e-3)
 
 
 def test_input_guards():

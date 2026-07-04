@@ -43,8 +43,17 @@ import numpy as np
 
 __all__ = ["MixupBarcodes", "mixup_barcodes", "mixup_barcodes_of_filtrations"]
 
-# death sentinel used by the C++ index diagrams for points at infinity
-INVALID_INDEX = np.iinfo(np.uint64).max
+# death sentinel of the C++ index diagrams for points at infinity:
+# k_invalid_index = uint64 max, which reads as -1 once viewed as int64
+INVALID_INDEX = -1
+
+
+def empty_dim_triples():
+    """The (finite values, finite indices, essential values) triple of one
+    empty degree: (0, 3) float64, (0, 3) int64, (0, 3) float64 arrays."""
+    return (np.empty((0, 3), dtype=np.float64),
+            np.empty((0, 3), dtype=np.int64),
+            np.empty((0, 3), dtype=np.float64))
 
 
 def compute_mixup_triples(kicr, fil_K, fil_L, max_dim):
@@ -62,8 +71,8 @@ def compute_mixup_triples(kicr, fil_K, fil_L, max_dim):
     zero-length image sub-bar the birth cell doubles as the image death cell,
     mirroring the paper's (b, b, d) convention for unmatched bars), and
     essential_vals is an (m, 3) float array for the essential bars of the
-    domain (death = +inf; image death may be finite if the filtration was
-    truncated below the actual death value).
+    domain (death = +inf; image death is finite when the image class dies
+    below a truncation cutoff or at its own birth value).
 
     The matching is by birth cell, as in the paper: the domain birth cell
     (a cell of L) is located in K by its uid, and the image bar born at that
@@ -72,26 +81,21 @@ def compute_mixup_triples(kicr, fil_K, fil_L, max_dim):
     C++ diagram construction; for the matching this is equivalent to an
     image sub-bar of length zero, so the triple degenerates to (b, b, d).
     """
+    # local copies of the diagrams, padded so that degrees above the max cell
+    # dimension of the respective filtration read as legitimately empty
     dom_dgms = kicr.domain_diagrams()
     im_dgms = kicr.image_diagrams()
-
-    # the C++ diagrams only carry dimensions up to the max cell dimension of
-    # the respective filtration; degrees above L's have no bars at all
-    avail_dim = int(fil_L.max_dim) if fil_L.size() > 0 else -1
+    dom_dgms.pad_to_dim(max_dim)
+    im_dgms.pad_to_dim(max_dim)
 
     out = {}
     for dim in range(max_dim + 1):
-        if dim > avail_dim:
-            out[dim] = (np.empty((0, 3), dtype=np.float64),
-                        np.empty((0, 3), dtype=np.int64),
-                        np.empty((0, 3), dtype=np.float64))
-            continue
         dom_val = np.asarray(dom_dgms.in_dimension(dim), dtype=np.float64).reshape(-1, 2)
-        dom_idx = np.asarray(dom_dgms.index_diagram_in_dimension(dim, as_numpy=True),
-                             dtype=np.uint64).reshape(-1, 2)
+        dom_idx = np.asarray(dom_dgms.index_diagram_in_dimension(dim, as_numpy=True)
+                             ).reshape(-1, 2).astype(np.int64)
         im_val = np.asarray(im_dgms.in_dimension(dim), dtype=np.float64).reshape(-1, 2)
-        im_idx = np.asarray(im_dgms.index_diagram_in_dimension(dim, as_numpy=True),
-                            dtype=np.uint64).reshape(-1, 2)
+        im_idx = np.asarray(im_dgms.index_diagram_in_dimension(dim, as_numpy=True)
+                            ).reshape(-1, 2).astype(np.int64)
 
         # image bars keyed by the K sorted id of their birth cell
         im_by_birth = {}
@@ -103,7 +107,9 @@ def compute_mixup_triples(kicr, fil_K, fil_L, max_dim):
         for (b_L, d_L), (b_val, d_val) in zip(dom_idx, dom_val):
             b_K = int(fil_K.sorted_id_by_uid(fil_L.cell(int(b_L)).uid))
             im_row = im_by_birth.get(b_K)
-            if im_row is not None:
+            if im_row is None:
+                im_d_val = im_d_idx = None
+            else:
                 n_matched += 1
                 im_b_val, im_d_val, im_d_idx = im_row
                 if not np.isclose(im_b_val, b_val, rtol=1e-9, atol=1e-12):
@@ -111,12 +117,18 @@ def compute_mixup_triples(kicr, fil_K, fil_L, max_dim):
                         f"mixup: domain and image bars born at the same cell have "
                         f"different birth values ({b_val} vs {im_b_val}); K and L "
                         f"must carry the same values on shared cells")
-            if int(d_L) == INVALID_INDEX:
-                # essential domain bar; its image bar is essential too, unless the
-                # filtration is truncated and the image class dies below the cutoff
-                im_death = np.inf
-                if im_row is not None and im_row[2] != int(INVALID_INDEX):
-                    im_death = im_row[1]
+            if d_L == INVALID_INDEX:
+                # essential domain bar. Its image bar is (a) essential as well,
+                # (b) a finite pair (only possible when the filtration is
+                # truncated and the image class dies below the cutoff), or
+                # (c) a zero-persistence pair dropped by the C++ diagram
+                # construction, i.e. the image class died at its birth value
+                if im_row is None:
+                    im_death = float(b_val)
+                elif im_d_idx == INVALID_INDEX:
+                    im_death = np.inf
+                else:
+                    im_death = im_d_val
                 essential_vals.append((float(b_val), im_death, np.inf))
                 continue
             d_K = int(fil_K.sorted_id_by_uid(fil_L.cell(int(d_L)).uid))
@@ -126,13 +138,15 @@ def compute_mixup_triples(kicr, fil_K, fil_L, max_dim):
                 finite_vals.append((float(b_val), float(b_val), float(d_val)))
                 finite_idx.append((b_K, b_K, d_K))
             else:
-                im_b_val, im_d_val, im_d_idx = im_row
-                if im_d_idx == int(INVALID_INDEX) or im_d_val > d_val * (1 + 1e-9) + 1e-12:
+                # sign-safe tolerance: values may be negative for general
+                # sublevel filtrations passed to mixup_barcodes_of_filtrations
+                tol = 1e-9 * max(abs(d_val), abs(im_d_val), 1.0)
+                if im_d_idx == INVALID_INDEX or im_d_val > d_val + tol:
                     raise RuntimeError(
                         f"mixup: image death {im_d_val} exceeds domain death {d_val} "
                         f"in dim {dim}; the filtration orders of K and L are "
                         f"inconsistent on ties")
-                finite_vals.append((float(b_val), min(float(im_d_val), float(d_val)), float(d_val)))
+                finite_vals.append((float(b_val), min(im_d_val, float(d_val)), float(d_val)))
                 finite_idx.append((b_K, im_d_idx, d_K))
 
         # every image bar must be consumed by a domain bar (the induced matching
@@ -192,91 +206,77 @@ class MixupBarcodes:
     Instances are plain-numpy containers: picklable and cheap to copy.
     """
 
-    def __init__(self, finite, finite_idx, essential, max_dim):
-        self._finite = finite
-        self._finite_idx = finite_idx
-        self._essential = essential
+    def __init__(self, triples, max_dim):
+        """triples: dict dim -> (finite_vals, finite_idx, essential_vals), as
+        returned by compute_mixup_triples."""
+        self._triples = triples
         self.max_dim = max_dim
-
-    @classmethod
-    def from_triples(cls, triples, max_dim):
-        """Build from the dict returned by compute_mixup_triples."""
-        finite = {d: t[0] for d, t in triples.items()}
-        finite_idx = {d: t[1] for d, t in triples.items()}
-        essential = {d: t[2] for d, t in triples.items()}
-        return cls(finite, finite_idx, essential, max_dim)
 
     @classmethod
     def empty(cls, max_dim):
         """An all-empty result (e.g. for an empty point cloud A)."""
-        finite = {d: np.empty((0, 3), dtype=np.float64) for d in range(max_dim + 1)}
-        finite_idx = {d: np.empty((0, 3), dtype=np.int64) for d in range(max_dim + 1)}
-        essential = {d: np.empty((0, 3), dtype=np.float64) for d in range(max_dim + 1)}
-        return cls(finite, finite_idx, essential, max_dim)
+        return cls({d: empty_dim_triples() for d in range(max_dim + 1)}, max_dim)
 
-    def _check_dim(self, dim):
-        if dim not in self._finite:
+    def _dim_triples(self, dim):
+        try:
+            return self._triples[dim]
+        except KeyError:
             raise KeyError(f"no mixup barcode in dimension {dim}; "
-                           f"available: {sorted(self._finite)}")
+                           f"available: {sorted(self._triples)}") from None
 
     def in_dimension(self, dim):
         """Finite mixup triples in the given degree: (n, 3) array of
         (birth, image_death, death) rows with birth <= image_death <= death."""
-        self._check_dim(dim)
-        return self._finite[dim].copy()
+        return self._dim_triples(dim)[0].copy()
 
     def __getitem__(self, dim):
         return self.in_dimension(dim)
 
     def __contains__(self, dim):
-        return dim in self._finite
+        return dim in self._triples
 
     def keys(self):
-        return sorted(self._finite)
+        return sorted(self._triples)
 
     def index_triples_in_dimension(self, dim):
         """Sorted ids in K of the (birth, image death, death) cells of the
         finite triples, aligned with in_dimension(dim). When the image
         sub-bar is empty the birth cell doubles as the image death cell."""
-        self._check_dim(dim)
-        return self._finite_idx[dim].copy()
+        return self._dim_triples(dim)[1].copy()
 
     def essential_in_dimension(self, dim):
         """Essential bars of L as (m, 3) triples (birth, image_death, +inf).
-        The image death is +inf as well unless the filtration was truncated
-        below the actual death of the image class. Not part of statistics."""
-        self._check_dim(dim)
-        return self._essential[dim].copy()
+        The image death is +inf as well unless the image class dies below a
+        truncation cutoff (finite value) or at its own birth value (equal to
+        the birth). Not part of statistics."""
+        return self._dim_triples(dim)[2].copy()
 
     def persistence_barcode(self, dim):
         """Finite positive-persistence bars [b, d) of L: columns 0, 2 of the triples."""
-        return self.in_dimension(dim)[:, [0, 2]]
+        return self._dim_triples(dim)[0][:, [0, 2]]
 
     def image_sub_barcode(self, dim):
         """Image sub-bars [b, d'): columns 0, 1 of the triples."""
-        return self.in_dimension(dim)[:, [0, 1]]
+        return self._dim_triples(dim)[0][:, [0, 1]]
 
     def mixup_sub_barcode(self, dim):
         """Mixup sub-bars [d', d): columns 1, 2 of the triples."""
-        return self.in_dimension(dim)[:, [1, 2]]
+        return self._dim_triples(dim)[0][:, [1, 2]]
 
     def total_persistence(self, dim):
         """Sum of d - b over the finite triples."""
-        self._check_dim(dim)
-        t = self._finite[dim]
+        t = self._dim_triples(dim)[0]
         return float(np.sum(t[:, 2] - t[:, 0]))
 
     def total_mixup(self, dim):
         """Sum of the mixups d - d' over the finite triples. Equals the total
         persistence of L minus the total image persistence."""
-        self._check_dim(dim)
-        t = self._finite[dim]
+        t = self._dim_triples(dim)[0]
         return float(np.sum(t[:, 2] - t[:, 1]))
 
     def mixup_percentages(self, dim):
         """Per-bar mixup percentages (d - d') / (d - b), an (n,) array."""
-        self._check_dim(dim)
-        t = self._finite[dim]
+        t = self._dim_triples(dim)[0]
         return (t[:, 2] - t[:, 1]) / (t[:, 2] - t[:, 0])
 
     def total_mixup_percentage(self, dim):
@@ -290,8 +290,8 @@ class MixupBarcodes:
         return float(np.mean(p)) if len(p) else 0.0
 
     def __repr__(self):
-        sizes = {d: len(self._finite[d]) for d in sorted(self._finite)}
-        tm = {d: round(self.total_mixup(d), 6) for d in sorted(self._finite)}
+        sizes = {d: len(self._triples[d][0]) for d in sorted(self._triples)}
+        tm = {d: round(self.total_mixup(d), 6) for d in sorted(self._triples)}
         return f"MixupBarcodes(max_dim={self.max_dim}, bars={sizes}, total_mixup={tm})"
 
 
@@ -331,7 +331,7 @@ def mixup_barcodes_of_filtrations(K, L, max_dim=None, n_threads=1):
 
     kicr = compute_kernel_image_cokernel_reduction(K, L, params)
     triples = compute_mixup_triples(kicr, K, L, max_dim)
-    return MixupBarcodes.from_triples(triples, max_dim)
+    return MixupBarcodes(triples, max_dim)
 
 
 def mixup_barcodes(A, B, max_dim=1, max_diameter=None, n_threads=1):
@@ -373,8 +373,11 @@ def mixup_barcodes(A, B, max_dim=1, max_diameter=None, n_threads=1):
 
     A = np.ascontiguousarray(np.asarray(A, dtype=np.float64))
     if B is None:
-        B = np.empty((0, A.shape[1] if A.ndim == 2 else 0), dtype=np.float64)
+        B = np.empty((0, 0), dtype=np.float64)
     B = np.ascontiguousarray(np.asarray(B, dtype=np.float64))
+    if B.size == 0:
+        # accept None, [], or any empty array as "no B points"
+        B = np.empty((0, A.shape[1] if A.ndim == 2 else 0), dtype=np.float64)
 
     if A.ndim != 2 or B.ndim != 2:
         raise ValueError("A and B must be 2D point arrays of shape (n, d)")
