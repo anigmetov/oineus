@@ -673,6 +673,11 @@ namespace oineus {
         // empty while keep-working.
         size_t n_cols_total() const { return has_working_rv_ ? working_rv_.size() : r_data.size(); }
 
+        // Telemetry: number of apparent pairs detected by the lean (decorated-matrix)
+        // reduction. 0 means the apparent path was not taken -- or the lean state has
+        // already been dropped by a materializing access (matrix read, clone, pickle).
+        size_t n_apparent_pairs() const { return apparent_ ? apparent_->n_apparent : 0; }
+
         // Per-column reads that work directly on the kept working form (no
         // materialization), falling back to at-rest r_data/v_data otherwise. The
         // topology optimizer's hot read sites use these. On the ordinary keep-working
@@ -891,9 +896,10 @@ namespace oineus {
                 bool used_apparent = false;
 
                 // Apparent-pairs (decorated-matrix) path. Gated by if constexpr so it
-                // is only instantiated for cell types with cofacets (Cube); VR/Simplex
-                // filtrations never compile it. Restricted at runtime to a complete
-                // cubical complex. Leaves the apparent columns null, pre-seeds their
+                // is only instantiated for cell types with a direct coboundary (slim
+                // Cube, slim Freudenthal); fat Simplex / BitPacked filtrations never
+                // compile it. Restricted at runtime to a complete grid complex built
+                // by grid.h. Leaves the apparent columns null, pre-seeds their
                 // pivots, and installs the on-demand R resolver.
                 if constexpr (SupportsApparent<C>::value) {
                     // The apparent lean form skips the eager Bauer fill, which also
@@ -901,7 +907,8 @@ namespace oineus {
                     // requested ELZ restore is never silently dropped.
                     const bool apparent_active = params.use_apparent_pairs
                             and params.advanced.dims_to_restore_elz.empty()
-                            and fil.kind() == FiltrationKind::Cubical
+                            and (fil.kind() == FiltrationKind::Cubical
+                                    or fil.kind() == FiltrationKind::Freudenthal)
                             and not fil.is_subfiltration();
                     if (apparent_active) {
                         used_apparent = true;

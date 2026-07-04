@@ -29,18 +29,19 @@
 namespace oineus {
 
 // Apparent detection is column-centric and needs BOTH facets and cofacets of a
-// cell, i.e. a cell type exposing coboundary() (Cube does; Simplex does not).
-// The fused factory uses this to `if constexpr`-gate the apparent build path so it
-// is never instantiated for unsupported cell types (e.g. VR / Simplex).
-template<class Cell, class = void>
-struct SupportsApparent : std::false_type {};
-
-// The slim Cube's coboundary takes the shared geometry (the GridDomain owned by
-// the filtration), so probe coboundary(geometry) rather than a no-argument
-// coboundary(). Cube matches; Simplex (no coboundary at all) does not.
+// cell via the buffer forms boundary_into(geometry, emit) /
+// coboundary_into(geometry, emit). The advertising traits (common_defs.h) are
+// the honest probe: HasPackedBoundary promises boundary_into,
+// HasDirectCoboundary promises coboundary_into. (A decltype probe of the call
+// expression would lie here: the Simplex wrapper declares the _into forms as
+// member templates for EVERY encoding, so the call is well-formed even when the
+// encoding, e.g. Fat, has no coboundary at all.) True for the slim Cube and
+// slim Freudenthal (Simplex<Int, FreudenthalAnchorType>); false for the fat
+// Simplex (no coboundary) and BitPacked (packed boundary, no direct coboundary).
+// The fused factory uses this to `if constexpr`-gate the apparent build path so
+// it is never instantiated for unsupported cell types.
 template<class Cell>
-struct SupportsApparent<Cell, std::void_t<decltype(std::declval<const Cell&>().coboundary(std::declval<const typename Cell::Geometry&>()))>>
-        : std::true_type {};
+struct SupportsApparent : std::conjunction<HasPackedBoundary<Cell>, HasDirectCoboundary<Cell>> {};
 
 // Detects the fused RV working-column type (RVColumn<Int,2>, which carries both an
 // r_column and a v_column) so the reducer's apparent-resolver hook is compiled only

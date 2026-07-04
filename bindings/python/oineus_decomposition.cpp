@@ -404,6 +404,10 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
             .def_ro("is_reduced", &Decomposition::is_reduced)
             .def("has_matrix_v", &Decomposition::has_matrix_v)
             .def("has_matrix_u", &Decomposition::has_matrix_u)
+            .def("n_apparent_pairs", &Decomposition::n_apparent_pairs,
+                    "Number of apparent pairs detected by the lean (use_apparent_pairs) "
+                    "reduction; 0 if the apparent path was not taken or the lean state "
+                    "was already dropped by a materializing access.")
             .def("r_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { self.materialize_from_working_(); require_r_materialized(self, "r_as_csc"); return z2_col_matrix_to_csc(self.r_data, self.r_data.size()); })
             .def("v_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { self.materialize_from_working_(); return z2_col_matrix_to_csc(self.v_data, self.v_data.size()); })
             .def("d_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { return z2_col_matrix_to_csc(self.d_data, self.v_data.size()); })
