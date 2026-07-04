@@ -8,6 +8,7 @@ materialization) optimization, extending bench_apparent.py to the full grid:
     threads   x  1, 8
     flag      x  on (apparent, compute_v=True) / off (compute_v=True)
                  / off_nov (compute_v=False -- cheapest R-only reference)
+                 / on_nov (apparent, compute_v=False -- R-only apparent)
 
 Every (config, rep) runs in a FRESH SUBPROCESS so peak RSS (ru_maxrss; BYTES on
 darwin, KB on Linux) is attributable per run; the parent aggregates medians.
@@ -16,12 +17,13 @@ right after the filtration build, so rss_peak - rss_fil bounds the reduction's
 own contribution to the peak. All runs are cold (no in-process warmup).
 
 Note: use_apparent_pairs only activates on the fused parallel path
-(n_threads > 1, compute_v=True); at n_threads=1 the flag is inert (classic
-serial fallback, n_apparent_pairs() == 0). The 1-thread rows measure exactly
-that.
+(n_threads > 1, compute_v either way); at n_threads=1 the flag is inert
+(classic serial fallback, n_apparent_pairs() == 0). The 1-thread rows measure
+exactly that.
 
 Usage:
     python bench_apparent_matrix.py [--reps 3] [--csv PATH] [--quick]
+        [--flags on_nov,...] [--threads 8,...] [--fields smooth,...]
     python bench_apparent_matrix.py --worker KIND FIELD N DUALIZE THREADS FLAG
 """
 import argparse
@@ -36,7 +38,7 @@ import time
 
 import numpy as np
 
-FLAGS = ("on", "off", "off_nov")
+FLAGS = ("on", "off", "off_nov", "on_nov")
 
 
 def smooth_field(n, seed=0):
@@ -80,8 +82,8 @@ def worker(kind, field, n, dualize, n_threads, flag):
 
     p = oin.ReductionParams()
     p.n_threads = n_threads
-    p.compute_v = (flag != "off_nov")
-    p.use_apparent_pairs = (flag == "on")
+    p.compute_v = flag in ("on", "off")
+    p.use_apparent_pairs = flag in ("on", "on_nov")
     t0 = time.perf_counter()
     dcmp = oin.reduce(fil, p, dualize)
     wall = time.perf_counter() - t0
@@ -146,7 +148,9 @@ def print_block(rows):
               f"{r['n_apparent']:>12,}{r['app_fraction']:>7.3f}")
 
 
-def parent(reps, csv_path, quick):
+def parent(reps, csv_path, quick, flags=None, threads=None, fields=None):
+    # flags / threads / fields: optional axis subsets for partial re-runs
+    flags_axis = tuple(flags) if flags else FLAGS
     if quick:
         combos = [("cube", "smooth", 48), ("freud", "smooth", 48)]
         threads_axis = (8,)
@@ -154,8 +158,9 @@ def parent(reps, csv_path, quick):
     else:
         combos = [(kind, field, n)
                   for kind in ("cube", "freud")
-                  for field, n in (("smooth", 96), ("smooth", 128), ("random", 96))]
-        threads_axis = (1, 8)
+                  for field, n in (("smooth", 96), ("smooth", 128), ("random", 96))
+                  if fields is None or field in fields]
+        threads_axis = tuple(threads) if threads else (1, 8)
 
     print(f"apparent-pairs matrix: medians of {reps} fresh-subprocess reps, "
           f"sequential; wall = oin.reduce only")
@@ -164,7 +169,7 @@ def parent(reps, csv_path, quick):
         block = []
         for dualize in (False, True):
             for n_threads in threads_axis:
-                for flag in FLAGS:
+                for flag in flags_axis:
                     row = run_config(kind, field, n, dualize, n_threads, flag, reps)
                     if row is None:
                         continue
@@ -191,6 +196,12 @@ def main():
     ap.add_argument("--csv", default="bench_apparent_matrix.csv")
     ap.add_argument("--quick", action="store_true",
                     help="48^3 smooth only, 8 threads, 1 rep (smoke test)")
+    ap.add_argument("--flags", default=None,
+                    help="comma-separated flag subset (default: all)")
+    ap.add_argument("--threads", default=None,
+                    help="comma-separated thread axis (default: 1,8)")
+    ap.add_argument("--fields", default=None,
+                    help="comma-separated field subset (default: smooth,random)")
     ap.add_argument("--worker", nargs=6,
                     metavar=("KIND", "FIELD", "N", "DUALIZE", "THREADS", "FLAG"))
     args = ap.parse_args()
@@ -198,7 +209,10 @@ def main():
         kind, field, n, dualize, n_threads, flag = args.worker
         worker(kind, field, int(n), bool(int(dualize)), int(n_threads), flag)
     else:
-        parent(args.reps, args.csv, args.quick)
+        parent(args.reps, args.csv, args.quick,
+               flags=args.flags.split(",") if args.flags else None,
+               threads=[int(t) for t in args.threads.split(",")] if args.threads else None,
+               fields=args.fields.split(",") if args.fields else None)
 
 
 if __name__ == "__main__":
