@@ -377,6 +377,32 @@ def test_float32_indices_values_generic_marker():
             assert issubclass(getattr(mod, nm), oin.IndicesValues), nm
 
 
+def test_float32_full_u_rows_and_u_timings():
+    # the row-form U drivers (compute_full_u_rows) and dcmp.u_timings must work on both
+    # backends; clone() must carry u_timings over (copy_from_ used to zero it); and
+    # UComputeTimings must pickle round-trip.
+    import pickle
+
+    a = np.random.default_rng(6).random((16, 16))
+    for dtype, tag in ((np.float32, "_f32"), (np.float64, "_oineus")):
+        fil = oin.freudenthal_filtration(a.astype(dtype), max_dim=2)
+        assert _module_tag(fil) == tag
+        dcmp = oin.Decomposition(fil, False)
+        # serial without clearing leaves V in ELZ form, which the row solver requires
+        dcmp.reduce(oin.ReductionParams(compute_v=True, n_threads=1, clearing_opt=False))
+        dcmp.compute_full_u_rows(fil, dim=0, n_threads=2)
+        assert type(dcmp.u_timings).__name__ == "UComputeTimings"
+        assert dcmp.u_timings.total > 0
+        # clone carries the timings (copied alongside col_repr_ in copy_from_)
+        assert dcmp.clone().u_timings.total == dcmp.u_timings.total
+
+    t = oin.UComputeTimings()
+    t.transpose_v, t.row_solve, t.col_solve, t.col_to_row = 1.0, 2.0, 3.0, 4.0
+    t2 = pickle.loads(pickle.dumps(t))
+    assert (t2.transpose_v, t2.row_solve, t2.col_solve, t2.col_to_row) == (1.0, 2.0, 3.0, 4.0)
+    assert t2.total == t.total
+
+
 def test_float32_concrete_optimizer_ctors_route_by_dtype():
     # P3: the concrete per-cell-type optimizer names route construction by the filtration dtype
     # (they rejected a float32 filtration before) and span both backends for isinstance. The
