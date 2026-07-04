@@ -1,3 +1,7 @@
+#include <optional>
+
+#include <nanobind/stl/optional.h>
+
 #include "oineus_persistence_bindings.h"
 
 void init_oineus_common(nb::module_& m)
@@ -59,9 +63,22 @@ void init_oineus_common(nb::module_& m)
                                       bool,   // compute_u
                                       bool,   // sanity_check
                                       bool,   // verbose
-                                      bool,   // use_apparent_pairs
+                                      int,    // use_apparent_pairs (ApparentPairs as int)
                                       RPAdvanced
                                     >;
+
+    // Python-facing form of the tri-state ApparentPairs: None <-> Auto,
+    // True <-> On, False <-> Off, so every existing bool call site keeps working
+    auto apparent_to_py = [](oin::ApparentPairs a) -> nb::object {
+        if (a == oin::ApparentPairs::Auto)
+            return nb::none();
+        return nb::cast(a == oin::ApparentPairs::On);
+    };
+    auto apparent_from_py = [](std::optional<bool> v) -> oin::ApparentPairs {
+        if (not v.has_value())
+            return oin::ApparentPairs::Auto;
+        return *v ? oin::ApparentPairs::On : oin::ApparentPairs::Off;
+    };
 
     nb::enum_<oin::ColumnRepr>(m, "ColumnRepr", "Working-column data structure used during reduction")
             .value("Set", oin::ColumnRepr::Set, "std::set (baseline, PHAT A-Set)")
@@ -166,7 +183,7 @@ void init_oineus_common(nb::module_& m)
     nb::class_<ReductionParams>(m, "ReductionParams")
             .def(nb::init<>())
             .def("__init__",
-                [](ReductionParams* p, int n_threads, int chunk_size, bool use_clearing, bool compute_v, bool compute_u, std::vector<dim_type> dims_to_restore_elz, oin::ColumnRepr col_repr, bool verbose, bool use_apparent_pairs) {
+                [apparent_from_py](ReductionParams* p, int n_threads, int chunk_size, bool use_clearing, bool compute_v, bool compute_u, std::vector<dim_type> dims_to_restore_elz, oin::ColumnRepr col_repr, bool verbose, std::optional<bool> use_apparent_pairs) {
                     new (p) ReductionParams();
                     p->n_threads = n_threads;
                     p->advanced.chunk_size = chunk_size;
@@ -176,13 +193,20 @@ void init_oineus_common(nb::module_& m)
                     p->advanced.dims_to_restore_elz = dims_to_restore_elz;
                     p->advanced.col_repr = col_repr;
                     p->verbose = verbose;
-                    p->use_apparent_pairs = use_apparent_pairs;
-                }, nb::arg("n_threads")=def_rp.n_threads, nb::arg("chunk_size")=def_rp.advanced.chunk_size, nb::arg("use_clearing")=def_rp.use_clearing, nb::arg("compute_v")=def_rp.compute_v, nb::arg("compute_u")=def_rp.compute_u, nb::arg("dims_to_restore_elz")=def_rp.advanced.dims_to_restore_elz, nb::arg("col_repr")=def_rp.advanced.col_repr, nb::arg("verbose")=def_rp.verbose, nb::arg("use_apparent_pairs")=def_rp.use_apparent_pairs)
+                    p->use_apparent_pairs = apparent_from_py(use_apparent_pairs);
+                }, nb::arg("n_threads")=def_rp.n_threads, nb::arg("chunk_size")=def_rp.advanced.chunk_size, nb::arg("use_clearing")=def_rp.use_clearing, nb::arg("compute_v")=def_rp.compute_v, nb::arg("compute_u")=def_rp.compute_u, nb::arg("dims_to_restore_elz")=def_rp.advanced.dims_to_restore_elz, nb::arg("col_repr")=def_rp.advanced.col_repr, nb::arg("verbose")=def_rp.verbose, nb::arg("use_apparent_pairs").none()=nb::none())
             .def_rw("n_threads", &ReductionParams::n_threads)
             .def_rw("use_clearing", &ReductionParams::use_clearing)
             .def_rw("compute_v", &ReductionParams::compute_v)
             .def_rw("compute_u", &ReductionParams::compute_u)
-            .def_rw("use_apparent_pairs", &ReductionParams::use_apparent_pairs)
+            .def_prop_rw("use_apparent_pairs",
+                    [apparent_to_py](const ReductionParams& p) { return apparent_to_py(p.use_apparent_pairs); },
+                    [apparent_from_py](ReductionParams& p, std::optional<bool> value) { p.use_apparent_pairs = apparent_from_py(value); },
+                    nb::for_setter(nb::arg("value").none()),
+                    "Apparent-pairs optimization, tri-state: None (default) = auto, "
+                    "on only where measured as a pure win (parallel diagram-only "
+                    "homology of a complete cubical grid); True = force on wherever "
+                    "supported; False = off.")
             .def_rw("sanity_check", &ReductionParams::sanity_check)
             .def_rw("advanced", &ReductionParams::advanced)
             // back-compat aliases for the renamed fields (read+write, no warning)
@@ -191,8 +215,9 @@ void init_oineus_common(nb::module_& m)
                     [](ReductionParams& p, bool value) { p.use_clearing = value; },
                     "Deprecated alias for use_clearing.")
             .def_prop_rw("apparent_opt",
-                    [](const ReductionParams& p) { return p.use_apparent_pairs; },
-                    [](ReductionParams& p, bool value) { p.use_apparent_pairs = value; },
+                    [apparent_to_py](const ReductionParams& p) { return apparent_to_py(p.use_apparent_pairs); },
+                    [apparent_from_py](ReductionParams& p, std::optional<bool> value) { p.use_apparent_pairs = apparent_from_py(value); },
+                    nb::for_setter(nb::arg("value").none()),
                     "Deprecated alias for use_apparent_pairs.")
             .def_prop_rw("do_sanity_check",
                     [](const ReductionParams& p) { return p.sanity_check; },
@@ -218,7 +243,7 @@ void init_oineus_common(nb::module_& m)
                       return std::make_tuple(p.n_threads,
                               p.use_clearing, p.compute_v, p.compute_u,
                               p.sanity_check, p.verbose,
-                              p.use_apparent_pairs, p.advanced);
+                              static_cast<int>(p.use_apparent_pairs), p.advanced);
                     })
             .def("__setstate__", [](ReductionParams& p, const RedParamsTuple& t) {
                     new (&p) ReductionParams();
@@ -228,7 +253,7 @@ void init_oineus_common(nb::module_& m)
                       p.compute_u       = std::get<3>(t);
                       p.sanity_check    = std::get<4>(t);
                       p.verbose         = std::get<5>(t);
-                      p.use_apparent_pairs = std::get<6>(t);
+                      p.use_apparent_pairs = static_cast<oin::ApparentPairs>(std::get<6>(t));
                       p.advanced        = std::get<7>(t);
                     })
     ;

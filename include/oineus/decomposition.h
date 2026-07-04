@@ -903,6 +903,27 @@ namespace oineus {
             return dcmp;
         }
 
+        // Resolve the tri-state params.use_apparent_pairs for one fused branch
+        // (call sites sit past the can_fuse check, so n_threads > 1 and no
+        // compute_u here; explicit On is still subject to the per-branch support
+        // gate at the call site). Auto enables the optimization only in its
+        // measured pure-win corner -- the fused R-only homology reduction of a
+        // complete cubical grid, where it ties-or-wins on wall time AND sets the
+        // peak-RSS floor. Everywhere else (RV, cohomology, Freudenthal) it
+        // trades wall time for memory, so it stays opt-in.
+        template<class C, class R>
+        static bool apparent_requested_(const ReductionParams& params, const Filtration<C, R>& fil, bool dualize, bool r_only)
+        {
+            switch (params.use_apparent_pairs) {
+                case ApparentPairs::On: return true;
+                case ApparentPairs::Off: return false;
+                case ApparentPairs::Auto: break;
+            }
+            return r_only and not dualize
+                    and fil.kind() == FiltrationKind::Cubical
+                    and not fil.is_subfiltration();
+        }
+
         // True-fused reduction: build the parallel working-column array DIRECTLY
         // from the (co)boundary (no intermediate at-rest r_data, no prepare-copy)
         // and feed it straight to the reduction core. The diagram reads from
@@ -952,7 +973,7 @@ namespace oineus {
                     // The apparent lean form skips the eager Bauer fill, which also
                     // hosts the ELZ-restore pass; refuse the combination so a
                     // requested ELZ restore is never silently dropped.
-                    const bool apparent_active = params.use_apparent_pairs
+                    const bool apparent_active = apparent_requested_(params, fil, dualize, /*r_only=*/false)
                             and params.advanced.dims_to_restore_elz.empty()
                             and (fil.kind() == FiltrationKind::Cubical
                                     or fil.kind() == FiltrationKind::Freudenthal)
@@ -1014,7 +1035,7 @@ namespace oineus {
                 // column's V is the identity anyway), and the post-state is the
                 // usual pivots-only one (r_data stays empty).
                 if constexpr (SupportsApparent<C>::value) {
-                    const bool apparent_active = params.use_apparent_pairs
+                    const bool apparent_active = apparent_requested_(params, fil, dualize, /*r_only=*/true)
                             and (fil.kind() == FiltrationKind::Cubical
                                     or fil.kind() == FiltrationKind::Freudenthal)
                             and not fil.is_subfiltration();

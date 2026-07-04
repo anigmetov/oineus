@@ -9,8 +9,12 @@ must reconstruct a valid R = D V.
 Activation requires the fused parallel path (params.n_threads > 1, both
 compute_v=True and the R-only compute_v=False variant) on a complete cubical or
 slim Freudenthal grid complex; oin.reduce(...) is that entry point.
+
+The flag is tri-state: True/False force it on/off, None (the default) is auto
+and resolves to ON only on the fused R-only cubical homology path.
 """
 import gc
+import pickle
 import zlib
 
 import numpy as np
@@ -257,6 +261,87 @@ def test_apparent_r_only_serial_inert(kind, dualize):
     ctx = f"r-only serial kind={kind} dualize={dualize}"
     _assert_dgms_equal(_dgms(ref, fil, a.ndim), _dgms(serial, fil, a.ndim), ctx)
     _assert_dgms_equal(_zero_pers(ref, fil, a.ndim), _zero_pers(serial, fil, a.ndim), ctx + " [zero-pers]")
+
+
+# --- tri-state flag: None (the default) is Auto and resolves to ON only in
+# --- the measured pure-win corner, the fused R-only cubical homology path ---
+
+def _reduce_auto(kind, a, dualize=False, n_threads=8, compute_v=False):
+    build = oin.cube_filtration if kind == "cube" else oin.freudenthal_filtration
+    fil = build(a, n_threads=n_threads)
+    # nothing set on the flag: default params, i.e. Auto
+    dcmp = oin.reduce(fil, None, dualize, n_threads=n_threads, compute_v=compute_v)
+    return fil, dcmp
+
+
+def test_apparent_auto_activates_cube_hom_r_only():
+    # default params must take the apparent path on the fused R-only cubical
+    # homology reduction, and the diagram must match an explicit-Off run
+    a = np.random.default_rng(2027).standard_normal((8, 7, 6)).astype(np.float64)
+    fil, auto_d = _reduce_auto("cube", a)
+    assert auto_d.n_apparent_pairs() > 0, "Auto did not activate in the pure-win corner"
+    _, off = _reduce(a, dualize=False, apparent=False, n_threads=8, compute_v=False)
+    assert off.n_apparent_pairs() == 0
+    ctx = "auto cube hom r-only"
+    _assert_dgms_equal(_dgms(off, fil, a.ndim), _dgms(auto_d, fil, a.ndim), ctx)
+    _assert_dgms_equal(_zero_pers(off, fil, a.ndim), _zero_pers(auto_d, fil, a.ndim), ctx + " [zero-pers]")
+
+
+@pytest.mark.parametrize("kind,dualize,compute_v", [
+    ("cube", True, False),   # cohomology
+    ("cube", False, True),   # RV path
+    ("fr", False, False),    # Freudenthal homology R-only
+])
+def test_apparent_auto_stays_off_elsewhere(kind, dualize, compute_v):
+    a = np.random.default_rng(2028).standard_normal((8, 7, 6)).astype(np.float64)
+    _, dcmp = _reduce_auto(kind, a, dualize=dualize, compute_v=compute_v)
+    assert dcmp.n_apparent_pairs() == 0, f"Auto activated outside its corner: {kind} dualize={dualize} compute_v={compute_v}"
+
+
+def test_apparent_explicit_overrides_auto():
+    a = np.random.default_rng(2029).standard_normal((8, 7, 6)).astype(np.float64)
+    # explicit True on Freudenthal hom R-only: Auto would stay off, On activates
+    _, on = _reduce_fr(a, dualize=False, apparent=True, n_threads=8, compute_v=False)
+    assert on.n_apparent_pairs() > 0
+    # explicit False on cube hom R-only: Auto would turn on, Off wins
+    _, off = _reduce(a, dualize=False, apparent=False, n_threads=8, compute_v=False)
+    assert off.n_apparent_pairs() == 0
+
+
+def test_apparent_tristate_property_pickle_repr():
+    p = oin.ReductionParams()
+    assert p.use_apparent_pairs is None
+    assert "use_apparent_pairs = auto" in repr(p)
+    p.use_apparent_pairs = True
+    assert p.use_apparent_pairs is True
+    assert "use_apparent_pairs = on" in repr(p)
+    p.use_apparent_pairs = False
+    assert p.use_apparent_pairs is False
+    assert "use_apparent_pairs = off" in repr(p)
+    p.use_apparent_pairs = None
+    assert p.use_apparent_pairs is None
+
+    for val in (None, True, False):
+        p.use_apparent_pairs = val
+        back = pickle.loads(pickle.dumps(p))
+        assert back == p
+        assert back.use_apparent_pairs is val
+
+    # the kwargs ctor accepts all three states and defaults to Auto
+    assert oin.ReductionParams().use_apparent_pairs is None
+    assert oin.ReductionParams(use_apparent_pairs=None).use_apparent_pairs is None
+    assert oin.ReductionParams(use_apparent_pairs=True).use_apparent_pairs is True
+    assert oin.ReductionParams(use_apparent_pairs=False).use_apparent_pairs is False
+
+
+def test_apparent_tristate_reduce_kwargs():
+    # the oin.reduce kwargs layer must route all three states, None included
+    a = np.random.default_rng(2030).standard_normal((8, 8)).astype(np.float64)
+    fil = oin.cube_filtration(a, n_threads=4)
+    assert oin.reduce(fil, n_threads=4, compute_v=False, use_apparent_pairs=True).n_apparent_pairs() > 0
+    assert oin.reduce(fil, n_threads=4, compute_v=False, use_apparent_pairs=False).n_apparent_pairs() == 0
+    # cube hom R-only is Auto's pure-win corner, so None turns it on
+    assert oin.reduce(fil, n_threads=4, compute_v=False, use_apparent_pairs=None).n_apparent_pairs() > 0
 
 
 @pytest.mark.parametrize("dualize", [False, True])

@@ -196,7 +196,7 @@ TEST_CASE("apparent: R-only fused reduce matches classic pivots (cube + Freudent
             ReductionParams p_app;
             p_app.n_threads = 4;
             p_app.compute_v = false;
-            p_app.use_apparent_pairs = true;
+            p_app.use_apparent_pairs = ApparentPairs::On;
             auto test = VRUDecomposition<Int>::reduce_from_filtration_fused(fil, p_app, dualize);
 
             REQUIRE(test.n_apparent_pairs() > 0);

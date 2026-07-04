@@ -35,6 +35,30 @@ namespace oineus {
         return out;
     }
 
+    // Tri-state request for the apparent-pairs optimization
+    // (ReductionParams::use_apparent_pairs); resolution documented there
+    enum class ApparentPairs : char {
+        Auto = 0,
+        On = 1,
+        Off = 2
+    };
+
+    inline const char* to_string(ApparentPairs ap)
+    {
+        switch (ap) {
+            case ApparentPairs::Auto: return "auto";
+            case ApparentPairs::On:   return "on";
+            case ApparentPairs::Off:  return "off";
+        }
+        return "unknown";
+    }
+
+    inline std::ostream& operator<<(std::ostream& out, ApparentPairs ap)
+    {
+        out << to_string(ap);
+        return out;
+    }
+
     struct ReductionParams {
 
         // Rarely-tuned knobs, grouped so the top level stays small
@@ -49,11 +73,17 @@ namespace oineus {
         bool compute_v{false};
         bool compute_u{false};
         // Apparent-pairs optimization (Bauer/Ripser): skip building + storing the
-        // apparent columns; pre-seed their pivots. Default OFF -> existing paths
-        // unchanged. Honored only on the fused path for supported, complete
-        // filtrations (Cubical/Freudenthal, not subfiltrations); silently ignored
-        // otherwise. See include/oineus/apparent.h.
-        bool use_apparent_pairs{false};
+        // apparent columns; pre-seed their pivots. Tri-state:
+        //   Auto (default) -- ON only in the measured pure-win corner, the fused
+        //     parallel R-only homology reduction of a complete cubical grid
+        //     (wall ties-or-wins AND lower peak RSS there); OFF everywhere else.
+        //   On -- force wherever supported: the fused path for complete
+        //     Cubical/Freudenthal filtrations (not subfiltrations); silently
+        //     ignored otherwise. Buys the peak-RSS floor at a wall cost on
+        //     cohomology and on large Freudenthal grids.
+        //   Off -- never.
+        // See include/oineus/apparent.h and docs/topics/performance.md.
+        ApparentPairs use_apparent_pairs{ApparentPairs::Auto};
         bool sanity_check{false};
         bool verbose{false};
         Advanced advanced;
