@@ -148,7 +148,7 @@ def test_crit_sets_other_directions_grads_equal(direction):
 # weak-alpha longest-edge ties: gradient must split evenly among tied edges
 # ---------------------------------------------------------------------------
 
-# Isoceles triangle: the triangle's longest edge is tied (|p0-p2|^2 ==
+# Isosceles triangle: the triangle's longest edge is tied (|p0-p2|^2 ==
 # |p1-p2|^2 == 26). torch.amax / jnp.max split the tie gradient evenly;
 # eagerpy's torch max used to send it all to the first tied edge.
 TIE_PTS = np.array([[0.0, 0.0], [2.0, 0.0], [1.0, 5.0]])
