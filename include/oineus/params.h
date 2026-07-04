@@ -68,7 +68,10 @@ namespace oineus {
         out << ", compute_u = " << p.compute_u;
         out << ", use_apparent_pairs = " << p.use_apparent_pairs;
         out << ", col_repr = " << p.col_repr;
-        // out << ", dims_to_restore_elz = " << p.dims_to_restore_elz;
+        out << ", dims_to_restore_elz = [";
+        for(size_t i = 0; i < p.dims_to_restore_elz.size(); ++i)
+            out << (i ? ", " : "") << p.dims_to_restore_elz[i];
+        out << "]";
         out << ", sanity_check = " << p.sanity_check;
         out << ", verbose = " << p.verbose;
         out << ")";
