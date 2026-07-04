@@ -24,7 +24,7 @@ from ._oineus import Decomposition, IndexDiagramPoint
 # reduce is the fused one-shot build+reduce free function; it is Real-templated (registered per
 # backend), so it is re-exposed below as a dtype-routing facade (like the other routed helpers).
 from ._oineus import DecompositionManipStats
-from ._oineus import ReductionParams, ReductionTimings, KICRParams
+from ._oineus import ReductionParams, ReductionTimings, UComputeTimings, KICRParams
 from ._oineus import ColumnRepr
 # KerImCokReduced(+Prod), IndicesValues(+Prod) and the concrete per-cell-type TopologyOptimizer
 # classes (Prod / Cube_ND) are Real-templated (and several are per-cell-type too); they are
@@ -1934,6 +1934,7 @@ _PUBLIC_API_NAMES = [
     "DecompositionManipStats",
     "ReductionParams",
     "ReductionTimings",
+    "UComputeTimings",
     "KICRParams",
     "KerImCokReduced",
     "KerImCokReducedProd",

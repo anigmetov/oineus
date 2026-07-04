@@ -30,6 +30,13 @@
 //   void add(const std::vector<Int>& pivot);      // XOR a sorted pivot column
 //   void to_vector(std::vector<Int>& out) const;  // sorted dump (non-destructive)
 //   size_t size() const;                          // logical popcount (stats only)
+//
+// The U-solve residual additionally uses:
+//   void flip(Int i);                             // toggle a single index (Z_2 XOR of e_i)
+//   Int  top() const;                             // min set index, -1 if empty (row form)
+// low()/flip() are provided by all four column types; top() by all except
+// HeapColumn (a max-heap cannot expose the min cheaply), so the row-form U
+// solve accepts Set/Full/BitTree residuals but not Heap.
 
 namespace oineus {
 
@@ -55,8 +62,17 @@ struct SetColumn {
         }
     }
 
+    // Toggle a single index (XOR with e_i), the residual's single-bit primitive.
+    void flip(Int i)
+    {
+        auto res = data_.insert(i);
+        if (!res.second)
+            data_.erase(res.first);
+    }
+
     bool is_zero() const { return data_.empty(); }
     Int low() const { return data_.empty() ? Int(-1) : *data_.rbegin(); }
+    Int top() const { return data_.empty() ? Int(-1) : *data_.begin(); }
     template<class Col>
     void to_vector(Col& out) const { out.assign(data_.begin(), data_.end()); }
     size_t size() const { return data_.size(); }
@@ -89,6 +105,15 @@ struct HeapColumn {
             heap_.push_back(e);
             std::push_heap(heap_.begin(), heap_.end());
         }
+    }
+
+    // Toggle a single index (XOR with e_i). Lazy: a duplicate cancels its
+    // partner when the pivot is queried. No top() -- a max-heap cannot expose
+    // the min cheaply, so HeapColumn is not offered as a row-form residual.
+    void flip(Int i)
+    {
+        heap_.push_back(i);
+        std::push_heap(heap_.begin(), heap_.end());
     }
 
     // Remove and return the max index with odd multiplicity, canceling pairs.
@@ -210,6 +235,20 @@ struct FullColumn {
         return Int(-1);
     }
 
+    // Min set index, -1 if empty. The heap is max-oriented, so scan the touched
+    // words for the lowest word still carrying a bit (dirty_ may list words that
+    // were later cleared, hence the bits_[w] guard).
+    Int top() const
+    {
+        if (nnz_ == 0)
+            return Int(-1);
+        size_t best_w = SIZE_MAX;
+        for (size_t w : dirty_)
+            if (bits_[w] && w < best_w)
+                best_w = w;
+        return Int(best_w * 64 + __builtin_ctzll(bits_[best_w]));
+    }
+
     template<class Col>
     void to_vector(Col& out) const
     {
@@ -327,6 +366,24 @@ struct BitTreeColumn {
         for (int lev = L; lev > 0; --lev) {
             uint64_t word = levels_[lev - 1][pos];
             pos = pos * 64 + (63 - __builtin_clzll(word));
+        }
+        return Int(pos);
+    }
+
+    // Smallest set index, -1 if empty. Mirror of low() using the lowest set bit
+    // (__builtin_ctzll) at each level. Used by the row-form U solve, whose
+    // forward substitution against lower-unit-triangular V^T consumes the
+    // residual from the top (smallest index up).
+    Int top() const
+    {
+        if (nnz_ == 0)
+            return Int(-1);
+        int L = int(levels_.size()) - 1;
+        uint64_t topword = levels_[L][0];
+        size_t pos = __builtin_ctzll(topword);
+        for (int lev = L; lev > 0; --lev) {
+            uint64_t word = levels_[lev - 1][pos];
+            pos = pos * 64 + __builtin_ctzll(word);
         }
         return Int(pos);
     }

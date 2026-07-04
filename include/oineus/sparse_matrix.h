@@ -322,7 +322,8 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
 
     static Matrix col_to_row_format_parallel(const Matrix& col_format, int
         n_threads, size_t col_start = 0,
-        size_t col_end = std::numeric_limits<size_t>::max(), Int num_rows = -1)
+        size_t col_end = std::numeric_limits<size_t>::max(), Int num_rows = -1,
+        bool prefer_row_scatter = false)
     {
         if (col_format.empty()) {
             return {};
@@ -387,30 +388,87 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
             t.join();
         }
 
-        for (int row_idx = 0; row_idx < num_rows; ++row_idx) {
-            size_t prefix = 0;
-            const size_t r = static_cast<size_t>(row_idx);
-            for (size_t tid = 0; tid < n_workers; ++tid) {
-                const size_t count = per_thread_positions[tid][r];
-                per_thread_positions[tid][r] = prefix;
-                prefix += count;
+        // Per-row exclusive prefix-sum across threads (so each worker knows where to
+        // write within each row) and allocate each output row. Parallelized over
+        // rows (independent); the previous serial loop here was an
+        // O(num_rows * n_workers) term that grew with the thread count.
+        {
+            std::vector<std::thread> prefix_workers;
+            prefix_workers.reserve(n_workers);
+            for (size_t wid = 0; wid < n_workers; ++wid) {
+                const size_t r_begin = (wid * static_cast<size_t>(num_rows)) / n_workers;
+                const size_t r_end = ((wid + 1) * static_cast<size_t>(num_rows)) / n_workers;
+                prefix_workers.emplace_back(
+                    [&per_thread_positions, &row_format, n_workers, r_begin, r_end]() {
+                        for (size_t r = r_begin; r < r_end; ++r) {
+                            size_t prefix = 0;
+                            for (size_t tid = 0; tid < n_workers; ++tid) {
+                                const size_t count = per_thread_positions[tid][r];
+                                per_thread_positions[tid][r] = prefix;
+                                prefix += count;
+                            }
+                            row_format[r].resize(prefix);
+                        }
+                    });
             }
-            row_format[r].resize(prefix);
+            for (auto& t : prefix_workers) t.join();
         }
 
         workers.clear();
 
-        for (size_t tid = 0; tid < n_workers; ++tid) {
-            workers.emplace_back([&, tid]() {
-                auto [begin, end] = worker_range(tid);
-                auto& local_pos = per_thread_positions[tid];
-                for (size_t col_idx = begin; col_idx < end; ++col_idx) {
-                    for (int row_idx : col_format[col_idx]) {
-                        const size_t r = static_cast<size_t>(row_idx);
-                        row_format[r][local_pos[r]++] = static_cast<int>(col_idx);
+        // Scatter -- two strategies with identical output; the caller picks via
+        // prefer_row_scatter (see the (side,dim) routing in compute_u_from_v /
+        // compute_partial_u_rows).
+        //
+        // COLUMN-partitioned (default): each worker owns a column range and writes
+        // each entry to row_format[row][pos++]. Reads every column once; best when
+        // rows have low degree (little write contention, small random-write set).
+        //
+        // ROW-partitioned: each worker owns a DISJOINT output-row range and writes
+        // only its own row_format[] buffers -- zero cross-thread contention,
+        // cache-warm writes -- binary-searching each sorted column for its range
+        // (columns are sorted ascending: compute_u_column sorts, V is 1-diagonal).
+        // Wins when the column scatter would degenerate into a random-DRAM-write
+        // storm (measured flat 1->16 threads on the dense cohomology dim-1
+        // transposes, where this scales ~4x). No scalar density metric predicts the
+        // crossover across filtration/dim/side (characterized on LS/alpha/VR, dims
+        // 0/1/2 -- e.g. VR hom-V^T at collen 47 wants column while LS coh at collen
+        // 33 wants row, and dim-2 inverts per filtration), so the caller decides.
+        const bool dense = prefer_row_scatter;
+        if (dense) {
+            for (size_t wid = 0; wid < n_workers; ++wid) {
+                const size_t r_begin = (wid * static_cast<size_t>(num_rows)) / n_workers;
+                const size_t r_end = ((wid + 1) * static_cast<size_t>(num_rows)) / n_workers;
+                workers.emplace_back(
+                    [&col_format, &row_format, col_start, col_end, r_begin, r_end]() {
+                        if (r_begin >= r_end)
+                            return;
+                        std::vector<size_t> cursor(r_end - r_begin, 0);
+                        const Int lo = static_cast<Int>(r_begin);
+                        const Int hi = static_cast<Int>(r_end);
+                        for (size_t col_idx = col_start; col_idx < col_end; ++col_idx) {
+                            const auto& col = col_format[col_idx];
+                            auto it = std::lower_bound(col.begin(), col.end(), lo);
+                            for (; it != col.end() && *it < hi; ++it) {
+                                const size_t r = static_cast<size_t>(*it);
+                                row_format[r][cursor[r - r_begin]++] = static_cast<int>(col_idx);
+                            }
+                        }
+                    });
+            }
+        } else {
+            for (size_t tid = 0; tid < n_workers; ++tid) {
+                workers.emplace_back([&, tid]() {
+                    auto [begin, end] = worker_range(tid);
+                    auto& local_pos = per_thread_positions[tid];
+                    for (size_t col_idx = begin; col_idx < end; ++col_idx) {
+                        for (int row_idx : col_format[col_idx]) {
+                            const size_t r = static_cast<size_t>(row_idx);
+                            row_format[r][local_pos[r]++] = static_cast<int>(col_idx);
+                        }
                     }
-                }
-            });
+                });
+            }
         }
 
         for (auto& t : workers) {

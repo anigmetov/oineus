@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <cstdlib>
@@ -34,6 +35,7 @@
 #endif
 
 #include "common_defs.h"
+#include "reduction_timings.h"
 #include "diagram.h"
 #include "mem_reclamation.h"
 #include "sparse_matrix.h"
@@ -398,54 +400,77 @@ namespace oineus {
         return n_fixes;
     }
 
-    template<class Int>
-    bool restore_elz_column_parallel(typename SimpleRVMatrixTraits<Int, 2>::AMatrix& r_v_matrix, size_t current_col)
+    // Parallel ELZ restore of one column, using a working representative. The
+    // earlier naive version XORed columns with std::set_symmetric_difference, which
+    // reallocates a fresh column on every add and dominated the (serial, dense)
+    // cohomology ELZ restore. This one caches the current R and V into reusable
+    // working columns
+    // (v_work, r_work -- whatever WorkCol the reduction's col_repr picked:
+    // BitTree/Heap/Full/Set), does every XOR in that representation allocation-free,
+    // and materializes once at the end. The caller owns v_work/r_work and reuses
+    // them across its column block, so the O(n) dense buffer is allocated once per
+    // worker, not per column.
+    //
+    // Reformulation of the same algorithm: walk V's entries from the largest index
+    // down (= bottom-up in the sorted column). The current max is the candidate
+    // `added_col`. If it triggers an undo, XOR its column into V and R -- V is
+    // upper-triangular so this removes added_col and toggles only SMALLER entries,
+    // leaving already-recorded larger survivors final. Otherwise the candidate is a
+    // survivor: record it and clear it from the working V. Survivors are produced in
+    // decreasing order, so reverse for the ascending at-rest column.
+    template<class Int, class WorkCol>
+    bool restore_elz_column_parallel_repr(
+            typename SimpleRVMatrixTraits<Int, 2>::AMatrix& r_v_matrix,
+            size_t current_col, WorkCol& v_work, WorkCol& r_work)
     {
-        using SparseTraits = SimpleSparseMatrixTraits<Int, 2>;
-        using RVTraits = SimpleRVMatrixTraits<Int, 2>;
-        using RVColumn = typename RVTraits::Column;
+        using RVColumn = typename SimpleRVMatrixTraits<Int, 2>::Column;
 
         auto current_ptr = r_v_matrix[current_col].load(std::memory_order_relaxed);
         if (current_ptr == nullptr)
             return false;
 
-        RVColumn local_col(*current_ptr);
+        v_work.load(current_ptr->v_column);   // clear + fill (O(nnz), reuses buffers)
+        r_work.load(current_ptr->r_column);
 
-        size_t bottom_offset = 0;
+        SparseColumn<Int> kept_v;             // survivors, pushed in DECREASING order
         bool changed = false;
 
-        // Same bottom-up continuation logic as the serial version, but working on a local copy
-        // of the current column before publishing a new pointer.
-        while (bottom_offset < local_col.v_column.size()) {
-            const size_t v_idx = local_col.v_column.size() - 1 - bottom_offset;
-            const Int added_col = local_col.v_column[v_idx];
+        while (true) {
+            const Int added_col = v_work.low();
+            if (added_col < 0)
+                break;
 
             auto added_ptr = r_v_matrix[added_col].load(std::memory_order_relaxed);
             if (added_ptr == nullptr)
-                return changed;
+                return changed;               // neighbour not materialized: leave column as-is
 
-            const bool is_current_col_death = not local_col.r_column.empty();
+            const bool is_current_col_death = not r_work.is_zero();
             const bool is_added_col_zero = added_ptr->r_column.empty();
-
             const bool added_zero_column = (added_col < static_cast<Int>(current_col) && is_added_col_zero);
             const bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
-                    (local_col.r_column.back() > added_ptr->r_column.back()));
+                    r_work.low() > added_ptr->r_column.back());
 
             if (added_zero_column || added_non_killing_column) {
-                SparseTraits::add_to_column(local_col.v_column, added_ptr->v_column);
-                SparseTraits::add_to_column(local_col.r_column, added_ptr->r_column);
+                v_work.add(added_ptr->v_column);
+                r_work.add(added_ptr->r_column);
                 changed = true;
             } else {
-                ++bottom_offset;
+                kept_v.push_back(added_col);
+                const std::array<Int, 1> one{added_col};
+                v_work.add(one);              // clear the survivor from the working V
             }
         }
 
-        if (changed) {
-            auto* new_col = new RVColumn(std::move(local_col.r_column), std::move(local_col.v_column));
-            r_v_matrix[current_col].store(new_col, std::memory_order_relaxed);
-        }
+        if (not changed)
+            return false;                     // result equals the original column -> don't republish
 
-        return changed;
+        SparseColumn<Int> v_result(kept_v.rbegin(), kept_v.rend());   // descending -> ascending
+        SparseColumn<Int> r_result;
+        r_work.to_vector(r_result);
+
+        auto* new_col = new RVColumn(std::move(r_result), std::move(v_result));
+        r_v_matrix[current_col].store(new_col, std::memory_order_relaxed);
+        return true;
     }
 
     template<typename Int_>
@@ -460,6 +485,11 @@ namespace oineus {
         MatrixData r_data;
         MatrixData v_data;
         MatrixData u_data_t;
+        // Per-phase wall-clock of the last compute_u_* call (see UComputeTimings).
+        UComputeTimings u_timings_;
+        // Diagnostic: per-thread wall-clock of the last parallel ELZ-restore pass
+        // (one entry per worker), to measure load imbalance of the contiguous split.
+        std::vector<double> dbg_restore_thread_times_;
         bool is_reduced {false};
         // Whether d_data (the original boundary) is held. The fused
         // reduce_from_filtration path builds R directly and does not keep D, so
@@ -467,6 +497,11 @@ namespace oineus {
         // ordinary ctor+reduce path.
         bool has_d_data_ {true};
         bool dualize_ {false};
+        // Working-column representation the last reduce() ran with. The U-solve
+        // reads it so its residual uses the same data structure as the reduction
+        // (BitTree by default; Set/Heap/Full for the ablation study), rather than
+        // hardcoding BitTree. Set in reduce(); carried by copy/move.
+        ColumnRepr col_repr_ {ColumnRepr::BitTree};
         // True iff R, V are known to be in ELZ form. Maintained by the
         // reduction drivers and by restore_elz; consulted by
         // compute_partial_u_rows which requires V to be ELZ. A full
@@ -564,6 +599,7 @@ namespace oineus {
             is_reduced = other.is_reduced;
             has_d_data_ = other.has_d_data_;
             dualize_ = other.dualize_;
+            col_repr_ = other.col_repr_;
             is_elz_in_dim_ = other.is_elz_in_dim_;
             _pivots = other._pivots;
             ri_r_ = other.ri_r_;
@@ -591,6 +627,7 @@ namespace oineus {
             is_reduced = other.is_reduced;
             has_d_data_ = other.has_d_data_;
             dualize_ = other.dualize_;
+            col_repr_ = other.col_repr_;
             is_elz_in_dim_ = std::move(other.is_elz_in_dim_);
             _pivots = std::move(other._pivots);
             ri_r_ = std::move(other.ri_r_);
@@ -1139,6 +1176,19 @@ namespace oineus {
         template<class WorkCol> void reduce_parallel_r_only_impl(Params& params);
         template<class WorkCol> void reduce_parallel_rv_impl(Params& params);
 
+        // Templated U-solve kernels. The public compute_u_from_v / _1 /
+        // compute_partial_u_rows dispatch on col_repr_ and call these with the
+        // matching WorkCol residual (same set of column types as the reduction).
+        // The row form (compute_partial_u_rows) needs top(), so Heap is excluded
+        // there (see the dispatcher).
+        template<class WorkCol> void compute_u_from_v_impl(dim_type dim, size_t n_threads, bool verbose);
+        template<class WorkCol> void compute_u_from_v_1_impl(dim_type dim, size_t n_threads, bool verbose);
+        template<class WorkCol, typename Real, typename ValueAt, typename CmpOp>
+        void compute_partial_u_rows_impl(const std::vector<size_t>& rows,
+                                         const std::vector<Real>& bounds,
+                                         dim_type dim, ValueAt&& value_at,
+                                         CmpOp&& cmp_op, size_t n_threads, bool verbose);
+
         // Parallel reduction "cores": everything after the prepare phase (thread
         // spawn/join, interrupt, stats, copy-back, copy-pivots, teardown). The
         // working column array and the pivots are built by the caller -- either the
@@ -1432,10 +1482,29 @@ namespace oineus {
         bool is_R_column_zero(size_t col_idx) const { return r_is_zero(col_idx); }
         bool is_V_column_zero(size_t col_idx) const { return v_col(col_idx).empty(); }
 
-        IntSparseColumn compute_u_column(size_t col_idx) const;
+        // Column-form U solve (R u_c = D_c). WorkCol is the residual data
+        // structure -- any of the four ColumnRepr types; the driver picks it
+        // from col_repr_.
+        template<class WorkCol>
+        IntSparseColumn compute_u_column(size_t col_idx, WorkCol& residual) const;
+        // Convenience overload for single-column callers: allocates a fresh residual.
+        IntSparseColumn compute_u_column(size_t col_idx) const
+        {
+            BitTreeColumn<Int_> residual;
+            residual.reserve(n_cols_total());
+            return compute_u_column(col_idx, residual);
+        }
         void compute_u_from_v(dim_type dim, size_t n_threads=1, bool verbose=false);
 
-        IntSparseColumn compute_u_column_1(size_t col_idx) const;
+        template<class WorkCol>
+        IntSparseColumn compute_u_column_1(size_t col_idx, WorkCol& residual) const;
+        // Convenience overload for single-column callers: allocates a fresh residual.
+        IntSparseColumn compute_u_column_1(size_t col_idx) const
+        {
+            BitTreeColumn<Int_> residual;
+            residual.reserve(n_cols_total());
+            return compute_u_column_1(col_idx, residual);
+        }
         void compute_u_from_v_1(dim_type dim, size_t n_threads=1, bool verbose=false);
 
         // Row-form U primitives. Solves (row r of U) V = e_r^T in
@@ -1452,12 +1521,28 @@ namespace oineus {
         //   coh (dualize=true), decrease_birth walker:
         //     cmp_op(piv_value, bound) = (piv_value < bound)  ["below"]
         // Negate flips both directions; not yet supported.
+        template<class WorkCol, typename Real, typename ValueAt, typename CmpOp>
+        IntSparseColumn compute_u_row_bounded(size_t row_idx,
+                                              const MatrixData& vt_data,
+                                              Real value_bound,
+                                              ValueAt&& value_at,
+                                              CmpOp&& cmp_op,
+                                              WorkCol& residual) const;
+
+        // Convenience overload for single-row callers: allocates a fresh residual.
         template<typename Real, typename ValueAt, typename CmpOp>
         IntSparseColumn compute_u_row_bounded(size_t row_idx,
                                               const MatrixData& vt_data,
                                               Real value_bound,
                                               ValueAt&& value_at,
-                                              CmpOp&& cmp_op) const;
+                                              CmpOp&& cmp_op) const
+        {
+            BitTreeColumn<Int_> residual;
+            residual.reserve(n_cols_total());
+            return compute_u_row_bounded(row_idx, vt_data, value_bound,
+                                         std::forward<ValueAt>(value_at),
+                                         std::forward<CmpOp>(cmp_op), residual);
+        }
 
         // Parallel partial-rows driver. Builds vt_data internally for
         // `dim`, then runs n_threads row solves on the rows list.
@@ -1848,6 +1933,10 @@ namespace oineus {
 
         invalidate_dynamic_();   // R, V are rebuilt; any row index is now stale
         params.timings.reset();
+
+        // Record the working-column repr so a later compute_u_* uses the same
+        // residual data structure (not a hardcoded BitTree).
+        col_repr_ = params.col_repr;
 
         if (r_data.empty()) {
             is_reduced = true;
@@ -3468,7 +3557,10 @@ namespace oineus {
 
         // Deterministic static partitioning to avoid a hot global fetch_add in tight loops.
 
-        auto run_parallel_cols = [this, n_workers](dim_type dim, const auto& fn) {
+        // thread_times (optional): if given, filled with each worker's wall-clock
+        // so callers can measure load imbalance of the equal-column-count split.
+        auto run_parallel_cols = [this, n_workers](dim_type dim, const auto& fn,
+                                                   std::vector<double>* thread_times = nullptr) {
             if (dualize()) {
                 dim = _dim_first.size() - dim - 1;
             }
@@ -3479,17 +3571,30 @@ namespace oineus {
                 return;
 
             const size_t n_workers_eff = std::min(n_workers, n_cols_in_dim);
+            if (thread_times)
+                thread_times->assign(n_workers_eff, 0.0);
 
+            // Equal-column-count contiguous blocks. This is badly imbalanced on
+            // cohomology (the ELZ violations cluster in one column range, so one
+            // worker does ~all the work), BUT a work-balanced dynamic split is
+            // WORSE: restore_elz_column reads neighbour columns, so processing the
+            // heavy range out of increasing order makes columns read not-yet-
+            // restored neighbours and re-do work, blowing total work up ~Nx. The
+            // in-order contiguous walk of the heavy range is the minimal-work serial
+            // chain; the coh bottleneck is intrinsic order-dependence, not scheduling.
             std::vector<std::thread> workers;
             workers.reserve(n_workers_eff);
 
             for (size_t tid = 0; tid < n_workers_eff; ++tid) {
                 const size_t begin = start_idx + (tid * n_cols_in_dim) / n_workers_eff;
                 const size_t end   = start_idx + ((tid + 1) * n_cols_in_dim) / n_workers_eff;
-                workers.emplace_back([begin, end, &fn]() {
+                workers.emplace_back([begin, end, &fn, thread_times, tid]() {
+                    Timer tm;
                     for (size_t col_idx = begin; col_idx < end; ++col_idx) {
                         fn(col_idx);
                     }
+                    if (thread_times)
+                        (*thread_times)[tid] = tm.elapsed();
                 });
             }
 
@@ -3534,7 +3639,7 @@ namespace oineus {
         std::vector<RVColumn*> r_v_matrix_copy;
 
         if (need_bauer) {
-            Timer timer_restore;
+            Timer timer_bauer;
 
             // Bauer-trick fill for ALL cleared columns across every dim. Both the
             // copy-back below and the kept working form require every column
@@ -3570,8 +3675,10 @@ namespace oineus {
                     throw std::runtime_error("Bauer trick failed while filling V in reduce_parallel_rv");
                 }
             }
+            params.timings.bauer = timer_bauer.elapsed();
 
             if (do_restore) {
+                Timer timer_restore;
                 // snapshot pointers before restore_elz swaps some of them
                 r_v_matrix_copy.assign(n_cols, nullptr);
                 for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
@@ -3581,18 +3688,73 @@ namespace oineus {
                 // ELZ restore over the requested dims (others stay unrestored but
                 // still have valid Bauer-filled V columns).
                 for(dim_type dim: params.dims_to_restore_elz) {
-                    run_parallel_cols(dim, [&](size_t col_idx) {
-                        restore_elz_column_parallel<Int>(r_v_matrix, col_idx);
-                    });
+                    // Dedicated parallel restore: each worker owns one reusable
+                    // (v_work, r_work) WorkCol pair (the col_repr-chosen
+                    // representation) and reuses it across its contiguous column
+                    // block, so the O(n) dense buffer is allocated once per worker
+                    // rather than once per column. Contiguous in-order blocks are
+                    // intentional: restore_elz_column reads neighbour columns, so the
+                    // in-increasing-order walk of the (cohomology) heavy range is the
+                    // minimal-work serial chain -- a balanced/out-of-order split blows
+                    // total work up. Per-thread wall times feed restore_thread_times.
+                    const dim_type _d = dualize()
+                            ? static_cast<dim_type>(_dim_first.size()) - dim - 1 : dim;
+                    const size_t cs = static_cast<size_t>(_dim_first[_d]);
+                    const size_t ce = static_cast<size_t>(_dim_last[_d]) + 1;
+                    const size_t ncol = ce - cs;
+                    if (ncol > 0) {
+                        const size_t nw = std::min(n_workers, ncol);
+                        dbg_restore_thread_times_.assign(nw, 0.0);
+                        std::vector<std::thread> restore_workers;
+                        restore_workers.reserve(nw);
+                        for (size_t tid = 0; tid < nw; ++tid) {
+                            const size_t begin = cs + (tid * ncol) / nw;
+                            const size_t end   = cs + ((tid + 1) * ncol) / nw;
+                            restore_workers.emplace_back(
+                                    [this, &r_v_matrix, begin, end, tid, n_cols]() {
+                                Timer tm;
+                                WorkCol v_work, r_work;
+                                v_work.reserve(n_cols);
+                                r_work.reserve(n_cols);
+                                for (size_t col_idx = begin; col_idx < end; ++col_idx)
+                                    restore_elz_column_parallel_repr<Int, WorkCol>(
+                                            r_v_matrix, col_idx, v_work, r_work);
+                                dbg_restore_thread_times_[tid] = tm.elapsed();
+                            });
+                        }
+                        for (auto& w : restore_workers)
+                            w.join();
+                    }
                     // is_elz_in_dim_ uses the internal _dim key (matrix layout).
                     const dim_type _dim = static_cast<dim_type>(_dim_from_dim(dim));
                     set_is_elz_flag(_dim, true);
                 }
+                params.timings.restore_elz = timer_restore.elapsed();
             }
-            params.timings.restore_elz = timer_restore.elapsed();
         }
 
         Timer timer_copy_back;
+        // Shared error capture for the parallel copy-back branches: worker tasks
+        // must not throw (that would std::terminate), so record the first invariant
+        // violation and throw on the joining thread afterwards.
+        std::atomic<bool> cb_error{false};
+        std::atomic<Int> cb_err_col{-1};
+        std::atomic<int> cb_err_code{0};   // 1=pivot mismatch, 2=V not 1-diag, 3=null column
+        auto cb_record = [&](int code, Int col) {
+            cb_err_code.store(code, std::memory_order_relaxed);
+            cb_err_col.store(col, std::memory_order_relaxed);
+            cb_error.store(true, std::memory_order_relaxed);
+        };
+        auto cb_throw_if_error = [&]() {
+            if (not cb_error.load(std::memory_order_relaxed))
+                return;
+            const std::string col = std::to_string(cb_err_col.load(std::memory_order_relaxed));
+            switch (cb_err_code.load(std::memory_order_relaxed)) {
+                case 3: throw std::runtime_error("NULL column after restore_elz in reduce_parallel_rv (col " + col + ")");
+                case 1: throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx (col " + col + ")");
+                default: throw std::runtime_error("V column is not 1-diag (col " + col + ")");
+            }
+        };
         if (keep_working) {
             // Free the pre-restore versions that restore_elz replaced; the current
             // (live) pointers move into working_rv_. r_data/v_data stay empty and
@@ -3608,70 +3770,75 @@ namespace oineus {
             working_rv_ = std::move(r_v_matrix);
             has_working_rv_ = true;
         } else if (do_restore) {
-            // copy-back (restore branch): every column non-null after Bauer fill.
-            for(int dim_idx = _dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
-                for(Int col_idx = _dim_first[dim_idx]; col_idx <= _dim_last[dim_idx]; ++col_idx) {
+            // Restore branch: every column is non-null (restore_elz already
+            // Bauer-filled), so the move has no cross-column dependency -> flat
+            // parallel pass over all columns, then a parallel free pass.
+            {
+                tf::Taskflow tf_move;
+                tf_move.for_each_index((size_t) 0, n_cols, (size_t) 1, [&](size_t col_idx) {
                     auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
                     if (p == nullptr) {
-                        throw std::runtime_error("NULL column after restore_elz in reduce_parallel_rv");
+                        cb_record(3, static_cast<Int>(col_idx));
+                        return;
                     }
                     r_data[col_idx] = std::move(p->r_column);
                     v_data[col_idx] = std::move(p->v_column);
-                    if (r_data[col_idx].size() > 0) {
-                        if (pivots[r_data[col_idx].back()] != col_idx) {
-                            IC(col_idx);
-                            IC(pivots[r_data[col_idx].back()]);
-                            IC(r_data[col_idx]);
-                            throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx");
-                        }
-                    }
-                    if (v_data[col_idx].empty() or v_data[col_idx].back() != col_idx) {
-                        IC(col_idx);
-                        IC(v_data[col_idx]);
-                        throw std::runtime_error("V column is not 1-diag");
-                    }
-                }
+                    if (r_data[col_idx].size() > 0
+                        and pivots[r_data[col_idx].back()] != static_cast<Int>(col_idx))
+                        cb_record(1, static_cast<Int>(col_idx));
+                    if (v_data[col_idx].empty() or v_data[col_idx].back() != static_cast<Int>(col_idx))
+                        cb_record(2, static_cast<Int>(col_idx));
+                });
+                executor.run(tf_move).get();
             }
-            for(size_t col_idx = 0; col_idx < n_cols; ++col_idx) {
-                auto p_current = r_v_matrix[col_idx].load(std::memory_order_relaxed);
-                auto p_original = r_v_matrix_copy[col_idx];
-                if (p_current == p_original) {
-                    delete p_current;
-                } else {
-                    delete p_current;
-                    delete p_original;
-                }
+            {
+                tf::Taskflow tf_free;
+                tf_free.for_each_index((size_t) 0, n_cols, (size_t) 1, [&](size_t col_idx) {
+                    auto p_current = r_v_matrix[col_idx].load(std::memory_order_relaxed);
+                    auto p_original = r_v_matrix_copy[col_idx];
+                    if (p_current == p_original) {
+                        delete p_current;
+                    } else {
+                        delete p_current;
+                        delete p_original;
+                    }
+                });
+                executor.run(tf_free).get();
             }
+            cb_throw_if_error();
         } else {
-            for(int dim_idx = _dim_first.size() - 1; dim_idx >= 0; --dim_idx) {
-                for(Int col_idx = _dim_first[dim_idx]; col_idx <= _dim_last[dim_idx]; ++col_idx) {
+            // Plain branch: cleared columns Bauer-fill V from r_data[pivots[col]],
+            // which is a HIGHER-dim column already moved (loop is high->low). So the
+            // dim loop stays serial and only the inner column loop is parallel; within
+            // a dim every column writes its own r_data/v_data and reads only
+            // already-finished higher dims.
+            for (int dim_idx = int(_dim_first.size()) - 1; dim_idx >= 0; --dim_idx) {
+                const Int lo = _dim_first[dim_idx];
+                const Int hi = _dim_last[dim_idx];   // inclusive
+                if (hi < lo)
+                    continue;
+                tf::Taskflow tf_cb;
+                tf_cb.for_each_index(static_cast<size_t>(lo), static_cast<size_t>(hi) + 1, (size_t) 1,
+                        [&](size_t col_idx) {
                     auto p = r_v_matrix[col_idx].load(std::memory_order_relaxed);
                     if (p) {
                         r_data[col_idx] = std::move(p->r_column);
                         v_data[col_idx] = std::move(p->v_column);
-                        if (r_data[col_idx].size() > 0) {
-                            if (pivots[r_data[col_idx].back()] != col_idx) {
-                                IC(col_idx);
-                                IC(pivots[r_data[col_idx].back()]);
-                                IC(r_data[col_idx]);
-                                throw std::runtime_error("pivots[low(r_data[col_idx])] != col_idx");
-                            }
-                        }
+                        if (r_data[col_idx].size() > 0
+                            and pivots[r_data[col_idx].back()] != static_cast<Int>(col_idx))
+                            cb_record(1, static_cast<Int>(col_idx));
                         delete p;
                     } else {
-                        // column was cleared
+                        // cleared column: Bauer's trick fills V from the higher-dim R
                         r_data[col_idx].clear();
-                        // Bauer's trick with filling V
-                        v_data[col_idx] = r_data.at(pivots.at(col_idx));
+                        v_data[col_idx] = r_data[pivots[col_idx]];
                     }
-                    if (v_data[col_idx].empty() or v_data[col_idx].back() != col_idx) {
-                        IC(col_idx);
-                        IC(pivots.at(col_idx));
-                        IC(v_data[col_idx]);
-                        throw std::runtime_error("V column is not 1-diag");
-                    }
-                } // loop over columns
-            } // loop over dimensions
+                    if (v_data[col_idx].empty() or v_data[col_idx].back() != static_cast<Int>(col_idx))
+                        cb_record(2, static_cast<Int>(col_idx));
+                });
+                executor.run(tf_cb).get();
+            }
+            cb_throw_if_error();
         }
         params.timings.copy_back = timer_copy_back.elapsed();
 
@@ -4198,11 +4365,10 @@ namespace oineus {
     }
 
     template<typename Int_>
+    template<class WorkCol>
     typename VRUDecomposition<Int_>::IntSparseColumn
-    VRUDecomposition<Int_>::compute_u_column(size_t col_idx) const
+    VRUDecomposition<Int_>::compute_u_column(size_t col_idx, WorkCol& residual) const
     {
-        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
-
         if (not is_reduced)
             throw std::runtime_error("Cannot compute U column from non-reduced decomposisition");
 
@@ -4211,13 +4377,15 @@ namespace oineus {
 
         IntSparseColumn result;
 
-        auto residual = MatrixTraits::load_to_cache(d_data.at(col_idx));
+        // Reduce the residual with the reduction's fast working column (BitTree),
+        // reused across columns by the caller -- not a std::set. load() clears it.
+        residual.load(d_data.at(col_idx));
 
-        while (not MatrixTraits::is_zero(residual)) {
-            auto low_idx = MatrixTraits::low(residual);
+        while (not residual.is_zero()) {
+            auto low_idx = residual.low();
             auto piv_col_idx = _pivots.at(low_idx);
             result.push_back(piv_col_idx);
-            MatrixTraits::add_to_cached(r_data[piv_col_idx], residual);
+            residual.add(r_data[piv_col_idx]);
         }
 
         std::sort(result.begin(), result.end());
@@ -4232,11 +4400,10 @@ namespace oineus {
     }
 
     template<typename Int_>
+    template<class WorkCol>
     typename VRUDecomposition<Int_>::IntSparseColumn
-    VRUDecomposition<Int_>::compute_u_column_1(size_t col_idx) const
+    VRUDecomposition<Int_>::compute_u_column_1(size_t col_idx, WorkCol& residual) const
     {
-        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
-
         if (not is_reduced)
             throw std::runtime_error("Cannot compute U column from non-reduced decomposisition");
 
@@ -4245,13 +4412,16 @@ namespace oineus {
 
         IntSparseColumn result;
 
-        auto residual = MatrixTraits::cached_identity_column(col_idx);
+        // Fast BitTree residual (reused by the caller), seeded with the identity
+        // column {col_idx}.
+        residual.clear();
+        residual.flip(static_cast<Int_>(col_idx));
 
-        while (not MatrixTraits::is_zero(residual)) {
+        while (not residual.is_zero()) {
             // V is upper triangular: low and pivot of a column are equal
-            auto piv_col_idx = MatrixTraits::low(residual);
+            auto piv_col_idx = residual.low();
             result.push_back(piv_col_idx);
-            MatrixTraits::add_to_cached(v_data[piv_col_idx], residual);
+            residual.add(v_data[piv_col_idx]);
         }
 
         if (result.empty()) {
@@ -4266,7 +4436,22 @@ namespace oineus {
     template<typename Int_>
     void VRUDecomposition<Int_>::compute_u_from_v_1(dim_type dim, size_t n_threads, bool verbose)
     {
+        // Pick the residual data structure from the reduction's col_repr (all
+        // four are valid for the column form).
+        switch (col_repr_) {
+            case ColumnRepr::Set:     compute_u_from_v_1_impl<SetColumn<Int_>>(dim, n_threads, verbose); break;
+            case ColumnRepr::Heap:    compute_u_from_v_1_impl<HeapColumn<Int_>>(dim, n_threads, verbose); break;
+            case ColumnRepr::Full:    compute_u_from_v_1_impl<FullColumn<Int_>>(dim, n_threads, verbose); break;
+            case ColumnRepr::BitTree: compute_u_from_v_1_impl<BitTreeColumn<Int_>>(dim, n_threads, verbose); break;
+        }
+    }
+
+    template<typename Int_>
+    template<class WorkCol>
+    void VRUDecomposition<Int_>::compute_u_from_v_1_impl(dim_type dim, size_t n_threads, bool verbose)
+    {
         Timer timer;
+        u_timings_.reset();
         using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
 
         // compute columns of U in parallel
@@ -4289,11 +4474,13 @@ namespace oineus {
 
         for(size_t tid = 0; tid < n_threads; ++tid) {
             workers.emplace_back([this, &u_data, &next_free_column, col_end]() {
+                WorkCol residual;
+                residual.reserve(v_data.size());   // V column indices < v_data.size()
                 while(true) {
                     const size_t col_idx = next_free_column.fetch_add(1, std::memory_order_relaxed);
                     if (col_idx >= col_end)
                         break;
-                    u_data[col_idx] = compute_u_column_1(col_idx);
+                    u_data[col_idx] = compute_u_column_1(col_idx, residual);
                 }
             });
         }
@@ -4301,19 +4488,39 @@ namespace oineus {
         for(auto& worker: workers)
             worker.join();
 
-        [[maybe_unused]] auto col_inv_elapsed = timer.elapsed_reset();
+        u_timings_.col_solve = timer.elapsed_reset();
 
-        u_data_t = MatrixTraits::col_to_row_format_parallel(u_data, n_threads, col_start, col_end, v_data.size());
+        // (side,dim) scatter routing: row-partitioned only for the dense cohomology
+        // dim-1 transpose, column-partitioned otherwise (characterized on LS/alpha/VR,
+        // dims 0/1/2; no scalar metric generalizes, so route by side+dim).
+        u_data_t = MatrixTraits::col_to_row_format_parallel(
+                u_data, n_threads, col_start, col_end, v_data.size(),
+                /*prefer_row_scatter=*/(dim == 1 && dualize_));
 
-        [[maybe_unused]] auto col_to_row_elapsed = timer.elapsed_reset();
+        u_timings_.col_to_row = timer.elapsed_reset();
 
-        if (verbose) IC(col_inv_elapsed, col_to_row_elapsed);
+        if (verbose) IC(u_timings_.col_solve, u_timings_.col_to_row);
     }
 
     template<typename Int_>
     void VRUDecomposition<Int_>::compute_u_from_v(dim_type dim, size_t n_threads, bool verbose)
     {
+        // Pick the residual data structure from the reduction's col_repr (all
+        // four are valid for the column form).
+        switch (col_repr_) {
+            case ColumnRepr::Set:     compute_u_from_v_impl<SetColumn<Int_>>(dim, n_threads, verbose); break;
+            case ColumnRepr::Heap:    compute_u_from_v_impl<HeapColumn<Int_>>(dim, n_threads, verbose); break;
+            case ColumnRepr::Full:    compute_u_from_v_impl<FullColumn<Int_>>(dim, n_threads, verbose); break;
+            case ColumnRepr::BitTree: compute_u_from_v_impl<BitTreeColumn<Int_>>(dim, n_threads, verbose); break;
+        }
+    }
+
+    template<typename Int_>
+    template<class WorkCol>
+    void VRUDecomposition<Int_>::compute_u_from_v_impl(dim_type dim, size_t n_threads, bool verbose)
+    {
         Timer timer;
+        u_timings_.reset();
         using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
 
         // compute columns of U in parallel
@@ -4329,11 +4536,13 @@ namespace oineus {
 
         for(size_t tid = 0; tid < n_threads; ++tid) {
             workers.emplace_back([this, &u_data, &next_free_column, col_end]() {
+                WorkCol residual;
+                residual.reserve(r_data.size());   // max row index < r_data.size()
                 while(true) {
                     const size_t col_idx = next_free_column.fetch_add(1, std::memory_order_relaxed);
                     if (col_idx >= col_end)
                         break;
-                    u_data[col_idx] = compute_u_column(col_idx);
+                    u_data[col_idx] = compute_u_column(col_idx, residual);
                 }
             });
         }
@@ -4341,23 +4550,29 @@ namespace oineus {
         for(auto& worker: workers)
             worker.join();
 
-        [[maybe_unused]] auto col_inv_elapsed = timer.elapsed_reset();
+        u_timings_.col_solve = timer.elapsed_reset();
 
-        u_data_t = MatrixTraits::col_to_row_format_parallel(u_data, n_threads, col_start, col_end, v_data.size());
+        // (side,dim) scatter routing: row-partitioned only for the dense cohomology
+        // dim-1 transpose, column-partitioned otherwise (characterized on LS/alpha/VR,
+        // dims 0/1/2; no scalar metric generalizes, so route by side+dim).
+        u_data_t = MatrixTraits::col_to_row_format_parallel(
+                u_data, n_threads, col_start, col_end, v_data.size(),
+                /*prefer_row_scatter=*/(dim == 1 && dualize_));
 
-        [[maybe_unused]] auto col_to_row_elapsed = timer.elapsed_reset();
+        u_timings_.col_to_row = timer.elapsed_reset();
 
-        if (verbose) IC(col_inv_elapsed, col_to_row_elapsed);
+        if (verbose) IC(u_timings_.col_solve, u_timings_.col_to_row);
     }
 
     template<typename Int_>
-    template<typename Real, typename ValueAt, typename CmpOp>
+    template<class WorkCol, typename Real, typename ValueAt, typename CmpOp>
     typename VRUDecomposition<Int_>::IntSparseColumn
     VRUDecomposition<Int_>::compute_u_row_bounded(size_t row_idx,
                                                   const MatrixData& vt_data,
                                                   Real value_bound,
                                                   ValueAt&& value_at,
-                                                  CmpOp&& cmp_op) const
+                                                  CmpOp&& cmp_op,
+                                                  WorkCol& residual) const
     {
         // Row-form analogue of compute_u_column_1_bounded. Solves
         // (row r of U) * V = e_r^T via residual-style forward
@@ -4365,7 +4580,6 @@ namespace oineus {
         // strictly increase in matrix index because vt_data[p]'s
         // smallest entry is p (V[p][p] = 1) and XOR cancels it; the
         // remaining entries are all > p.
-        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
 
         if (not is_reduced)
             throw std::runtime_error("Cannot compute U row from non-reduced decomposition");
@@ -4373,10 +4587,13 @@ namespace oineus {
             throw std::runtime_error("Cannot compute U row from non-reduced decomposition");
 
         IntSparseColumn result;
-        auto residual = MatrixTraits::cached_identity_column(row_idx);
+        // Fast BitTree residual (reused by the caller), seeded with identity {row}.
+        // top() gives the smallest index -> forward substitution up the triangle.
+        residual.clear();
+        residual.flip(static_cast<Int_>(row_idx));
 
-        while (not MatrixTraits::is_zero(residual)) {
-            auto piv_col_idx = MatrixTraits::top(residual);
+        while (not residual.is_zero()) {
+            auto piv_col_idx = residual.top();
             if (cmp_op(value_at(piv_col_idx), value_bound)) {
                 break;
             }
@@ -4402,7 +4619,7 @@ namespace oineus {
                     + dbg.str());
             }
             result.push_back(piv_col_idx);
-            MatrixTraits::add_to_cached(vt_data[piv_col_idx], residual);
+            residual.add(vt_data[piv_col_idx]);
         }
 
         if (result.empty()) {
@@ -4429,8 +4646,44 @@ namespace oineus {
             size_t n_threads,
             bool verbose)
     {
+        // Row form needs top() (min index). A max-heap cannot expose it cheaply,
+        // so Heap is unsupported here; Set/Full/BitTree all work.
+        switch (col_repr_) {
+            case ColumnRepr::Set:
+                compute_partial_u_rows_impl<SetColumn<Int_>>(rows, bounds, dim,
+                        std::forward<ValueAt>(value_at), std::forward<CmpOp>(cmp_op), n_threads, verbose);
+                break;
+            case ColumnRepr::Full:
+                compute_partial_u_rows_impl<FullColumn<Int_>>(rows, bounds, dim,
+                        std::forward<ValueAt>(value_at), std::forward<CmpOp>(cmp_op), n_threads, verbose);
+                break;
+            case ColumnRepr::BitTree:
+                compute_partial_u_rows_impl<BitTreeColumn<Int_>>(rows, bounds, dim,
+                        std::forward<ValueAt>(value_at), std::forward<CmpOp>(cmp_op), n_threads, verbose);
+                break;
+            case ColumnRepr::Heap:
+                throw std::runtime_error(
+                    "compute_partial_u_rows (row-form U solve) does not support "
+                    "ColumnRepr::Heap: a max-heap has no efficient top(). Use "
+                    "Set, Full, or BitTree.");
+        }
+    }
+
+    template<typename Int_>
+    template<class WorkCol, typename Real, typename ValueAt, typename CmpOp>
+    void VRUDecomposition<Int_>::compute_partial_u_rows_impl(
+            const std::vector<size_t>& rows,
+            const std::vector<Real>& bounds,
+            dim_type dim,
+            ValueAt&& value_at,
+            CmpOp&& cmp_op,
+            size_t n_threads,
+            bool verbose)
+    {
         if (rows.size() != bounds.size())
             throw std::runtime_error("compute_partial_u_rows: rows and bounds must have the same size");
+
+        u_timings_.reset();
 
         // The apparent lean working form has null slots the resolver alone can fill;
         // reading V per-column here would deref null, so materialize first.
@@ -4480,14 +4733,16 @@ namespace oineus {
                 v_dim[c] = working_rv_[c].load(std::memory_order_relaxed)->v_column;
             vt_data = MatrixTraits::col_to_row_format_parallel(
                     v_dim, static_cast<int>(n_threads), cs, ce,
-                    static_cast<typename MatrixTraits::Int>(nc));
+                    static_cast<typename MatrixTraits::Int>(nc),
+                    /*prefer_row_scatter=*/(dim == 1 && dualize_));
         } else {
             vt_data = MatrixTraits::col_to_row_format_parallel(
                     v_data, static_cast<int>(n_threads), cs, ce,
-                    static_cast<typename MatrixTraits::Int>(v_data.size()));
+                    static_cast<typename MatrixTraits::Int>(v_data.size()),
+                    /*prefer_row_scatter=*/(dim == 1 && dualize_));
         }
 
-        [[maybe_unused]] auto vt_elapsed = timer.elapsed_reset();
+        u_timings_.transpose_v = timer.elapsed_reset();
 
         // Stage B: parallel row solves. Each row writes to its own
         // u_data_t[r] slot; no shared writes.
@@ -4496,22 +4751,24 @@ namespace oineus {
         workers.reserve(n_threads);
 
         for (size_t tid = 0; tid < n_threads; ++tid) {
-            workers.emplace_back([this, &rows, &bounds, &vt_data,
+            workers.emplace_back([this, &rows, &bounds, &vt_data, nc,
                                   &next_free, &value_at, &cmp_op]() {
+                WorkCol residual;
+                residual.reserve(nc);   // V^T column indices < nc
                 while (true) {
                     const size_t i = next_free.fetch_add(1, std::memory_order_relaxed);
                     if (i >= rows.size()) break;
                     u_data_t[rows[i]] = compute_u_row_bounded(
-                            rows[i], vt_data, bounds[i], value_at, cmp_op);
+                            rows[i], vt_data, bounds[i], value_at, cmp_op, residual);
                 }
             });
         }
 
         for (auto& w : workers) w.join();
 
-        [[maybe_unused]] auto solve_elapsed = timer.elapsed_reset();
+        u_timings_.row_solve = timer.elapsed_reset();
 
-        if (verbose) IC(vt_elapsed, solve_elapsed);
+        if (verbose) IC(u_timings_.transpose_v, u_timings_.row_solve);
     }
 
     template<typename Int_>
@@ -4521,6 +4778,7 @@ namespace oineus {
                                                      size_t n_threads,
                                                      bool verbose)
     {
+        u_timings_.reset();
         const auto _dim = _dim_from_dim(dim);
         const size_t cstart = range_start_(_dim);
         const size_t cend = range_end_(_dim);
