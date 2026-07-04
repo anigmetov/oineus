@@ -5,7 +5,6 @@
 #include <fstream>
 #include <iostream>
 
-#include "log_wrapper.h"
 #include "common_defs.h"
 
 namespace oineus {
@@ -53,7 +52,6 @@ namespace oineus {
         DimVec dims_to_restore_elz;
         bool sanity_check{false};
         bool verbose{false};
-        spd::level::level_enum spdlog_level {spd::level::level_enum::info};
     };
 
     // back-compat alias for the historical C++ name
@@ -89,8 +87,7 @@ namespace oineus {
             && a.col_repr == b.col_repr
             && a.dims_to_restore_elz == b.dims_to_restore_elz
             && a.sanity_check == b.sanity_check
-            && a.verbose == b.verbose
-            && a.spdlog_level == b.spdlog_level;
+            && a.verbose == b.verbose;
     }
 
     inline bool operator!=(const ReductionParams& a, const ReductionParams& b)

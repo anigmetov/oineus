@@ -55,7 +55,6 @@ void init_oineus_common(nb::module_& m)
                                       decltype (ReductionParams::dims_to_restore_elz),
                                       bool,   // sanity_check
                                       bool,   // verbose
-                                      int,    // spdlog_level
                                       int,    // col_repr
                                       bool    // use_apparent_pairs
                                     >;
@@ -189,7 +188,7 @@ void init_oineus_common(nb::module_& m)
                       return std::make_tuple(p.n_threads, p.chunk_size,
                               p.use_clearing, p.compute_v, p.compute_u,
                               p.dims_to_restore_elz, p.sanity_check,
-                              p.verbose, static_cast<int>(p.spdlog_level),
+                              p.verbose,
                               static_cast<int>(p.col_repr), p.use_apparent_pairs);
                     })
             .def("__setstate__", [](ReductionParams& p, const RedParamsTuple& t) {
@@ -202,9 +201,8 @@ void init_oineus_common(nb::module_& m)
                       p.dims_to_restore_elz  = std::get<5>(t);
                       p.sanity_check    = std::get<6>(t);
                       p.verbose         = std::get<7>(t);
-                      p.spdlog_level    = static_cast<spd::level::level_enum>(std::get<8>(t));
-                      p.col_repr        = static_cast<oin::ColumnRepr>(std::get<9>(t));
-                      p.use_apparent_pairs = std::get<10>(t);
+                      p.col_repr        = static_cast<oin::ColumnRepr>(std::get<8>(t));
+                      p.use_apparent_pairs = std::get<9>(t);
                     })
     ;
 

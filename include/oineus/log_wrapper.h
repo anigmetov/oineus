@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cctype>
+#include <cstdlib>
 #include <string>
 
 #ifdef OINEUS_USE_SPDLOG
@@ -117,3 +119,28 @@ inline void info([[maybe_unused]] const Args& ... args)
 #endif
 
 namespace spd=spdlog;
+
+namespace oineus {
+
+// Log level of the internal reduction loggers, read once from the environment
+// variable OINEUS_LOG_LEVEL (trace/debug/info/warn/error/critical/off; default
+// info). Only meaningful in spdlog builds; spdlog never appears in the API.
+inline spd::level::level_enum log_level_from_env()
+{
+    static const spd::level::level_enum level = [] {
+        const char* env = std::getenv("OINEUS_LOG_LEVEL");
+        std::string s = env ? env : "";
+        for(auto& c : s)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (s == "trace")    return spd::level::trace;
+        if (s == "debug")    return spd::level::debug;
+        if (s == "warn")     return spd::level::warn;
+        if (s == "error")    return spd::level::err;
+        if (s == "critical") return spd::level::critical;
+        if (s == "off")      return spd::level::off;
+        return spd::level::info;
+    }();
+    return level;
+}
+
+} // namespace oineus
