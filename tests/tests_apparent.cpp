@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <random>
 #include <vector>
 
@@ -7,6 +8,18 @@
 #include <oineus/apparent.h>
 
 using namespace oineus;
+
+// SupportsApparent must accept exactly the cell families exposing BOTH buffer
+// (co)boundary forms: slim Cube and slim Freudenthal. Fat Simplex (no coboundary)
+// and BitPacked (packed boundary, no direct coboundary) stay out.
+static_assert(SupportsApparent<Cube<int, 2>>::value);
+static_assert(SupportsApparent<Cube<long, 3>>::value);
+static_assert(SupportsApparent<Simplex<int, FreudenthalAnchorType<int, 2>>>::value);
+static_assert(SupportsApparent<Simplex<long, FreudenthalAnchorType<long, 3>>>::value);
+static_assert(not SupportsApparent<Simplex<int>>::value);
+static_assert(not SupportsApparent<Simplex<long>>::value);
+static_assert(not SupportsApparent<Simplex<int, BitPacked<int, std::uint64_t>>>::value);
+static_assert(not SupportsApparent<Simplex<long, BitPacked<long, unsigned __int128>>>::value);
 
 template<class AM>
 static bool same_matching(const AM& a, const AM& b)
@@ -109,5 +122,73 @@ TEST_CASE("apparent: generic == local on 3D cubical")
     auto am_loc = detect_apparent_local(fil);
 
     REQUIRE(same_matching(am_gen, am_loc));
+    REQUIRE(am_gen.n_apparent > 0);
+}
+
+TEST_CASE("apparent: generic == local == brute force on slim Freudenthal, subset of persistence pairs")
+{
+    using Int = int;
+    using Real = double;
+    constexpr size_t D = 2;
+    using Grid = oineus::Grid<Int, Real, D>;
+
+    std::mt19937_64 gen(4321);
+    std::uniform_real_distribution<Real> dist(0.0, 1.0);
+
+    typename Grid::GridPoint dims{7, 7};
+    std::vector<Real> data(49);
+    for(auto& x : data) x = dist(gen);
+
+    Grid grid(dims, /*wrap=*/false, data.data(), Grid::DataLocation::VERTEX);
+    auto fil = grid.freudenthal_filtration_slim(/*top_d=*/D, /*negate=*/false, /*n_threads=*/1);
+
+    auto bd = fil.boundary_matrix(1);
+
+    auto am_gen = detect_apparent_generic(bd);
+    auto am_bru = detect_apparent_bruteforce(bd);
+    auto am_loc = detect_apparent_local(fil);
+
+    REQUIRE(same_matching(am_gen, am_bru));
+    REQUIRE(same_matching(am_gen, am_loc));
+    REQUIRE(am_gen.n_apparent > 0);
+
+    // every apparent pair must be a true persistence pair of the full reduction
+    VRUDecomposition<Int> dcmp(fil, /*dualize=*/false);
+    ReductionParams p;
+    p.compute_v = true;
+    p.n_threads = 1;
+    dcmp.reduce(p);
+
+    for(size_t r = 0; r < fil.size(); ++r) {
+        Int c = am_gen.apparent_pivot_of_row[r];
+        if (c >= 0)
+            REQUIRE(dcmp._pivots[r] == c);
+    }
+}
+
+TEST_CASE("apparent: generic == local on 3D slim Freudenthal, serial and parallel")
+{
+    using Int = int;
+    using Real = double;
+    constexpr size_t D = 3;
+    using Grid = oineus::Grid<Int, Real, D>;
+
+    std::mt19937_64 gen(777);
+    std::uniform_real_distribution<Real> dist(0.0, 1.0);
+
+    typename Grid::GridPoint dims{5, 5, 5};
+    std::vector<Real> data(125);
+    for(auto& x : data) x = dist(gen);
+
+    Grid grid(dims, /*wrap=*/false, data.data(), Grid::DataLocation::VERTEX);
+    auto fil = grid.freudenthal_filtration_slim(/*top_d=*/D, /*negate=*/false, /*n_threads=*/1);
+
+    auto bd = fil.boundary_matrix(1);
+    auto am_gen = detect_apparent_generic(bd);
+    auto am_loc = detect_apparent_local(fil);
+    auto am_par = detect_apparent_local(fil, /*n_threads=*/4);
+
+    REQUIRE(same_matching(am_gen, am_loc));
+    REQUIRE(same_matching(am_gen, am_par));
     REQUIRE(am_gen.n_apparent > 0);
 }
