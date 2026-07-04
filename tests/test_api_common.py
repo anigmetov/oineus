@@ -21,14 +21,10 @@ def test_reduction_params_api():
     params.chunk_size = 16
     params.clearing_opt = True
     params.print_time = False
-    params.elapsed = 0.0
     params.compute_v = True
     params.compute_u = True
     params.dims_to_restore_elz = []
     params.do_sanity_check = False
-    params.elapsed_restore_elz = 0.0
-    params.elapsed_copy_back = 0.0
-    params.elapsed_copy_pivots = 0.0
     params.verbose = False
 
     _ = repr(params)

@@ -2,7 +2,7 @@
 filtrations: build time, reduction time, and peak RSS, apparent_opt ON vs OFF,
 for cohomology (dualize=True) and homology (dualize=False).
 
-The win lives in the BUILD phase (params.timings.prepare): with apparent_opt the
+The win lives in the BUILD phase (dcmp.timings.prepare): with apparent_opt the
 cohomology builder emits each non-apparent column directly from cube.coboundary()
 and never forms the full antitransposed matrix, so build time and peak working
 memory drop with the apparent fraction (typically ~90%+ on smooth volumes). The
@@ -61,8 +61,8 @@ def run_one(dualize, apparent, n, reps, n_threads=8):
         t0 = time.perf_counter()
         dcmp = oin.reduce(fil, p, dualize)
         wall = time.perf_counter() - t0
-        prepare_best = min(prepare_best, p.timings.prepare)
-        reduce_best = min(reduce_best, p.timings.reduce)
+        prepare_best = min(prepare_best, dcmp.timings.prepare)
+        reduce_best = min(reduce_best, dcmp.timings.reduce)
         wall_best = min(wall_best, wall)
         del dcmp
     return dict(N=N, prepare=prepare_best, reduce=reduce_best, wall=wall_best,

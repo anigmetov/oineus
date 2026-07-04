@@ -99,7 +99,7 @@ def test_restore_elz_requires_compute_v():
         dcmp.reduce(params)
 
 
-def test_parallel_reduction_elapsed_fields():
+def test_parallel_reduction_timing_fields():
     filtration = _build_filtration()
 
     params_no_restore = oin.ReductionParams()
@@ -111,10 +111,10 @@ def test_parallel_reduction_elapsed_fields():
     dcmp = oin.Decomposition(filtration, dualize=False, n_threads=4)
     dcmp.reduce(params_no_restore)
 
-    assert params_no_restore.elapsed >= 0.0
-    assert params_no_restore.elapsed_restore_elz == 0.0
-    assert params_no_restore.elapsed_copy_back >= 0.0
-    assert params_no_restore.elapsed_copy_pivots >= 0.0
+    assert dcmp.timings.total >= 0.0
+    assert dcmp.timings.restore_elz == 0.0
+    assert dcmp.timings.copy_back >= 0.0
+    assert dcmp.timings.copy_pivots >= 0.0
 
     params_with_restore = oin.ReductionParams()
     params_with_restore.n_threads = 4
@@ -125,10 +125,10 @@ def test_parallel_reduction_elapsed_fields():
     dcmp2 = oin.Decomposition(filtration, dualize=False, n_threads=4)
     dcmp2.reduce(params_with_restore)
 
-    assert params_with_restore.elapsed >= 0.0
-    assert params_with_restore.elapsed_restore_elz >= 0.0
-    assert params_with_restore.elapsed_copy_back >= 0.0
-    assert params_with_restore.elapsed_copy_pivots >= 0.0
+    assert dcmp2.timings.total >= 0.0
+    assert dcmp2.timings.restore_elz >= 0.0
+    assert dcmp2.timings.copy_back >= 0.0
+    assert dcmp2.timings.copy_pivots >= 0.0
 
     params_r_only = oin.ReductionParams()
     params_r_only.n_threads = 4
@@ -139,10 +139,10 @@ def test_parallel_reduction_elapsed_fields():
     dcmp3 = oin.Decomposition(filtration, dualize=False, n_threads=4)
     dcmp3.reduce(params_r_only)
 
-    assert params_r_only.elapsed >= 0.0
-    assert params_r_only.elapsed_restore_elz == 0.0
-    assert params_r_only.elapsed_copy_back >= 0.0
-    assert params_r_only.elapsed_copy_pivots >= 0.0
+    assert dcmp3.timings.total >= 0.0
+    assert dcmp3.timings.restore_elz == 0.0
+    assert dcmp3.timings.copy_back >= 0.0
+    assert dcmp3.timings.copy_pivots >= 0.0
 
 
 def test_serial_without_clearing_ignores_restore_elz():
@@ -156,4 +156,4 @@ def test_serial_without_clearing_ignores_restore_elz():
     params.dims_to_restore_elz = [0, 1, 2]
 
     dcmp.reduce(params)
-    assert params.elapsed_restore_elz == 0.0
+    assert dcmp.timings.restore_elz == 0.0

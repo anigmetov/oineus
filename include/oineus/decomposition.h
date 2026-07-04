@@ -485,6 +485,8 @@ namespace oineus {
         MatrixData r_data;
         MatrixData v_data;
         MatrixData u_data_t;
+        // Per-phase wall-clock of the last reduce() call (see ReductionTimings).
+        ReductionTimings timings_;
         // Per-phase wall-clock of the last compute_u_* call (see UComputeTimings).
         UComputeTimings u_timings_;
         // Diagnostic: per-thread wall-clock of the last parallel ELZ-restore pass
@@ -600,6 +602,7 @@ namespace oineus {
             has_d_data_ = other.has_d_data_;
             dualize_ = other.dualize_;
             col_repr_ = other.col_repr_;
+            timings_ = other.timings_;
             u_timings_ = other.u_timings_;
             dbg_restore_thread_times_ = other.dbg_restore_thread_times_;
             is_elz_in_dim_ = other.is_elz_in_dim_;
@@ -630,6 +633,7 @@ namespace oineus {
             has_d_data_ = other.has_d_data_;
             dualize_ = other.dualize_;
             col_repr_ = other.col_repr_;
+            timings_ = other.timings_;
             u_timings_ = other.u_timings_;
             dbg_restore_thread_times_ = std::move(other.dbg_restore_thread_times_);
             is_elz_in_dim_ = std::move(other.is_elz_in_dim_);
@@ -789,7 +793,7 @@ namespace oineus {
         // Run the parallel RV / R-only core, dispatching on params.col_repr exactly
         // like reduce_parallel_rv / reduce_parallel_r_only do. The working array is
         // already built; the col_repr choice flows in as the per-thread scratch.
-        void run_rv_core_dispatch_(Params& params, tf::Executor& executor,
+        void run_rv_core_dispatch_(const Params& params, tf::Executor& executor,
                 RVWorkingMatrix& rv, AtomicIdxVector& pivots, size_t n_cols,
                 int n_threads, bool keep_working)
         {
@@ -800,7 +804,7 @@ namespace oineus {
                 case ColumnRepr::BitTree: reduce_parallel_rv_core_<BitTreeColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, keep_working); break;
             }
         }
-        void run_r_only_core_dispatch_(Params& params, tf::Executor& executor,
+        void run_r_only_core_dispatch_(const Params& params, tf::Executor& executor,
                 RWorkingMatrix& ar, AtomicIdxVector& pivots, size_t n_cols,
                 int n_threads, bool copy_back_to_r)
         {
@@ -838,7 +842,7 @@ namespace oineus {
         // decomposition. diagram(fil) works as usual; sanity_check needs D passed
         // (e.g. fil.boundary_matrix()).
         template<class C, class R>
-        static VRUDecomposition reduce_from_filtration(const Filtration<C, R>& fil, Params& params, bool dualize = false)
+        static VRUDecomposition reduce_from_filtration(const Filtration<C, R>& fil, const Params& params, bool dualize = false)
         {
             VRUDecomposition dcmp;
             dcmp.init_fused_(fil, dualize, params.n_threads);
@@ -856,7 +860,7 @@ namespace oineus {
         // R-only-with-restore-ELZ fall back to the classic fused path
         // (init_fused_ + reduce), which handles them correctly.
         template<class C, class R>
-        static VRUDecomposition reduce_from_filtration_fused(const Filtration<C, R>& fil, Params& params, bool dualize = false)
+        static VRUDecomposition reduce_from_filtration_fused(const Filtration<C, R>& fil, const Params& params, bool dualize = false)
         {
             VRUDecomposition dcmp;
             const size_t n_cols = fil.size();
@@ -872,7 +876,7 @@ namespace oineus {
             }
 
             dcmp.set_dims_from_fil_(fil, dualize);
-            params.timings.reset();
+            dcmp.timings_.reset();
 
             const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
 
@@ -943,16 +947,15 @@ namespace oineus {
                 // Keep the working RV columns: r_data/v_data stay empty and are
                 // reconstructed lazily on first matrix/pickle access. diagram(fil)
                 // reads _pivots, so diagram-only callers never pay the copy-back.
-                params.timings.prepare = timer_build.elapsed();
+                dcmp.timings_.prepare = timer_build.elapsed();
                 dcmp.run_rv_core_dispatch_(params, executor, rv, pivots, n_cols, n_threads, /*keep_working=*/true);
             } else {
                 auto ar = dualize ? fil.coboundary_matrix_for_par(params.n_threads)
                                   : fil.boundary_matrix_for_par(params.n_threads);
-                params.timings.prepare = timer_build.elapsed();
+                dcmp.timings_.prepare = timer_build.elapsed();
                 dcmp.run_r_only_core_dispatch_(params, executor, ar, pivots, n_cols, n_threads, /*copy_back_to_r=*/false);
             }
 
-            dcmp.sync_elapsed_from_timings_(params);
             return dcmp;
         }
 
@@ -965,7 +968,7 @@ namespace oineus {
         // boundary ctor + reduce for serial / compute_u / empty / R-only+restoreELZ.
         static VRUDecomposition reduce_from_boundary_fused(const MatrixData& bdry,
                 std::vector<Int> dim_first_, std::vector<Int> dim_last_,
-                bool dualize, Params& params, bool keep_working)
+                bool dualize, const Params& params, bool keep_working)
         {
             VRUDecomposition dcmp;
             const size_t n_cols = bdry.size();
@@ -981,7 +984,7 @@ namespace oineus {
             }
 
             dcmp.set_dims_(std::move(dim_first_), std::move(dim_last_), dualize, n_cols);
-            params.timings.reset();
+            dcmp.timings_.reset();
 
             const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
             tf::Executor executor(n_threads);
@@ -1007,7 +1010,7 @@ namespace oineus {
                     });
                     executor.run(tf_build).get();
                 }
-                params.timings.prepare = timer_build.elapsed();
+                dcmp.timings_.prepare = timer_build.elapsed();
                 dcmp.run_rv_core_dispatch_(params, executor, rv, pivots, n_cols, n_threads, keep_working);
             } else {
                 RWorkingMatrix ar(n_cols);
@@ -1025,11 +1028,10 @@ namespace oineus {
                     });
                     executor.run(tf_build).get();
                 }
-                params.timings.prepare = timer_build.elapsed();
+                dcmp.timings_.prepare = timer_build.elapsed();
                 dcmp.run_r_only_core_dispatch_(params, executor, ar, pivots, n_cols, n_threads, /*copy_back_to_r=*/false);
             }
 
-            dcmp.sync_elapsed_from_timings_(params);
             return dcmp;
         }
 
@@ -1166,19 +1168,19 @@ namespace oineus {
 
         void set_is_elz_flag(dim_type _dim, bool new_value);
 
-        void reduce(Params& params);
+        void reduce(const Params& params);
 
         // Public dispatchers: select the working-column representation from
         // params.col_repr and forward to the templated *_impl below.
-        void reduce_serial(Params& params);
-        void reduce_parallel_r_only(Params& params);
-        void reduce_parallel_rv(Params& params);
+        void reduce_serial(const Params& params);
+        void reduce_parallel_r_only(const Params& params);
+        void reduce_parallel_rv(const Params& params);
 
         // Templated reduction kernels, one instantiation per working-column type
         // (WorkCol = SetColumn<Int>, HeapColumn<Int>, FullColumn<Int>, BitTreeColumn<Int>).
-        template<class WorkCol> void reduce_serial_impl(Params& params);
-        template<class WorkCol> void reduce_parallel_r_only_impl(Params& params);
-        template<class WorkCol> void reduce_parallel_rv_impl(Params& params);
+        template<class WorkCol> void reduce_serial_impl(const Params& params);
+        template<class WorkCol> void reduce_parallel_r_only_impl(const Params& params);
+        template<class WorkCol> void reduce_parallel_rv_impl(const Params& params);
 
         // Templated U-solve kernels. The public compute_u_from_v / _1 /
         // compute_partial_u_rows dispatch on col_repr_ and call these with the
@@ -1199,19 +1201,16 @@ namespace oineus {
         // classic *_impl prepare (from r_data) or a fused from-filtration builder --
         // and handed in. parallel_reduction itself is untouched. n_cols is sourced
         // from the working array (never size(), which is r_data.size()).
-        template<class WorkCol> void reduce_parallel_r_only_core_(Params& params,
+        template<class WorkCol> void reduce_parallel_r_only_core_(const Params& params,
                 tf::Executor& executor,
                 typename GenericSparseMatrixTraits<Int, WorkCol>::AMatrix& ar_matrix,
                 AtomicIdxVector& pivots, size_t n_cols, int n_threads,
                 bool copy_back_to_r);
-        template<class WorkCol> void reduce_parallel_rv_core_(Params& params,
+        template<class WorkCol> void reduce_parallel_rv_core_(const Params& params,
                 tf::Executor& executor,
                 typename GenericRVMatrixTraits<Int, WorkCol>::AMatrix& r_v_matrix,
                 AtomicIdxVector& pivots, size_t n_cols, int n_threads,
                 bool keep_working);
-
-        // Copy params.timings into the back-compat scalar timing fields.
-        static void sync_elapsed_from_timings_(Params& params);
 
         bool is_negative(size_t simplex) const
         {
@@ -1931,12 +1930,12 @@ namespace oineus {
     }
 
     template<class Int>
-    void VRUDecomposition<Int>::reduce(Params& params)
+    void VRUDecomposition<Int>::reduce(const Params& params)
     {
         CALI_CXX_MARK_FUNCTION;
 
         invalidate_dynamic_();   // R, V are rebuilt; any row index is now stale
-        params.timings.reset();
+        timings_.reset();
 
         // Record the working-column repr so a later compute_u_* uses the same
         // residual data structure (not a hardcoded BitTree).
@@ -1944,7 +1943,6 @@ namespace oineus {
 
         if (r_data.empty()) {
             is_reduced = true;
-            sync_elapsed_from_timings_(params);
             return;
         }
 
@@ -1962,27 +1960,12 @@ namespace oineus {
             reduce_parallel_rv(params);
         else
             reduce_parallel_r_only(params);
-
-        // Derive the back-compat scalar timers from the per-phase breakdown:
-        // elapsed is now the full, path-comparable reduction time.
-        sync_elapsed_from_timings_(params);
-    }
-
-    // Mirror params.timings into the historical scalar timing fields so existing
-    // callers (and the pickle layout) keep working. elapsed becomes the total.
-    template<class Int>
-    void VRUDecomposition<Int>::sync_elapsed_from_timings_(Params& params)
-    {
-        params.elapsed             = params.timings.reduction_total();
-        params.elapsed_restore_elz = params.timings.restore_elz;
-        params.elapsed_copy_back   = params.timings.copy_back;
-        params.elapsed_copy_pivots = params.timings.copy_pivots;
     }
 
     // ---- working-column dispatchers: pick WorkCol from params.col_repr ----
 
     template<class Int>
-    void VRUDecomposition<Int>::reduce_serial(Params& params)
+    void VRUDecomposition<Int>::reduce_serial(const Params& params)
     {
         switch (params.col_repr) {
             case ColumnRepr::Set:     reduce_serial_impl<SetColumn<Int>>(params); break;
@@ -1993,7 +1976,7 @@ namespace oineus {
     }
 
     template<class Int>
-    void VRUDecomposition<Int>::reduce_parallel_r_only(Params& params)
+    void VRUDecomposition<Int>::reduce_parallel_r_only(const Params& params)
     {
         switch (params.col_repr) {
             case ColumnRepr::Set:     reduce_parallel_r_only_impl<SetColumn<Int>>(params); break;
@@ -2004,7 +1987,7 @@ namespace oineus {
     }
 
     template<class Int>
-    void VRUDecomposition<Int>::reduce_parallel_rv(Params& params)
+    void VRUDecomposition<Int>::reduce_parallel_rv(const Params& params)
     {
         switch (params.col_repr) {
             case ColumnRepr::Set:     reduce_parallel_rv_impl<SetColumn<Int>>(params); break;
@@ -2016,7 +1999,7 @@ namespace oineus {
 
     template<class Int>
     template<class WorkCol>
-    void VRUDecomposition<Int>::reduce_serial_impl(Params& params)
+    void VRUDecomposition<Int>::reduce_serial_impl(const Params& params)
     {
         CALI_CXX_MARK_FUNCTION;
 
@@ -2115,7 +2098,7 @@ namespace oineus {
         } // loop over dimensions
 
         // Serial reduces in place: no prepare / copy_back / copy_pivots phases.
-        params.timings.reduce = timer_reduction.elapsed();
+        timings_.reduce = timer_reduction.elapsed();
 
         // Serial reduction with clearing off produces ELZ by construction.
         if (not params.clearing_opt) {
@@ -2129,16 +2112,16 @@ namespace oineus {
                     continue;
                 restore_elz(dim, false, params.verbose, 1);
             }
-            params.timings.restore_elz = timer_restore.elapsed();
+            timings_.restore_elz = timer_restore.elapsed();
         }
 
         if (params.print_time or params.verbose) {
             std::cerr << "reduce_serial, matrix_size = " << r_data.size()
                       << ", clearing_opt = " << params.clearing_opt
                       << ", n_cleared = " << n_cleared
-                      << ", reduction elapsed: " << params.timings.reduce
-                      << ", restore_elz elapsed: " << params.timings.restore_elz
-                      << ", total elapsed: " << params.timings.reduction_total()
+                      << ", reduction elapsed: " << timings_.reduce
+                      << ", restore_elz elapsed: " << timings_.restore_elz
+                      << ", total elapsed: " << timings_.reduction_total()
                       << std::endl;
         }
 
@@ -3232,7 +3215,7 @@ namespace oineus {
 
     template<class Int>
     template<class WorkCol>
-    void VRUDecomposition<Int>::reduce_parallel_r_only_impl(Params& params)
+    void VRUDecomposition<Int>::reduce_parallel_r_only_impl(const Params& params)
     {
         CALI_CXX_MARK_FUNCTION;
         using namespace std::placeholders;
@@ -3269,7 +3252,7 @@ namespace oineus {
                     });
             executor.run(taskflow_prepare).get();
         }
-        params.timings.prepare = timer_prepare.elapsed();
+        timings_.prepare = timer_prepare.elapsed();
 
         spd::debug("Pivots initialized");
 
@@ -3286,7 +3269,7 @@ namespace oineus {
     // copy-pivots, and teardown. parallel_reduction itself is untouched.
     template<class Int>
     template<class WorkCol>
-    void VRUDecomposition<Int>::reduce_parallel_r_only_core_(Params& params,
+    void VRUDecomposition<Int>::reduce_parallel_r_only_core_(const Params& params,
             tf::Executor& executor,
             typename GenericSparseMatrixTraits<Int, WorkCol>::AMatrix& ar_matrix,
             AtomicIdxVector& pivots, size_t n_cols, int n_threads,
@@ -3348,7 +3331,7 @@ namespace oineus {
         if (oineus::interrupted())
             throw oineus::interrupted_exception{};
 
-        params.timings.reduce = timer_reduction.elapsed();
+        timings_.reduce = timer_reduction.elapsed();
 
         if (params.print_time) {
             long total_cleared = 0;
@@ -3356,7 +3339,7 @@ namespace oineus {
                 total_cleared += s.n_cleared;
                 spd::info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
             }
-            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, params.timings.reduce);
+            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, timings_.reduce);
         }
 
 #ifdef OINEUS_GATHER_ADD_STATS
@@ -3394,7 +3377,7 @@ namespace oineus {
                 executor.run(taskflow_free).get();
                 r_data.clear();
             }
-            params.timings.copy_back = timer_copy_back.elapsed();
+            timings_.copy_back = timer_copy_back.elapsed();
         }
 
         {
@@ -3407,7 +3390,7 @@ namespace oineus {
                         _pivots[col_idx] = pivots[col_idx].load(std::memory_order_relaxed);
                     });
             executor.run(taskflow_copy_pivots).get();
-            params.timings.copy_pivots = timer_copy_pivots.elapsed();
+            timings_.copy_pivots = timer_copy_pivots.elapsed();
         }
 
         // Free the working columns retired during reduction (deferred by the
@@ -3417,7 +3400,7 @@ namespace oineus {
         {
             Timer timer_teardown;
             mms.clear();
-            params.timings.copy_back += timer_teardown.elapsed();
+            timings_.copy_back += timer_teardown.elapsed();
         }
 
         is_reduced = true;
@@ -3425,7 +3408,7 @@ namespace oineus {
 
     template<class Int>
     template<class WorkCol>
-    void VRUDecomposition<Int>::reduce_parallel_rv_impl(Params& params)
+    void VRUDecomposition<Int>::reduce_parallel_rv_impl(const Params& params)
     {
         CALI_CXX_MARK_FUNCTION;
         using namespace std::placeholders;
@@ -3468,7 +3451,7 @@ namespace oineus {
                     });
             executor.run(taskflow_prepare).get();
         }
-        params.timings.prepare = timer_prepare.elapsed();
+        timings_.prepare = timer_prepare.elapsed();
 
         reduce_parallel_rv_core_<WorkCol>(params, executor, r_v_matrix, pivots, n_cols, n_threads, /*keep_working=*/false);
     }
@@ -3480,7 +3463,7 @@ namespace oineus {
     // n_cols by the caller. parallel_reduction itself is untouched.
     template<class Int>
     template<class WorkCol>
-    void VRUDecomposition<Int>::reduce_parallel_rv_core_(Params& params,
+    void VRUDecomposition<Int>::reduce_parallel_rv_core_(const Params& params,
             tf::Executor& executor,
             typename GenericRVMatrixTraits<Int, WorkCol>::AMatrix& r_v_matrix,
             AtomicIdxVector& pivots, size_t n_cols, int n_threads,
@@ -3543,7 +3526,7 @@ namespace oineus {
         if (oineus::interrupted())
             throw oineus::interrupted_exception{};
 
-        params.timings.reduce = timer_reduction.elapsed();
+        timings_.reduce = timer_reduction.elapsed();
 
         if (params.print_time) {
             long total_cleared = 0;
@@ -3551,7 +3534,7 @@ namespace oineus {
                 total_cleared += s.n_cleared;
                 spd::info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
             }
-            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, params.timings.reduce);
+            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, timings_.reduce);
         }
 
 #ifdef OINEUS_GATHER_ADD_STATS
@@ -3679,7 +3662,7 @@ namespace oineus {
                     throw std::runtime_error("Bauer trick failed while filling V in reduce_parallel_rv");
                 }
             }
-            params.timings.bauer = timer_bauer.elapsed();
+            timings_.bauer = timer_bauer.elapsed();
 
             if (do_restore) {
                 Timer timer_restore;
@@ -3733,7 +3716,7 @@ namespace oineus {
                     const dim_type _dim = static_cast<dim_type>(_dim_from_dim(dim));
                     set_is_elz_flag(_dim, true);
                 }
-                params.timings.restore_elz = timer_restore.elapsed();
+                timings_.restore_elz = timer_restore.elapsed();
             }
         }
 
@@ -3844,7 +3827,7 @@ namespace oineus {
             }
             cb_throw_if_error();
         }
-        params.timings.copy_back = timer_copy_back.elapsed();
+        timings_.copy_back = timer_copy_back.elapsed();
 
         {
             Timer timer_copy_pivots;
@@ -3856,7 +3839,7 @@ namespace oineus {
                         _pivots[col_idx] = pivots[col_idx].load(std::memory_order_relaxed);
                     });
             executor.run(taskflow_copy_pivots).get();
-            params.timings.copy_pivots = timer_copy_pivots.elapsed();
+            timings_.copy_pivots = timer_copy_pivots.elapsed();
         }
 
         // Free the working columns retired during reduction (deferred by the
@@ -3866,7 +3849,7 @@ namespace oineus {
         {
             Timer timer_teardown;
             mms.clear();
-            params.timings.copy_back += timer_teardown.elapsed();
+            timings_.copy_back += timer_teardown.elapsed();
         }
 
         is_reduced = true;

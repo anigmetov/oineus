@@ -124,7 +124,7 @@ int main(int argc, char** argv)
 
     rv.reduce(params);
     if (params.print_time)
-       std::cerr << fname_in << ";" << params.n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << params.elapsed << std::endl;
+       std::cerr << fname_in << ";" << params.n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << rv.timings_.reduction_total() << std::endl;
 
      auto dgm = rv.diagram(fil, false);
 

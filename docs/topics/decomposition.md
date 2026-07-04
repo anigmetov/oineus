@@ -70,9 +70,9 @@ dgms = dcmp.diagram(fil)
 and feeds it straight to the parallel reducer, skipping the intermediate
 boundary-matrix copies the explicit `Decomposition(fil) + reduce` path makes.
 The diagrams are identical; this is simply the recommended default when speed
-matters. (`params` is taken by reference, so the per-phase timings land back on
-it -- see {doc}`performance`.) `dualize=True` selects cohomology, exactly as for
-`Decomposition`.
+matters. (The per-phase timings land on the returned decomposition as
+`dcmp.timings` -- see {doc}`performance`.) `dualize=True` selects cohomology,
+exactly as for `Decomposition`.
 
 Two post-reduce details, both invisible if you only call `dcmp.diagram(fil)`:
 

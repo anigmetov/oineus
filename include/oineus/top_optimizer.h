@@ -692,10 +692,11 @@ public:
     //
     // The per-side reduction recipe (compute_v/compute_u, clearing, ELZ dims,
     // thread count) is decided at construction and stays valid across a value
-    // change, so it is preserved here; only the stale timing outputs are
-    // zeroed. Resetting params to a default Params() instead would silently
-    // drop the crit-sets recipe and make the next ensure_*_reduced rebuild a
-    // V-less decomposition, crashing the change_*/crit-set walkers.
+    // change, so it is preserved here. Resetting params to a default Params()
+    // instead would silently drop the crit-sets recipe and make the next
+    // ensure_*_reduced rebuild a V-less decomposition, crashing the
+    // change_*/crit-set walkers. (Timings live on the decompositions, which
+    // are discarded here, so no stale measurements survive.)
     //
     // TODO(revisit): update() is still suspected to be broken (sketchy state
     // invariants around boundary_data_); the lazy-world wiring below preserves
@@ -710,8 +711,6 @@ public:
         decmp_coh_ = Decomposition();
         decmp_hom_built_ = false;
         decmp_coh_built_ = false;
-        params_hom_.reset_timings();
-        params_coh_.reset_timings();
     }
 
     decltype(auto) convert_critical_sets(const CriticalSets& critical_sets) const

@@ -186,7 +186,7 @@ int main(int argc, char** argv)
         decmp.reduce(params);
 
         if (params.print_time)
-            std::cerr << fname_in << ";" << params.n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << params.elapsed << std::endl;
+            std::cerr << fname_in << ";" << params.n_threads << ";" << params.clearing_opt << ";" << params.chunk_size << ";" << decmp.timings_.reduction_total() << std::endl;
 
         auto dgm = decmp.diagram(fil, true);
 

@@ -7,7 +7,6 @@
 
 #include "log_wrapper.h"
 #include "common_defs.h"
-#include "reduction_timings.h"
 
 namespace oineus {
     // Working-column data structure used during reduction. The at-rest storage
@@ -54,34 +53,8 @@ namespace oineus {
         ColumnRepr col_repr{ColumnRepr::BitTree};
         DimVec dims_to_restore_elz;
         bool do_sanity_check{false};
-        // Back-compat scalar timings (seconds). elapsed now equals
-        // timings.reduction_total() (the full, path-comparable reduction time);
-        // the other three mirror the matching timings.* phase. The detailed
-        // per-phase breakdown lives in `timings`.
-        double elapsed{0.0};
-        double elapsed_restore_elz{0.0};
-        double elapsed_copy_back{0.0};
-        double elapsed_copy_pivots{0.0};
         bool verbose{false};
         spd::level::level_enum spdlog_level {spd::level::level_enum::info};
-        // Per-phase wall-clock breakdown of the last reduce(); transient output,
-        // not part of operator== or pickling.
-        ReductionTimings timings;
-
-        // Zero only the transient timing outputs (the scalar elapsed* mirrors
-        // and the detailed `timings` breakdown), preserving the reduction
-        // recipe. Use when reusing a Params for a fresh reduction so stale
-        // measurements don't linger. Not a full reset: a copy ctor that zeroed
-        // these would break copy semantics (operator== / pickling include the
-        // scalar elapsed* fields).
-        void reset_timings()
-        {
-            elapsed = 0.0;
-            elapsed_restore_elz = 0.0;
-            elapsed_copy_back = 0.0;
-            elapsed_copy_pivots = 0.0;
-            timings.reset();
-        }
     };
 
     inline std::ostream& operator<<(std::ostream& out, const Params& p)
@@ -96,8 +69,6 @@ namespace oineus {
         out << ", col_repr = " << p.col_repr;
         // out << ", dims_to_restore_elz = " << p.dims_to_restore_elz;
         out << ", do_sanity_check = " << p.do_sanity_check;
-        out << ", elapsed = " << p.elapsed;
-        out << ", timings = " << p.timings;
         out << ", verbose = " << p.verbose;
         out << ")";
         return out;
@@ -115,10 +86,6 @@ namespace oineus {
             && a.col_repr == b.col_repr
             && a.dims_to_restore_elz == b.dims_to_restore_elz
             && a.do_sanity_check == b.do_sanity_check
-            && a.elapsed == b.elapsed
-            && a.elapsed_restore_elz == b.elapsed_restore_elz
-            && a.elapsed_copy_back == b.elapsed_copy_back
-            && a.elapsed_copy_pivots == b.elapsed_copy_pivots
             && a.verbose == b.verbose
             && a.spdlog_level == b.spdlog_level;
     }

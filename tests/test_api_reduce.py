@@ -164,17 +164,34 @@ def test_reduce_sanity_check_without_d_returns_false():
     assert dcmp.sanity_check(fil.boundary_matrix()) is True
 
 
-def test_reduce_timings_propagate():
-    # oin.reduce takes params by reference, so the per-phase timings are
-    # written back to the caller's object.
+def test_reduce_timings_on_decomposition():
+    # the per-phase timings live on the decomposition, not on the params
     fil = _grid_fil(n=48, seed=6)
     p = oin.ReductionParams()
     p.compute_v = False
     p.n_threads = 4
-    oin.reduce(fil, p)
+    dcmp = oin.reduce(fil, p)
 
-    assert p.timings.reduce >= 0.0
-    assert p.elapsed >= 0.0
+    assert dcmp.timings.reduce >= 0.0
+    assert dcmp.timings.total >= dcmp.timings.reduce
+
+    # the removed params outputs must fail loudly, pointing at dcmp.timings
+    with pytest.raises(RuntimeError, match="dcmp.timings"):
+        _ = p.timings
+    with pytest.raises(RuntimeError, match="dcmp.timings"):
+        _ = p.elapsed
+
+
+@pytest.mark.skipif(np.dtype("float32") not in oin._dtype.REAL_MODULES,
+                    reason="extension built without the float32 backend")
+def test_reduce_timings_float32_backend():
+    # timings must be readable on a float32 filtration's decomposition too
+    # (the Decomposition class and its timings are Real-independent)
+    rng = np.random.default_rng(6)
+    fil = oin.freudenthal_filtration(data=np.ascontiguousarray(rng.random((16, 16), dtype=np.float32)))
+    dcmp = oin.reduce(fil, oin.ReductionParams())
+    assert dcmp.timings.reduce >= 0.0
+    assert dcmp.timings.total >= dcmp.timings.reduce
 
 
 def test_reduce_keep_working_diagram_then_materialize():

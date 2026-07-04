@@ -55,10 +55,6 @@ void init_oineus_common(nb::module_& m)
                                       bool,   // compute_u
                                       decltype (ReductionParams::dims_to_restore_elz),
                                       bool,   // do_sanity_check
-                                      double, //elapsed
-                                      double, //elapsed_restore_elz
-                                      double, //elapsed_copy_back
-                                      double, //elapsed_copy_pivots
                                       bool,   // verbose
                                       int,    // spdlog_level
                                       int,    // col_repr
@@ -75,10 +71,10 @@ void init_oineus_common(nb::module_& m)
     using TimingsStateTuple = std::tuple<double, double, double, double, double, double>;
 
     nb::class_<ReductionTimings>(m, "ReductionTimings",
-            "Per-phase wall-clock breakdown (seconds) of the last reduce() call. Some "
-            "fields are 0 when a path skips that phase: the serial path reduces in place, "
-            "so it has no prepare / copy_back / copy_pivots. reduction_total is the "
-            "path-comparable total; ReductionParams.elapsed equals it.")
+            "Per-phase wall-clock breakdown (seconds) of the last reduce() call, "
+            "available as Decomposition.timings. Some fields are 0 when a path skips "
+            "that phase: the serial path reduces in place, so it has no prepare / "
+            "copy_back / copy_pivots. reduction_total is the path-comparable total.")
             .def(nb::init<>())
             .def_rw("prepare", &ReductionTimings::prepare, "build the working atomic-pointer matrix (parallel only)")
             .def_rw("reduce", &ReductionTimings::reduce, "the reduction itself (serial loop or parallel threads)")
@@ -156,18 +152,24 @@ void init_oineus_common(nb::module_& m)
             .def_rw("chunk_size", &ReductionParams::chunk_size)
             .def_rw("clearing_opt", &ReductionParams::clearing_opt)
             .def_rw("print_time", &ReductionParams::print_time)
-            .def_rw("elapsed", &ReductionParams::elapsed)
             .def_rw("compute_v", &ReductionParams::compute_v)
             .def_rw("compute_u", &ReductionParams::compute_u)
             .def_rw("apparent_opt", &ReductionParams::apparent_opt)
             .def_rw("col_repr", &ReductionParams::col_repr)
             .def_rw("dims_to_restore_elz", &ReductionParams::dims_to_restore_elz)
             .def_rw("do_sanity_check", &ReductionParams::do_sanity_check)
-            .def_rw("elapsed_restore_elz", &ReductionParams::elapsed_restore_elz)
-            .def_rw("elapsed_copy_back", &ReductionParams::elapsed_copy_back)
-            .def_rw("elapsed_copy_pivots", &ReductionParams::elapsed_copy_pivots)
-            .def_ro("timings", &ReductionParams::timings,
-                    "Per-phase wall-clock breakdown of the last reduce() (ReductionTimings).")
+            // timing outputs moved off the params: fail loudly with a pointer to the
+            // new location instead of an AttributeError
+            .def_prop_ro("elapsed", [](const ReductionParams&) -> double {
+                    throw std::runtime_error("ReductionParams.elapsed was removed: reduce() no longer "
+                            "writes timings back into the params. Read dcmp.timings.total (or the "
+                            "per-phase fields of dcmp.timings) on the reduced Decomposition instead.");
+                })
+            .def_prop_ro("timings", [](const ReductionParams&) -> ReductionTimings {
+                    throw std::runtime_error("ReductionParams.timings was removed: reduce() no longer "
+                            "writes timings back into the params. Read dcmp.timings on the reduced "
+                            "Decomposition instead.");
+                })
             .def_rw("verbose", &ReductionParams::verbose)
             .def("__repr__", [](const ReductionParams& self) { std::stringstream ss; ss << self; return ss.str(); })
             .def(nb::self == nb::self)
@@ -175,9 +177,8 @@ void init_oineus_common(nb::module_& m)
             .def("__getstate__", [](const ReductionParams& p) {
                       return std::make_tuple(p.n_threads, p.chunk_size,
                               p.clearing_opt, p.print_time, p.compute_v, p.compute_u,
-                              p.dims_to_restore_elz, p.do_sanity_check, p.elapsed,
-                              p.elapsed_restore_elz,
-                              p.elapsed_copy_back, p.elapsed_copy_pivots, p.verbose, static_cast<int>(p.spdlog_level),
+                              p.dims_to_restore_elz, p.do_sanity_check,
+                              p.verbose, static_cast<int>(p.spdlog_level),
                               static_cast<int>(p.col_repr), p.apparent_opt);
                     })
             .def("__setstate__", [](ReductionParams& p, const RedParamsTuple& t) {
@@ -190,14 +191,10 @@ void init_oineus_common(nb::module_& m)
                       p.compute_u       = std::get<5>(t);
                       p.dims_to_restore_elz  = std::get<6>(t);
                       p.do_sanity_check = std::get<7>(t);
-                      p.elapsed         = std::get<8>(t);
-                      p.elapsed_restore_elz = std::get<9>(t);
-                      p.elapsed_copy_back = std::get<10>(t);
-                      p.elapsed_copy_pivots = std::get<11>(t);
-                      p.verbose         = std::get<12>(t);
-                      p.spdlog_level    = static_cast<spd::level::level_enum>(std::get<13>(t));
-                      p.col_repr        = static_cast<oin::ColumnRepr>(std::get<14>(t));
-                      p.apparent_opt    = std::get<15>(t);
+                      p.verbose         = std::get<8>(t);
+                      p.spdlog_level    = static_cast<spd::level::level_enum>(std::get<9>(t));
+                      p.col_repr        = static_cast<oin::ColumnRepr>(std::get<10>(t));
+                      p.apparent_opt    = std::get<11>(t);
                     })
     ;
 

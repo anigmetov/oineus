@@ -341,19 +341,19 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
     using FatFilList = oineus_python::TypeList<SimplexFiltration, ProdSimplexFiltration>;
 
     {
-        auto reduce_fil = [](const auto& fil, oin::Params& params, bool dualize) {
+        auto reduce_fil = [](const auto& fil, const oin::Params& params, bool dualize) {
             return Decomposition::reduce_from_filtration_fused(fil, params, dualize);
         };
         // fat Simplex / product: no keep_alive (no deferred resolver over the filtration)
         oineus_python::for_each_type(FatFilList{}, [&m, reduce_fil]<class Fil>() {
-            m.def("reduce", [reduce_fil](const Fil& fil, oin::Params& params, bool dualize)
+            m.def("reduce", [reduce_fil](const Fil& fil, const oin::Params& params, bool dualize)
                     { return reduce_fil(fil, params, dualize); },
                     nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
         });
         // slim cube / Freudenthal / packed: keep_alive<0, 1> (see SlimFilList note above)
         oineus_python::for_each_type(SlimFilList{}, [&m, reduce_fil]<class Fil>() {
-            m.def("reduce", [reduce_fil](const Fil& fil, oin::Params& params, bool dualize)
+            m.def("reduce", [reduce_fil](const Fil& fil, const oin::Params& params, bool dualize)
                     { return reduce_fil(fil, params, dualize); },
                     nb::arg("filtration"), nb::arg("params")=oin::Params(), nb::arg("dualize")=false,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
@@ -393,6 +393,8 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                     },
                     [](Decomposition& self, const typename Decomposition::MatrixData& value) { self.v_data = value; })
             .def_rw("u_data_t", &Decomposition::u_data_t)
+            .def_ro("timings", &Decomposition::timings_,
+                    "Per-phase wall-clock breakdown of the last reduce() call (ReductionTimings).")
             .def_ro("u_timings", &Decomposition::u_timings_,
                     "Per-phase wall-clock breakdown of the last compute_u_* call (UComputeTimings).")
             .def_ro("restore_thread_times", &Decomposition::dbg_restore_thread_times_,

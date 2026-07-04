@@ -6,17 +6,15 @@
 namespace oineus {
 
 // Per-phase wall-clock breakdown (seconds) of a single VRUDecomposition::reduce()
-// call, filled with oineus::Timer. Some fields are legitimately 0 when a code path
-// does not run that phase: the serial path reduces in place, so it has no
-// prepare / copy_back / copy_pivots; the parallel paths build a working
-// (atomic-pointer) matrix (prepare), reduce it (reduce), optionally restore ELZ,
-// then move it back into r_data/v_data (copy_back) and copy pivots (copy_pivots).
+// call, filled with oineus::Timer and stored on the decomposition (timings_).
+// Some fields are legitimately 0 when a code path does not run that phase: the
+// serial path reduces in place, so it has no prepare / copy_back / copy_pivots;
+// the parallel paths build a working (atomic-pointer) matrix (prepare), reduce it
+// (reduce), optionally restore ELZ, then move it back into r_data/v_data
+// (copy_back) and copy pivots (copy_pivots).
 //
 // reduction_total() is the apples-to-apples number to compare across the serial
-// and parallel paths. The historical Params::elapsed was NOT comparable: in the
-// parallel paths it timed only the reduction core and excluded prepare/copy_back,
-// while in the serial path it timed the whole (in-place) reduction. Params::elapsed
-// is now kept as a back-compat scalar equal to reduction_total().
+// and parallel paths.
 struct ReductionTimings {
     double prepare {0.0};       // build the working atomic-pointer matrix; parallel only
     double reduce {0.0};        // the reduction itself (serial loop or parallel threads)

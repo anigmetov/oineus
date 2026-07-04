@@ -85,9 +85,9 @@ copy-back of $R/V$.
 
 ### Reading the per-phase timings
 
-`ReductionParams` is passed by reference, so after `reduce` the field
-`params.timings` ({py:class}`oineus.ReductionTimings`) holds the wall-clock
-breakdown in seconds:
+After `reduce`, the decomposition's read-only field `dcmp.timings`
+({py:class}`oineus.ReductionTimings`) holds the wall-clock breakdown in
+seconds:
 
 | phase | meaning | nonzero when |
 |---|---|---|
@@ -97,8 +97,8 @@ breakdown in seconds:
 | `copy_back` | move the working columns back into `r_data`/`v_data` | parallel, *materializing* paths |
 | `copy_pivots` | copy the pivot array into the at-rest `_pivots` | parallel only |
 
-`params.timings.reduction_total` is the path-comparable sum, and
-`params.elapsed` equals it. The serial path reduces in place, so it has no
+`dcmp.timings.reduction_total` (synonym: `dcmp.timings.total`) is the
+path-comparable sum. The serial path reduces in place, so it has no
 `prepare` / `copy_back` / `copy_pivots`. Pass `verbose=True` for a printed
 trace as well.
 
