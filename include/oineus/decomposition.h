@@ -124,8 +124,9 @@ namespace oineus {
             else
                 logger = spd::stderr_color_mt(logger_name.c_str());
         }
-        logger->set_level(log_level_from_env());
-        logger->flush_on(log_level_from_env());
+        auto log_level = log_level_from_env();
+        logger->set_level(log_level);
+        logger->flush_on(log_level);
 
         using PColumn = typename MatrixTraits::PColumn;
 
