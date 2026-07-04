@@ -911,24 +911,20 @@ namespace oineus {
                             : fil.boundary_matrix_for_par_with_v_apparent(params.n_threads, *dcmp.apparent_);
 
                         // Resolver: regenerate an apparent column's R in matrix-index
-                        // space via the cell's direct (co)boundary. Closes over the
-                        // filtration, which must outlive any deferred materialize.
+                        // space via the filtration's single-source column emitters
+                        // (buffer (co)boundary + uid->sorted_id index), so the resolved
+                        // columns match the fused build column-for-column. Closes over
+                        // the filtration, which must outlive any deferred materialize.
+                        // Runs on worker threads: the column lives in the caller's
+                        // frame, no shared scratch.
                         const auto* fil_ptr = &fil;
                         const bool dual = dualize;
-                        const size_t N = n_cols;
-                        dcmp.apparent_resolve_fn_ = [fil_ptr, dual, N](Int mc) -> SparseColumn<Int> {
+                        dcmp.apparent_resolve_fn_ = [fil_ptr, dual](Int mc) -> SparseColumn<Int> {
                             SparseColumn<Int> r;
-                            if (not dual) {
-                                const auto& cell = fil_ptr->cells()[static_cast<size_t>(mc)];
-                                for(const auto& fuid : cell.get_cell().boundary(fil_ptr->geometry()))
-                                    r.push_back(static_cast<Int>(fil_ptr->get_sorted_id_by_uid(fuid)));
-                            } else {
-                                const size_t s = N - 1 - static_cast<size_t>(mc);
-                                const auto& cell = fil_ptr->cells()[s];
-                                for(const auto& cuid : cell.get_cell().coboundary(fil_ptr->geometry()))
-                                    r.push_back(static_cast<Int>(N - 1 - static_cast<size_t>(fil_ptr->get_sorted_id_by_uid(cuid))));
-                            }
-                            std::sort(r.begin(), r.end());
+                            if (not dual)
+                                fil_ptr->emit_boundary_col_(fil_ptr->cells()[static_cast<size_t>(mc)], /*missing_ok=*/false, r);
+                            else
+                                fil_ptr->emit_cohomology_col_(static_cast<size_t>(mc), r);
                             return r;
                         };
 

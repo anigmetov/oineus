@@ -23,6 +23,7 @@
 #include <type_traits>
 #include <ostream>
 
+#include "common_defs.h"
 #include "sparse_matrix.h"
 
 namespace oineus {
@@ -184,8 +185,9 @@ detect_apparent_bruteforce(const Matrix& M)
     return am;
 }
 
-// Local per-cell detector for cells exposing BOTH boundary() and coboundary()
-// (e.g. Cube). Column-centric: for each cell tau, take its youngest facet
+// Local per-cell detector for cells exposing BOTH buffer forms
+// boundary_into(geometry, emit) and coboundary_into(geometry, emit) (slim Cube,
+// slim Freudenthal). Column-centric: for each cell tau, take its youngest facet
 // f* = argmax sorted_id over facets, then tau is apparent iff tau is the oldest
 // cofacet of f* (argmin sorted_id over cofacets of f*). Operates in sorted_id
 // (homology) space; the cohomology index relabeling is layered on by the fused
@@ -222,19 +224,19 @@ detect_apparent_local(const Fil& fil, int n_threads = 1)
 
                 // youngest facet f* = max sorted_id over facets of cell
                 Int fstar = Int(-1);
-                for(const auto& fuid : cell.get_cell().boundary(fil.geometry())) {
+                cell.get_cell().boundary_into(fil.geometry(), [&fil, &fstar](const auto& fuid) {
                     Int sid = fil.get_sorted_id_by_uid(fuid);
                     if (sid > fstar)
                         fstar = sid;
-                }
+                });
 
                 // oldest cofacet of f* = min sorted_id over cofacets of f*
                 Int oldest = std::numeric_limits<Int>::max();
-                for(const auto& cuid : cells[fstar].get_cell().coboundary(fil.geometry())) {
+                cells[fstar].get_cell().coboundary_into(fil.geometry(), [&fil, &oldest](const auto& cuid) {
                     Int sid = fil.get_sorted_id_by_uid(cuid);
                     if (sid < oldest)
                         oldest = sid;
-                }
+                });
 
                 if (oldest == static_cast<Int>(c)) {
                     am.is_apparent_col[c] = 1;
