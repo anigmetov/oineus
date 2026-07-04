@@ -520,6 +520,18 @@ def test_numpy_values_raise():
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
+def test_index_diagram_accessor_returns_copy(backend):
+    """Mutating the array returned by index_diagram_in_dimension must not
+    corrupt the internal pairing (which the torch backward scatters
+    through)."""
+    K, L = _known_filtrations(1)
+    dgms = od.kicr_diagrams(_as_diff(K, backend), L)
+    idx = dgms.kernel.index_diagram_in_dimension(0)
+    idx[:] = 0
+    assert dgms.kernel.index_diagram_in_dimension(0).tolist() == [[5, 7]]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
 def test_repr_is_informative(backend):
     K, L = _known_filtrations(1)
     dgms = od.kicr_diagrams(_as_diff(K, backend), L)

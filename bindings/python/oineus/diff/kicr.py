@@ -99,7 +99,10 @@ class KICRFamilyDiagrams:
             raise KeyError(
                 f"No {self.family} index diagram for dimension {dim}. "
                 f"Available: {list(self._index_dgms.keys())}")
-        return self._index_dgms[dim]
+        # copy: on the torch path the internal array shares memory with the
+        # index tensor autograd retains for the backward scatter, so handing
+        # out the buffer itself would let a caller corrupt gradients
+        return self._index_dgms[dim].copy()
 
     @property
     def max_dim(self) -> int:
