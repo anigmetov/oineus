@@ -485,7 +485,7 @@ namespace oineus {
         MatrixData r_data;
         MatrixData v_data;
         MatrixData u_data_t;
-        // Per-phase wall-clock of the last reduce() call (see ReductionTimings).
+        // Per-phase wall-clock of the last reduce() call (see ReductionTimings)
         ReductionTimings timings_;
         // Per-phase wall-clock of the last compute_u_* call (see UComputeTimings).
         UComputeTimings u_timings_;

@@ -2,6 +2,7 @@ from __future__ import absolute_import
 
 __version__ = "0.9.32"
 
+import copy
 import typing
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
@@ -327,16 +328,58 @@ TopologyOptimizerCube_4D = _real_templated_marker("TopologyOptimizerCube_4D",
     route=module_of_oineus_obj, route_kw="fil")
 
 
-def reduce(filtration, params=None, dualize=False):
+def apply_reduction_kwargs(params, kwargs):
+    """Return ReductionParams combining params with keyword overrides.
+
+    With no kwargs, params is returned as-is (or a default instance if None).
+    Otherwise the overrides are set on a copy, so the caller's params object
+    is never mutated. An unknown field name raises TypeError.
+    """
+    if not kwargs:
+        return ReductionParams() if params is None else params
+    params = ReductionParams() if params is None else copy.copy(params)
+    for name, value in kwargs.items():
+        try:
+            setattr(params, name, value)
+        except AttributeError:
+            raise TypeError(f"reduce() got an unexpected keyword argument {name!r}"
+                            " (not a ReductionParams field)") from None
+    return params
+
+
+def reduce(filtration, params=None, dualize=False, **kwargs):
     """Reduce a filtration in one fused build+reduce step, returning a Decomposition.
 
     Routes to the backend (float64 / float32) matching the filtration's dtype, so it accepts the
     now-default packed/slim and float32 filtrations. Equivalent to
     ``d = oineus.Decomposition(filtration); d.reduce(params)`` but uses the fused fast path.
+
+    ReductionParams fields can be given directly as keyword arguments, e.g.
+    ``oineus.reduce(fil, n_threads=8, compute_v=True)``; they are set on a copy
+    of params (or of a default ReductionParams), so the caller's params object
+    is never mutated. An unknown field name raises TypeError.
     """
-    if params is None:
-        params = ReductionParams()
+    params = apply_reduction_kwargs(params, kwargs)
     return module_of_oineus_obj(filtration).reduce(filtration, params, dualize)
+
+
+# pythonic kwargs layer over the C++ Decomposition.reduce(params) method:
+# dcmp.reduce(n_threads=8, compute_u=True) works like the free reduce above
+_decomposition_reduce_cpp = Decomposition.reduce
+
+
+def _decomposition_reduce(self, params=None, **kwargs):
+    """Reduce this decomposition with the given ReductionParams.
+
+    ReductionParams fields can be given directly as keyword arguments, e.g.
+    ``dcmp.reduce(n_threads=8, compute_u=True)``; they are set on a copy of
+    params (or of a default ReductionParams), so the caller's params object is
+    never mutated. An unknown field name raises TypeError.
+    """
+    return _decomposition_reduce_cpp(self, apply_reduction_kwargs(params, kwargs))
+
+
+Decomposition.reduce = _decomposition_reduce
 
 
 # Visualization helpers require matplotlib, an optional extra

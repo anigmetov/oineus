@@ -182,6 +182,57 @@ def test_reduce_timings_on_decomposition():
         _ = p.elapsed
 
 
+def test_reduce_kwargs_equivalent_to_params():
+    # kwargs are a convenience spelling of ReductionParams fields; both the
+    # free reduce and the Decomposition method must accept them and produce
+    # the same diagrams as the explicit-params call
+    fil = _grid_fil(seed=9)
+
+    p = oin.ReductionParams()
+    p.n_threads = 2
+    p.compute_v = True
+    dcmp_params = oin.reduce(fil, p)
+    dcmp_kwargs = oin.reduce(fil, n_threads=2, compute_v=True)
+
+    for d in range(3):
+        got = np.asarray(dcmp_kwargs.diagram(fil).in_dimension(d))
+        want = np.asarray(dcmp_params.diagram(fil).in_dimension(d))
+        assert np.array_equal(np.sort(got, axis=0), np.sort(want, axis=0))
+
+    # same timings shape: every phase field is present and non-negative
+    for t in (dcmp_params.timings, dcmp_kwargs.timings):
+        for phase in ("prepare", "reduce", "bauer", "restore_elz", "copy_back", "copy_pivots"):
+            assert getattr(t, phase) >= 0.0
+        assert t.total >= 0.0
+
+    # the method form: dcmp.reduce(n_threads=..., compute_u=...) must work
+    dcmp_m = oin.Decomposition(fil, False)
+    dcmp_m.reduce(n_threads=1, compute_u=True, compute_v=True)
+    assert dcmp_m.has_matrix_u()
+    assert dcmp_m.has_matrix_v()
+
+    # kwargs must not mutate the caller's params object
+    base = oin.ReductionParams()
+    dcmp_o = oin.Decomposition(fil, False)
+    dcmp_o.reduce(base, compute_v=True)
+    assert base.compute_v is False
+    assert dcmp_o.has_matrix_v()
+
+    # old-name aliases work as kwargs too (set through the compat property)
+    dcmp_a = oin.Decomposition(fil, False)
+    dcmp_a.reduce(clearing_opt=False)
+    assert dcmp_a.is_reduced
+
+
+def test_reduce_unknown_kwarg_raises_typeerror():
+    fil = _grid_fil(seed=10)
+    with pytest.raises(TypeError, match="no_such_field"):
+        oin.reduce(fil, no_such_field=1)
+    dcmp = oin.Decomposition(fil, False)
+    with pytest.raises(TypeError, match="no_such_field"):
+        dcmp.reduce(no_such_field=1)
+
+
 @pytest.mark.skipif(np.dtype("float32") not in oin._dtype.REAL_MODULES,
                     reason="extension built without the float32 backend")
 def test_reduce_timings_float32_backend():
