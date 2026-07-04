@@ -164,9 +164,12 @@ void init_oineus_common(nb::module_& m)
                     p->col_repr = col_repr;
                     p->dims_to_restore_elz = dims_to_restore_elz;
                 }, nb::arg("chunk_size")=def_rp.advanced.chunk_size, nb::arg("col_repr")=def_rp.advanced.col_repr, nb::arg("dims_to_restore_elz")=def_rp.advanced.dims_to_restore_elz)
-            .def_rw("chunk_size", &RPAdvanced::chunk_size)
-            .def_rw("col_repr", &RPAdvanced::col_repr)
-            .def_rw("dims_to_restore_elz", &RPAdvanced::dims_to_restore_elz)
+            .def_rw("chunk_size", &RPAdvanced::chunk_size,
+                    "number of columns each parallel worker claims at a time")
+            .def_rw("col_repr", &RPAdvanced::col_repr,
+                    "working-column data structure used during reduction (ColumnRepr)")
+            .def_rw("dims_to_restore_elz", &RPAdvanced::dims_to_restore_elz,
+                    "dimensions whose V columns are normalized to ELZ form after a clearing reduce")
             .def("__repr__", [](const RPAdvanced& self) { std::stringstream ss; ss << self; return ss.str(); })
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
@@ -180,7 +183,12 @@ void init_oineus_common(nb::module_& m)
                     p.dims_to_restore_elz = std::get<2>(t);
                 });
 
-    nb::class_<ReductionParams>(m, "ReductionParams")
+    nb::class_<ReductionParams>(m, "ReductionParams",
+            "Input recipe for a persistence reduction: basic knobs (n_threads, "
+            "use_clearing, compute_v, compute_u, use_apparent_pairs, sanity_check, "
+            "verbose) plus rarely-tuned ones under .advanced. Pure input: timings "
+            "live on the decomposition (dcmp.timings), so a recipe stays equal to "
+            "itself after a run and can be shared between reductions.")
             .def(nb::init<>())
             .def("__init__",
                 [apparent_from_py](ReductionParams* p, int n_threads, int chunk_size, bool use_clearing, bool compute_v, bool compute_u, std::vector<dim_type> dims_to_restore_elz, oin::ColumnRepr col_repr, bool verbose, std::optional<bool> use_apparent_pairs) {

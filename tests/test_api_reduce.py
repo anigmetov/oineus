@@ -238,7 +238,7 @@ def test_reduce_advanced_kwargs_route_to_advanced():
     # given to reduce() must land in params.advanced
     fil = _grid_fil(seed=11)
 
-    p = oin.apply_reduction_kwargs(None, dict(n_threads=2, chunk_size=64,
+    p = oin._apply_reduction_kwargs(None, dict(n_threads=2, chunk_size=64,
                                               col_repr=oin.ColumnRepr.Full,
                                               dims_to_restore_elz=[0, 1]))
     assert p.n_threads == 2
@@ -248,7 +248,7 @@ def test_reduce_advanced_kwargs_route_to_advanced():
 
     # advanced kwargs must not mutate the caller's params object either
     base = oin.ReductionParams()
-    p2 = oin.apply_reduction_kwargs(base, dict(chunk_size=base.advanced.chunk_size + 1))
+    p2 = oin._apply_reduction_kwargs(base, dict(chunk_size=base.advanced.chunk_size + 1))
     assert p2.advanced.chunk_size == base.advanced.chunk_size + 1
     assert base == oin.ReductionParams()
 

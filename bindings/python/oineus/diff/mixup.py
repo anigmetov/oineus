@@ -28,7 +28,6 @@ sqrt(dist^2 + eps), so degree-0 births are sqrt(eps) instead of 0 and
 all values carry an O(eps) shift; reduce eps if this matters.
 """
 
-import numpy as np
 
 from .. import mixup as _mixup
 from ._backend import infer_backend

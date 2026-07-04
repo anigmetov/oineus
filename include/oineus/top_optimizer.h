@@ -258,37 +258,6 @@ public:
         }
     }
 
-    // // Tracks how each side was last reduced (or that it has not been).
-    // // matrix_summary() returns this for diagnostics + benchmarks; the
-    // // ensure_reduced_* helpers also use it to skip work.
-    // struct SideStatus {
-    //     bool is_reduced {false};
-    //     bool has_v {false};
-    //     bool has_u {false};
-    //     bool clearing_opt_used {false};
-    //
-    //     friend std::ostream& operator<<(std::ostream& out, const SideStatus& s)
-    //     {
-    //         out << "SideStatus(is_reduced=" << (s.is_reduced ? "true" : "false")
-    //             << ", has_v=" << (s.has_v ? "true" : "false")
-    //             << ", has_u=" << (s.has_u ? "true" : "false")
-    //             << ", clearing_opt_used=" << (s.clearing_opt_used ? "true" : "false") << ")";
-    //         return out;
-    //     }
-    // };
-    //
-    // SideStatus side_status(const Decomposition& dcmp, const ReductionParams& params) const
-    // {
-    //     SideStatus s;
-    //     s.is_reduced = dcmp.is_reduced;
-    //     s.has_v = dcmp.is_reduced and params.compute_v;
-    //     s.has_u = dcmp.has_matrix_u();
-    //     s.clearing_opt_used = params.use_clearing;
-    //     return s;
-    // }
-    //
-    // SideStatus hom_status() const { return side_status(decmp_hom_, params_hom_); }
-    // SideStatus coh_status() const { return side_status(decmp_coh_, params_coh_); }
 
     // ---------------------------------------------------------------
     // New per-backward API. The optimizer lives for one autograd call;

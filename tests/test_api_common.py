@@ -93,10 +93,10 @@ def test_reduction_params_advanced():
 
     # repr contains the nested advanced block
     r = repr(params)
-    assert "advanced = Advanced(" in r
+    assert "advanced = ReductionParamsAdvanced(" in r
     assert "chunk_size = 64" in r
     assert "col_repr = Full" in r
-    assert repr(params.advanced).startswith("Advanced(")
+    assert repr(params.advanced).startswith("ReductionParamsAdvanced(")
 
 
 def test_reduction_params_renamed_field_aliases():

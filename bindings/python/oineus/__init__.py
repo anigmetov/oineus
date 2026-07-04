@@ -328,7 +328,7 @@ TopologyOptimizerCube_4D = _real_templated_marker("TopologyOptimizerCube_4D",
     route=module_of_oineus_obj, route_kw="fil")
 
 
-def apply_reduction_kwargs(params, kwargs):
+def _apply_reduction_kwargs(params, kwargs):
     """Return ReductionParams combining params with keyword overrides.
 
     With no kwargs, params is returned as-is (or a default instance if None).
@@ -366,7 +366,7 @@ def reduce(filtration, params=None, dualize=False, **kwargs):
     of params (or of a default ReductionParams), so the caller's params object
     is never mutated. An unknown field name raises TypeError.
     """
-    params = apply_reduction_kwargs(params, kwargs)
+    params = _apply_reduction_kwargs(params, kwargs)
     return module_of_oineus_obj(filtration).reduce(filtration, params, dualize)
 
 
@@ -383,7 +383,7 @@ def _decomposition_reduce(self, params=None, **kwargs):
     params (or of a default ReductionParams), so the caller's params object is
     never mutated. An unknown field name raises TypeError.
     """
-    return _decomposition_reduce_cpp(self, apply_reduction_kwargs(params, kwargs))
+    return _decomposition_reduce_cpp(self, _apply_reduction_kwargs(params, kwargs))
 
 
 Decomposition.reduce = _decomposition_reduce
@@ -1988,6 +1988,7 @@ _PUBLIC_API_NAMES = [
     "reduce",
     "DecompositionManipStats",
     "ReductionParams",
+    "ReductionParamsAdvanced",
     "ReductionTimings",
     "UComputeTimings",
     "KICRParams",

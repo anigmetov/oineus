@@ -1662,7 +1662,7 @@ namespace oineus {
         // from col_repr_.
         template<class WorkCol>
         IntSparseColumn compute_u_column(size_t col_idx, WorkCol& residual) const;
-        // Convenience overload for single-column callers: allocates a fresh residual.
+        // Convenience overload for single-column callers: allocates a fresh residual
         IntSparseColumn compute_u_column(size_t col_idx) const
         {
             BitTreeColumn<Int_> residual;
@@ -1673,7 +1673,7 @@ namespace oineus {
 
         template<class WorkCol>
         IntSparseColumn compute_u_column_1(size_t col_idx, WorkCol& residual) const;
-        // Convenience overload for single-column callers: allocates a fresh residual.
+        // Convenience overload for single-column callers: allocates a fresh residual
         IntSparseColumn compute_u_column_1(size_t col_idx) const
         {
             BitTreeColumn<Int_> residual;
@@ -1704,7 +1704,7 @@ namespace oineus {
                                               CmpOp&& cmp_op,
                                               WorkCol& residual) const;
 
-        // Convenience overload for single-row callers: allocates a fresh residual.
+        // Convenience overload for single-row callers: allocates a fresh residual
         template<typename Real, typename ValueAt, typename CmpOp>
         IntSparseColumn compute_u_row_bounded(size_t row_idx,
                                               const MatrixData& vt_data,

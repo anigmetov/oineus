@@ -94,7 +94,7 @@ namespace oineus {
 
     inline std::ostream& operator<<(std::ostream& out, const ReductionParams::Advanced& a)
     {
-        out << "Advanced(chunk_size = " << a.chunk_size;
+        out << "ReductionParamsAdvanced(chunk_size = " << a.chunk_size;
         out << ", col_repr = " << a.col_repr;
         out << ", dims_to_restore_elz = [";
         for(size_t i = 0; i < a.dims_to_restore_elz.size(); ++i)
