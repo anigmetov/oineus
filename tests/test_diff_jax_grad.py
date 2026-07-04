@@ -265,3 +265,30 @@ def test_crit_sets_backward_runs_all_directions():
         g = np.asarray(jax.grad(f)(jnp.asarray(pts_np)))
         assert np.isfinite(g).all(), direction
         assert (g ** 2).sum() > 0.0, direction
+
+
+def test_crit_sets_backward_detects_filtration_mutation():
+    """The crit-sets backward re-reduces from the live under_fil; mutating
+    the filtration between forward and backward must raise, not silently
+    produce cotangents for the wrong pairing."""
+    rng = np.random.default_rng(42)
+    angles = np.linspace(0, 2 * np.pi, 20, endpoint=False)
+    pts_np = np.stack([np.cos(angles) + rng.normal(0, 0.1, 20),
+                       np.sin(angles) + rng.normal(0, 0.1, 20),
+                       rng.normal(0, 0.1, 20)], axis=1)
+    holder = {}
+
+    def f(x):
+        fil = od.vr_filtration(x, max_dim=2)
+        holder["under_fil"] = fil.under_fil
+        d1 = od.persistence_diagram(fil, gradient_method="crit-sets").in_dimension(1)
+        return ((d1[:, 1] - d1[:, 0]) ** 2).sum()
+
+    y, vjp_fn = jax.vjp(f, jnp.asarray(pts_np))
+
+    under_fil = holder["under_fil"]
+    new_vals = rng.uniform(0.0, 1.0, size=under_fil.size())
+    under_fil.set_values(np.ascontiguousarray(new_vals))
+
+    with pytest.raises(RuntimeError, match="modified between forward and backward"):
+        vjp_fn(jnp.ones_like(y))

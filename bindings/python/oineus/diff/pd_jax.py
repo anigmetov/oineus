@@ -11,7 +11,10 @@ Two paths over the framework-neutral pd_core:
   a fresh TopologyOptimizer -- pure (no live C++ state crosses the
   forward/backward seam; the residual is just the values array) at the
   cost of a second reduction per backward, acceptable given crit-sets'
-  far lower step count.
+  far lower step count. The re-reduce reads the live under_fil, so the
+  filtration must not be mutated (set_values) between forward and
+  backward; the backward compares the re-derived index diagrams against
+  the forward's and raises RuntimeError on mismatch.
 
 oineus.diff is an eager boundary: diagram sizes are data-dependent, so
 these calls cannot sit inside jax.jit / jax.vmap. Use them inside the
@@ -58,6 +61,9 @@ def jax_diagram(fil_values, fwd, dim):
         return _gather(values, index_dgm), values
 
     def crit_bwd(values, grad_output):
+        if index_dgm.size == 0:
+            # empty diagram in this dim: the gradient is zero, skip the re-reduce
+            return (jnp.zeros_like(values),)
         # Pure re-reduce: rebuild the optimizer from the saved values
         # instead of reusing the (stateful) one from the eager forward.
         values_np = np.asarray(values)
@@ -72,6 +78,17 @@ def jax_diagram(fil_values, fwd, dim):
             step_size=fwd.step_size,
             max_dim=fwd.max_dim,
         )
+        # The re-reduce reads the live under_fil; if it was mutated after the
+        # forward, the pairing silently changes and the cotangents would be
+        # garbage. The index diagram is canonical for a filtration, so any
+        # mismatch against the forward's is proof of mutation.
+        for d, fwd_dgm in fwd.index_dgm.items():
+            if not np.array_equal(re_fwd.index_dgm[d], fwd_dgm):
+                raise RuntimeError(
+                    "crit-sets backward: the filtration was modified between "
+                    "forward and backward (re-derived index diagram differs "
+                    "in dimension {}); do not call set_values on the "
+                    "underlying filtration before backward runs".format(d))
         grad_np = pd_core.pd_backward(
             re_fwd, dim, np.asarray(grad_output, dtype=values_np.dtype))
         return (jnp.asarray(grad_np),)
