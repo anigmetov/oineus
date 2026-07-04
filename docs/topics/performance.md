@@ -138,6 +138,28 @@ integer vectors, independent of `col_repr`. That is what lets the fused path
 and the keep-working optimizer hand one working array to any `col_repr` core
 and keep it around afterwards.
 
+### Apparent pairs on grids (`use_apparent_pairs`)
+
+On complete cubical / Freudenthal grid filtrations, `use_apparent_pairs`
+leaves the *apparent* (Bauer) columns -- typically 43-50% of all columns --
+out of the parallel working matrix and resolves them on demand. It is
+tri-state:
+
+- `None` (default, auto) -- ON only where measured as a pure win: the
+  parallel diagram-only (`compute_v=False`) **homology** reduction of a
+  **cubical** grid, where it ties or wins on wall time *and* sets the
+  peak-RSS floor (~-20% vs plain R-only, ~-40% vs R+V at $128^3$).
+- `True` -- force ON wherever supported. Peak RSS drops against the
+  same-mode baseline everywhere (-7..-22% for diagram-only runs,
+  -15..-31% for R+V on smooth fields), at a wall cost: ~1.8-2.4x on
+  cohomology with `compute_v=True`, ~1.4x on Freudenthal homology at
+  $128^3$. Worth it for memory-bound runs that need $V$ (the optimizer)
+  or Freudenthal grids; avoid it for wall-sensitive cohomology runs.
+- `False` -- never.
+
+The flag is inert at `n_threads=1` and on VR / user filtrations, and the
+diagrams are identical either way.
+
 ## Filtration construction
 
 The filtration builders themselves can be the bottleneck on dense inputs:
