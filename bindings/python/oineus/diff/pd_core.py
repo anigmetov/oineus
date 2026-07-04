@@ -10,6 +10,10 @@ an upstream diagram gradient into a gradient on the filtration values,
 either by a plain scatter (dgm-loss) or through the critical-set machinery
 (crit-sets). See persistence_diagram.py for the user-facing description of
 the two gradient methods.
+
+kicr_forward at the bottom is the analogous framework-neutral forward for
+kernel/image/cokernel diagrams (see kicr.py); its index diagrams are pure
+gather maps into K's values, so no custom backward is needed there.
 """
 
 from dataclasses import dataclass
@@ -380,3 +384,91 @@ def combine(flat_indices, flat_targets, strategy, current_values=None,
         return unique_ids, avg
 
     raise ValueError(f"unsupported strategy {strategy!r}")
+
+
+# ---------------------------------------------------------------------------
+# kernel/image/cokernel (KICR): framework-neutral forward
+# ---------------------------------------------------------------------------
+
+# C++ sentinel for "no death cell" in an index diagram entry: points at
+# infinity carry k_invalid_index / plus_inf (both size_t max, common_defs.h)
+# as their death index
+KICR_INVALID_INDEX = np.iinfo(np.uint64).max
+
+KICR_FAMILIES = ("kernel", "image", "cokernel")
+
+
+@dataclass
+class KICRForward:
+    """Result of the KICR forward reduction: everything the gathers need.
+
+    All indices are sorted ids of the FULL filtration K. kernel.h reads
+    every birth/death value of every family through
+    fil_K_.value_by_sorted_id -- including kernel death cells, which live
+    in L but enter the diagram as sorted_L_to_sorted_K_[tau] -- so each
+    per-dimension index diagram subscripts K's values tensor directly.
+    Points at infinity (death index == KICR_INVALID_INDEX) are filtered
+    out here.
+    """
+    kicr: object       # live C++ KerImCokReduced
+    index_dgms: dict   # family -> {dim -> (n_d, 2) int64 [birth_sid_K, death_sid_K]}
+    families: tuple    # the subset of KICR_FAMILIES that was computed
+    max_dim: int
+
+
+def kicr_forward(fil_K, fil_L, *, kernel, image, cokernel,
+                 include_zero_persistence, n_threads):
+    """Run the C++ ker/im/cok reduction for the inclusion L -> K and
+    collect the finite index diagrams of the requested families as numpy.
+
+    fil_K, fil_L are C++ filtrations; L must be a subcomplex of K carrying
+    the same values on shared cells (the CEHM setting g = f restricted to
+    L). The returned index diagrams are pure gather maps: the diagram in
+    each dimension is values_K[index_dgm], so gradients reach K's values
+    through the native VJP of the gather (a scatter-add) and no custom
+    backward is needed. Zero-persistence pairs are dropped unless
+    include_zero_persistence is True, mirroring the non-diff KICR
+    diagrams.
+    """
+    # late import: the facade lives in the package __init__, which is fully
+    # initialized by the time oineus.diff loads, but keeping the import here
+    # makes pd_core importable in isolation for tests
+    from .. import compute_kernel_image_cokernel_reduction
+
+    families = tuple(name for name, on in
+                     (("kernel", kernel), ("image", image), ("cokernel", cokernel))
+                     if on)
+    if not families:
+        raise ValueError(
+            "at least one of kernel/image/cokernel must be requested")
+
+    params = _oineus.KICRParams()
+    params.codomain = False
+    params.kernel = bool(kernel)
+    params.image = bool(image)
+    params.cokernel = bool(cokernel)
+    params.include_zero_persistence = bool(include_zero_persistence)
+    params.n_threads = max(1, int(n_threads) if n_threads is not None else 1)
+
+    kicr = compute_kernel_image_cokernel_reduction(fil_K, fil_L, params)
+
+    # finite points of every family live in dims [0, max_dim): a finite pair
+    # always involves a (dim+1)-cell (the death cell for image/cokernel, both
+    # cells for kernel), so range(max_dim) covers them all -- same convention
+    # as the ordinary differentiable diagrams
+    max_dim = int(fil_K.max_dim)
+    getter = {"kernel": kicr.kernel_diagrams, "image": kicr.image_diagrams,
+              "cokernel": kicr.cokernel_diagrams}
+    index_dgms = {}
+    for family in families:
+        dgms = getter[family]()
+        by_dim = {}
+        for dim in range(max_dim):
+            arr = np.asarray(dgms.index_diagram_in_dimension(dim, as_numpy=True))
+            arr = arr.reshape(-1, 2)
+            finite = arr[:, 1] != KICR_INVALID_INDEX
+            by_dim[dim] = arr[finite].astype(np.int64)
+        index_dgms[family] = by_dim
+
+    return KICRForward(kicr=kicr, index_dgms=index_dgms,
+                       families=families, max_dim=max_dim)
