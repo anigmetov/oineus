@@ -125,6 +125,8 @@ def _compute_values_for_dim(points, sigma_rows, tau_by_sigma_tuple, eps):
         pieces.append(vals)
         positions.append(np.asarray(indices, dtype=np.int64))
 
+    if not pieces:
+        return epy.zeros(points, 0)
     order = np.concatenate(positions)
     inv = np.empty(n_d, dtype=np.int64)
     inv[order] = np.arange(n_d, dtype=np.int64)

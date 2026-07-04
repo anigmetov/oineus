@@ -150,10 +150,10 @@ def pd_forward(under_fil, values_np, *, dualize, method, dims_to_backprop,
     """Reduce one side of the decomposition; return a PDForward.
 
     under_fil is the C++ filtration; values_np a detached numpy copy of the
-    differentiable filtration values (used only by the crit-sets backward
-    math). Parameters may be unresolved (strings, None) -- they are resolved
-    here, so the jax re-reduce path can replay a PDForward's stored fields
-    directly.
+    differentiable filtration values (the backward shapes its gradient like
+    it and the crit-sets math reads it). Parameters may be unresolved
+    (strings, None) -- they are resolved here, so the jax re-reduce path can
+    replay a PDForward's stored fields directly.
     """
     if dualize is None:
         dualize = default_dualize_for_filtration(under_fil)
@@ -253,7 +253,10 @@ def _backward_crit_sets(fwd, dim, grad_np):
     indvals = top_opt.crit_sets_apply(flat_idx.astype(np.uintp).tolist(),
                                       flat_tgt.tolist(), fwd.strategy)
     out_idx = np.asarray(indvals.indices_array(), copy=True).astype(np.int64)
-    out_tgt = np.asarray(indvals.values_array(), copy=True)
+    # cast the C++ targets to the values dtype BEFORE subtracting, as the
+    # torch path always did: keeps float32 values on a float64 backend
+    # bit-identical to the pre-refactor behavior
+    out_tgt = np.asarray(indvals.values_array()).astype(fil_values.dtype)
     if out_idx.size == 0:
         return grad_vals
 
