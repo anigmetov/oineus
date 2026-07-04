@@ -1,20 +1,21 @@
 """Differentiable alpha filtration.
 
 Combinatorics come from CGAL via diode (with attachment information).
-Critical values are recomputed in PyTorch as squared circumradii of each
-simplex's *attacher* tau (a Gabriel coface), so gradients flow back to
-the input point coordinates. Vertices are immovable: dim-0 values are
-zeros without grad.
+Critical values are recomputed differentiably (torch or jax, via eagerpy)
+as squared circumradii of each simplex's *attacher* tau (a Gabriel
+coface), so gradients flow back to the input point coordinates. Vertices
+are immovable: dim-0 values are zeros without grad.
 """
 import inspect
 import time
 from typing import Optional
 
 import numpy as np
-import torch
+import eagerpy as epy
 
 from .. import _oineus
 from .._dtype import real_module_for
+from ._backend import concrete_numpy
 from ._tensor_utils import real_buffer_for
 from .alpha_utils import (
     edge_circumradius_sq,
@@ -85,46 +86,49 @@ def _bucket_indices_by_tau_dim(tau_rows):
 def _compute_values_for_dim(points, sigma_rows, tau_by_sigma_tuple, eps):
     """Compute the differentiable critical-value tensor for one dim block.
 
+    points: eagerpy tensor of the input coordinates.
     sigma_rows: numpy ``(n_d, d+1)`` of vertex indices in Oineus sorted order.
     tau_by_sigma_tuple: dict mapping ``tuple(sigma_verts)`` -> ``tuple(tau_verts)``.
 
-    Returns a 1-D tensor of shape ``(n_d,)`` with autograd connected back
-    through ``points`` for every nonzero entry.
+    Returns a 1-D eagerpy tensor of shape ``(n_d,)`` with autograd connected
+    back through ``points`` for every nonzero entry.
     """
     n_d = sigma_rows.shape[0]
     sigma_tuples = [tuple(int(v) for v in row) for row in sigma_rows]
     tau_rows = [tau_by_sigma_tuple[s] for s in sigma_tuples]
     buckets = _bucket_indices_by_tau_dim(tau_rows)
 
-    result = torch.zeros(n_d, dtype=points.dtype, device=points.device)
-
+    # Every sigma has exactly one tau, so the buckets partition the rows:
+    # concatenate the per-bucket values and apply the inverse permutation
+    # (a pure gather, backend-neutral) instead of scattering into zeros
+    pieces = []
+    positions = []
     for tau_dim, (indices, taus) in buckets.items():
         if not indices:
             continue
-        idx = torch.as_tensor(indices, dtype=torch.long, device=points.device)
-        tau_arr = torch.as_tensor(taus, dtype=torch.long, device=points.device)
+        tau_arr = np.asarray(taus, dtype=np.int64)
         if tau_dim == 0:
-            vals = torch.zeros(idx.shape[0], dtype=points.dtype, device=points.device)
+            vals = epy.zeros(points, len(indices))
         elif tau_dim == 1:
-            p0 = points[tau_arr[:, 0]]
-            p1 = points[tau_arr[:, 1]]
-            vals = edge_circumradius_sq(p0, p1)
+            vals = epy.astensor(edge_circumradius_sq(
+                points[tau_arr[:, 0]], points[tau_arr[:, 1]]))
         elif tau_dim == 2:
-            p0 = points[tau_arr[:, 0]]
-            p1 = points[tau_arr[:, 1]]
-            p2 = points[tau_arr[:, 2]]
-            vals = triangle_circumradius_sq(p0, p1, p2, eps)
+            vals = epy.astensor(triangle_circumradius_sq(
+                points[tau_arr[:, 0]], points[tau_arr[:, 1]],
+                points[tau_arr[:, 2]], eps))
         elif tau_dim == 3:
-            p0 = points[tau_arr[:, 0]]
-            p1 = points[tau_arr[:, 1]]
-            p2 = points[tau_arr[:, 2]]
-            p3 = points[tau_arr[:, 3]]
-            vals = tetrahedron_circumradius_sq(p0, p1, p2, p3, eps)
+            vals = epy.astensor(tetrahedron_circumradius_sq(
+                points[tau_arr[:, 0]], points[tau_arr[:, 1]],
+                points[tau_arr[:, 2]], points[tau_arr[:, 3]], eps))
         else:
             raise RuntimeError(f"alpha_filtration: tau_dim={tau_dim} not supported")
-        result = result.index_copy(0, idx, vals)
+        pieces.append(vals)
+        positions.append(np.asarray(indices, dtype=np.int64))
 
-    return result
+    order = np.concatenate(positions)
+    inv = np.empty(n_d, dtype=np.int64)
+    inv[order] = np.arange(n_d, dtype=np.int64)
+    return epy.concatenate(pieces)[inv]
 
 
 def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
@@ -134,13 +138,14 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
     Combinatorics and per-simplex *attacher* (a Gabriel coface tau whose
     squared circumradius equals alpha(sigma)) are obtained from diode
     (CGAL, via ``fill_alpha_shapes(..., with_attachment=True)``). Critical
-    values are recomputed in PyTorch as squared circumradii of tau, so
+    values are recomputed differentiably as squared circumradii of tau, so
     gradients flow back to ``points``.
 
     Vertices are immovable: dim-0 values are zeros without grad.
 
     Args:
-        points: ``(n, d)`` torch.Tensor with ``d in {2, 3}``. Differentiable.
+        points: ``(n, d)`` torch tensor or jax array with ``d in {2, 3}``.
+            Differentiable; the returned values are in the same framework.
         eps: small value for numerical stability in the closed-form formulas.
         exact: forwarded to diode (selects the exact CGAL kernel).
         print_time: if True, print per-stage timings.
@@ -165,7 +170,8 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
     if print_time:
         t0 = time.time()
 
-    points_np = points.detach().cpu().numpy()
+    tensor = epy.astensor(points)
+    points_np = concrete_numpy(points)
     triples = diode.fill_alpha_shapes(points_np, exact=exact, with_attachment=True)
 
     if print_time:
@@ -175,8 +181,8 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
     pairs = [(s, a) for s, a, _ in triples]
     # Route to the backend matching the point dtype so a float32 cloud builds a genuine float32
     # under-filtration (diode's alpha values are double; the float32 _Filtration ctor narrows
-    # them). The recomputed values below already follow points.dtype, so the whole DiffFiltration
-    # stays single-dtype instead of float32 values on a float64 filtration.
+    # them). The recomputed values below already follow the points dtype, so the whole
+    # DiffFiltration stays single-dtype instead of float32 values on a float64 filtration.
     sub = real_module_for(points_np)
     alpha_fil = sub._Filtration(pairs, duplicates_possible=False, n_threads=1)
     alpha_fil.kind = _oineus.FiltrationKind.Alpha
@@ -200,7 +206,7 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
         print(f"build tau_by_sigma_tuple elapsed: {time.time() - t0:.3f}")
 
     n_v = alpha_fil.size_in_dimension(0)
-    values_in_dim = [torch.zeros(n_v, dtype=points.dtype, device=points.device)]
+    values_in_dim = [epy.zeros(tensor, n_v)]
 
     for dim in range(1, alpha_fil.max_dim + 1):
         if print_time:
@@ -214,7 +220,7 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
         else:
             raise RuntimeError(f"alpha_filtration: dim={dim} not supported")
         sigma_rows = sigma_rows.astype(np.int64)
-        vals = _compute_values_for_dim(points, sigma_rows, tau_by_sigma_tuple, eps)
+        vals = _compute_values_for_dim(tensor, sigma_rows, tau_by_sigma_tuple, eps)
         values_in_dim.append(vals)
         if print_time:
             print(f"dim {dim} elapsed: {time.time() - t_dim:.3f}")
@@ -222,10 +228,10 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
     if print_time:
         t0 = time.time()
 
-    cd_vals = torch.cat(values_in_dim)
+    cd_vals = epy.concatenate(values_in_dim)
     # contiguous buffer in the filtration's Real dtype -- read directly by set_values
-    alpha_fil.set_values(real_buffer_for(alpha_fil, cd_vals))
-    sorted_vals = torch.cat([torch.sort(v)[0] for v in values_in_dim])
+    alpha_fil.set_values(real_buffer_for(alpha_fil, cd_vals.raw))
+    sorted_vals = epy.concatenate([epy.sort(v) for v in values_in_dim]).raw
 
     if print_time:
         print(f"finalize elapsed: {time.time() - t0:.3f}")
