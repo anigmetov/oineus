@@ -176,6 +176,30 @@ def test_float32_inputs():
     expected = mb.total_mixup(0) + mb.total_mixup(1)
     assert float(loss.detach()) == pytest.approx(expected, abs=5e-3)
 
+    # mixed dtypes: torch.cat promotes the union to float64 and L follows
+    A32 = torch.tensor(A_np, dtype=torch.float32, requires_grad=True)
+    B64 = torch.tensor(B_np, dtype=torch.float64, requires_grad=True)
+    dmb2 = od.mixup_barcodes(A32, B64, max_dim=1)
+    assert dmb2[0].dtype == torch.float64
+    (dmb2.total_mixup(0) + dmb2.total_mixup(1)).backward()
+    assert A32.grad.abs().sum() > 0 and B64.grad.abs().sum() > 0
+
+
+def test_collapsed_bar_percentages_are_nan_safe():
+    # near-duplicate points in float32: the eps-smoothed gathered values of
+    # a kept degree-0 bar collide, so its (d - b) denominator is zero; the
+    # percentage statistics must stay finite and must not NaN-poison grads
+    A_np = np.array([[0.0, 0.0], [1e-7, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+    B_np = np.array([[0.5, 0.5]], dtype=np.float32)
+    A = torch.tensor(A_np, requires_grad=True)
+    B = torch.tensor(B_np, requires_grad=True)
+    dmb = od.mixup_barcodes(A, B, max_dim=1)
+    p = dmb.total_mixup_percentage(0)
+    m = dmb.mean_mixup_percentage(0)
+    assert torch.isfinite(p) and torch.isfinite(m)
+    (p + m).backward()
+    assert torch.isfinite(A.grad).all() and torch.isfinite(B.grad).all()
+
 
 def test_input_guards():
     A_np, B_np = make_clouds()

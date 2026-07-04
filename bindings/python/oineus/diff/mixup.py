@@ -32,7 +32,7 @@ import numpy as np
 
 from .. import mixup as _mixup
 from ._backend import infer_backend
-from ._tensor_utils import tensor_to_real_numpy
+from ._tensor_utils import real_dtype_for_tensor, tensor_to_real_numpy
 from .kicr import gather_diagram
 from .vietoris_rips import vr_filtration as diff_vr_filtration
 
@@ -92,9 +92,22 @@ class DiffMixupBarcodes:
                            f"available: {sorted(self._index_triples)}")
         return self._index_triples[dim].copy()
 
-    # no special zero constants are needed for empty degrees: a sum over an
-    # empty tensor is already a differentiable zero scalar of the right
-    # dtype (and device, for torch)
+    # No special zero constants are needed for empty degrees: a sum over an
+    # empty tensor is already a zero scalar of the right dtype (and device,
+    # for torch). Such a constant carries no autograd history, so calling
+    # backward()/grad on an empty-degree statistic ALONE fails in torch;
+    # summed with any non-empty term it is harmless.
+
+    def _percentages(self, t):
+        # NaN-safe (d - d') / (d - b): the eps-smoothed gathered values of a
+        # positive-persistence bar can collide (near-duplicate points in
+        # float32), so guard the division -- a collapsed bar contributes 0
+        # without poisoning gradients
+        num = t[:, 2] - t[:, 1]
+        denom = t[:, 2] - t[:, 0]
+        pos = denom > 0
+        safe_denom = denom + (~pos) * 1.0
+        return num / safe_denom * pos
 
     def total_persistence(self, dim):
         """Sum of death - birth over the finite triples (differentiable scalar)."""
@@ -107,17 +120,19 @@ class DiffMixupBarcodes:
         return (t[:, 2] - t[:, 1]).sum()
 
     def total_mixup_percentage(self, dim):
-        """Sum of the per-bar mixup percentages (differentiable scalar)."""
-        t = self.in_dimension(dim)
-        return ((t[:, 2] - t[:, 1]) / (t[:, 2] - t[:, 0])).sum()
+        """Sum of the per-bar mixup percentages (differentiable scalar).
+        A bar whose gathered eps-smoothed persistence collapses to zero
+        contributes 0."""
+        return self._percentages(self.in_dimension(dim)).sum()
 
     def mean_mixup_percentage(self, dim):
         """Mean of the per-bar mixup percentages (differentiable scalar);
-        a zero constant if the barcode is empty."""
+        a zero constant if the barcode is empty. A bar whose gathered
+        eps-smoothed persistence collapses to zero contributes 0."""
         t = self.in_dimension(dim)
         if not len(t):
             return t.sum()  # zero scalar of the right dtype/device
-        return ((t[:, 2] - t[:, 1]) / (t[:, 2] - t[:, 0])).mean()
+        return self._percentages(t).mean()
 
     def __repr__(self):
         sizes = {d: len(self._index_triples[d]) for d in sorted(self._index_triples)}
@@ -171,22 +186,15 @@ def mixup_barcodes(A, B, max_dim=1, max_diameter=None, eps=1e-6, n_threads=1):
     if max_dim < 0:
         raise ValueError("max_dim must be non-negative")
 
-    # no dtype override: A_np carries the tensor's matching Real (float32
-    # tensors build a float32 L, matching the float32 K that
-    # diff_vr_filtration builds for the union)
-    A_np = tensor_to_real_numpy(epy.astensor(A))
-    if A_np.ndim != 2:
+    if A.ndim != 2:
         raise ValueError("A must be a 2D tensor of shape (n, d)")
 
-    if A_np.shape[0] == 0:
+    if len(A) == 0:
         empty_idx = _mixup.empty_dim_triples()[1]
         empty_t = {d: gather_diagram(A.reshape(-1), empty_idx, backend)
                    for d in range(max_dim + 1)}
         empty_i = {d: empty_idx.copy() for d in range(max_dim + 1)}
         return DiffMixupBarcodes(empty_t, empty_i, backend, max_dim)
-
-    if max_diameter is None:
-        max_diameter = float(max_distance(A_np)) if len(A_np) >= 2 else 0.0
 
     have_B = B is not None and len(B) > 0
     if have_B:
@@ -198,6 +206,15 @@ def mixup_barcodes(A, B, max_dim=1, max_diameter=None, eps=1e-6, n_threads=1):
             union = jnp.concatenate([A, B], axis=0)
     else:
         union = A
+
+    # L must be built in the same Real as the union filtration K (float32
+    # tensors run the whole pipeline in float32; if concatenation promoted
+    # a mixed-dtype A, B pair, A follows the promoted dtype)
+    A_np = tensor_to_real_numpy(epy.astensor(A),
+                                dtype=real_dtype_for_tensor(epy.astensor(union)))
+
+    if max_diameter is None:
+        max_diameter = float(max_distance(A_np)) if len(A_np) >= 2 else 0.0
 
     # differentiable filtration of the union; fat cells (see oineus.mixup:
     # packed uids depend on the point count, so packed K and L would not
