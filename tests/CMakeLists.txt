@@ -83,6 +83,7 @@ else()
             dcmp-manips
             dcmp-restore-elz
             dgm-dist
+            diff-backend
             diff-critical-sets
             diff-cube-fil
             diff-delaunay-arrays

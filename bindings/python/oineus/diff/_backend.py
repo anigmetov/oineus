@@ -16,6 +16,8 @@ oineus.diff imports and works with only torch installed, only jax
 installed, or neither.
 """
 
+import sys
+
 import numpy as np
 
 
@@ -26,6 +28,14 @@ def infer_backend(x):
     if mod == "torch":
         return "torch"
     if mod in ("jax", "jaxlib"):
+        return "jax"
+    # user-defined subclasses live in the user's module, so the fast
+    # module-root check misses them; fall back to isinstance, gated on the
+    # framework already being imported (a live instance implies it is), so
+    # neither torch nor jax gets imported here
+    if "torch" in sys.modules and isinstance(x, sys.modules["torch"].Tensor):
+        return "torch"
+    if "jax" in sys.modules and isinstance(x, sys.modules["jax"].Array):
         return "jax"
     return None
 
