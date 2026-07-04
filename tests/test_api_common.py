@@ -1,5 +1,7 @@
 import pickle
 
+import pytest
+
 import oineus as oin
 
 
@@ -18,11 +20,11 @@ def test_vredge_api():
 def test_reduction_params_api():
     params = oin.ReductionParams()
     params.n_threads = 1
-    params.chunk_size = 16
+    params.advanced.chunk_size = 16
     params.use_clearing = True
     params.compute_v = True
     params.compute_u = True
-    params.dims_to_restore_elz = []
+    params.advanced.dims_to_restore_elz = []
     params.sanity_check = False
     params.verbose = False
 
@@ -41,13 +43,60 @@ def test_reduction_params_ctor_defaults_agree():
     default = oin.ReductionParams()
     kwargs_default = oin.ReductionParams(verbose=False)
     assert kwargs_default.n_threads == default.n_threads
-    assert kwargs_default.chunk_size == default.chunk_size
+    assert kwargs_default.advanced.chunk_size == default.advanced.chunk_size
     assert kwargs_default.use_clearing == default.use_clearing
     assert kwargs_default.compute_v == default.compute_v
     assert kwargs_default.compute_u == default.compute_u
-    assert kwargs_default.col_repr == default.col_repr
+    assert kwargs_default.advanced.col_repr == default.advanced.col_repr
     assert kwargs_default.verbose == default.verbose
     assert kwargs_default == default
+
+
+def test_reduction_params_advanced():
+    # chunk_size / col_repr / dims_to_restore_elz live in the nested
+    # advanced sub-struct: flat attribute access is a clean break (loud
+    # AttributeError), in-place mutation goes through params.advanced,
+    # and ==, repr, pickle all include the nested block
+    params = oin.ReductionParams()
+
+    for name in ("chunk_size", "col_repr", "dims_to_restore_elz"):
+        with pytest.raises(AttributeError):
+            getattr(params, name)
+
+    params.advanced.chunk_size = 64
+    params.advanced.col_repr = oin.ColumnRepr.Full
+    params.advanced.dims_to_restore_elz = [0, 1]
+    assert params.advanced.chunk_size == 64
+    assert params.advanced.col_repr == oin.ColumnRepr.Full
+    assert list(params.advanced.dims_to_restore_elz) == [0, 1]
+
+    # whole-object assignment of a standalone ReductionParamsAdvanced
+    params2 = oin.ReductionParams()
+    params2.advanced = oin.ReductionParamsAdvanced(chunk_size=32)
+    assert params2.advanced.chunk_size == 32
+
+    # == distinguishes params differing only in advanced
+    a, b = oin.ReductionParams(), oin.ReductionParams()
+    assert a == b
+    b.advanced.chunk_size += 1
+    assert a != b
+    assert a.advanced != b.advanced
+
+    # pickle roundtrip carries the nested block (outer and standalone)
+    back = pickle.loads(pickle.dumps(params))
+    assert back == params
+    assert back.advanced.chunk_size == 64
+    assert back.advanced.col_repr == oin.ColumnRepr.Full
+    assert list(back.advanced.dims_to_restore_elz) == [0, 1]
+    adv_back = pickle.loads(pickle.dumps(params.advanced))
+    assert adv_back == params.advanced
+
+    # repr contains the nested advanced block
+    r = repr(params)
+    assert "advanced = Advanced(" in r
+    assert "chunk_size = 64" in r
+    assert "col_repr = Full" in r
+    assert repr(params.advanced).startswith("Advanced(")
 
 
 def test_reduction_params_renamed_field_aliases():

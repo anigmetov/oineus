@@ -49,7 +49,7 @@ reduce_with_params(const Fil& fil, bool clearing, bool compute_u,
     params.use_clearing = clearing;
     if (restore_elz)
         for (oineus::dim_type d = 0; d < static_cast<oineus::dim_type>(decmp.n_dims()); ++d)
-            params.dims_to_restore_elz.push_back(d);
+            params.advanced.dims_to_restore_elz.push_back(d);
     params.n_threads = n_threads;
     decmp.reduce(params);
     return decmp;
@@ -68,7 +68,7 @@ reduce_with_params_dualize(const Fil& fil, bool dualize, bool clearing,
     params.use_clearing = clearing;
     if (restore_elz)
         for (oineus::dim_type d = 0; d < static_cast<oineus::dim_type>(decmp.n_dims()); ++d)
-            params.dims_to_restore_elz.push_back(d);
+            params.advanced.dims_to_restore_elz.push_back(d);
     params.n_threads = n_threads;
     decmp.reduce(params);
     return decmp;
@@ -491,10 +491,10 @@ reduce_col_repr(const Fil& fil, bool dualize, oineus::ColumnRepr cr,
     oineus::ReductionParams params;
     params.compute_v = true;
     params.use_clearing = true;
-    params.col_repr = cr;
+    params.advanced.col_repr = cr;
     for (oineus::dim_type d = 0;
          d < static_cast<oineus::dim_type>(decmp.n_dims()); ++d)
-        params.dims_to_restore_elz.push_back(d);
+        params.advanced.dims_to_restore_elz.push_back(d);
     params.n_threads = n_threads;
     decmp.reduce(params);
     return decmp;
@@ -593,8 +593,8 @@ TEST_CASE("parallel restore_elz runs with every col_repr (Set/Heap/Full/BitTree)
             params.compute_v = true;
             params.use_clearing = true;
             params.n_threads = 4;
-            params.col_repr = cr;
-            params.dims_to_restore_elz = {0, 1};
+            params.advanced.col_repr = cr;
+            params.advanced.dims_to_restore_elz = {0, 1};
             decmp.reduce(params);
 
             // the parallel restore actually ran (it fills the per-worker times)

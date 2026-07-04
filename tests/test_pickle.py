@@ -56,7 +56,7 @@ def test_common_types():
 
     params = oin.ReductionParams()
     params.n_threads = 2
-    params.chunk_size = 8
+    params.advanced.chunk_size = 8
     params.compute_v = True
     params.compute_u = True
     _assert_roundtrip(params)

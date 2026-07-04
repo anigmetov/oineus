@@ -25,7 +25,7 @@ from ._oineus import Decomposition, IndexDiagramPoint
 # reduce is the fused one-shot build+reduce free function; it is Real-templated (registered per
 # backend), so it is re-exposed below as a dtype-routing facade (like the other routed helpers).
 from ._oineus import DecompositionManipStats
-from ._oineus import ReductionParams, ReductionTimings, UComputeTimings, KICRParams
+from ._oineus import ReductionParams, ReductionParamsAdvanced, ReductionTimings, UComputeTimings, KICRParams
 from ._oineus import ColumnRepr
 # KerImCokReduced(+Prod), IndicesValues(+Prod) and the concrete per-cell-type TopologyOptimizer
 # classes (Prod / Cube_ND) are Real-templated (and several are per-cell-type too); they are
@@ -333,7 +333,9 @@ def apply_reduction_kwargs(params, kwargs):
 
     With no kwargs, params is returned as-is (or a default instance if None).
     Otherwise the overrides are set on a copy, so the caller's params object
-    is never mutated. An unknown field name raises TypeError.
+    is never mutated. Fields of params.advanced (chunk_size, col_repr,
+    dims_to_restore_elz) are accepted flat and routed there. An unknown
+    field name raises TypeError.
     """
     if not kwargs:
         return ReductionParams() if params is None else params
@@ -341,9 +343,14 @@ def apply_reduction_kwargs(params, kwargs):
     for name, value in kwargs.items():
         try:
             setattr(params, name, value)
+            continue
+        except AttributeError:
+            pass
+        try:
+            setattr(params.advanced, name, value)
         except AttributeError:
             raise TypeError(f"reduce() got an unexpected keyword argument {name!r}"
-                            " (not a ReductionParams field)") from None
+                            " (not a ReductionParams or ReductionParams.advanced field)") from None
     return params
 
 

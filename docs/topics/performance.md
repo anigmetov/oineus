@@ -11,8 +11,8 @@ implicit "use every core" -- you choose.
 import oineus as oin
 
 params = oin.ReductionParams(
-    n_threads=8,        # default
-    chunk_size=256,     # default; rarely worth tuning
+    n_threads=8,        # default is 1 -- you choose the thread count
+    chunk_size=256,     # advanced knob (params.advanced); rarely worth tuning
     use_clearing=True,  # default; turn off only to compare with literature
     compute_v=False,    # default; True if you need cycle reps
     compute_u=False,    # default; cannot be combined with n_threads > 1
@@ -45,7 +45,7 @@ What actually matters:
 
 While a column is being reduced it lives in a transient *working* data
 structure; the stored columns themselves are always sorted integer
-vectors. `ReductionParams.col_repr` selects that working structure. The
+vectors. `ReductionParams.advanced.col_repr` selects that working structure. The
 options follow the accelerated column representations of the PHAT library
 ([Bauer et al., 2017](https://doi.org/10.1016/j.jsc.2016.03.008)):
 

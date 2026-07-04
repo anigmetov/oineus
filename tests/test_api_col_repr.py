@@ -22,7 +22,7 @@ def _vr_fil(seed=0):
 
 def _dgms(fil, col_repr, dualize, n_threads, compute_v, ndims):
     p = oin.ReductionParams()
-    p.col_repr = col_repr
+    p.advanced.col_repr = col_repr
     p.compute_v = compute_v
     p.n_threads = n_threads
     dcmp = oin.Decomposition(fil, dualize)

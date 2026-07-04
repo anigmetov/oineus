@@ -224,8 +224,8 @@ public:
         params_coh_.n_threads = legacy_in_band ? 1 : n_threads_;
         // ELZ restoration only happens when V is being built, so the
         // dgm-loss branch below clears this back to empty.
-        params_hom_.dims_to_restore_elz = dims_to_restore_elz_;
-        params_coh_.dims_to_restore_elz = dims_to_restore_elz_;
+        params_hom_.advanced.dims_to_restore_elz = dims_to_restore_elz_;
+        params_coh_.advanced.dims_to_restore_elz = dims_to_restore_elz_;
 
         if (not with_crit_sets_) {
             // dgm-loss: only the pairing in R is needed.
@@ -235,8 +235,8 @@ public:
             params_coh_.compute_u = false;
             params_hom_.use_clearing = true;
             params_coh_.use_clearing = true;
-            params_hom_.dims_to_restore_elz.clear();
-            params_coh_.dims_to_restore_elz.clear();
+            params_hom_.advanced.dims_to_restore_elz.clear();
+            params_coh_.advanced.dims_to_restore_elz.clear();
         } else if (legacy_in_band) {
             // In-band U: clearing off, serial. The forward already
             // builds U during reduction; ensure_has_u_* will be a no-op.

@@ -233,6 +233,38 @@ def test_reduce_unknown_kwarg_raises_typeerror():
         dcmp.reduce(no_such_field=1)
 
 
+def test_reduce_advanced_kwargs_route_to_advanced():
+    # the kwargs layer stays flat: chunk_size / col_repr / dims_to_restore_elz
+    # given to reduce() must land in params.advanced
+    fil = _grid_fil(seed=11)
+
+    p = oin.apply_reduction_kwargs(None, dict(n_threads=2, chunk_size=64,
+                                              col_repr=oin.ColumnRepr.Full,
+                                              dims_to_restore_elz=[0, 1]))
+    assert p.n_threads == 2
+    assert p.advanced.chunk_size == 64
+    assert p.advanced.col_repr == oin.ColumnRepr.Full
+    assert list(p.advanced.dims_to_restore_elz) == [0, 1]
+
+    # advanced kwargs must not mutate the caller's params object either
+    base = oin.ReductionParams()
+    p2 = oin.apply_reduction_kwargs(base, dict(chunk_size=base.advanced.chunk_size + 1))
+    assert p2.advanced.chunk_size == base.advanced.chunk_size + 1
+    assert base == oin.ReductionParams()
+
+    # end to end: reduction with flat advanced kwargs matches the classic path
+    oracle = _classic_dgms(fil)
+    dcmp = oin.reduce(fil, n_threads=2, chunk_size=64, col_repr=oin.ColumnRepr.Full)
+    fused = [dcmp.diagram(fil).in_dimension(d) for d in range(3)]
+    assert _dgms_equal(oracle, fused)
+
+    # the method form with dims_to_restore_elz (needs compute_v)
+    dcmp_m = oin.Decomposition(fil, False)
+    dcmp_m.reduce(n_threads=2, compute_v=True, dims_to_restore_elz=[0, 1], chunk_size=32)
+    assert dcmp_m.is_reduced
+    assert dcmp_m.has_matrix_v()
+
+
 @pytest.mark.skipif(np.dtype("float32") not in oin._dtype.REAL_MODULES,
                     reason="extension built without the float32 backend")
 def test_reduce_timings_float32_backend():
@@ -243,6 +275,18 @@ def test_reduce_timings_float32_backend():
     dcmp = oin.reduce(fil, oin.ReductionParams())
     assert dcmp.timings.reduce >= 0.0
     assert dcmp.timings.total >= dcmp.timings.reduce
+
+
+@pytest.mark.skipif(np.dtype("float32") not in oin._dtype.REAL_MODULES,
+                    reason="extension built without the float32 backend")
+def test_reduce_float32_advanced_kwargs():
+    # ReductionParamsAdvanced is Real-independent: a float32 decomposition
+    # must reduce with flat advanced kwargs like the float64 one
+    rng = np.random.default_rng(8)
+    fil = oin.freudenthal_filtration(data=np.ascontiguousarray(rng.random((16, 16), dtype=np.float32)))
+    dcmp = oin.reduce(fil, n_threads=2, chunk_size=64, col_repr=oin.ColumnRepr.Full)
+    assert dcmp.is_reduced
+    assert len(dcmp.diagram(fil).in_dimension(0)) > 0
 
 
 def test_reduce_keep_working_diagram_then_materialize():

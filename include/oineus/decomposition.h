@@ -155,7 +155,7 @@ namespace oineus {
         bool done;
 
         do {
-            get_next_chunk(params.use_clearing, next_free_chunk, params.chunk_size, n_cols,
+            get_next_chunk(params.use_clearing, next_free_chunk, params.advanced.chunk_size, n_cols,
                         my_chunk, chunk_begin, chunk_end, done, logger,
                         // the following are only used if clearing is true
                         next_free_chunks, dim_first, dim_last, current_dim);
@@ -790,14 +790,14 @@ namespace oineus {
             set_dims_(fil.dims_first(), fil.dims_last(), _dualize, fil.size());
         }
 
-        // Run the parallel RV / R-only core, dispatching on params.col_repr exactly
+        // Run the parallel RV / R-only core, dispatching on params.advanced.col_repr exactly
         // like reduce_parallel_rv / reduce_parallel_r_only do. The working array is
         // already built; the col_repr choice flows in as the per-thread scratch.
         void run_rv_core_dispatch_(const ReductionParams& params, tf::Executor& executor,
                 RVWorkingMatrix& rv, AtomicIdxVector& pivots, size_t n_cols,
                 int n_threads, bool keep_working)
         {
-            switch (params.col_repr) {
+            switch (params.advanced.col_repr) {
                 case ColumnRepr::Set:     reduce_parallel_rv_core_<SetColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, keep_working); break;
                 case ColumnRepr::Heap:    reduce_parallel_rv_core_<HeapColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, keep_working); break;
                 case ColumnRepr::Full:    reduce_parallel_rv_core_<FullColumn<Int>>(params, executor, rv, pivots, n_cols, n_threads, keep_working); break;
@@ -808,7 +808,7 @@ namespace oineus {
                 RWorkingMatrix& ar, AtomicIdxVector& pivots, size_t n_cols,
                 int n_threads, bool copy_back_to_r)
         {
-            switch (params.col_repr) {
+            switch (params.advanced.col_repr) {
                 case ColumnRepr::Set:     reduce_parallel_r_only_core_<SetColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, copy_back_to_r); break;
                 case ColumnRepr::Heap:    reduce_parallel_r_only_core_<HeapColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, copy_back_to_r); break;
                 case ColumnRepr::Full:    reduce_parallel_r_only_core_<FullColumn<Int>>(params, executor, ar, pivots, n_cols, n_threads, copy_back_to_r); break;
@@ -865,7 +865,7 @@ namespace oineus {
             VRUDecomposition dcmp;
             const size_t n_cols = fil.size();
 
-            const bool restore_elz_r_only = (not params.dims_to_restore_elz.empty() and not params.compute_v);
+            const bool restore_elz_r_only = (not params.advanced.dims_to_restore_elz.empty() and not params.compute_v);
             const bool can_fuse = params.n_threads > 1 and n_cols > 0
                     and not params.compute_u and not restore_elz_r_only;
 
@@ -878,7 +878,7 @@ namespace oineus {
             dcmp.set_dims_from_fil_(fil, dualize);
             dcmp.timings_.reset();
 
-            const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+            const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.advanced.chunk_size)));
 
             tf::Executor executor(n_threads);
             AtomicIdxVector pivots(dcmp.n_rows);
@@ -899,7 +899,7 @@ namespace oineus {
                     // hosts the ELZ-restore pass; refuse the combination so a
                     // requested ELZ restore is never silently dropped.
                     const bool apparent_active = params.use_apparent_pairs
-                            and params.dims_to_restore_elz.empty()
+                            and params.advanced.dims_to_restore_elz.empty()
                             and fil.kind() == FiltrationKind::Cubical
                             and not fil.is_subfiltration();
                     if (apparent_active) {
@@ -973,7 +973,7 @@ namespace oineus {
             VRUDecomposition dcmp;
             const size_t n_cols = bdry.size();
 
-            const bool restore_elz_r_only = (not params.dims_to_restore_elz.empty() and not params.compute_v);
+            const bool restore_elz_r_only = (not params.advanced.dims_to_restore_elz.empty() and not params.compute_v);
             const bool can_fuse = params.n_threads > 1 and n_cols > 0
                     and not params.compute_u and not restore_elz_r_only;
 
@@ -986,7 +986,7 @@ namespace oineus {
             dcmp.set_dims_(std::move(dim_first_), std::move(dim_last_), dualize, n_cols);
             dcmp.timings_.reset();
 
-            const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+            const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.advanced.chunk_size)));
             tf::Executor executor(n_threads);
             AtomicIdxVector pivots(dcmp.n_rows);
             init_pivots_(executor, pivots, dcmp.n_rows);
@@ -1171,7 +1171,7 @@ namespace oineus {
         void reduce(const ReductionParams& params);
 
         // Public dispatchers: select the working-column representation from
-        // params.col_repr and forward to the templated *_impl below.
+        // params.advanced.col_repr and forward to the templated *_impl below.
         void reduce_serial(const ReductionParams& params);
         void reduce_parallel_r_only(const ReductionParams& params);
         void reduce_parallel_rv(const ReductionParams& params);
@@ -1939,7 +1939,7 @@ namespace oineus {
 
         // Record the working-column repr so a later compute_u_* uses the same
         // residual data structure (not a hardcoded BitTree).
-        col_repr_ = params.col_repr;
+        col_repr_ = params.advanced.col_repr;
 
         if (r_data.empty()) {
             is_reduced = true;
@@ -1951,7 +1951,7 @@ namespace oineus {
 
         // Serial + no clearing already produces ELZ, so restore_elz is ignored there.
         const bool serial_without_clearing = (params.n_threads == 1 && !params.use_clearing);
-        if (not params.dims_to_restore_elz.empty() and not params.compute_v and not serial_without_clearing)
+        if (not params.advanced.dims_to_restore_elz.empty() and not params.compute_v and not serial_without_clearing)
             throw std::runtime_error("Cannot restore ELZ during reduction without V matrix");
 
         if (params.n_threads == 1)
@@ -1962,12 +1962,12 @@ namespace oineus {
             reduce_parallel_r_only(params);
     }
 
-    // ---- working-column dispatchers: pick WorkCol from params.col_repr ----
+    // ---- working-column dispatchers: pick WorkCol from params.advanced.col_repr ----
 
     template<class Int>
     void VRUDecomposition<Int>::reduce_serial(const ReductionParams& params)
     {
-        switch (params.col_repr) {
+        switch (params.advanced.col_repr) {
             case ColumnRepr::Set:     reduce_serial_impl<SetColumn<Int>>(params); break;
             case ColumnRepr::Heap:    reduce_serial_impl<HeapColumn<Int>>(params); break;
             case ColumnRepr::Full:    reduce_serial_impl<FullColumn<Int>>(params); break;
@@ -1978,7 +1978,7 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::reduce_parallel_r_only(const ReductionParams& params)
     {
-        switch (params.col_repr) {
+        switch (params.advanced.col_repr) {
             case ColumnRepr::Set:     reduce_parallel_r_only_impl<SetColumn<Int>>(params); break;
             case ColumnRepr::Heap:    reduce_parallel_r_only_impl<HeapColumn<Int>>(params); break;
             case ColumnRepr::Full:    reduce_parallel_r_only_impl<FullColumn<Int>>(params); break;
@@ -1989,7 +1989,7 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::reduce_parallel_rv(const ReductionParams& params)
     {
-        switch (params.col_repr) {
+        switch (params.advanced.col_repr) {
             case ColumnRepr::Set:     reduce_parallel_rv_impl<SetColumn<Int>>(params); break;
             case ColumnRepr::Heap:    reduce_parallel_rv_impl<HeapColumn<Int>>(params); break;
             case ColumnRepr::Full:    reduce_parallel_rv_impl<FullColumn<Int>>(params); break;
@@ -2004,7 +2004,7 @@ namespace oineus {
         CALI_CXX_MARK_FUNCTION;
 
         // If clearing is off, serial reduction is already ELZ and restore_elz is ignored.
-        if (not params.dims_to_restore_elz.empty() and params.use_clearing and not params.compute_v) {
+        if (not params.advanced.dims_to_restore_elz.empty() and params.use_clearing and not params.compute_v) {
             throw std::runtime_error("Cannot restore ELZ during serial reduction without V matrix");
         }
 
@@ -2105,9 +2105,9 @@ namespace oineus {
             set_is_elz_flag(k_all_dims, true);
         }
 
-        if (params.dims_to_restore_elz.size() > 0 and params.use_clearing) {
+        if (params.advanced.dims_to_restore_elz.size() > 0 and params.use_clearing) {
             Timer timer_restore;
-            for(auto dim : params.dims_to_restore_elz) {
+            for(auto dim : params.advanced.dims_to_restore_elz) {
                 if (dim >= dim_first.size())
                     continue;
                 restore_elz(dim, false, params.verbose, 1);
@@ -3229,7 +3229,7 @@ namespace oineus {
         using Column = typename MatrixTraits::Column;
         using AMatrix = std::vector<typename MatrixTraits::APColumn>;
 
-        const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+        const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.advanced.chunk_size)));
 
         Timer timer_prepare;
 
@@ -3339,7 +3339,7 @@ namespace oineus {
                 total_cleared += s.n_cleared;
                 spd::info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
             }
-            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, timings_.reduce);
+            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.advanced.chunk_size, total_cleared, timings_.reduce);
         }
 
 #ifdef OINEUS_GATHER_ADD_STATS
@@ -3418,7 +3418,7 @@ namespace oineus {
         if (n_cols == 0)
             return;
 
-        int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.chunk_size)));
+        int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.advanced.chunk_size)));
 
         Timer timer_prepare;
 
@@ -3534,7 +3534,7 @@ namespace oineus {
                 total_cleared += s.n_cleared;
                 spd::info("Thread {}: cleared {}, right jumps {}", s.thread_id, s.n_cleared, s.n_right_pivots);
             }
-            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.chunk_size, total_cleared, timings_.reduce);
+            spd::info("n_threads = {}, chunk = {}, total_cleared = {}, elapsed = {} sec", n_threads, params.advanced.chunk_size, total_cleared, timings_.reduce);
         }
 
 #ifdef OINEUS_GATHER_ADD_STATS
@@ -3610,7 +3610,7 @@ namespace oineus {
         // };
 
 
-        const bool do_restore = params.dims_to_restore_elz.size() > 0;
+        const bool do_restore = params.advanced.dims_to_restore_elz.size() > 0;
         // Keep-working hands the live RV columns to the decomposition, so every
         // column must be non-null (the optimizer and materialize read V on cleared
         // columns); run the Bauer fill for keep_working as well as for restore_elz.
@@ -3674,7 +3674,7 @@ namespace oineus {
 
                 // ELZ restore over the requested dims (others stay unrestored but
                 // still have valid Bauer-filled V columns).
-                for(dim_type dim: params.dims_to_restore_elz) {
+                for(dim_type dim: params.advanced.dims_to_restore_elz) {
                     // Dedicated parallel restore: each worker owns one reusable
                     // (v_work, r_work) WorkCol pair (the col_repr-chosen
                     // representation) and reuses it across its contiguous column

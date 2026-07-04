@@ -37,8 +37,14 @@ namespace oineus {
 
     struct ReductionParams {
 
+        // Rarely-tuned knobs, grouped so the top level stays small
+        struct Advanced {
+            int chunk_size{128};
+            ColumnRepr col_repr{ColumnRepr::BitTree};
+            DimVec dims_to_restore_elz;
+        };
+
         int n_threads{1};
-        int chunk_size{128};
         bool use_clearing{true};
         bool compute_v{false};
         bool compute_u{false};
@@ -48,30 +54,47 @@ namespace oineus {
         // filtrations (Cubical/Freudenthal, not subfiltrations); silently ignored
         // otherwise. See include/oineus/apparent.h.
         bool use_apparent_pairs{false};
-        ColumnRepr col_repr{ColumnRepr::BitTree};
-        DimVec dims_to_restore_elz;
         bool sanity_check{false};
         bool verbose{false};
+        Advanced advanced;
     };
 
     // back-compat alias for the historical C++ name
     using Params = ReductionParams;
 
+    inline std::ostream& operator<<(std::ostream& out, const ReductionParams::Advanced& a)
+    {
+        out << "Advanced(chunk_size = " << a.chunk_size;
+        out << ", col_repr = " << a.col_repr;
+        out << ", dims_to_restore_elz = [";
+        for(size_t i = 0; i < a.dims_to_restore_elz.size(); ++i)
+            out << (i ? ", " : "") << a.dims_to_restore_elz[i];
+        out << "])";
+        return out;
+    }
+
+    inline bool operator==(const ReductionParams::Advanced& a, const ReductionParams::Advanced& b)
+    {
+        return a.chunk_size == b.chunk_size
+            && a.col_repr == b.col_repr
+            && a.dims_to_restore_elz == b.dims_to_restore_elz;
+    }
+
+    inline bool operator!=(const ReductionParams::Advanced& a, const ReductionParams::Advanced& b)
+    {
+        return !(a == b);
+    }
+
     inline std::ostream& operator<<(std::ostream& out, const ReductionParams& p)
     {
         out << "ReductionParams(n_threads = " << p.n_threads;
-        out << ", chunk_size = " << p.chunk_size;
         out << ", use_clearing = " << p.use_clearing;
         out << ", compute_v = " << p.compute_v;
         out << ", compute_u = " << p.compute_u;
         out << ", use_apparent_pairs = " << p.use_apparent_pairs;
-        out << ", col_repr = " << p.col_repr;
-        out << ", dims_to_restore_elz = [";
-        for(size_t i = 0; i < p.dims_to_restore_elz.size(); ++i)
-            out << (i ? ", " : "") << p.dims_to_restore_elz[i];
-        out << "]";
         out << ", sanity_check = " << p.sanity_check;
         out << ", verbose = " << p.verbose;
+        out << ", advanced = " << p.advanced;
         out << ")";
         return out;
     }
@@ -79,15 +102,13 @@ namespace oineus {
     inline bool operator==(const ReductionParams& a, const ReductionParams& b)
     {
         return a.n_threads == b.n_threads
-            && a.chunk_size == b.chunk_size
             && a.use_clearing == b.use_clearing
             && a.compute_v == b.compute_v
             && a.compute_u == b.compute_u
             && a.use_apparent_pairs == b.use_apparent_pairs
-            && a.col_repr == b.col_repr
-            && a.dims_to_restore_elz == b.dims_to_restore_elz
             && a.sanity_check == b.sanity_check
-            && a.verbose == b.verbose;
+            && a.verbose == b.verbose
+            && a.advanced == b.advanced;
     }
 
     inline bool operator!=(const ReductionParams& a, const ReductionParams& b)

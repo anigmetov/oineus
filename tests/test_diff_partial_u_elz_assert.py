@@ -30,7 +30,7 @@ def test_compute_partial_u_rows_rejects_non_elz_v():
     rp.compute_v = True
     rp.compute_u = False
     rp.use_clearing = True
-    rp.dims_to_restore_elz = []
+    rp.advanced.dims_to_restore_elz = []
     rp.n_threads = 2
     dcmp.reduce(rp)
 
@@ -52,7 +52,7 @@ def test_compute_partial_u_rows_accepts_after_explicit_restore_elz():
     rp.compute_v = True
     rp.compute_u = False
     rp.use_clearing = True
-    rp.dims_to_restore_elz = []
+    rp.advanced.dims_to_restore_elz = []
     rp.n_threads = 2
     dcmp.reduce(rp)
     dcmp.restore_elz(n_threads=1)

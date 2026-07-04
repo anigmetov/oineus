@@ -93,7 +93,7 @@ int main(int argc, char** argv)
     params.n_threads = 10;
     ops
             >> Option('d', "dim", top_d, "top dimension")
-            >> Option('c', "chunk-size", params.chunk_size, "chunk_size")
+            >> Option('c', "chunk-size", params.advanced.chunk_size, "chunk_size")
             >> Option('t', "threads", params.n_threads, "number of threads")
             >> Option('s', "sort", sort_dgms, "sort diagrams")
             >> Option("clear", params.use_clearing, "clearing optimization")
@@ -120,11 +120,11 @@ int main(int argc, char** argv)
 
     spd::info("Matrix read");
 
-    fname_dgm = fname_in + "_t_" + std::to_string(params.n_threads) + "_c_" + std::to_string(params.chunk_size);
+    fname_dgm = fname_in + "_t_" + std::to_string(params.n_threads) + "_c_" + std::to_string(params.advanced.chunk_size);
 
     rv.reduce(params);
     if (params.verbose)
-       std::cerr << fname_in << ";" << params.n_threads << ";" << params.use_clearing << ";" << params.chunk_size << ";" << rv.timings_.reduction_total() << std::endl;
+       std::cerr << fname_in << ";" << params.n_threads << ";" << params.use_clearing << ";" << params.advanced.chunk_size << ";" << rv.timings_.reduction_total() << std::endl;
 
      auto dgm = rv.diagram(fil, false);
 
