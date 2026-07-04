@@ -158,6 +158,10 @@ dev = [
     # Differentiable-diagram tests (PyTorch autograd). Heavy install
     # (~1 GB on macOS arm64). All py-diff-* tests need it.
     "torch",
+    # JAX backend of oineus.diff (py-diff-jax-*, py-diff-torch-vs-jax,
+    # py-diff-torch-optional). CPU build is enough; those tests self-skip
+    # when jax is absent.
+    "jax",
     # CGAL alpha-shape filtration tests (py-plot-gradient,
     # diff/cech_delaunay). 1.2.1+ ships the structured-array exporters
     # (fill_*_arrays) that the bit-packed alpha path and py-packed-alpha need;

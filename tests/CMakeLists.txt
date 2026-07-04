@@ -90,6 +90,10 @@ else()
             diff-fused-optimizer
             diff-grad
             diff-inf-points-raises
+            diff-jax-f32
+            diff-jax-grad
+            diff-torch-optional
+            diff-torch-vs-jax
             diff-vr-packed
             diff-partial-u-elz-assert
             diff-review-bugfixes
@@ -111,6 +115,7 @@ else()
             packed-alpha
             packed-vr
             parallel-dgm
+            pd-core
             pickle
             plot
             plot-chain
