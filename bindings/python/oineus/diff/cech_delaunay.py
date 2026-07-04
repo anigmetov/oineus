@@ -1,14 +1,22 @@
 import time
 import numpy as np
-import torch
+
+try:
+    import torch
+except ImportError:  # torch-only module; guarded at call time
+    torch = None
 
 from .. import _delaunay_combinatorics, _oineus
+from ._backend import require_torch
 from ._tensor_utils import real_buffer_for
 from .diff_filtration import DiffFiltration
 
 def triangle_meb(p0, p1, p2, eps=1e-12):
     """
     Compute minimum enclosing ball center and radius squared for triangles.
+
+    torch-only for now: raises ImportError without torch and TypeError for
+    non-torch (e.g. jax) inputs.
 
     Args:
         p0, p1, p2: Tensor of shape (n, d) for n triangles in d dimensions
@@ -18,6 +26,7 @@ def triangle_meb(p0, p1, p2, eps=1e-12):
         centers: Tensor of shape (n, d) - MEB centers
         radii_sq: Tensor of shape (n,) - MEB radii squared
     """
+    require_torch(p0, "triangle_meb")
     a = p1 - p0
     b = p2 - p0
     c = p2 - p1
@@ -93,6 +102,9 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False):
     2. A face's MEB (if opposite vertex is inside that MEB)
     3. An edge's MEB (if other two vertices are inside that MEB)
 
+    torch-only for now: raises ImportError without torch and TypeError for
+    non-torch (e.g. jax) inputs.
+
     Args:
         p0, p1, p2, p3: Tensor of shape (n, 3) for n tetrahedra
         eps: Small value for numerical stability
@@ -101,6 +113,7 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False):
         centers: Tensor of shape (n, 3) - MEB centers
         radii_sq: Tensor of shape (n,) - MEB radii squared
     """
+    require_torch(p0, "tetrahedron_meb")
     n = p0.shape[0]
     device = p0.device
     dtype = p0.dtype
@@ -180,6 +193,9 @@ def cech_delaunay_filtration(points, eps: float = 0.0, *, packed: bool = False, 
     filtration values are recomputed differentiably as squared minimum
     enclosing ball radii of each simplex, so gradients flow back to ``points``.
 
+    torch-only for now: raises ImportError without torch and TypeError for
+    non-torch (e.g. jax) point clouds.
+
     Args:
         points: ``(n, d)`` torch.Tensor with ``d in {2, 3}``. Differentiable.
         eps: Small value for numerical stability in the MEB computation.
@@ -191,6 +207,7 @@ def cech_delaunay_filtration(points, eps: float = 0.0, *, packed: bool = False, 
     Returns:
         DiffFiltration whose values are squared MEB radii.
     """
+    require_torch(points, "cech_delaunay_filtration")
     if print_time:
         start = time.time()
 

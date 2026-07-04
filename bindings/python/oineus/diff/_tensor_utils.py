@@ -3,6 +3,7 @@ import numpy as np
 import eagerpy as epy
 
 from .._dtype import REAL_DTYPE, DEFAULT_REAL_DTYPE, REAL_MODULES, as_real_numpy, dtype_of_oineus_obj
+from ._backend import infer_backend, jax_concrete_numpy, concrete_numpy
 
 _F32 = np.dtype("float32")
 
@@ -26,13 +27,18 @@ def tensor_to_real_numpy(tensor, dtype=None):
     """
     if dtype is None:
         dtype = real_dtype_for_tensor(tensor)
+    if infer_backend(tensor.raw) == "jax":
+        # inside jax.grad the raw tensor is a tracer that numpy cannot
+        # convert; peek its concrete primal (eager AD only, see _backend)
+        return np.array(jax_concrete_numpy(tensor.raw), dtype=dtype, order="C")
     casted = tensor.float32() if np.dtype(dtype) == _F32 else tensor.float64()
     return np.array(casted.numpy(), dtype=dtype, order="C")
 
 
 def real_buffer_for(oineus_obj, tensor):
-    """Contiguous Real-dtype numpy buffer from a torch ``tensor``, matching the
-    backend Real of an already-built oineus object (filtration/diagram/optimizer).
+    """Contiguous Real-dtype numpy buffer from a framework ``tensor`` (torch or
+    jax, incl. eager-AD tracers), matching the backend Real of an already-built
+    oineus object (filtration/diagram/optimizer).
 
     Feed it straight to set_values and friends: the dtype matches the object's C++
     Real, so nanobind's ndarray overload reads it directly -- no per-element
@@ -40,7 +46,7 @@ def real_buffer_for(oineus_obj, tensor):
     zero-copy view of the tensor; a float32 tensor against a float64 backend is
     widened once.
     """
-    return as_real_numpy(tensor.detach().cpu().numpy(), dtype=dtype_of_oineus_obj(oineus_obj))
+    return as_real_numpy(concrete_numpy(tensor), dtype=dtype_of_oineus_obj(oineus_obj))
 
 
 def gather_values(tensor, critical_indices):

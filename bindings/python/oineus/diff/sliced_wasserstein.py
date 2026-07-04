@@ -1,8 +1,12 @@
 import operator
 
-import torch
+try:
+    import torch
+except ImportError:  # torch-only module; guarded at call time
+    torch = None
 import numpy as np
 
+from ._backend import require_torch
 from .wasserstein_utils import _project_to_diagonal, _split_finite_essential, _match_essential_1d
 
 
@@ -185,7 +189,12 @@ def sliced_wasserstein_distance(dgm1, dgm2, n_directions=100, ignore_inf_points=
 
     Returns:
         Scalar tensor with the sliced Wasserstein distance
+
+    torch-only for now: raises ImportError without torch and TypeError for
+    non-torch (e.g. jax) diagrams.
     """
+    require_torch(dgm1, "sliced_wasserstein_distance")
+    require_torch(dgm2, "sliced_wasserstein_distance")
     if len(dgm1) == 0 and len(dgm2) == 0:
         return torch.tensor(0.0, dtype=dgm1.dtype, device=dgm1.device)
 
@@ -249,7 +258,12 @@ def sliced_wasserstein_distance_diag_corrected(dgm1, dgm2, n_directions=100, ign
 
     Returns:
         Scalar tensor with the diagonal-corrected sliced Wasserstein distance
+
+    torch-only for now: raises ImportError without torch and TypeError for
+    non-torch (e.g. jax) diagrams.
     """
+    require_torch(dgm1, "sliced_wasserstein_distance_diag_corrected")
+    require_torch(dgm2, "sliced_wasserstein_distance_diag_corrected")
     if len(dgm1) == 0 and len(dgm2) == 0:
         return torch.tensor(0.0, dtype=dgm1.dtype, device=dgm1.device)
 

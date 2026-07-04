@@ -38,6 +38,11 @@ def detect_real_dtype(x):
     float32 if ``x`` is a float32 numpy array / torch tensor / jax array AND a
     float32 backend is compiled in; otherwise float64 (the default). Anything that
     is not a recognizable float32 array falls back to float64.
+
+    Note for jax users: jax arrays are float32 unless x64 is enabled
+    (jax.config.update("jax_enable_x64", True)), so by default they route to
+    the float32 backend when it is compiled in; with x64 enabled float64
+    arrays route to the default float64 backend.
     """
     dt = None
     if isinstance(x, np.ndarray):

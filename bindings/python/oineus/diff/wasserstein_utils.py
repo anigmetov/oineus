@@ -1,6 +1,9 @@
 """Shared utilities for Wasserstein and sliced Wasserstein distances."""
 
-import torch
+try:
+    import torch
+except ImportError:  # torch-only module; callers guard before reaching here
+    torch = None
 
 
 def _project_to_diagonal(points):
@@ -71,7 +74,7 @@ def _split_finite_essential(dgm):
     return finite, (coords_bfin_pinf, coords_bfin_ninf, coords_pinf_dfin, coords_ninf_dfin)
 
 
-def _match_essential_1d(ess1: torch.Tensor, ess2: torch.Tensor, q: float = 1.0) -> torch.Tensor:
+def _match_essential_1d(ess1, ess2, q: float = 1.0):
     """
     Match essential points in 1D.
 

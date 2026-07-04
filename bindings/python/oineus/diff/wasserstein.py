@@ -7,10 +7,15 @@ finite, finite-to-diagonal, and essential-to-essential).
 """
 
 import numpy as np
-import torch
+
+try:
+    import torch
+except ImportError:  # torch-only module; guarded at call time
+    torch = None
 
 from .. import _oineus
 from .._dtype import as_real_numpy
+from ._backend import require_torch
 
 # Mapping from essential family attribute name to the index of the finite
 # coordinate axis (0 = birth, 1 = death). Used to compute the per-pair
@@ -24,21 +29,24 @@ _ESSENTIAL_FINITE_AXIS = (
 
 
 def wasserstein_cost(
-    dgm_a: torch.Tensor,
-    dgm_b: torch.Tensor,
+    dgm_a,
+    dgm_b,
     wasserstein_q: float = 1.0,
     wasserstein_delta: float = 0.05,
     ignore_inf_points: bool = True,
     internal_p: float = float("inf"),
-) -> torch.Tensor:
+):
     """Differentiable Wasserstein cost between two persistence diagrams.
 
     Returns ``cost = sum_pair dist(p_a, p_b) ** wasserstein_q`` so that
     ``Wasserstein_q distance == cost ** (1 / wasserstein_q)``.
 
+    torch-only for now: raises ImportError without torch and TypeError for
+    non-torch (e.g. jax) diagrams.
+
     Args:
-        dgm_a: ``(N, 2)`` tensor of (birth, death) points.
-        dgm_b: ``(M, 2)`` tensor of (birth, death) points.
+        dgm_a: ``(N, 2)`` torch tensor of (birth, death) points.
+        dgm_b: ``(M, 2)`` torch tensor of (birth, death) points.
         wasserstein_q: Wasserstein power (default 1.0 → W_1).
         wasserstein_delta: Hera relative-error parameter (must be > 0).
         ignore_inf_points: If True, drop essential (±inf) points before
@@ -53,6 +61,8 @@ def wasserstein_cost(
         finite point on both sides (and through the finite coord of every
         matched essential). Diagonal projections are detached.
     """
+    require_torch(dgm_a, "wasserstein_cost")
+    require_torch(dgm_b, "wasserstein_cost")
     device = dgm_a.device
     dtype  = dgm_a.dtype
 
