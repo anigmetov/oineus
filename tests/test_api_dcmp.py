@@ -104,3 +104,25 @@ def test_decomposition_diagram_overloads_cube_1d():
 
     _ = dcmp.diagram(fil, include_inf_points=True)
     _ = dcmp.zero_pers_diagram(fil)
+
+
+def test_csc_exports_raise_when_matrix_absent():
+    import pytest
+
+    # fused reduce never stores D: d_as_csc must raise, not return an empty matrix
+    fil = _make_simplex_filtration()
+    dcmp = oin.reduce(fil, oin.ReductionParams(compute_v=True, n_threads=4), False)
+    with pytest.raises(RuntimeError, match="does not retain the boundary matrix"):
+        dcmp.d_as_csc()
+
+    # classic reduce without compute_u: u_as_csr must raise, not return (0, 0)
+    dcmp2 = oin.Decomposition(fil, dualize=False, n_threads=1)
+    dcmp2.reduce(oin.ReductionParams(compute_v=True, n_threads=1))
+    with pytest.raises(RuntimeError, match="U was not computed"):
+        dcmp2.u_as_csr()
+
+    # classic path keeps D: square export works even without compute_v
+    dcmp3 = oin.Decomposition(fil, dualize=False, n_threads=1)
+    dcmp3.reduce(oin.ReductionParams(n_threads=1))
+    d = dcmp3.d_as_csc()
+    assert d.shape == (fil.size(), fil.size())

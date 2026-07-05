@@ -30,6 +30,29 @@ static void require_r_materialized(const Decomposition& self, const char* what)
                 "Decomposition(fil) + reduce() path.");
 }
 
+// The fused reduce builds the working matrix straight from the filtration and
+// never stores the boundary matrix D; returning an empty matrix silently would
+// look like an empty D.
+template<class Decomposition>
+static void require_d_data(const Decomposition& self, const char* what)
+{
+    if (not self.has_d_data_)
+        throw std::runtime_error(
+                std::string(what) + " is not available: this decomposition came from the "
+                "fused reduce (oin.reduce), which does not retain the boundary matrix D. "
+                "Use fil.boundary_matrix() to get D, or the classic "
+                "Decomposition(fil, dualize) constructor, which stores it.");
+}
+
+template<class Decomposition>
+static void require_u_matrix(const Decomposition& self, const char* what)
+{
+    if (not self.has_matrix_u())
+        throw std::runtime_error(
+                std::string(what) + " is not available: U was not computed. Reduce with "
+                "compute_u=True, or call compute_u_from_v / compute_full_u_rows first.");
+}
+
 Eigen::SparseMatrix<oin_int, Eigen::ColMajor>  z2_col_matrix_to_csc(const oin::VRUDecomposition<oin_int>::MatrixData& col_matrix, size_t num_rows)
 {
     const size_t num_cols = col_matrix.size();
@@ -410,8 +433,8 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                     "was already dropped by a materializing access.")
             .def("r_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { self.materialize_from_working_(); require_r_materialized(self, "r_as_csc"); return z2_col_matrix_to_csc(self.r_data, self.r_data.size()); })
             .def("v_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { self.materialize_from_working_(); return z2_col_matrix_to_csc(self.v_data, self.v_data.size()); })
-            .def("d_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { return z2_col_matrix_to_csc(self.d_data, self.v_data.size()); })
-            .def("u_as_csr", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::RowMajor> { return z2_row_matrix_to_csr(self.u_data_t, self.u_data_t.size()); })
+            .def("d_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { require_d_data(self, "d_as_csc"); return z2_col_matrix_to_csc(self.d_data, self.d_data.size()); })
+            .def("u_as_csr", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::RowMajor> { require_u_matrix(self, "u_as_csr"); return z2_row_matrix_to_csr(self.u_data_t, self.u_data_t.size()); })
             // .def("u_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { return z2_col_matrix_to_csc(self.u_data, self.u_data_t.size()); })
             .def_prop_ro("dualize", &Decomposition::dualize)
             .def_ro("dim_first", &Decomposition::dim_first)
