@@ -567,23 +567,6 @@ decltype(auto) get_vr_filtration_from_pwdists(nb::ndarray<Real, nb::c_contig, nb
 
 template<class Cell, class Real>
 PyOineusDiagrams<Real>
-compute_diagrams_from_fil(const oineus::Filtration<Cell, Real>& fil, int n_threads)
-{
-    using Int = typename Cell::Int;
-    oineus::VRUDecomposition<Int> d_matrix {fil, false};
-
-    oineus::ReductionParams params;
-
-    params.use_clearing = true;
-    params.n_threads = n_threads;
-
-    d_matrix.reduce_parallel(params);
-
-    return PyOineusDiagrams<Real>(d_matrix.diagram(fil));
-}
-
-template<class Cell, class Real>
-PyOineusDiagrams<Real>
 compute_relative_diagrams(const oineus::Filtration<Cell, Real>& fil, const oineus::Filtration<Cell, Real>& relative, bool include_inf_points)
 {
     using Int = typename Cell::Int;
@@ -748,47 +731,6 @@ get_coboundary_matrix(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> d
     auto bm = fil.boundary_matrix();
     return oin::antitranspose(bm);
 }
-
-template<class Int, class Real>
-PyOineusDiagrams<Real>
-compute_diagrams_ls_freudenthal(nb::ndarray<Real, nb::c_contig, nb::device::cpu, nb::ro> data, bool negate, bool wrap, dim_type max_dim, oin::ReductionParams& params, bool include_inf_points, bool dualize)
-{
-    // for diagram in dimension d, we need (d+1)-cells
-    Timer timer;
-    auto fil = get_fr_filtration<Int, Real>(data, negate, wrap, max_dim + 1, params.n_threads);
-    auto elapsed_fil = timer.elapsed_reset();
-    oin::VRUDecomposition<Int> decmp {fil, dualize};
-    auto elapsed_decmp_ctor = timer.elapsed_reset();
-
-    if (params.verbose)
-        std::cerr << "Filtration: " << elapsed_fil << ", decomposition ctor: " << elapsed_decmp_ctor << std::endl;
-
-    decmp.reduce(params);
-
-    if (params.sanity_check and not decmp.sanity_check())
-        throw std::runtime_error("sanity check failed");
-    return PyOineusDiagrams<Real>(decmp.diagram(fil, include_inf_points));
-}
-
-
-template<typename C, typename Real>
-oin::KerImCokReduced<C, Real, 2> compute_kernel_image_cokernel_reduction(const oin::Filtration<C, Real>& K, const oin::Filtration<C, Real>& L, oin::ReductionParams& params)
-{
-    using KICR = oin::KerImCokReduced<C, Real, 2>;
-
-    params.use_clearing = false;
-
-    oin::KICRParams kicr_params;
-    kicr_params.verbose = params.verbose;
-    kicr_params.kernel = kicr_params.image = kicr_params.cokernel = true;
-    kicr_params.params_f = kicr_params.params_g = params;
-    kicr_params.params_ker = kicr_params.params_cok = kicr_params.params_im = params;
-
-    KICR result { K, L, kicr_params };
-
-    return result;
-}
-
 
 // Real-INDEPENDENT registration (enums, params, the int-templated decomposition
 // stats): registered once on the top module.
