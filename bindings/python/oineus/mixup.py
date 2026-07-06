@@ -56,7 +56,7 @@ def empty_dim_triples():
             np.empty((0, 3), dtype=np.float64))
 
 
-def compute_mixup_triples(kicr, fil_K, fil_L, max_dim):
+def compute_mixup_triples(kicr, max_dim):
     """Match domain and image index diagrams of a KICR reduction into mixup triples.
 
     kicr is a KerImCokReduced computed for the inclusion fil_L -> fil_K with
@@ -75,11 +75,18 @@ def compute_mixup_triples(kicr, fil_K, fil_L, max_dim):
     below a truncation cutoff or at its own birth value).
 
     The matching is by birth cell, as in the paper: the domain birth cell
-    (a cell of L) is located in K by its uid, and the image bar born at that
-    cell -- which exists and is unique -- supplies the premature death. A
-    finite image pair whose birth and death values coincide is dropped by the
-    C++ diagram construction; for the matching this is equivalent to an
-    image sub-bar of length zero, so the triple degenerates to (b, b, d).
+    (a cell of L) is located in K via the reduction's precomputed L->K index
+    map, and the image bar born at that cell -- which exists and is unique --
+    supplies the premature death. A finite image pair whose birth and death
+    values coincide is dropped by the C++ diagram construction; for the
+    matching this is equivalent to an image sub-bar of length zero, so the
+    triple degenerates to (b, b, d).
+
+    The whole matching is vectorized: the C++ reduction already built the
+    sorted_id-in-L -> sorted_id-in-K map (kicr.sorted_L_to_sorted_K()), so the
+    birth/death cells of L are located in K with a single numpy gather each,
+    and each domain bar is paired to its image bar by a searchsorted on the
+    image birth cells -- no per-bar binding crossings or cell materializations.
     """
     # local copies of the diagrams, padded so that degrees above the max cell
     # dimension of the respective filtration read as legitimately empty
@@ -87,6 +94,11 @@ def compute_mixup_triples(kicr, fil_K, fil_L, max_dim):
     im_dgms = kicr.image_diagrams()
     dom_dgms.pad_to_dim(max_dim)
     im_dgms.pad_to_dim(max_dim)
+
+    # sorted_id in L -> sorted_id in K, in bulk. Every cell of L is in K, so
+    # every entry is valid; int64 so the essential death sentinel (-1) never
+    # aliases a real index in a gather.
+    L2K = np.asarray(kicr.sorted_L_to_sorted_K(), dtype=np.int64)
 
     out = {}
     for dim in range(max_dim + 1):
@@ -97,69 +109,110 @@ def compute_mixup_triples(kicr, fil_K, fil_L, max_dim):
         im_idx = np.asarray(im_dgms.index_diagram_in_dimension(dim, as_numpy=True)
                             ).reshape(-1, 2).astype(np.int64)
 
-        # image bars keyed by the K sorted id of their birth cell
-        im_by_birth = {}
-        for (b_idx, d_idx), (b_val, d_val) in zip(im_idx, im_val):
-            im_by_birth[int(b_idx)] = (float(b_val), float(d_val), int(d_idx))
+        nd = len(dom_idx)
+        ni = len(im_idx)
 
-        finite_vals, finite_idx, essential_vals = [], [], []
-        n_matched = 0
-        for (b_L, d_L), (b_val, d_val) in zip(dom_idx, dom_val):
-            b_K = int(fil_K.sorted_id_by_uid(fil_L.cell(int(b_L)).uid))
-            im_row = im_by_birth.get(b_K)
-            if im_row is None:
-                im_d_val = im_d_idx = None
-            else:
-                n_matched += 1
-                im_b_val, im_d_val, im_d_idx = im_row
-                if not np.isclose(im_b_val, b_val, rtol=1e-9, atol=1e-12):
-                    raise RuntimeError(
-                        f"mixup: domain and image bars born at the same cell have "
-                        f"different birth values ({b_val} vs {im_b_val}); K and L "
-                        f"must carry the same values on shared cells")
-            if d_L == INVALID_INDEX:
-                # essential domain bar. Its image bar is (a) essential as well,
-                # (b) a finite pair (only possible when the filtration is
-                # truncated and the image class dies below the cutoff), or
-                # (c) a zero-persistence pair dropped by the C++ diagram
-                # construction, i.e. the image class died at its birth value
-                if im_row is None:
-                    im_death = float(b_val)
-                elif im_d_idx == INVALID_INDEX:
-                    im_death = np.inf
-                else:
-                    im_death = im_d_val
-                essential_vals.append((float(b_val), im_death, np.inf))
-                continue
-            d_K = int(fil_K.sorted_id_by_uid(fil_L.cell(int(d_L)).uid))
-            if im_row is None:
-                # the image pair born at b_K had zero persistence and was dropped:
-                # image sub-bar is empty, premature death at birth (paper's (b, b, d))
-                finite_vals.append((float(b_val), float(b_val), float(d_val)))
-                finite_idx.append((b_K, b_K, d_K))
-            else:
-                # sign-safe tolerance: values may be negative for general
-                # sublevel filtrations passed to mixup_barcodes_of_filtrations
-                tol = 1e-9 * max(abs(d_val), abs(im_d_val), 1.0)
-                if im_d_idx == INVALID_INDEX or im_d_val > d_val + tol:
-                    raise RuntimeError(
-                        f"mixup: image death {im_d_val} exceeds domain death {d_val} "
-                        f"in dim {dim}; the filtration orders of K and L are "
-                        f"inconsistent on ties")
-                finite_vals.append((float(b_val), min(im_d_val, float(d_val)), float(d_val)))
-                finite_idx.append((b_K, im_d_idx, d_K))
+        # birth cell of every domain bar, located in K (domain births are never
+        # essential, so dom_idx[:, 0] is always a valid L index)
+        b_K = L2K[dom_idx[:, 0]] if nd else np.empty(0, dtype=np.int64)
 
-        # every image bar must be consumed by a domain bar (the induced matching
-        # is onto the image barcode); a leftover signals inconsistent orderings
-        if n_matched != len(im_by_birth):
+        # match each domain bar to the unique image bar born at the same K cell,
+        # via searchsorted on the (unique) image birth cells
+        im_match = np.full(nd, -1, dtype=np.int64)   # row in im_* per domain bar, -1 if none
+        matched = np.zeros(nd, dtype=bool)
+        if nd and ni:
+            order = np.argsort(im_idx[:, 0], kind="stable")
+            sb = im_idx[order, 0]
+            pos = np.clip(np.searchsorted(sb, b_K), 0, ni - 1)
+            hit = sb[pos] == b_K
+            im_match[hit] = order[pos[hit]]
+            matched = hit
+
+        # image fields per domain bar, valid only where matched; the unmatched
+        # rows gather image bar 0 as a harmless placeholder and are always
+        # discarded by a `matched`/`np.where` mask before use
+        safe = np.where(matched, im_match, 0)
+        if ni:
+            im_b_val_at = im_val[safe, 0]
+            im_d_val_at = im_val[safe, 1]
+            im_d_idx_at = im_idx[safe, 1]
+        else:
+            im_b_val_at = np.zeros(nd, dtype=np.float64)
+            im_d_val_at = np.zeros(nd, dtype=np.float64)
+            im_d_idx_at = np.full(nd, INVALID_INDEX, dtype=np.int64)
+
+        # matched domain/image bars are born at the same cell, so they must
+        # agree on its filtration value
+        if matched.any():
+            bad = matched & ~np.isclose(im_b_val_at, dom_val[:, 0], rtol=1e-9, atol=1e-12)
+            if bad.any():
+                i = int(np.argmax(bad))
+                raise RuntimeError(
+                    f"mixup: domain and image bars born at the same cell have "
+                    f"different birth values ({dom_val[i, 0]} vs {im_b_val_at[i]}); K and L "
+                    f"must carry the same values on shared cells")
+
+        essential_mask = dom_idx[:, 1] == INVALID_INDEX
+        finite_mask = ~essential_mask
+
+        # essential domain bars (death = +inf). The matched image bar is (a)
+        # essential as well (image death cell INVALID -> +inf), (b) a finite
+        # pair (image class dies below a truncation cutoff -> its finite death),
+        # or (c) absent because it was a zero-persistence pair dropped by the
+        # C++ diagram construction, i.e. died at its birth value
+        e = essential_mask
+        e_b = dom_val[e, 0]
+        e_matched = matched[e]
+        e_im_death = np.where(~e_matched, e_b,
+                              np.where(im_d_idx_at[e] == INVALID_INDEX, np.inf, im_d_val_at[e]))
+        essential_vals = np.column_stack(
+            [e_b, e_im_death, np.full(e_b.shape, np.inf)]).astype(np.float64).reshape(-1, 3)
+
+        # finite domain bars
+        f = finite_mask
+        f_b_val = dom_val[f, 0]
+        f_d_val = dom_val[f, 1]
+        f_b_K = b_K[f]
+        f_d_K = L2K[dom_idx[f, 1]]        # finite -> death cell is a valid L index
+        f_matched = matched[f]
+        f_im_d_val = im_d_val_at[f]
+        f_im_d_idx = im_d_idx_at[f]
+
+        # image death must not exceed domain death (sign-safe tolerance: values
+        # may be negative for general sublevel filtrations). An essential image
+        # bar (INVALID death cell) matched to a finite domain bar is likewise
+        # inconsistent
+        tol = 1e-9 * np.maximum.reduce([np.abs(f_d_val),
+                                        np.abs(np.where(f_matched, f_im_d_val, 0.0)),
+                                        np.ones_like(f_d_val)])
+        bad_f = f_matched & ((f_im_d_idx == INVALID_INDEX) | (f_im_d_val > f_d_val + tol))
+        if bad_f.any():
+            j = int(np.argmax(bad_f))
             raise RuntimeError(
-                f"mixup: {len(im_by_birth) - n_matched} image bars in dim {dim} "
+                f"mixup: image death {f_im_d_val[j]} exceeds domain death {f_d_val[j]} "
+                f"in dim {dim}; the filtration orders of K and L are "
+                f"inconsistent on ties")
+
+        # matched -> premature death min(image death, domain death) at the image
+        # death cell; unmatched (image pair dropped) -> death at birth (b, b, d)
+        f_im_death_val = np.where(f_matched, np.minimum(f_im_d_val, f_d_val), f_b_val)
+        f_im_death_idx = np.where(f_matched, f_im_d_idx, f_b_K)
+        finite_vals = np.column_stack(
+            [f_b_val, f_im_death_val, f_d_val]).astype(np.float64).reshape(-1, 3)
+        finite_idx = np.column_stack(
+            [f_b_K, f_im_death_idx, f_d_K]).astype(np.int64).reshape(-1, 3)
+
+        # every image bar must be consumed by exactly one domain bar (the
+        # induced matching is onto the image barcode); a leftover signals
+        # inconsistent orderings. Image births are distinct, so the number of
+        # matched domain bars must equal the number of distinct image births
+        n_im_births = len(np.unique(im_idx[:, 0])) if ni else 0
+        n_matched = int(matched.sum())
+        if n_matched != n_im_births:
+            raise RuntimeError(
+                f"mixup: {n_im_births - n_matched} image bars in dim {dim} "
                 f"were not matched by any domain bar; the filtration orders of "
                 f"K and L are inconsistent on ties")
-
-        finite_vals = np.asarray(finite_vals, dtype=np.float64).reshape(-1, 3)
-        finite_idx = np.asarray(finite_idx, dtype=np.int64).reshape(-1, 3)
-        essential_vals = np.asarray(essential_vals, dtype=np.float64).reshape(-1, 3)
 
         # deterministic order: by birth, then death, then image death, then birth cell
         if len(finite_vals):
@@ -330,7 +383,7 @@ def mixup_barcodes_of_filtrations(K, L, max_dim=None, n_threads=1):
     params.n_threads = max(1, int(n_threads))
 
     kicr = compute_kernel_image_cokernel_reduction(K, L, params)
-    triples = compute_mixup_triples(kicr, K, L, max_dim)
+    triples = compute_mixup_triples(kicr, max_dim)
     return MixupBarcodes(triples, max_dim)
 
 

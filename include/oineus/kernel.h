@@ -819,6 +819,13 @@ public:
 		return new_order_to_old_;
 	}
 
+	// sorted_id in K for each sorted_id in L (every cell of L is in K, so all entries are valid).
+	// Exposed for the mixup-barcode matching, which locates each L cell in K in bulk.
+	const std::vector<size_t>& get_sorted_L_to_sorted_K() const
+	{
+		return sorted_L_to_sorted_K_;
+	}
+
 };
 
 // Concise human-readable summary: the complex sizes, max dimension, and the point count

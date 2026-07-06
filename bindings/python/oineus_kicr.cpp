@@ -1,5 +1,17 @@
 #include "oineus_persistence_bindings.h"
 
+// Copy a size_t vector into a fresh numpy array (owning capsule). Used for
+// sorted_L_to_sorted_K, which spans every cell of L: a Python list would box
+// one PyLong per cell and defeat the bulk-gather the mixup matching relies on.
+static nb::ndarray<size_t, nb::numpy> size_t_vector_to_numpy(const std::vector<size_t>& v)
+{
+    size_t n = v.size();
+    size_t* ptr = new size_t[n];
+    std::copy(v.begin(), v.end(), ptr);
+    nb::capsule owner(ptr, [](void* p) noexcept { delete[] reinterpret_cast<size_t*>(p); });
+    return nb::ndarray<size_t, nb::numpy>(ptr, {n}, owner);
+}
+
 template<class KerImCokReduced>
 void bind_kicr_pickle_and_equality(nb::class_<KerImCokReduced>& cls)
 {
@@ -83,6 +95,7 @@ void init_oineus_kicr_class(nb::module_& m, const std::string& class_name)
             .def("image_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_image_diagrams()); })
             .def("old_order_to_new", [](const KICR& self) { return self.get_old_order_to_new(); })
             .def("new_order_to_old", [](const KICR& self) { return self.get_new_order_to_old(); })
+            .def("sorted_L_to_sorted_K", [](const KICR& self) { return size_t_vector_to_numpy(self.get_sorted_L_to_sorted_K()); })
             .def_rw("fil_K", &KICR::fil_K_)
             .def_rw("fil_L", &KICR::fil_L_)
             // decomposition objects provide access to their R/V/U matrices
