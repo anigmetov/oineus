@@ -13,6 +13,9 @@
 #include <atomic>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
+#include <cstdint>
+#include <memory>
 #include <new>
 #include <memory>
 #include <boost/container/small_vector.hpp>
@@ -322,6 +325,193 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
         return row_format;
     }
 
+    // Row-bucket ("radix") scatter transpose -- the third strategy, for inputs
+    // where the column scatter's random writes span far more rows than any
+    // cache level. Rows are grouped into 32K-row bands; entries are first
+    // BINNED per (worker, band) with streaming writes, then each band's owner
+    // sizes and fills its own rows from the band's slabs. All large-array
+    // traffic is sequential except the final per-row writes, which stay inside
+    // one band. Output is bit-identical to the other two modes (same
+    // worker-order concatenation argument): slabs are laid out bucket-major /
+    // worker-minor, workers own ascending column ranges, and each slab is
+    // filled in ascending column order, so every output row comes out sorted.
+    // Peak transient memory is nnz * 8 bytes (packed u32 row / u32 col) plus
+    // O(n_workers * n_buckets) -- no per-(worker, row) histograms.
+    // Requires num_rows and col_end to fit in 32 bits; falls back to the
+    // column scatter otherwise.
+    static Matrix col_to_row_format_bucket(const Matrix& col_format, int
+        n_threads, size_t col_start = 0,
+        size_t col_end = std::numeric_limits<size_t>::max(), Int num_rows = -1)
+    {
+        if (col_format.empty()) {
+            return {};
+        }
+
+        if (col_end > col_format.size()) {
+            col_end = col_format.size();
+        }
+
+        if (num_rows == -1) {
+            for (const auto& col : col_format) {
+                if (!col.empty()) {
+                    num_rows = std::max(num_rows, col.back());
+                }
+            }
+            num_rows++;
+        }
+
+        if (num_rows <= 0) {
+            return {};
+        }
+
+        if (static_cast<size_t>(num_rows) > std::numeric_limits<std::uint32_t>::max()
+                || col_end > std::numeric_limits<std::uint32_t>::max()) {
+            return col_to_row_format_parallel(col_format, n_threads, col_start, col_end,
+                    num_rows, /*prefer_row_scatter=*/false);
+        }
+
+        static const bool dbg_transpose = std::getenv("OINEUS_DBG_TRANSPOSE") != nullptr;
+        Timer dbg_timer;
+
+        Matrix row_format(static_cast<size_t>(num_rows));
+
+        const double dbg_t_ctor = dbg_timer.elapsed_reset();
+
+        if (col_start >= col_end) {
+            return row_format;
+        }
+
+        const size_t n_cols = col_end - col_start;
+        const size_t requested_threads = n_threads > 0 ? static_cast<size_t>(n_threads) : 1;
+        const size_t n_workers = std::min(requested_threads, n_cols);
+        const size_t nr = static_cast<size_t>(num_rows);
+
+        // 32K-row bands: a band's u32 counter/cursor arrays (256 KB) stay
+        // cache-resident while its rows are counted and filled
+        constexpr size_t band_shift = 15;
+        const size_t band_rows = size_t(1) << band_shift;
+        const size_t n_buckets = (nr + band_rows - 1) >> band_shift;
+
+        // nnz-balanced contiguous column ranges. Contiguity in ascending column
+        // order is load-bearing for the sortedness of the output rows.
+        std::vector<size_t> len_prefix(n_cols + 1, 0);
+        for (size_t i = 0; i < n_cols; ++i)
+            len_prefix[i + 1] = len_prefix[i] + col_format[col_start + i].size();
+        const size_t nnz = len_prefix[n_cols];
+        if (nnz == 0) {
+            return row_format;
+        }
+        std::vector<size_t> range(n_workers + 1, n_cols);
+        range[0] = 0;
+        for (size_t w = 1; w < n_workers; ++w)
+            range[w] = static_cast<size_t>(
+                    std::lower_bound(len_prefix.begin(), len_prefix.end(), (nnz * w) / n_workers)
+                    - len_prefix.begin());
+
+        // Pass 1: per-(worker, bucket) entry counts
+        std::vector<std::vector<size_t>> wb_count(n_workers);
+        {
+            std::vector<std::thread> ws;
+            ws.reserve(n_workers);
+            for (size_t w = 0; w < n_workers; ++w) {
+                ws.emplace_back([&, w]() {
+                    auto& cnt = wb_count[w];
+                    cnt.assign(n_buckets, 0);
+                    for (size_t i = range[w]; i < range[w + 1]; ++i)
+                        for (Int row_idx : col_format[col_start + i])
+                            ++cnt[static_cast<size_t>(row_idx) >> band_shift];
+                });
+            }
+            for (auto& t : ws) t.join();
+        }
+        const double dbg_t_count = dbg_timer.elapsed_reset();
+
+        // Slab layout inside the bin array: bucket-major, worker-minor, so one
+        // sequential scan of a bucket's region visits workers in ascending order
+        std::vector<std::vector<size_t>> slab_off(n_workers, std::vector<size_t>(n_buckets));
+        std::vector<size_t> bucket_base(n_buckets + 1);
+        {
+            size_t running = 0;
+            for (size_t b = 0; b < n_buckets; ++b) {
+                bucket_base[b] = running;
+                for (size_t w = 0; w < n_workers; ++w) {
+                    slab_off[w][b] = running;
+                    running += wb_count[w][b];
+                }
+            }
+            bucket_base[n_buckets] = running;
+        }
+
+        // Pass 2: bin. Each worker streams its columns once, appending packed
+        // (row, col) entries to its per-bucket slabs -- sequential writes into
+        // n_buckets streams instead of random writes across all rows. new[]
+        // leaves the buffer uninitialized (POD), so pages are first touched by
+        // the workers that write them.
+        std::unique_ptr<std::uint64_t[]> bin(new std::uint64_t[nnz]);
+        {
+            std::vector<std::thread> ws;
+            ws.reserve(n_workers);
+            for (size_t w = 0; w < n_workers; ++w) {
+                ws.emplace_back([&, w]() {
+                    std::vector<size_t> cur(slab_off[w]);
+                    for (size_t i = range[w]; i < range[w + 1]; ++i) {
+                        const std::uint64_t col_bits = static_cast<std::uint32_t>(col_start + i);
+                        for (Int row_idx : col_format[col_start + i])
+                            bin[cur[static_cast<size_t>(row_idx) >> band_shift]++] =
+                                    (static_cast<std::uint64_t>(row_idx) << 32) | col_bits;
+                    }
+                });
+            }
+            for (auto& t : ws) t.join();
+        }
+        const double dbg_t_bin = dbg_timer.elapsed_reset();
+
+        // Pass 3: per-bucket scatter, buckets handed out dynamically. The
+        // bucket's owner counts its rows, sizes them, and fills them by one
+        // more sequential scan of the bucket's slabs; the row buffers are
+        // allocated by the same thread that immediately fills them.
+        {
+            std::atomic<size_t> next_bucket{0};
+            std::vector<std::thread> ws;
+            ws.reserve(n_workers);
+            for (size_t w = 0; w < n_workers; ++w) {
+                ws.emplace_back([&]() {
+                    std::vector<std::uint32_t> cnt(band_rows), cur(band_rows);
+                    while (true) {
+                        const size_t b = next_bucket.fetch_add(1, std::memory_order_relaxed);
+                        if (b >= n_buckets)
+                            break;
+                        const size_t lo = b << band_shift;
+                        const size_t band = std::min(nr, lo + band_rows) - lo;
+                        std::fill(cnt.begin(), cnt.begin() + band, 0);
+                        for (size_t p = bucket_base[b]; p < bucket_base[b + 1]; ++p)
+                            ++cnt[static_cast<size_t>(bin[p] >> 32) - lo];
+                        for (size_t r = 0; r < band; ++r) {
+                            row_format[lo + r].resize(cnt[r]);
+                            cur[r] = 0;
+                        }
+                        for (size_t p = bucket_base[b]; p < bucket_base[b + 1]; ++p) {
+                            const std::uint64_t e = bin[p];
+                            const size_t r = static_cast<size_t>(e >> 32) - lo;
+                            row_format[lo + r][cur[r]++] = static_cast<Int>(e & 0xffffffffu);
+                        }
+                    }
+                });
+            }
+            for (auto& t : ws) t.join();
+        }
+
+        if (dbg_transpose) {
+            std::fprintf(stderr,
+                    "[transpose] workers=%zu cols=%zu rows=%lld scatter=bucket "
+                    "ctor=%.3fs count=%.3fs bin=%.3fs scatter=%.3fs\n",
+                    n_workers, n_cols, static_cast<long long>(num_rows),
+                    dbg_t_ctor, dbg_t_count, dbg_t_bin, dbg_timer.elapsed_reset());
+        }
+
+        return row_format;
+    }
+
     static Matrix col_to_row_format_parallel(const Matrix& col_format, int
         n_threads, size_t col_start = 0,
         size_t col_end = std::numeric_limits<size_t>::max(), Int num_rows = -1,
@@ -346,6 +536,20 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
 
         if (num_rows <= 0) {
             return {};
+        }
+
+        // Forced routing for characterization: OINEUS_TRANSPOSE_MODE in
+        // {col,row,bucket} overrides the caller's prefer_row_scatter
+        static const char* forced_mode = std::getenv("OINEUS_TRANSPOSE_MODE");
+        if (forced_mode) {
+            if (std::strcmp(forced_mode, "row") == 0)
+                prefer_row_scatter = true;
+            else if (std::strcmp(forced_mode, "col") == 0)
+                prefer_row_scatter = false;
+            else if (std::strcmp(forced_mode, "bucket") == 0
+                    && static_cast<size_t>(num_rows) <= std::numeric_limits<std::uint32_t>::max()
+                    && col_end <= std::numeric_limits<std::uint32_t>::max())
+                return col_to_row_format_bucket(col_format, n_threads, col_start, col_end, num_rows);
         }
 
         // Diagnostic: OINEUS_DBG_TRANSPOSE=1 prints per-pass wall times to stderr

@@ -2,9 +2,10 @@
 // oineus::SimpleSparseMatrixTraits<Int, 2>::col_to_row_format_parallel
 // (include/oineus/sparse_matrix.h): parallel count + parallel per-row prefix
 // sum + scatter, where the scatter strategy is picked by the caller via
-// prefer_row_scatter (column-partitioned vs row-partitioned). Every case is
-// checked against a simple serial reference transpose defined here, for both
-// scatter strategies and several thread counts.
+// prefer_row_scatter (column-partitioned vs row-partitioned), plus the
+// row-bucket radix variant col_to_row_format_bucket. Every case is checked
+// against a simple serial reference transpose defined here, for all three
+// strategies and several thread counts.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -75,7 +76,7 @@ bool rows_are_sorted(const M& rows)
     return true;
 }
 
-// Run the production transpose across thread counts and BOTH scatter
+// Run the production transpose across thread counts and ALL THREE scatter
 // strategies and require the result to match the serial reference.
 template<class Int>
 void check_against_reference(const Matrix<Int>& cols, size_t col_start = 0,
@@ -92,6 +93,9 @@ void check_against_reference(const Matrix<Int>& cols, size_t col_start = 0,
                     cols, threads, col_start, col_end, num_rows, prefer_row_scatter);
             REQUIRE(got == expected);
         }
+        const Matrix<Int> got_bucket = MatrixTraits::col_to_row_format_bucket(
+                cols, threads, col_start, col_end, num_rows);
+        REQUIRE(got_bucket == expected);
     }
 }
 
@@ -147,6 +151,8 @@ TEST_CASE("Parallel col->row: empty and trivial inputs")
             REQUIRE(MatrixTraits::col_to_row_format_parallel(
                     cols, 4, 0, std::numeric_limits<size_t>::max(), Int(-1), prs).empty());
         }
+        REQUIRE(MatrixTraits::col_to_row_format_bucket(
+                cols, 4, 0, std::numeric_limits<size_t>::max(), Int(-1)).empty());
     }
 
     // columns present but zero rows (all columns empty), num_rows derived and explicit
@@ -156,6 +162,8 @@ TEST_CASE("Parallel col->row: empty and trivial inputs")
             REQUIRE(MatrixTraits::col_to_row_format_parallel(
                     cols, 8, 0, std::numeric_limits<size_t>::max(), Int(-1), prs).empty());
         }
+        REQUIRE(MatrixTraits::col_to_row_format_bucket(
+                cols, 8, 0, std::numeric_limits<size_t>::max(), Int(-1)).empty());
         check_against_reference<Int>(cols, 0, std::numeric_limits<size_t>::max(), Int(7));
     }
 
@@ -332,6 +340,11 @@ TEST_CASE("Parallel col->row: boundary-like 200k matrix per-dimension block conv
                 REQUIRE(got == expected);
                 REQUIRE(rows_are_sorted(got));
             }
+            // 200k rows = 7 bands: the bucket variant crosses band boundaries here
+            const Matrix<Int> got_bucket = MatrixTraits::col_to_row_format_bucket(
+                    cols, threads, col_start, col_end, num_rows);
+            REQUIRE(got_bucket == expected);
+            REQUIRE(rows_are_sorted(got_bucket));
         }
 
         if (dim == 0) {
