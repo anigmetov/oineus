@@ -475,6 +475,38 @@ namespace oineus {
         if (current_ptr == nullptr)
             return false;
 
+        // Fast path: most columns need no undo at all (violators cluster in a
+        // narrow range, especially on cohomology), and for a no-undo column the
+        // main loop degenerates to a descending walk of the ORIGINAL entries with
+        // r_work pinned at R[current_col] -- so the decision can be made by a
+        // plain reverse scan of the at-rest column, before paying the two O(nnz)
+        // working-representation loads and the survivor-clearing walk. The scan
+        // mirrors the main loop exactly: candidates in descending order, a null
+        // neighbour leaves the column as-is, the first violation falls through
+        // to the full algorithm.
+        {
+            const auto& v_col = current_ptr->v_column;
+            const auto& r_col = current_ptr->r_column;
+            const bool is_current_col_death = not r_col.empty();
+            const Int current_r_low = is_current_col_death ? r_col.back() : Int(-1);
+            bool violation = false;
+            for (size_t k = v_col.size(); k-- > 0;) {
+                const Int added_col = v_col[k];
+                auto added_ptr = r_v_matrix[added_col].load(std::memory_order_relaxed);
+                if (added_ptr == nullptr)
+                    return false;             // neighbour not materialized: leave column as-is
+                const bool is_added_col_zero = added_ptr->r_column.empty();
+                if ((added_col < static_cast<Int>(current_col) && is_added_col_zero) ||
+                    (is_current_col_death && !is_added_col_zero &&
+                     current_r_low > added_ptr->r_column.back())) {
+                    violation = true;
+                    break;
+                }
+            }
+            if (not violation)
+                return false;
+        }
+
         v_work.load(current_ptr->v_column);   // clear + fill (O(nnz), reuses buffers)
         r_work.load(current_ptr->r_column);
 
