@@ -360,8 +360,11 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
             return row_format;
         }
 
-        std::vector<std::vector<size_t>> per_thread_positions(
-                n_workers, std::vector<size_t>(static_cast<size_t>(num_rows), 0));
+        // Allocated empty here; each count worker assign()s its own slot inside
+        // the thread, so the O(n_workers * num_rows) zeroing runs in parallel
+        // with first-touch pages local to the worker (the serial value-init here
+        // was a GB-scale memset at high thread counts on multi-M-row inputs)
+        std::vector<std::vector<size_t>> per_thread_positions(n_workers);
 
         auto worker_range = [n_cols, n_workers, col_start](size_t tid) {
             const size_t begin = col_start + (tid * n_cols) / n_workers;
@@ -376,6 +379,7 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
             workers.emplace_back([&, tid]() {
                 auto [begin, end] = worker_range(tid);
                 auto& local_counts = per_thread_positions[tid];
+                local_counts.assign(static_cast<size_t>(num_rows), 0);
                 for (size_t col_idx = begin; col_idx < end; ++col_idx) {
                     for (Int row_idx : col_format[col_idx]) {
                         ++local_counts[static_cast<size_t>(row_idx)];
