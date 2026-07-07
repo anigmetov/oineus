@@ -538,19 +538,32 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
             return {};
         }
 
-        // Forced routing for characterization: OINEUS_TRANSPOSE_MODE in
-        // {col,row,bucket} overrides the caller's prefer_row_scatter
+        // Routing. Default: the bucket transpose whenever the output rows span
+        // far more memory than any cache (measured 3-23x over both scatter
+        // modes at 10M and 50M rows: the column scatter's random writes and
+        // the row scatter's every-worker-scans-all-columns term both collapse
+        // into sequential band-local passes). Below the threshold the transpose
+        // is milliseconds either way and the (side,dim)-routed scatters keep
+        // their measured preference. OINEUS_TRANSPOSE_MODE in {col,row,bucket}
+        // force-routes for characterization.
+        const bool fits_u32 =
+                static_cast<size_t>(num_rows) <= std::numeric_limits<std::uint32_t>::max()
+                && col_end <= std::numeric_limits<std::uint32_t>::max();
+        bool use_bucket = fits_u32 && static_cast<size_t>(num_rows) >= (size_t(1) << 20);
         static const char* forced_mode = std::getenv("OINEUS_TRANSPOSE_MODE");
         if (forced_mode) {
-            if (std::strcmp(forced_mode, "row") == 0)
+            if (std::strcmp(forced_mode, "row") == 0) {
                 prefer_row_scatter = true;
-            else if (std::strcmp(forced_mode, "col") == 0)
+                use_bucket = false;
+            } else if (std::strcmp(forced_mode, "col") == 0) {
                 prefer_row_scatter = false;
-            else if (std::strcmp(forced_mode, "bucket") == 0
-                    && static_cast<size_t>(num_rows) <= std::numeric_limits<std::uint32_t>::max()
-                    && col_end <= std::numeric_limits<std::uint32_t>::max())
-                return col_to_row_format_bucket(col_format, n_threads, col_start, col_end, num_rows);
+                use_bucket = false;
+            } else if (std::strcmp(forced_mode, "bucket") == 0) {
+                use_bucket = fits_u32;
+            }
         }
+        if (use_bucket)
+            return col_to_row_format_bucket(col_format, n_threads, col_start, col_end, num_rows);
 
         // Diagnostic: OINEUS_DBG_TRANSPOSE=1 prints per-pass wall times to stderr
         static const bool dbg_transpose = std::getenv("OINEUS_DBG_TRANSPOSE") != nullptr;
