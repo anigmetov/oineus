@@ -467,7 +467,8 @@ namespace oineus {
     template<class Int, class WorkCol>
     bool restore_elz_column_parallel_repr(
             typename SimpleRVMatrixTraits<Int, 2>::AMatrix& r_v_matrix,
-            size_t current_col, WorkCol& v_work, WorkCol& r_work)
+            size_t current_col, WorkCol& v_work, WorkCol& r_work,
+            SparseColumn<Int>& kept_v)
     {
         using RVColumn = typename SimpleRVMatrixTraits<Int, 2>::Column;
 
@@ -510,7 +511,7 @@ namespace oineus {
         v_work.load(current_ptr->v_column);   // clear + fill (O(nnz), reuses buffers)
         r_work.load(current_ptr->r_column);
 
-        SparseColumn<Int> kept_v;             // survivors, pushed in DECREASING order
+        kept_v.clear();                       // survivors, pushed in DECREASING order
         bool changed = false;
 
         while (true) {
@@ -3953,9 +3954,10 @@ namespace oineus {
                                 WorkCol v_work, r_work;
                                 v_work.reserve(n_cols);
                                 r_work.reserve(n_cols);
+                                SparseColumn<Int> kept_v;   // survivor scratch, reused across columns
                                 for (size_t col_idx = begin; col_idx < end; ++col_idx)
                                     restore_elz_column_parallel_repr<Int, WorkCol>(
-                                            r_v_matrix, col_idx, v_work, r_work);
+                                            r_v_matrix, col_idx, v_work, r_work, kept_v);
                                 dbg_restore_thread_times_[tid] = tm.elapsed();
                             });
                         }
