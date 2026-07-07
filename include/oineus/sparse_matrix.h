@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
+#include <cstdio>
 #include <new>
 #include <memory>
 #include <boost/container/small_vector.hpp>
@@ -20,6 +21,7 @@
 
 #include "common_defs.h"   // JeAllocator + guarded <jemalloc/jemalloc.h>
 #include "profile.h"
+#include "timer.h"
 
 namespace oineus {
 
@@ -346,7 +348,13 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
             return {};
         }
 
+        // Diagnostic: OINEUS_DBG_TRANSPOSE=1 prints per-pass wall times to stderr
+        static const bool dbg_transpose = std::getenv("OINEUS_DBG_TRANSPOSE") != nullptr;
+        Timer dbg_timer;
+
         Matrix row_format(static_cast<size_t>(num_rows));
+
+        const double dbg_t_ctor = dbg_timer.elapsed_reset();
 
         if (col_start >= col_end) {
             return row_format;
@@ -392,6 +400,8 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
             t.join();
         }
 
+        const double dbg_t_count = dbg_timer.elapsed_reset();
+
         // Per-row exclusive prefix-sum across threads (so each worker knows where to
         // write within each row) and allocate each output row. Parallelized over
         // rows (independent); the previous serial loop here was an
@@ -417,6 +427,8 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
             }
             for (auto& t : prefix_workers) t.join();
         }
+
+        const double dbg_t_prefix = dbg_timer.elapsed_reset();
 
         workers.clear();
 
@@ -477,6 +489,15 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
 
         for (auto& t : workers) {
             t.join();
+        }
+
+        if (dbg_transpose) {
+            std::fprintf(stderr,
+                    "[transpose] workers=%zu cols=%zu rows=%lld scatter=%s "
+                    "ctor=%.3fs count=%.3fs prefix=%.3fs scatter=%.3fs\n",
+                    n_workers, n_cols, static_cast<long long>(num_rows),
+                    dense ? "row" : "col",
+                    dbg_t_ctor, dbg_t_count, dbg_t_prefix, dbg_timer.elapsed_reset());
         }
 
         return row_format;
