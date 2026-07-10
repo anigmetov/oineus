@@ -531,6 +531,50 @@ def test_index_diagram_accessor_returns_copy(backend):
     assert dgms.kernel.index_diagram_in_dimension(0).tolist() == [[5, 7]]
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason="requires torch")
+def test_gather_diagram_empty_torch_backprops():
+    """An empty diagram is a valid zero loss: the empty gather must keep
+    grad_fn so backward yields zero grads instead of raising."""
+    from oineus.diff.kicr import gather_diagram
+
+    v = torch.rand(5, dtype=torch.float64, requires_grad=True)
+    dgm = gather_diagram(v, np.zeros((0, 2), dtype=np.int64), "torch")
+    assert tuple(dgm.shape) == (0, 2)
+    assert dgm.dtype == v.dtype
+
+    dgm.sum().backward()
+    assert v.grad is not None
+    assert (v.grad == 0).all()
+
+    # (0, 3) mixup triples keep their shape too
+    assert tuple(gather_diagram(v, np.zeros((0, 3), dtype=np.int64), "torch").shape) == (0, 3)
+
+
+@pytest.mark.skipif(not HAS_JAX, reason="requires jax")
+def test_gather_diagram_empty_jax_backprops():
+    from oineus.diff.kicr import gather_diagram
+
+    idx = np.zeros((0, 2), dtype=np.int64)
+    vals = jnp.arange(5.0)
+    dgm = gather_diagram(vals, idx, "jax")
+    assert tuple(dgm.shape) == (0, 2)
+    assert dgm.dtype == vals.dtype
+
+    grad = jax.grad(lambda v: gather_diagram(v, idx, "jax").sum())(vals)
+    assert (np.asarray(grad) == 0).all()
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="requires torch")
+def test_mixup_empty_input_torch_backprops():
+    # mixup_barcodes routes empty inputs through the gather_diagram empty
+    # path; the zero loss must backprop to a (0, d) grad, not raise
+    A = torch.zeros((0, 2), dtype=torch.float64, requires_grad=True)
+    mb = od.mixup_barcodes(A, None, max_dim=1)
+    loss = sum(mb[d].sum() for d in range(2))
+    loss.backward()
+    assert tuple(A.grad.shape) == (0, 2)
+
+
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_repr_is_informative(backend):
     K, L = _known_filtrations(1)

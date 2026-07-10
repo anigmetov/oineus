@@ -33,20 +33,18 @@ def gather_diagram(values, index_dgm, backend):
     framework.
 
     index_dgm is an (n_d, k) int64 numpy array of sorted ids into values
-    (k = 2 for diagrams, k = 3 for mixup triples). Empty index arrays
-    produce an empty constant of the same shape and the right dtype (and
-    device, for torch). The native VJP of the gather is the scatter-add,
-    so no custom backward is needed.
+    (k = 2 for diagrams, k = 3 for mixup triples). Empty index arrays go
+    through the same gather: both frameworks gather on empty indices
+    natively, and in torch the empty gather keeps grad_fn (a detached
+    zeros constant would make a valid zero loss fail to backprop). The
+    native VJP of the gather is the scatter-add, so no custom backward
+    is needed.
     """
     if backend == "torch":
         import torch
-        if index_dgm.size == 0:
-            return torch.zeros(index_dgm.shape, dtype=values.dtype, device=values.device)
         return values[torch.from_numpy(index_dgm).to(values.device)]
     if backend == "jax":
         import jax.numpy as jnp
-        if index_dgm.size == 0:
-            return jnp.zeros(index_dgm.shape, dtype=values.dtype)
         return values[jnp.asarray(index_dgm)]
     raise RuntimeError(f"unknown backend {backend!r}")
 
