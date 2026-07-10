@@ -487,7 +487,7 @@ the only async-signal-safe write); long-running C++ loops poll it via
 `oineus::interrupted()` and throw `oineus::interrupted_exception`; a
 nanobind exception translator converts that to `KeyboardInterrupt`.
 Polling sites live in `include/oineus/decomposition.h`,
-`grid.h`, `vietoris_rips_inorder.h`, `filtration.h`, and -- under the
+`grid.h`, `vietoris_rips_inorder.h`, `filtration.h`, `apparent.h`, and -- under the
 `HERA_USE_OINEUS_INTERRUPT` macro -- in `extern/hera/wasserstein/` and
 `extern/hera/bottleneck/`.
 

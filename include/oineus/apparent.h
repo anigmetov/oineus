@@ -24,6 +24,7 @@
 #include <ostream>
 
 #include "common_defs.h"
+#include "interrupt.h"
 #include "sparse_matrix.h"
 
 namespace oineus {
@@ -132,6 +133,8 @@ detect_apparent_generic(const Matrix& M)
     std::vector<Int> seen_first_col(n, Int(-1));   // first column containing row r
 
     for(std::size_t c = 0; c < n; ++c) {
+        if (c % 1024 == 0 and oineus::interrupted())
+            throw oineus::interrupted_exception{};
         const auto& col = M[c];
         if (col.empty())
             continue;
@@ -206,8 +209,12 @@ detect_apparent_local(const Fil& fil, int n_threads = 1)
 
     tf::Executor executor(std::max(1, n_threads));
     tf::Taskflow taskflow;
+    // Worker tasks poll the interrupt flag and return early (never throw);
+    // the orchestrator throws after the barrier.
     taskflow.for_each_index((std::size_t)0, n, (std::size_t)1,
             [&am, &cells, &fil](std::size_t c) {
+                if (c % 1024 == 0 and oineus::interrupted())
+                    return;
                 const auto& cell = cells[c];
                 if (cell.dim() == 0)
                     return;
@@ -234,6 +241,8 @@ detect_apparent_local(const Fil& fil, int n_threads = 1)
                 }
             });
     executor.run(taskflow).get();
+    if (oineus::interrupted())
+        throw oineus::interrupted_exception{};
 
     std::size_t cnt = 0;
     for(char v : am.is_apparent_col)
