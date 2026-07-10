@@ -106,6 +106,56 @@ def test_decomposition_diagram_overloads_cube_1d():
     _ = dcmp.zero_pers_diagram(fil)
 
 
+def _random_grid_filtration():
+    np.random.seed(1)
+    return oin.freudenthal_filtration(np.random.rand(12, 12))
+
+
+def test_compute_u_from_v_1_fused_keep_working():
+    # fused RV reduce keeps the working columns (r_data/v_data empty at rest);
+    # compute_u_from_v_1 used to index the empty at-rest V and segfault.
+    # It must materialize and produce a correct U (U V == I on the solved block).
+    fil = _random_grid_filtration()
+    dcmp = oin.reduce(fil, oin.ReductionParams(compute_v=True, n_threads=4), False)
+    dcmp.compute_u_from_v_1(dim=1)
+
+    u = dcmp.u_as_csr()
+    v = dcmp.v_as_csc()
+    prod = (u @ v).toarray() % 2
+    lo, hi = dcmp.dim_first[1], dcmp.dim_last[1] + 1
+    identity = np.eye(fil.size())
+    assert np.array_equal(prod[:, lo:hi], identity[:, lo:hi])
+
+
+def test_compute_u_from_v_guards():
+    import pytest
+
+    fil = _random_grid_filtration()
+
+    # fused diagram-only reduce leaves pivots only: no V to solve U from
+    dcmp = oin.reduce(fil, oin.ReductionParams(compute_v=False, n_threads=4), False)
+    with pytest.raises(RuntimeError, match="V was not computed"):
+        dcmp.compute_u_from_v_1()
+    with pytest.raises(RuntimeError, match="V was not computed"):
+        dcmp.compute_u_from_v()
+
+    # classic reduce without compute_v: same clean error, not a crash
+    dcmp2 = oin.Decomposition(fil, dualize=False, n_threads=1)
+    dcmp2.reduce(oin.ReductionParams(compute_v=False, n_threads=1))
+    with pytest.raises(RuntimeError, match="V was not computed"):
+        dcmp2.compute_u_from_v_1()
+
+    # not reduced yet
+    dcmp3 = oin.Decomposition(fil, dualize=False, n_threads=1)
+    with pytest.raises(RuntimeError, match="not reduced"):
+        dcmp3.compute_u_from_v_1()
+
+    # fused RV reduce never stores D, and compute_u_from_v reads it
+    dcmp4 = oin.reduce(fil, oin.ReductionParams(compute_v=True, n_threads=4), False)
+    with pytest.raises(RuntimeError, match="boundary matrix"):
+        dcmp4.compute_u_from_v()
+
+
 def test_csc_exports_raise_when_matrix_absent():
     import pytest
 

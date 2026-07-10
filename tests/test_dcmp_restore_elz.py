@@ -86,6 +86,28 @@ def test_restore_elz_parallel_matches_serial_restore_and_serial_no_clearing(dual
     assert v_parallel_restore == v_parallel_then_serial == v_serial
 
 
+def test_restore_elz_fused_keep_working():
+    # oin.reduce (fused RV) keeps the working columns; restore_elz used to pass
+    # its has_matrix_v gate and index the empty at-rest r_data/v_data (segfault).
+    # It must materialize first, restore, and enable the row-form U solve.
+    np.random.seed(1)
+    fil = oin.freudenthal_filtration(np.random.rand(12, 12))
+    dcmp = oin.reduce(fil, oin.ReductionParams(compute_v=True, n_threads=4), False)
+
+    dcmp.restore_elz()
+
+    assert dcmp.n_elz_violators(n_threads=1) == 0
+    dcmp.compute_partial_u_rows(fil, rows=[0], bounds=[1e9], dim=0, cmp="above")
+
+    # the solved U row satisfies U[0] * V == e_0 over Z/2
+    u = dcmp.u_as_csr()
+    v = dcmp.v_as_csc()
+    row = np.asarray((u[[0], :] @ v).todense()).ravel() % 2
+    expected = np.zeros(fil.size())
+    expected[0] = 1
+    assert np.array_equal(row, expected)
+
+
 def test_restore_elz_requires_compute_v():
     filtration = _build_filtration()
     dcmp = oin.Decomposition(filtration, dualize=False, n_threads=2)

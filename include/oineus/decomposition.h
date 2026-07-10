@@ -2076,6 +2076,11 @@ namespace oineus {
     void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads)
     {
         (void)n_threads;
+        // The restore reads and rewrites the at-rest R/V columns; reconstruct
+        // them from the kept working form of the fused reduce first (no-op
+        // otherwise). Without this, the has_matrix_v gate passes on a
+        // keep-working decomposition and the loop below indexes empty matrices.
+        materialize_from_working_();
         if (not has_matrix_v()) {
             throw std::runtime_error("VRUDecomposition: cannot restore ELZ without V matrix");
         }
@@ -4601,6 +4606,22 @@ namespace oineus {
     template<typename Int_>
     void VRUDecomposition<Int_>::compute_u_from_v_1(dim_type dim, size_t n_threads, bool verbose)
     {
+        // The solve reads the at-rest V; reconstruct it from the kept working
+        // form of the fused reduce first (no-op otherwise). Gate on the main
+        // thread: the per-column checks throw inside worker std::threads, which
+        // would call std::terminate instead of raising a clean error.
+        materialize_from_working_();
+        if (not is_reduced)
+            throw std::runtime_error("compute_u_from_v_1: decomposition is not reduced, call reduce() first");
+        if (not has_matrix_v())
+            throw std::runtime_error(
+                    "compute_u_from_v_1 is not available: V was not computed. U is "
+                    "solved from V, so reduce with compute_v=True first. If this "
+                    "decomposition came from the fused diagram-only reduce (oin.reduce "
+                    "with n_threads > 1 and compute_v=False), the reduced columns were "
+                    "freed after extracting pivots; re-reduce with compute_v=True or "
+                    "use the classic Decomposition(fil) + reduce() path.");
+
         // Pick the residual data structure from the reduction's col_repr (all
         // four are valid for the column form).
         switch (col_repr_) {
@@ -4670,6 +4691,26 @@ namespace oineus {
     template<typename Int_>
     void VRUDecomposition<Int_>::compute_u_from_v(dim_type dim, size_t n_threads, bool verbose)
     {
+        // Same entry gates as compute_u_from_v_1 (see the comment there), plus a
+        // D gate: this variant re-reduces the original boundary columns.
+        materialize_from_working_();
+        if (not is_reduced)
+            throw std::runtime_error("compute_u_from_v: decomposition is not reduced, call reduce() first");
+        if (not has_matrix_v())
+            throw std::runtime_error(
+                    "compute_u_from_v is not available: V was not computed. U is "
+                    "solved from V, so reduce with compute_v=True first. If this "
+                    "decomposition came from the fused diagram-only reduce (oin.reduce "
+                    "with n_threads > 1 and compute_v=False), the reduced columns were "
+                    "freed after extracting pivots; re-reduce with compute_v=True or "
+                    "use the classic Decomposition(fil) + reduce() path.");
+        if (not has_d_data_)
+            throw std::runtime_error(
+                    "compute_u_from_v is not available: it reads the boundary matrix "
+                    "D, which the fused reduce (oin.reduce) does not retain. Use "
+                    "compute_u_from_v_1 (solves from V alone), or the classic "
+                    "Decomposition(fil, dualize) constructor, which stores D.");
+
         // Pick the residual data structure from the reduction's col_repr (all
         // four are valid for the column form).
         switch (col_repr_) {
