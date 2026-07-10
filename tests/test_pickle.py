@@ -110,6 +110,46 @@ def test_decomposition_pickle():
     assert "Matrix U[" in r
 
 
+def test_decomposition_pickle_preserves_col_repr_and_timings():
+    import pytest
+
+    np.random.seed(1)
+    fil = oin.freudenthal_filtration(np.random.rand(12, 12))
+
+    # col_repr_ is behavioral: the row-form U solve rejects Heap. The
+    # rejection must survive a pickle round-trip (col_repr_ used to be
+    # dropped, so an unpickled Heap decomposition silently succeeded).
+    params = oin.ReductionParams(compute_v=True, use_clearing=False, n_threads=1)
+    params.advanced.col_repr = oin.ColumnRepr.Heap
+    dcmp = oin.Decomposition(fil, dualize=False, n_threads=1)
+    dcmp.reduce(params)
+    with pytest.raises(RuntimeError, match="Heap"):
+        dcmp.compute_full_u_rows(fil, dim=0)
+
+    dcmp_back = pickle.loads(pickle.dumps(dcmp))
+    with pytest.raises(RuntimeError, match="Heap"):
+        dcmp_back.compute_full_u_rows(fil, dim=0)
+
+    # timings, u_timings and restore thread times survive the round-trip
+    dcmp2 = oin.Decomposition(fil, dualize=False, n_threads=1)
+    dcmp2.reduce(oin.ReductionParams(compute_v=True, use_clearing=False, n_threads=1))
+    dcmp2.compute_full_u_rows(fil, dim=0)
+    assert dcmp2.timings.reduction_total > 0
+    assert dcmp2.u_timings.total > 0
+
+    dcmp2_back = pickle.loads(pickle.dumps(dcmp2))
+    assert dcmp2_back.timings.reduction_total == dcmp2.timings.reduction_total
+    assert dcmp2_back.u_timings.total == dcmp2.u_timings.total
+
+    params3 = oin.ReductionParams(compute_v=True, n_threads=4)
+    params3.advanced.dims_to_restore_elz = [0, 1]
+    dcmp3 = oin.Decomposition(fil, dualize=False, n_threads=4)
+    dcmp3.reduce(params3)
+    assert len(dcmp3.restore_thread_times) > 0
+    dcmp3_back = pickle.loads(pickle.dumps(dcmp3))
+    assert dcmp3_back.restore_thread_times == dcmp3.restore_thread_times
+
+
 def test_topology_optimizer_pickle():
     fil = _make_simplex_filtration()
     opt = oin.TopologyOptimizer(fil)

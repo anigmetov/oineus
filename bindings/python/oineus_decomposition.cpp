@@ -329,7 +329,11 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                                                decltype(Decomposition::_dim_last),
                                                decltype(Decomposition::is_elz_in_dim_),
                                                decltype(Decomposition::n_rows),
-                                               decltype(Decomposition::has_d_data_)>;
+                                               decltype(Decomposition::has_d_data_),
+                                               int,    // col_repr_ (ColumnRepr as int, matching the RPAdvanced pickle)
+                                               decltype(Decomposition::timings_),
+                                               decltype(Decomposition::u_timings_),
+                                               decltype(Decomposition::dbg_restore_thread_times_)>;
     using Simplex = oin::Simplex<oin_int>;
     using SimplexFiltration = oin::Filtration<Simplex, oin_real>;
     using ProdSimplex = oin::ProductCell<Simplex, Simplex>;
@@ -610,7 +614,9 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                 self.ensure_materialized_();   // keep-working -> at-rest before pickling
                 return std::make_tuple(self.d_data, self.r_data, self.v_data, self.u_data_t, self.is_reduced,
                         self.dualize_, self._pivots, self.dim_first, self.dim_last,
-                        self._dim_first, self._dim_last, self.is_elz_in_dim_, self.n_rows, self.has_d_data_);
+                        self._dim_first, self._dim_last, self.is_elz_in_dim_, self.n_rows, self.has_d_data_,
+                        static_cast<int>(self.col_repr_), self.timings_, self.u_timings_,
+                        self.dbg_restore_thread_times_);
             })
             .def("__setstate__", [](Decomposition& self, const DecompositionStateTuple& t) {
                 new (&self) Decomposition();
@@ -628,6 +634,10 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                 self.is_elz_in_dim_ = std::get<11>(t);
                 self.n_rows = std::get<12>(t);
                 self.has_d_data_ = std::get<13>(t);
+                self.col_repr_ = static_cast<oin::ColumnRepr>(std::get<14>(t));
+                self.timings_ = std::get<15>(t);
+                self.u_timings_ = std::get<16>(t);
+                self.dbg_restore_thread_times_ = std::get<17>(t);
             })
                     ;
 
