@@ -1280,9 +1280,23 @@ def max_distance(data: np.ndarray, from_pwdists: bool=False):
     else:
         if data.ndim != 2 or data.shape[0] < 2:
             raise ValueError("max_distance: data must be a 2D array with at least 2 rows")
-        diff = data[:, np.newaxis, :] - data[np.newaxis, :, :]
-        squared_distances = np.sum(diff**2, axis=2)
-        return 1.00001 * np.sqrt(np.min(np.max(squared_distances, axis=1)))
+        # enclosing radius min_i max_j d(x_i, x_j) via the Gram identity
+        # ||x-y||^2 = ||x||^2 + ||y||^2 - 2<x,y>, computed on row chunks so
+        # peak extra memory is O(chunk * n) instead of the (n, n, d) temporary
+        # a broadcasted difference would materialize. Centering first keeps
+        # ||x||^2 at the data's intrinsic scale, avoiding catastrophic
+        # cancellation when the cloud sits far from the origin.
+        x = np.asarray(data, dtype=np.float64)
+        x = np.ascontiguousarray(x - x.mean(axis=0))
+        n = x.shape[0]
+        sq_norms = np.einsum('ij,ij->i', x, x)
+        chunk = max(1, (2 ** 24) // n)  # ~128 MB of float64 per chunk
+        min_of_max = np.inf
+        for beg in range(0, n, chunk):
+            sq_dists = sq_norms[beg:beg + chunk, np.newaxis] + sq_norms[np.newaxis, :] - 2.0 * (x[beg:beg + chunk] @ x.T)
+            min_of_max = min(min_of_max, np.max(sq_dists, axis=1).min())
+        # cancellation in the Gram identity can produce tiny negative squares
+        return 1.00001 * np.sqrt(max(min_of_max, 0.0))
 
 
 def freudenthal_filtration(data: np.ndarray,
