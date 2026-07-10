@@ -257,6 +257,22 @@ def test_max_distance_rejects_too_few_rows():
         oin.max_distance(np.zeros((1, 3), dtype=REAL_DTYPE))
 
 
+def test_max_distance_chunked_matches_naive():
+    # the chunked Gram-identity computation must reproduce the naive
+    # broadcasted formula, including for clouds far from the origin
+    # (centering guards against catastrophic cancellation) and for
+    # float32 input (promoted to float64 internally)
+    rng = np.random.default_rng(7)
+    for n, d, shift, dtype in ((50, 3, 0.0, np.float64),
+                               (200, 2, 1e6, np.float64),
+                               (80, 4, 0.0, np.float32)):
+        data = (rng.standard_normal((n, d)) + shift).astype(dtype)
+        x = data.astype(np.float64)
+        diff = x[:, np.newaxis, :] - x[np.newaxis, :, :]
+        naive = 1.00001 * np.sqrt(np.min(np.max(np.sum(diff**2, axis=2), axis=1)))
+        assert oin.max_distance(data) == pytest.approx(naive, rel=1e-9)
+
+
 def test_compute_diagrams_vr_rejects_non_2d():
     with pytest.raises(ValueError):
         oin.compute_diagrams_vr(np.zeros(5, dtype=REAL_DTYPE))
