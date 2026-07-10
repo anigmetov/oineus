@@ -108,6 +108,52 @@ def test_restore_elz_fused_keep_working():
     assert np.array_equal(row, expected)
 
 
+def test_restore_elz_default_dim_records_flags_under_dualize():
+    # The all-dims default restore_elz() used to push the k_all_dims sentinel
+    # through the dualize dim remap and record is_elz_in_dim_ key n_dims(),
+    # which no checker reads -- so the row-form U solve rejected the V it had
+    # just restored. The sentinel must set the flags every checker reads.
+    np.random.seed(1)
+    fil = oin.freudenthal_filtration(np.random.rand(12, 12))
+    params = oin.ReductionParams(compute_v=True, n_threads=4)
+
+    dcmp = oin.Decomposition(fil, dualize=True)
+    dcmp.reduce(params)
+    dcmp.restore_elz()
+
+    assert all(dcmp.n_elz_violators_in_dim(d, n_threads=1) == 0 for d in range(3))
+
+    # rejected with 'V is not known to be in ELZ form' before the fix
+    dcmp.compute_partial_u_rows(fil, rows=[0], bounds=[1e9], dim=0, cmp="below")
+
+    # a genuine dim-0 block row (last matrix index is a vertex under dualize):
+    # the solved row must satisfy U[r] * V == e_r over Z/2
+    r = fil.size() - 1
+    dcmp.compute_partial_u_rows(fil, rows=[r], bounds=[1e9], dim=0, cmp="below")
+    u = dcmp.u_as_csr()
+    v = dcmp.v_as_csc()
+    row = np.asarray((u[[r], :] @ v).todense()).ravel() % 2
+    expected = np.zeros(fil.size())
+    expected[r] = 1
+    assert np.array_equal(row, expected)
+
+    dcmp.compute_partial_u_rows(fil, rows=[200], bounds=[1e9], dim=1, cmp="below")
+
+
+def test_restore_elz_explicit_dim_records_only_that_dim_under_dualize():
+    np.random.seed(1)
+    fil = oin.freudenthal_filtration(np.random.rand(12, 12))
+    params = oin.ReductionParams(compute_v=True, n_threads=4)
+
+    dcmp = oin.Decomposition(fil, dualize=True)
+    dcmp.reduce(params)
+    dcmp.restore_elz(1)
+
+    dcmp.compute_partial_u_rows(fil, rows=[200], bounds=[1e9], dim=1, cmp="below")
+    with pytest.raises(RuntimeError, match="ELZ"):
+        dcmp.compute_partial_u_rows(fil, rows=[0], bounds=[1e9], dim=0, cmp="below")
+
+
 def test_restore_elz_requires_compute_v():
     filtration = _build_filtration()
     dcmp = oin.Decomposition(filtration, dualize=False, n_threads=2)

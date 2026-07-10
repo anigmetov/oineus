@@ -2086,7 +2086,14 @@ namespace oineus {
         }
 
         size_t n_violators = 0;
-        const auto _dim = _dim_from_dim(dim);
+        // Keep the all-dims sentinel out of the dualize remap: _dim_from_dim
+        // maps k_all_dims to n_dims() when dualize (size_t wrap-around), and
+        // set_is_elz_flag would then record key n_dims() -- one that no checker
+        // (compute_partial_u_rows & co read keys 0..n_dims()-1) ever consults,
+        // so a successful all-dims restore looked like no restore at all.
+        // range_start_/range_end_ treat k_all_dims and n_dims() identically
+        // (both take the all-dims branch), so the restored columns are the same.
+        const auto _dim = (dim == k_all_dims) ? k_all_dims : _dim_from_dim(dim);
         const size_t range_start_idx = range_start_(_dim);
         const size_t range_end_idx = range_end_(_dim);
 
