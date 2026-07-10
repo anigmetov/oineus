@@ -156,6 +156,16 @@ def test_compute_u_from_v_guards():
         dcmp4.compute_u_from_v()
 
 
+def test_densify_v_for_selinv_fused_keep_working():
+    # densify used to read the empty at-rest r_data/v_data on a fused
+    # keep-working decomposition and silently return a (0, 0) matrix
+    fil = _random_grid_filtration()
+    dcmp = oin.reduce(fil, oin.ReductionParams(compute_v=True, n_threads=4), False)
+    m = dcmp.densify_v_for_selinv(rows_to_invert={0}, n_threads=1)
+    assert m.shape == (fil.size(), fil.size())
+    assert m.nnz > 0
+
+
 def test_fused_reduce_records_col_repr():
     import pytest
 

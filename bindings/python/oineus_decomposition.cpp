@@ -522,12 +522,16 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
             // filtration cell type in the for_each_type(DecompFilList) block below
             // (so grids/cubes/packed get the row-form path, not just fat simplices).
             .def("densify_v_for_selinv", [](Decomposition& self, const std::set<oin_int>& rows_to_invert, int n_threads) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
+                     // fused keep-working state: r_data/v_data are empty until
+                     // materialized, and the densify would silently return a (0, 0) matrix
+                     self.materialize_from_working_();
                      int num_rows = self.r_data.size();
                      return densify_v_for_selinv<oin_real>(self, rows_to_invert, num_rows, n_threads);
                  },
                  nb::arg("rows_to_invert"), nb::arg("n_threads")=1,
                  nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
             .def("densify_v_for_selinv_with_targets", [](Decomposition& self, const SimplexFiltration& fil, const std::vector<oin_int>& rows_to_invert, const std::vector<oin_real>& targets) -> Eigen::SparseMatrix<oin_real, Eigen::RowMajor> {
+                     self.materialize_from_working_();   // see densify_v_for_selinv above
                      int num_rows = self.r_data.size();
                      return densify_v_for_selinv_1(self, fil, rows_to_invert, targets, num_rows);
                  },

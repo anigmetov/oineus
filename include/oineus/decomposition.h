@@ -1691,6 +1691,25 @@ namespace oineus {
         }
         void compute_u_from_v_1(dim_type dim, size_t n_threads=1, bool verbose=false);
 
+        // Shared entry gate of the U-from-V solvers: reconstruct the at-rest
+        // R/V from the kept working form of the fused reduce (no-op otherwise)
+        // and fail on the calling thread -- the per-column checks throw inside
+        // worker std::threads, which would call std::terminate.
+        void require_v_for_u_solve_(const char* what)
+        {
+            materialize_from_working_();
+            if (not is_reduced)
+                throw std::runtime_error(std::string(what) + ": decomposition is not reduced, call reduce() first");
+            if (not has_matrix_v())
+                throw std::runtime_error(std::string(what)
+                        + " is not available: V was not computed. U is solved from V, "
+                        "so reduce with compute_v=True first. If this decomposition came "
+                        "from the fused diagram-only reduce (oin.reduce with n_threads > 1 "
+                        "and compute_v=False), the reduced columns were freed after "
+                        "extracting pivots; re-reduce with compute_v=True or use the "
+                        "classic Decomposition(fil) + reduce() path.");
+        }
+
         // Row-form U primitives. Solves (row r of U) V = e_r^T in
         // residual style against V^T (lower unit-triangular, forward
         // substitution). Each row solve is independent and writes its
@@ -4622,21 +4641,7 @@ namespace oineus {
     template<typename Int_>
     void VRUDecomposition<Int_>::compute_u_from_v_1(dim_type dim, size_t n_threads, bool verbose)
     {
-        // The solve reads the at-rest V; reconstruct it from the kept working
-        // form of the fused reduce first (no-op otherwise). Gate on the main
-        // thread: the per-column checks throw inside worker std::threads, which
-        // would call std::terminate instead of raising a clean error.
-        materialize_from_working_();
-        if (not is_reduced)
-            throw std::runtime_error("compute_u_from_v_1: decomposition is not reduced, call reduce() first");
-        if (not has_matrix_v())
-            throw std::runtime_error(
-                    "compute_u_from_v_1 is not available: V was not computed. U is "
-                    "solved from V, so reduce with compute_v=True first. If this "
-                    "decomposition came from the fused diagram-only reduce (oin.reduce "
-                    "with n_threads > 1 and compute_v=False), the reduced columns were "
-                    "freed after extracting pivots; re-reduce with compute_v=True or "
-                    "use the classic Decomposition(fil) + reduce() path.");
+        require_v_for_u_solve_("compute_u_from_v_1");
 
         // Pick the residual data structure from the reduction's col_repr (all
         // four are valid for the column form).
@@ -4707,19 +4712,8 @@ namespace oineus {
     template<typename Int_>
     void VRUDecomposition<Int_>::compute_u_from_v(dim_type dim, size_t n_threads, bool verbose)
     {
-        // Same entry gates as compute_u_from_v_1 (see the comment there), plus a
-        // D gate: this variant re-reduces the original boundary columns.
-        materialize_from_working_();
-        if (not is_reduced)
-            throw std::runtime_error("compute_u_from_v: decomposition is not reduced, call reduce() first");
-        if (not has_matrix_v())
-            throw std::runtime_error(
-                    "compute_u_from_v is not available: V was not computed. U is "
-                    "solved from V, so reduce with compute_v=True first. If this "
-                    "decomposition came from the fused diagram-only reduce (oin.reduce "
-                    "with n_threads > 1 and compute_v=False), the reduced columns were "
-                    "freed after extracting pivots; re-reduce with compute_v=True or "
-                    "use the classic Decomposition(fil) + reduce() path.");
+        require_v_for_u_solve_("compute_u_from_v");
+        // plus a D gate: this variant re-reduces the original boundary columns
         if (not has_d_data_)
             throw std::runtime_error(
                     "compute_u_from_v is not available: it reads the boundary matrix "
