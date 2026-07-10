@@ -156,6 +156,28 @@ def test_compute_u_from_v_guards():
         dcmp4.compute_u_from_v()
 
 
+def test_fused_reduce_records_col_repr():
+    import pytest
+
+    # the fused factories used to skip recording col_repr_ (only member
+    # reduce() set it), so the row-form U solve's documented Heap rejection
+    # silently did not fire after a fused Heap reduce
+    fil = _random_grid_filtration()
+    params = oin.ReductionParams(compute_v=True, n_threads=4)
+    params.advanced.col_repr = oin.ColumnRepr.Heap
+    params.advanced.dims_to_restore_elz = [0]
+
+    dcmp = oin.reduce(fil, params, False)
+    with pytest.raises(RuntimeError, match="Heap"):
+        dcmp.compute_full_u_rows(fil, dim=0)
+
+    # same fused config minus Heap: the row-form solve goes through
+    params2 = oin.ReductionParams(compute_v=True, n_threads=4)
+    params2.advanced.dims_to_restore_elz = [0]
+    dcmp2 = oin.reduce(fil, params2, False)
+    dcmp2.compute_full_u_rows(fil, dim=0)
+
+
 def test_csc_exports_raise_when_matrix_absent():
     import pytest
 

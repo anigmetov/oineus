@@ -196,6 +196,13 @@ namespace oineus {
 
                 PColumn orig_col = rv[current_column_idx].load(acq);
 
+#ifndef NDEBUG
+                // erase before the null check: a column zeroed by someone else
+                // (cleared / apparent) is processed too, and skipping the erase
+                // made the end-of-chunk completeness check below fire falsely
+                unprocessed_cols.erase(current_column_idx);
+#endif
+
                 if (orig_col == nullptr) {
                     // this column has already been zeroed by someone else, continue to next one
                     current_column_idx = next_column;
@@ -215,10 +222,6 @@ namespace oineus {
 
 #ifdef OINEUS_COLUMN_TRACE
                 if (g_column_trace) g_column_trace->record_touch(static_cast<size_t>(current_column_idx));
-#endif
-
-#ifndef NDEBUG
-                unprocessed_cols.erase(current_column_idx);
 #endif
 
                 if (params.use_clearing) {
@@ -951,6 +954,9 @@ namespace oineus {
 
             dcmp.set_dims_from_fil_(fil, dualize);
             dcmp.timings_.reset();
+            // Record the working-column repr just like member reduce() does, so a
+            // later compute_u_* / row-form solve sees what the reduction ran with.
+            dcmp.col_repr_ = params.advanced.col_repr;
 
             const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.advanced.chunk_size)));
 
@@ -1157,6 +1163,9 @@ namespace oineus {
 
             dcmp.set_dims_(std::move(dim_first_), std::move(dim_last_), dualize, n_cols);
             dcmp.timings_.reset();
+            // Record the working-column repr just like member reduce() does, so a
+            // later compute_u_* / row-form solve sees what the reduction ran with.
+            dcmp.col_repr_ = params.advanced.col_repr;
 
             const int n_threads = std::min(params.n_threads, std::max(1, static_cast<int>(n_cols / params.advanced.chunk_size)));
             tf::Executor executor(n_threads);
