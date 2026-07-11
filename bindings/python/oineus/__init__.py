@@ -1278,11 +1278,26 @@ def to_scipy_matrix(sparse_cols, shape=None):
 
 
 def max_distance(data: np.ndarray, from_pwdists: bool=False):
-    # Returns the ENCLOSING RADIUS min_i max_j d(x_i, x_j) -- the smallest radius
-    # from which one point covers all others -- scaled by 1.00001 so the bound sits
-    # strictly above it after rounding. This is the standard Vietoris-Rips cutoff
-    # (beyond it the complex is a cone, as in Ripser); it is NOT the diameter
-    # max_i max_j d: for three collinear points 0, 1, 2 it is 1, not 2.
+    """Enclosing radius of a point cloud, for use as a Vietoris-Rips cutoff.
+
+    Returns min_i max_j ||x_i - x_j|| (scaled by 1.00001 so it sits strictly
+    above the true value after rounding) -- the smallest radius from which some
+    single point sees every other. This is the standard Vietoris-Rips threshold:
+    beyond it the complex is a cone and carries no more topology, as in Ripser.
+    It is NOT the diameter max_i max_j ||x_i - x_j||; for three collinear points
+    at 0, 1, 2 it returns 1, not 2. Pass it to vr_filtration as max_diameter.
+
+    Args:
+        data: an (n, d) array of n points, or -- when from_pwdists is True -- an
+            (n, n) matrix of pairwise distances.
+        from_pwdists: if True, read the enclosing radius directly off a
+            pairwise-distance matrix instead of a point cloud.
+
+    Raises:
+        ValueError: if data is not a 2D array with at least two rows, contains
+            non-finite values, or has a coordinate spread that overflows float64
+            (rescale first).
+    """
     if from_pwdists:
         return 1.00001 * np.min(np.max(data, axis=1))
     if data.ndim != 2 or data.shape[0] < 2:
