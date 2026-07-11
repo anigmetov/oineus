@@ -1,5 +1,59 @@
 #include "oineus_persistence_bindings.h"
 
+#include <algorithm>
+#include <stdexcept>
+#include <vector>
+
+// Reject vertex lists that the C++ Simplex constructor would silently accept and
+// then mis-encode: an empty list, negative indices, or duplicates. The constructor
+// sorts and dedups, so e.g. [0,0] and [0,1] would collide on the same uid, and a
+// negative vertex is cast to size_t deep inside the combinatorial-number-system
+// encoder. This runs only at the Python trust boundary -- bulk C++ filtration
+// builders emit valid cells by construction and never take this path, so there is
+// no hot-loop cost (see plan: validate at the boundary, not in the core).
+static void validate_simplex_vertices(const oin::Simplex<oin_int>::IdxVector& vs)
+{
+    if (vs.empty())
+        throw std::invalid_argument("Simplex: vertex list must be non-empty");
+    for (oin_int v : vs)
+        if (v < 0)
+            throw std::invalid_argument("Simplex: vertex indices must be non-negative");
+    std::vector<oin_int> sorted_vs(vs.begin(), vs.end());
+    std::sort(sorted_vs.begin(), sorted_vs.end());
+    if (std::adjacent_find(sorted_vs.begin(), sorted_vs.end()) != sorted_vs.end())
+        throw std::invalid_argument("Simplex: vertex indices must be distinct");
+}
+
+// A cube uid packs (vertex_id << OINEUS_MAX_CUBE_DIM) | face-bits. Reject values the
+// dense uid->sorted_id index (filtration.h:212) would OOB on: a negative uid casts to a
+// huge size_t, and an out-of-domain vertex id blows up the flat-index allocation. Shared
+// by both the combinatorial (CombinatorialCube_ND) and value (Cube_ND) constructors, so
+// neither raw path can reach the unchecked C++ FatCube ctor.
+template<int D, class Domain>
+static void validate_cube_uid(oin_int x, const Domain& g)
+{
+    if (x < 0)
+        throw std::invalid_argument("Cube: uid must be non-negative");
+    if ((x >> OINEUS_MAX_CUBE_DIM) >= g.size())
+        throw std::invalid_argument("Cube: uid out of range for this domain");
+    if ((x & ((oin_int(1) << OINEUS_MAX_CUBE_DIM) - 1)) >> D)
+        throw std::invalid_argument("Cube: uid spans a dimension outside the domain");
+}
+
+template<int D, class Point, class Domain>
+static void validate_cube_anchor(const Point& anchor, const std::vector<oin_int>& spanning_dims, const Domain& g)
+{
+    if (not g.contains(anchor))
+        throw std::invalid_argument("Cube: anchor_vertex is outside the domain");
+    for (oin_int d : spanning_dims)
+        if (d < 0 or d >= D)
+            throw std::invalid_argument("Cube: spanning_dims must be in [0, ambient dim)");
+    std::vector<oin_int> sd(spanning_dims);
+    std::sort(sd.begin(), sd.end());
+    if (std::adjacent_find(sd.begin(), sd.end()) != sd.end())
+        throw std::invalid_argument("Cube: spanning_dims must be distinct");
+}
+
 // Registered per Real (double on the top module, float32 in _f32). `using oin_real =
 // Real` shadows the global alias so the body stays Real-generic. The Real-INDEPENDENT
 // classes here (CombinatorialSimplex / CombinatorialProdSimplex / GridDomain /
@@ -47,10 +101,24 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
 
     if (reg_indep)
     nb::class_<Simplex>(m, pure_simplex_class_name.c_str())
-        .def(nb::init<const Simplex::IdxVector&>(), nb::arg("vertices"))
-        .def(nb::init<oin_int, const Simplex::IdxVector&>(), nb::arg("id"), nb::arg("vertices"))
+        .def("__init__", [](Simplex* p, const Simplex::IdxVector& vs) {
+                validate_simplex_vertices(vs);
+                new (p) Simplex(vs);
+            }, nb::arg("vertices"))
+        .def("__init__", [](Simplex* p, oin_int id, const Simplex::IdxVector& vs) {
+                validate_simplex_vertices(vs);
+                new (p) Simplex(id, vs);
+            }, nb::arg("id"), nb::arg("vertices"))
         .def("__iter__", [](Simplex& sigma) { return nb::make_iterator(nb::type<Simplex>(), "vertices_iterator", sigma.get_vertices().begin(), sigma.get_vertices().end()); }, nb::keep_alive<0, 1>())
-        .def("__getitem__", [](Simplex& sigma, size_t i) { return sigma.get_vertices()[i]; })
+        .def("__getitem__", [](Simplex& sigma, Py_ssize_t i) {
+                const auto& vs = sigma.get_vertices();
+                Py_ssize_t n = static_cast<Py_ssize_t>(vs.size());
+                if (i < 0)
+                    i += n;
+                if (i < 0 or i >= n)
+                    throw std::out_of_range("Simplex vertex index out of range");
+                return vs[i];
+            })
         .def_prop_rw("id", &Simplex::get_id, &Simplex::set_id)
         // get_vertices / boundary are SFINAE-gated member templates on Simplex<Int,Enc>
         // (Fat-only), so they are bound via lambdas rather than &Simplex::method pointers.
@@ -80,7 +148,11 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
 
     if (reg_indep)
     nb::class_<ProdSimplex>(m, pure_prod_simplex_class_name.c_str())
-        .def(nb::init<const Simplex::IdxVector&, const Simplex::IdxVector&>(), nb::arg("vertices_1"), nb::arg("vertices_2"))
+        .def("__init__", [](ProdSimplex* p, const Simplex::IdxVector& vertices_1, const Simplex::IdxVector& vertices_2) {
+                validate_simplex_vertices(vertices_1);
+                validate_simplex_vertices(vertices_2);
+                new (p) ProdSimplex(Simplex(vertices_1), Simplex(vertices_2));
+            }, nb::arg("vertices_1"), nb::arg("vertices_2"))
         .def_prop_rw("id", &ProdSimplex::get_id, &ProdSimplex::set_id)
         .def_prop_ro("factor_1", &ProdSimplex::get_factor_1)
         .def_prop_ro("factor_2", &ProdSimplex::get_factor_2)
@@ -104,14 +176,24 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
         });
 
     nb::class_<SimplexValue>(m, simplex_class_name.c_str())
-            .def(nb::init<const Simplex::IdxVector&, oin_real>(),
-                    nb::arg("vertices"),
-                    nb::arg("value")=0.0)
+            .def("__init__", [](SimplexValue* p, const Simplex::IdxVector& vs, oin_real value) {
+                    validate_simplex_vertices(vs);
+                    new (p) SimplexValue(Simplex(vs), value);
+                }, nb::arg("vertices"), nb::arg("value")=0.0)
             .def("__init__", [](SimplexValue * p, oin_int id, const Simplex::IdxVector& vs, oin_real value) {
+                    validate_simplex_vertices(vs);
                     new (p) SimplexValue(Simplex(id, vs), value);
                 }, nb::arg("id"), nb::arg("vertices"), nb::arg("value"))
             .def("__iter__", [](SimplexValue& sigma) { return nb::make_iterator(nb::type<SimplexValue>(), "vertex_iterator", sigma.cell_.get_vertices().begin(), sigma.cell_.get_vertices().end()); }, nb::keep_alive<0, 1>())
-            .def("__getitem__", [](SimplexValue& sigma, size_t i) { return sigma.cell_.get_vertices()[i]; })
+            .def("__getitem__", [](SimplexValue& sigma, Py_ssize_t i) {
+                    const auto& vs = sigma.cell_.get_vertices();
+                    Py_ssize_t n = static_cast<Py_ssize_t>(vs.size());
+                    if (i < 0)
+                        i += n;
+                    if (i < 0 or i >= n)
+                        throw std::out_of_range("Simplex vertex index out of range");
+                    return vs[i];
+                })
             .def_prop_rw("id", &SimplexValue::get_id, &SimplexValue::set_id)
             .def_rw("sorted_id", &SimplexValue::sorted_id_)
             .def_prop_ro("vertices", &SimplexValue::template get_vertices<Simplex>, "simplex vertices")
@@ -145,6 +227,8 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
 
     nb::class_<ProdSimplexValue>(m, prod_simplex_class_name.c_str())
              .def("__init__", [](ProdSimplexValue* p, const Simplex::IdxVector& vertices_1, const Simplex::IdxVector& vertices_2, oin_real value) {
+                      validate_simplex_vertices(vertices_1);
+                      validate_simplex_vertices(vertices_2);
                       new (p) ProdSimplexValue(ProdSimplex(Simplex(vertices_1), Simplex(vertices_2)), value);
                     },
                     nb::arg("vertices_1"),
@@ -304,10 +388,13 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
         using Cube_##DIM##DStateTuple = std::tuple<oin_int, oin_int, GridDomain_##DIM##D>; \
         nb::class_<Cube_##DIM##D>(m, "CombinatorialCube_" #DIM "D") \
             .def("__init__", [](Cube_##DIM##D * p, const GridDomain_##DIM##D& g, oin_int x) { \
+                    validate_cube_uid<DIM>(x, g); \
                     new (p) Cube_##DIM##D(x, g); \
                 }, nb::arg("domain"), nb::arg("x")) \
-            .def(nb::init<const Cube_##DIM##D::Point&, const std::vector<oin_int>&, const GridDomain_##DIM##D&>(), \
-                 nb::arg("anchor_vertex"), nb::arg("spanning_dims"), nb::arg("domain")) \
+            .def("__init__", [](Cube_##DIM##D * p, const Cube_##DIM##D::Point& anchor, const std::vector<oin_int>& spanning_dims, const GridDomain_##DIM##D& g) { \
+                    validate_cube_anchor<DIM>(anchor, spanning_dims, g); \
+                    new (p) Cube_##DIM##D(anchor, spanning_dims, g); \
+                }, nb::arg("anchor_vertex"), nb::arg("spanning_dims"), nb::arg("domain")) \
             .def_prop_ro("dim", &Cube_##DIM##D::dim) \
             .def_prop_ro("uid", &Cube_##DIM##D::get_uid, "Get UID of a cube") \
             .def_prop_ro("vertices", &Cube_##DIM##D::get_vertices, "Get all vertices of a cube") \
@@ -345,9 +432,11 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
                                                  >; \
         nb::class_<CubeValue_##DIM##D>(m, "Cube_" #DIM "D") \
             .def("__init__", [](CubeValue_##DIM##D * p, const GridDomain_##DIM##D& g, oin_int x, oin_real value) { \
+                    validate_cube_uid<DIM>(x, g); \
                     new (p) CubeValue_##DIM##D(Cube_##DIM##D(x, g), value); \
                 }, nb::arg("domain"), nb::arg("x"), nb::arg("value")) \
             .def("__init__", [](CubeValue_##DIM##D * p, const typename Cube_##DIM##D::Point& anchor, const std::vector<oin_int>& spanning_dims, const GridDomain_##DIM##D& domain, oin_real value) { \
+                    validate_cube_anchor<DIM>(anchor, spanning_dims, domain); \
                     new (p) CubeValue_##DIM##D(Cube_##DIM##D(anchor, spanning_dims, domain), value); \
                 }, nb::arg("anchor_vertex"), nb::arg("spanning_dims"), nb::arg("domain"), nb::arg("value")) \
             .def_prop_ro("dim", &CubeValue_##DIM##D::dim) \

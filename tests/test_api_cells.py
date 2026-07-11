@@ -1,6 +1,7 @@
 import pickle
 
 import numpy as np
+import pytest
 import oineus as oin
 from oineus._dtype import REAL_DTYPE
 
@@ -307,3 +308,77 @@ def test_cube_3d_api():
 
     cube_back = pickle.loads(pickle.dumps(cube))
     assert cube_back == cube
+
+
+# ---- constructor / indexing validation at the Python trust boundary ----
+# Invalid cells used to be accepted silently: negative/duplicate simplex vertices
+# collided on the same uid, and a negative cube uid segfaulted Python when the
+# filtration wrote it through the dense uid->sorted_id index.
+
+@pytest.mark.parametrize("cls", [oin.Simplex, oin.CombinatorialSimplex])
+@pytest.mark.parametrize("bad", [[-1], [0, 0], [1, 1, 2], []])
+def test_simplex_constructor_rejects_invalid_vertices(cls, bad):
+    with pytest.raises(ValueError):
+        cls(bad)
+
+
+def test_simplex_getitem_bounds_and_negative_index():
+    s = oin.Simplex([3, 5, 7])
+    assert s[0] == 3
+    assert s[-1] == 7
+    assert s[-3] == 3
+    with pytest.raises(IndexError):
+        _ = s[3]
+    with pytest.raises(IndexError):
+        _ = s[-4]
+
+    cs = oin.CombinatorialSimplex([3, 5, 7])
+    assert cs[-1] == 7
+    with pytest.raises(IndexError):
+        _ = cs[3]
+
+
+@pytest.mark.parametrize("make_cube", [
+    lambda d, x: oin.Cube_1D(d, x, 0.0),
+    lambda d, x: oin.CombinatorialCube_1D(d, x),
+])
+@pytest.mark.parametrize("bad_uid", [-1, 10_000_000])
+def test_cube_constructor_rejects_invalid_uid(make_cube, bad_uid):
+    dom = oin.GridDomain_1D(4)
+    with pytest.raises(ValueError):
+        make_cube(dom, bad_uid)
+
+
+def test_valid_cube_still_builds_filtration():
+    d = oin.GridDomain_1D(4)
+    c0 = oin.Cube_1D(d, 0, 0.0)
+    fil = oin.Filtration([c0])
+    assert fil.size() == 1
+
+
+def test_cube_anchor_spanning_constructor_validation():
+    dom = oin.GridDomain_2D(3, 3)
+    # valid anchor + spanning dims still works
+    ok = oin.Cube_2D(anchor_vertex=[0, 0], spanning_dims=[0, 1], domain=dom, value=1.0)
+    assert ok.dim == 2
+    # anchor outside the domain
+    with pytest.raises(ValueError):
+        oin.Cube_2D(anchor_vertex=[3, 0], spanning_dims=[0], domain=dom, value=0.0)
+    # spanning dimension outside [0, ambient dim)
+    with pytest.raises(ValueError):
+        oin.Cube_2D(anchor_vertex=[0, 0], spanning_dims=[2], domain=dom, value=0.0)
+    # duplicate spanning dimension
+    with pytest.raises(ValueError):
+        oin.Cube_2D(anchor_vertex=[0, 0], spanning_dims=[0, 0], domain=dom, value=0.0)
+
+
+def test_prod_simplex_constructor_validation():
+    # product cells validate both vertex lists at the same trust boundary
+    with pytest.raises(ValueError):
+        oin.CombinatorialProdSimplex([0, 0], [1])
+    with pytest.raises(ValueError):
+        oin.CombinatorialProdSimplex([0], [-1])
+    with pytest.raises(ValueError):
+        oin.ProdSimplex([0, 0], [1], 0.0)
+    with pytest.raises(ValueError):
+        oin.ProdSimplex([0], [-1], 0.0)
