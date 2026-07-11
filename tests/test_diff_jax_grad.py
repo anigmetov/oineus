@@ -267,10 +267,13 @@ def test_crit_sets_backward_runs_all_directions():
         assert (g ** 2).sum() > 0.0, direction
 
 
-def test_crit_sets_backward_detects_filtration_mutation():
-    """The crit-sets backward re-reduces from the live under_fil; mutating
-    the filtration between forward and backward must raise, not silently
-    produce cotangents for the wrong pairing."""
+def test_crit_sets_backward_pure_under_order_preserving_mutation():
+    """The crit-sets backward restores the forward's values onto under_fil before
+    re-reducing, so an order-preserving set_values (2v+10) between forward and
+    backward -- which leaves the sorted order, and hence the index diagram, intact
+    and so slips past the structural guard -- no longer corrupts the cotangents:
+    the gradient matches the un-mutated one. (2v+10 preserves the filtration
+    property, so the mutated filtration is still valid.)"""
     rng = np.random.default_rng(42)
     angles = np.linspace(0, 2 * np.pi, 20, endpoint=False)
     pts_np = np.stack([np.cos(angles) + rng.normal(0, 0.1, 20),
@@ -284,11 +287,17 @@ def test_crit_sets_backward_detects_filtration_mutation():
         d1 = od.persistence_diagram(fil, gradient_method="crit-sets").in_dimension(1)
         return ((d1[:, 1] - d1[:, 0]) ** 2).sum()
 
-    y, vjp_fn = jax.vjp(f, jnp.asarray(pts_np))
+    # baseline: backward with no mutation between forward and backward
+    y0, vjp0 = jax.vjp(f, jnp.asarray(pts_np))
+    g_clean = np.asarray(vjp0(jnp.ones_like(y0))[0])
+    assert np.isfinite(g_clean).all() and (g_clean ** 2).sum() > 0.0
 
+    # order-preserving mutation at the seam -> tolerated, gradient reproduces g_clean
+    y1, vjp1 = jax.vjp(f, jnp.asarray(pts_np))
     under_fil = holder["under_fil"]
-    new_vals = rng.uniform(0.0, 1.0, size=under_fil.size())
-    under_fil.set_values(np.ascontiguousarray(new_vals))
+    orig = np.array([c.value for c in under_fil.cells()], dtype=np.float64)
+    under_fil.set_values(np.ascontiguousarray(2.0 * orig + 10.0))
+    g_mut = np.asarray(vjp1(jnp.ones_like(y1))[0])
 
-    with pytest.raises(RuntimeError, match="modified between forward and backward"):
-        vjp_fn(jnp.ones_like(y))
+    assert np.isfinite(g_mut).all()
+    assert np.allclose(g_clean, g_mut, atol=1e-6)

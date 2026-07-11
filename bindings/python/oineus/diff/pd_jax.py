@@ -11,10 +11,12 @@ Two paths over the framework-neutral pd_core:
   a fresh TopologyOptimizer -- pure (no live C++ state crosses the
   forward/backward seam; the residual is just the values array) at the
   cost of a second reduction per backward, acceptable given crit-sets'
-  far lower step count. The re-reduce reads the live under_fil, so the
-  filtration must not be mutated (set_values) between forward and
-  backward; the backward compares the re-derived index diagrams against
-  the forward's and raises RuntimeError on mismatch.
+  far lower step count. The re-reduce restores the saved forward values onto
+  under_fil before rebuilding, so a set_values() of new values between forward
+  and backward is tolerated (harmlessly overwritten). A structural change to
+  the filtration (different cells, not just their values) still cannot be
+  repaired -- the backward compares the re-derived index diagram against the
+  forward's and raises RuntimeError on mismatch.
 
 oineus.diff is an eager boundary: diagram sizes are data-dependent, so
 these calls cannot sit inside jax.jit / jax.vmap. Use them inside the
@@ -31,6 +33,7 @@ import jax
 import jax.numpy as jnp
 
 from . import pd_core
+from ._tensor_utils import real_buffer_for
 
 
 def _gather(values, index_dgm):
@@ -64,9 +67,15 @@ def jax_diagram(fil_values, fwd, dim):
         if index_dgm.size == 0:
             # empty diagram in this dim: the gradient is zero, skip the re-reduce
             return (jnp.zeros_like(values),)
-        # Pure re-reduce: rebuild the optimizer from the saved values
-        # instead of reusing the (stateful) one from the eager forward.
+        # Pure re-reduce: rebuild the optimizer from the saved forward values
+        # instead of reusing the (stateful) one from the eager forward. The
+        # reduction reads under_fil's live values, so restore them to the forward's
+        # first -- otherwise a set_values() between forward and backward (even an
+        # order-preserving one, which leaves the index diagram unchanged and so
+        # slips past the guard below) would desync the rebuilt optimizer from the
+        # saved values_np and yield wrong cotangents.
         values_np = np.asarray(values)
+        under_fil.set_values(real_buffer_for(under_fil, values_np))
         re_fwd = pd_core.pd_forward(
             under_fil, values_np,
             dualize=fwd.dualize,
@@ -78,17 +87,18 @@ def jax_diagram(fil_values, fwd, dim):
             step_size=fwd.step_size,
             max_dim=fwd.max_dim,
         )
-        # The re-reduce reads the live under_fil; if it was mutated after the
-        # forward, the pairing silently changes and the cotangents would be
-        # garbage. The index diagram is canonical for a filtration, so any
-        # mismatch against the forward's is proof of mutation.
+        # Sanity check: with the values restored above, the re-derived index
+        # diagram must match the forward's. A remaining mismatch means the
+        # filtration's structure (its cells, not just their values) changed
+        # between forward and backward -- which set_values cannot repair -- so the
+        # cotangents would be garbage.
         for d, fwd_dgm in fwd.index_dgm.items():
             if not np.array_equal(re_fwd.index_dgm[d], fwd_dgm):
                 raise RuntimeError(
-                    "crit-sets backward: the filtration was modified between "
-                    "forward and backward (re-derived index diagram differs "
-                    "in dimension {}); do not call set_values on the "
-                    "underlying filtration before backward runs".format(d))
+                    "crit-sets backward: the underlying filtration's structure "
+                    "changed between forward and backward (re-derived index "
+                    "diagram differs in dimension {}); rebuild the diagram after "
+                    "modifying the filtration".format(d))
         grad_np = pd_core.pd_backward(
             re_fwd, dim, np.asarray(grad_output, dtype=values_np.dtype))
         return (jnp.asarray(grad_np),)
