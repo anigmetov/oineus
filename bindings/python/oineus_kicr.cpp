@@ -1,15 +1,18 @@
 #include "oineus_persistence_bindings.h"
 
-// Copy a size_t vector into a fresh numpy array (owning capsule). Used for
-// sorted_L_to_sorted_K, which spans every cell of L: a Python list would box
-// one PyLong per cell and defeat the bulk-gather the mixup matching relies on.
-static nb::ndarray<size_t, nb::numpy> size_t_vector_to_numpy(const std::vector<size_t>& v)
+// Copy a size_t vector into a fresh int64 numpy array (owning capsule). Used for
+// sorted_L_to_sorted_K, which spans every cell of L: a Python list would box one
+// PyLong per cell and defeat the bulk-gather the mixup matching relies on. We emit
+// int64 (not size_t) because the sole caller immediately does
+// np.asarray(..., dtype=np.int64); matching the dtype here makes that a no-op
+// instead of a second full N-element copy. sorted_ids are always < 2^63.
+static nb::ndarray<int64_t, nb::numpy> size_t_vector_to_numpy(const std::vector<size_t>& v)
 {
     size_t n = v.size();
-    size_t* ptr = new size_t[n];
+    int64_t* ptr = new int64_t[n];
     std::copy(v.begin(), v.end(), ptr);
-    nb::capsule owner(ptr, [](void* p) noexcept { delete[] reinterpret_cast<size_t*>(p); });
-    return nb::ndarray<size_t, nb::numpy>(ptr, {n}, owner);
+    nb::capsule owner(ptr, [](void* p) noexcept { delete[] reinterpret_cast<int64_t*>(p); });
+    return nb::ndarray<int64_t, nb::numpy>(ptr, {n}, owner);
 }
 
 template<class KerImCokReduced>

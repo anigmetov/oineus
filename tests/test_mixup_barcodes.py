@@ -505,5 +505,16 @@ def test_n_threads_agree():
         assert_rows_equal(mb1.essential_in_dimension(dim), mb4.essential_in_dimension(dim))
 
 
+def test_sorted_l_to_sorted_k_is_int64_zero_copy():
+    # the getter returns int64 (not size_t) so the mixup np.asarray(dtype=int64)
+    # is a no-op rather than a second full N-element copy of L's cell map.
+    fil_2 = oin.list_to_filtration([(0, [0], 0.0), (1, [1], 0.0), (2, [0, 1], 1.0)])
+    fil_3 = oin.list_to_filtration([(0, [0], 0.0), (1, [1], 0.5), (2, [0, 1], 2.0)])
+    kicr = oin.compute_ker_cok_reduction_cyl(fil_2, fil_3)
+    a = np.asarray(kicr.sorted_L_to_sorted_K())
+    assert a.dtype == np.int64
+    assert np.shares_memory(a, np.asarray(a, dtype=np.int64))
+
+
 if __name__ == "__main__":
     pytest.main(["-v", __file__])
