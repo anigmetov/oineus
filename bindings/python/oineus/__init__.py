@@ -6,7 +6,6 @@ import copy
 import typing
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
-import scipy.sparse
 
 from . import _oineus
 
@@ -1261,6 +1260,7 @@ def frechet_mean(diagrams,
 
 
 def to_scipy_matrix(sparse_cols, shape=None):
+    import scipy.sparse  # local: keep scipy off the `import oineus` path
     if shape is None:
         shape = (len(sparse_cols), len(sparse_cols))
     row_ind = [j for i in range(len(sparse_cols)) for j in sparse_cols[i]]

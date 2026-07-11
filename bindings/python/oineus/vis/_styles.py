@@ -18,8 +18,6 @@ that an "edgecolors='white'" default produces on a white background.
 """
 from __future__ import annotations
 
-from matplotlib.colors import to_rgb
-
 
 # ---------------------------------------------------------------------------
 # Okabe-Ito palette (Wong, Nature Methods 2011)
@@ -42,7 +40,12 @@ def _darken(color, amount: float = 0.55) -> tuple:
     a halo darker than the fill, so dense clusters fill in solidly and
     isolated outliers still get a visible boundary.
     """
-    r, g, b = to_rgb(color)
+    # parse a "#RRGGBB" hex string to (r, g, b) floats in [0, 1]. Inputs are the
+    # Okabe-Ito palette (all 6-digit hex), so this avoids importing
+    # matplotlib.colors at module load -- pulling in matplotlib triggers its
+    # slow, noisy font-cache build on `import oineus`.
+    s = color.lstrip("#")
+    r, g, b = (int(s[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
     return (r * amount, g * amount, b * amount)
 
 

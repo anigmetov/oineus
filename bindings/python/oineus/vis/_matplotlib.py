@@ -11,18 +11,25 @@ import warnings
 
 import numpy as np
 
-try:
-    import matplotlib.pyplot as plt
-    from matplotlib.collections import LineCollection, PolyCollection
-    _HAS_MATPLOTLIB = True
-except Exception:
-    _HAS_MATPLOTLIB = False
+import importlib.util as _importlib_util
 
-try:
-    import mpl_scatter_density  # noqa: F401
-    _HAS_MPL_SCATTER_DENSITY = True
-except Exception:
-    _HAS_MPL_SCATTER_DENSITY = False
+# Defer the real matplotlib import: pyplot's font-cache build is slow and noisy,
+# and `import oineus` pulls this module in eagerly (for the plot_* names and style
+# constants). find_spec only checks availability -- it does not import the package
+# -- so the cost is paid lazily, inside a plot_* call, via _mpl_pyplot() /
+# _mpl_collections().
+_HAS_MATPLOTLIB = _importlib_util.find_spec("matplotlib") is not None
+_HAS_MPL_SCATTER_DENSITY = _importlib_util.find_spec("mpl_scatter_density") is not None
+
+
+def _mpl_pyplot():
+    import matplotlib.pyplot as plt
+    return plt
+
+
+def _mpl_collections():
+    from matplotlib.collections import LineCollection, PolyCollection
+    return LineCollection, PolyCollection
 
 from . import _common
 import warnings
@@ -240,6 +247,7 @@ def plot_diagram(
     """
     if not _HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plot_diagram.")
+    plt = _mpl_pyplot()
 
     scatter_only = _resolve_scatter_only(scatter_only, use_density)
 
@@ -609,6 +617,7 @@ def plot_diagram_gradient(
     """
     if not _HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plot_diagram_gradient.")
+    plt = _mpl_pyplot()
 
     # Legacy use_density=False meant "scatter mode, draw an arrow on every
     # finite point" -- no overlay cap. The new scatter_only=True is the
@@ -827,6 +836,8 @@ def plot_matching(
     """
     if not _HAS_MATPLOTLIB:
         raise ImportError("matplotlib is required for plot_matching.")
+    plt = _mpl_pyplot()
+    LineCollection, PolyCollection = _mpl_collections()
 
     scatter_only = _resolve_scatter_only(scatter_only, use_density)
     if pair_filter not in ("either", "both"):
@@ -1408,6 +1419,8 @@ def _render_chain_points_2d(
     *, vertex_style, edge_style, triangle_style,
     point_style, plot_source, title,
 ):
+    plt = _mpl_pyplot()
+    LineCollection, PolyCollection = _mpl_collections()
     if ax is None:
         _, ax = plt.subplots()
 
@@ -1454,6 +1467,7 @@ def _render_chain_points_2d(
 
 
 def _ensure_3d_axes(ax):
+    plt = _mpl_pyplot()
     if ax is None:
         fig = plt.figure()
         return fig.add_subplot(111, projection="3d")
@@ -1525,6 +1539,8 @@ def _render_chain_field_2d(
     *, vertex_style, edge_style, triangle_style,
     field_cmap, plot_source, title,
 ):
+    plt = _mpl_pyplot()
+    LineCollection, PolyCollection = _mpl_collections()
     if ax is None:
         _, ax = plt.subplots()
 
