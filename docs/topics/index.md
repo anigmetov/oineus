@@ -20,6 +20,7 @@ mapping_cylinder
 relative_homology
 performance
 interop
+limitations
 ```
 
 Each page is short and opinionated. If something feels missing, that is
