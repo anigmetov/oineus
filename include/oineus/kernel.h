@@ -272,6 +272,12 @@ public:
         return !(*this == other);
     }
 
+    // Default ctor: leaves everything empty, does NOT reduce. The reducing ctor
+    // below suppresses the implicit default, so declare it explicitly -- pickle's
+    // __setstate__ uses it to fill fields directly instead of re-running the
+    // expensive kernel/image/cokernel reduction only to overwrite the result.
+    KerImCokReduced() = default;
+
     // parameters: complex K, a subcomplex L, reduction params
     KerImCokReduced(const Fil& K, const Fil& L,
                     KICRParams& params)

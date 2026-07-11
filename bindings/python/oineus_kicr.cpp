@@ -52,8 +52,9 @@ void bind_kicr_pickle_and_equality(nb::class_<KerImCokReduced>& cls)
                     self.old_order_to_new_, self.K_to_ker_column_index_, self.params_);
         })
        .def("__setstate__", [](KerImCokReduced& self, const KICRStateTuple& t) {
-            auto params = std::get<19>(t);
-            new (&self) KerImCokReduced(std::get<0>(t), std::get<1>(t), params);
+            // default-construct (no reduction) and fill from the pickled state,
+            // instead of running the full KICR reduction only to overwrite it
+            new (&self) KerImCokReduced();
             self.fil_K_ = std::get<0>(t);
             self.fil_L_ = std::get<1>(t);
             self.dcmp_F_ = std::get<2>(t);
