@@ -393,3 +393,41 @@ def test_grid_repr_is_bounded_and_deterministic():
     assert "data_location=vertices" in r
     # deterministic: no raw pointer address in the repr
     assert repr(g) == repr(oin.Grid_2D(np.zeros((3, 4))))
+
+
+def test_simplex_join_validation():
+    # join() adds a vertex outside the validating constructors, so it must apply
+    # the same checks -- else join(-1) or join(existing) mis-encodes the uid.
+    s = oin.Simplex([0, 1], 0.0)
+    with pytest.raises(ValueError):
+        s.join(-1, 0.0)
+    with pytest.raises(ValueError):
+        s.join(0, 0.0)                       # already present -> duplicate
+    assert list(s.join(2, 0.5).vertices) == [0, 1, 2]
+
+    cs = oin.CombinatorialSimplex([0, 1])
+    with pytest.raises(ValueError):
+        cs.join(-1)
+    with pytest.raises(ValueError):
+        cs.join(1)
+
+
+@pytest.mark.parametrize("cls", [oin.Simplex, oin.CombinatorialSimplex])
+def test_simplex_dimension_limit(cls):
+    # the uid packs n_vertices+1 into 4 bits -> at most 14 vertices (dim 13);
+    # range(14) and range(30) would otherwise collide on the same uid.
+    _ = cls(list(range(14)))                 # dim 13, ok
+    with pytest.raises(ValueError):
+        cls(list(range(15)))                 # dim 14, would collide
+
+
+def test_cube_opposite_corner_validation():
+    d = oin.GridDomain_1D(4)                  # vertices 0..3
+    # an edge (spans dim 0) anchored at the last vertex has its far corner at
+    # vertex 4, outside the domain -> malformed boundary
+    with pytest.raises(ValueError):
+        oin.Cube_1D(anchor_vertex=[3], spanning_dims=[0], domain=d, value=0.0)
+    with pytest.raises(ValueError):
+        oin.CombinatorialCube_1D(d, (3 << 4) | 1)   # same cube via uid
+    # anchored one step in, it fits
+    _ = oin.Cube_1D(anchor_vertex=[2], spanning_dims=[0], domain=d, value=0.0)

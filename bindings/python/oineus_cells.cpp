@@ -15,6 +15,13 @@ static void validate_simplex_vertices(const oin::Simplex<oin_int>::IdxVector& vs
 {
     if (vs.empty())
         throw std::invalid_argument("Simplex: vertex list must be non-empty");
+    // the combinatorial uid (simplex.h:simplex_uid) packs n_vertices+1 into the top
+    // 4 bits of the 128-bit uid, so it can only distinguish up to 15 -> at most 14
+    // vertices (dimension 13). Beyond that the field wraps and uids collide silently
+    // (range(14) == range(30)); reject it rather than corrupt the topology.
+    if (vs.size() > 14)
+        throw std::invalid_argument(
+            "Simplex: at most 14 vertices (dimension 13) are supported by the uid encoding");
     for (oin_int v : vs)
         if (v < 0)
             throw std::invalid_argument("Simplex: vertex indices must be non-negative");
@@ -22,6 +29,22 @@ static void validate_simplex_vertices(const oin::Simplex<oin_int>::IdxVector& vs
     std::sort(sorted_vs.begin(), sorted_vs.end());
     if (std::adjacent_find(sorted_vs.begin(), sorted_vs.end()) != sorted_vs.end())
         throw std::invalid_argument("Simplex: vertex indices must be distinct");
+}
+
+// join() adds one vertex to an existing simplex without going through the
+// validating constructors, so it needs the same trust-boundary checks: the new
+// vertex must be non-negative, not already present (else it collapses to a
+// duplicate and mis-encodes the uid), and must not push the result past the
+// 14-vertex uid limit.
+static void validate_join_vertex(const oin::Simplex<oin_int>::IdxVector& vs, oin_int new_vertex)
+{
+    if (new_vertex < 0)
+        throw std::invalid_argument("Simplex.join: new vertex must be non-negative");
+    for (oin_int v : vs)
+        if (v == new_vertex)
+            throw std::invalid_argument("Simplex.join: new vertex is already present (would duplicate)");
+    if (vs.size() + 1 > 14)
+        throw std::invalid_argument("Simplex.join: result exceeds 14 vertices (dimension 13) supported by the uid encoding");
 }
 
 // A cube uid packs (vertex_id << OINEUS_MAX_CUBE_DIM) | face-bits. Reject values the
@@ -36,8 +59,18 @@ static void validate_cube_uid(oin_int x, const Domain& g)
         throw std::invalid_argument("Cube: uid must be non-negative");
     if ((x >> OINEUS_MAX_CUBE_DIM) >= g.size())
         throw std::invalid_argument("Cube: uid out of range for this domain");
-    if ((x & ((oin_int(1) << OINEUS_MAX_CUBE_DIM) - 1)) >> D)
+    const oin_int face_bits = x & ((oin_int(1) << OINEUS_MAX_CUBE_DIM) - 1);
+    if (face_bits >> D)
         throw std::invalid_argument("Cube: uid spans a dimension outside the domain");
+    // opposite corner must be in the domain (non-wrap): decode the anchor from the
+    // vertex part of the uid and check each spanned dim has room.
+    if (not g.wrap()) {
+        auto anchor = g.id_to_point(x >> OINEUS_MAX_CUBE_DIM);
+        auto dims = g.shape();
+        for (int d = 0; d < D; ++d)
+            if (((face_bits >> d) & 1) and anchor[d] + 1 >= dims[d])
+                throw std::invalid_argument("Cube: uid spans past the domain boundary (opposite corner is outside the grid)");
+    }
 }
 
 template<int D, class Point, class Domain>
@@ -52,6 +85,15 @@ static void validate_cube_anchor(const Point& anchor, const std::vector<oin_int>
     std::sort(sd.begin(), sd.end());
     if (std::adjacent_find(sd.begin(), sd.end()) != sd.end())
         throw std::invalid_argument("Cube: spanning_dims must be distinct");
+    // The opposite corner (anchor + one step in each spanned dim) must also be in
+    // the domain, else the cube has a vertex outside the grid and a malformed
+    // boundary. On a wrapped grid the step wraps around and is always valid.
+    if (not g.wrap()) {
+        auto dims = g.shape();
+        for (oin_int d : spanning_dims)
+            if (anchor[d] + 1 >= dims[d])
+                throw std::invalid_argument("Cube: spans past the domain boundary (opposite corner is outside the grid)");
+    }
 }
 
 // Registered per Real (double on the top module, float32 in _f32). `using oin_real =
@@ -127,6 +169,7 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
         .def_prop_ro("dim", &Simplex::dim)
         .def("boundary", [](const Simplex& s) { return s.boundary(); })
         .def("join", [](const Simplex& sigma, oin_int new_vertex, oin_int new_id) {
+                  validate_join_vertex(sigma.get_vertices(), new_vertex);
                   return sigma.join(new_id, new_vertex);
                 },
                 nb::arg("new_vertex"),
@@ -204,6 +247,7 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
             .def_prop_ro("combinatorial_simplex", &SimplexValue::get_cell)
             .def_prop_ro("combinatorial_cell", &SimplexValue::get_cell)
             .def("join", [](const SimplexValue& sigma, oin_int new_vertex, oin_real value, oin_int new_id) {
+                      validate_join_vertex(sigma.cell_.get_vertices(), new_vertex);
                       return sigma.join(new_id, new_vertex, value);
                     },
                     nb::arg("new_vertex"),
