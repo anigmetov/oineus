@@ -615,6 +615,15 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                 ss << self;
                 return ss.str();
             })
+            .def("__str__", [](const Decomposition& self) {
+                std::stringstream ss;
+                ss << self;
+                return ss.str();
+            })
+            .def("to_str_debug", [](const Decomposition& self) {
+                return to_str_debug(self);
+            }, "Full per-entry dump of the stored D, R, V, U matrices. Unbounded -- "
+               "for debugging small decompositions only; repr() shows a bounded summary.")
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def("__getstate__", [](const Decomposition& self) -> DecompositionStateTuple {

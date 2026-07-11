@@ -1185,8 +1185,28 @@ namespace oineus {
     };
 
     template<typename C, typename R>
+    // Concise, bounded summary (the __str__/__repr__ form): size and the
+    // per-dimension index boundaries, never the cells themselves -- a filtration
+    // can hold millions of cells, so dumping them all would hang a REPL/notebook.
+    // For the full per-cell dump use to_str_debug (opt-in) below.
     std::ostream& operator<<(std::ostream& out, const Filtration<C, R>& fil)
     {
+        out << "Filtration(size=" << fil.size() << ", dim_first=[";
+        for(auto x : fil.dims_first())
+            out << x << ",";
+        out << "], dim_last=[";
+        for(auto x : fil.dims_last())
+            out << x << ",";
+        out << "])";
+        return out;
+    }
+
+    // Full per-cell dump grouped by dimension. Unbounded -- for debugging small
+    // filtrations only; the pretty operator<< above omits the cells.
+    template<class C, class R>
+    std::string to_str_debug(const Filtration<C, R>& fil)
+    {
+        std::stringstream out;
         out << "Filtration(size = " << fil.size() << ", " << "\ncells = [";
         dim_type d = 0;
         for(const auto& sigma : fil.cells()) {
@@ -1206,7 +1226,7 @@ namespace oineus {
             out << x << ",";
         out << "]\n";
         out << ");";
-        return out;
+        return out.str();
     }
 
     template<class C, class R>

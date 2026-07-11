@@ -101,13 +101,17 @@ def test_decomposition_pickle():
     dcmp.reduce(params)
     _assert_roundtrip(dcmp)
 
-    # repr should contain a header line plus the four matrix sections.
+    # repr is a bounded one-line summary -- no per-entry matrix dump (that would
+    # hang a REPL on a million-column decomposition).
     r = repr(dcmp)
-    assert "Decomposition(size=" in r
-    assert "Matrix D[" in r
-    assert "Matrix R[" in r
-    assert "Matrix V[" in r
-    assert "Matrix U[" in r
+    assert "Decomposition(n_rows=" in r
+    assert "Matrix D[" not in r
+    # the full per-entry dump of D, R, V, U is opt-in via to_str_debug.
+    d = dcmp.to_str_debug()
+    assert "Matrix D[" in d
+    assert "Matrix R[" in d
+    assert "Matrix V[" in d
+    assert "Matrix U[" in d
 
 
 def test_decomposition_pickle_preserves_col_repr_and_timings():

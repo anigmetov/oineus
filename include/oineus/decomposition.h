@@ -5013,18 +5013,36 @@ namespace oineus {
                                n_threads, verbose);
     }
 
+    // Concise, bounded summary (the __str__/__repr__ form): dimensions and which
+    // matrices are stored/materialized -- never the entries. A decomposition can
+    // hold millions of columns, so printing them all would hang a REPL/notebook.
+    // For the full per-entry dump use to_str_debug (opt-in) below.
     template<typename Int>
     std::ostream& operator<<(std::ostream& out, const VRUDecomposition<Int>& m)
     {
-        using Traits = SimpleSparseMatrixTraits<Int, 2>;
-        using MatrixData = typename VRUDecomposition<Int>::MatrixData;
-
-        out << "Decomposition(size=" << m.r_data.size()
+        out << "Decomposition(n_rows=" << m.n_rows
             << ", dualize=" << (m.dualize() ? "true" : "false")
             << ", reduced=" << (m.is_reduced ? "true" : "false")
             << ", has_V=" << (m.has_matrix_v() ? "true" : "false")
             << ", has_U=" << (m.has_matrix_u() ? "true" : "false")
-            << ")\n";
+            << "; stored columns D=" << m.d_data.size()
+            << " R=" << m.r_data.size()
+            << " V=" << m.v_data.size()
+            << " U=" << m.u_data_t.size()
+            << ")";
+        return out;
+    }
+
+    // Full per-entry dump of every stored matrix (D, R, V, U). Unbounded -- for
+    // debugging small decompositions only; the pretty operator<< above omits this.
+    template<typename Int>
+    std::string to_str_debug(const VRUDecomposition<Int>& m)
+    {
+        using Traits = SimpleSparseMatrixTraits<Int, 2>;
+        using MatrixData = typename VRUDecomposition<Int>::MatrixData;
+
+        std::stringstream out;
+        out << m << "\n";
 
         auto print_matrix = [&out](const char* tag, const char* line_tag,
                                    const MatrixData& mat) {
@@ -5042,6 +5060,6 @@ namespace oineus {
         print_matrix("V", "Column", m.v_data);
         print_matrix("U", "Row",    m.u_data_t);
 
-        return out;
+        return out.str();
     }
 }

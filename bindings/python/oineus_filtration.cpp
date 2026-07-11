@@ -342,6 +342,9 @@ void register_slim_filtration(nb::module_& m)
         .def(nb::self == nb::self)
         .def(nb::self != nb::self)
         .def("__repr__", [](const Fil& fil) { std::stringstream ss; ss << fil; return ss.str(); })
+        .def("to_str_debug", [](const Fil& fil) { return to_str_debug(fil); },
+             "Full per-cell dump grouped by dimension. Unbounded -- for debugging "
+             "small filtrations only; repr() shows a bounded summary.")
         .def_prop_rw("kind", &Fil::kind, &Fil::set_kind,
             "FiltrationKind tag set by the constructor that built this filtration (or User for hand-built ones).")
         .def("__getstate__", [](const Fil& fil) -> StateTuple { return T::getstate(fil); })
@@ -535,6 +538,9 @@ void register_oineus_filtration(nb::module_& m, bool reg_indep)
               ss << fil;
               return ss.str();
             })
+            .def("to_str_debug", [](const Filtration& fil) { return to_str_debug(fil); },
+                 "Full per-cell dump grouped by dimension. Unbounded -- for debugging "
+                 "small filtrations only; repr() shows a bounded summary.")
             .def_prop_rw("kind", &Filtration::kind, &Filtration::set_kind,
                 "FiltrationKind tag set by the constructor that built this filtration "
                 "(or User for hand-built ones).")
@@ -824,6 +830,9 @@ void register_oineus_filtration(nb::module_& m, bool reg_indep)
               ss << fil;
               return ss.str();
             })
+            .def("to_str_debug", [](const ProdFiltration& fil) { return to_str_debug(fil); },
+                 "Full per-cell dump grouped by dimension. Unbounded -- for debugging "
+                 "small filtrations only; repr() shows a bounded summary.")
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def_prop_rw("kind", &ProdFiltration::kind, &ProdFiltration::set_kind,
