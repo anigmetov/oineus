@@ -99,7 +99,7 @@ public:
     VRUDecomp dcmp_im_;  //reduced image triple
     VRUDecomp dcmp_ker_; //reduced kernel triple
     VRUDecomp dcmp_cok_; //reduced cokernel triple
-    int max_dim_;        //the maximum dimension of a cell
+    int max_dim_ {-1};   //the maximum dimension of a cell (-1 so the defaulted ctor, used by pickle __setstate__, leaves a valid value rather than an indeterminate int)
     Dgms dom_diagrams_;  // diagrams of the included complex L
     Dgms cod_diagrams_;  // diagrams of the ambient complex K
     Dgms ker_diagrams_;  // kernel diagrams (essentially, map dim -> vector of DgmPoints)
