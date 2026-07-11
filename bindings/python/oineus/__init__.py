@@ -97,7 +97,9 @@ class _FiltrationMeta(type):
         return isinstance(obj, _ALL_FILTRATION_TYPES)
 
     def __subclasscheck__(cls, sub):
-        return issubclass(sub, _ALL_FILTRATION_TYPES)
+        # `sub is cls` keeps the relation reflexive: issubclass(Filtration, Filtration)
+        # must be True even though the facade is not itself a concrete C++ type.
+        return sub is cls or issubclass(sub, _ALL_FILTRATION_TYPES)
 
 
 class Filtration(metaclass=_FiltrationMeta):
@@ -118,6 +120,10 @@ class Filtration(metaclass=_FiltrationMeta):
     """
 
     def __new__(cls, cells, *args, **kwargs):
+        if not hasattr(cells, "__getitem__"):
+            # accept generators / iterators, not just sequences: materialize once so
+            # we can both peek cells[0] to dispatch and hand the full list to C++
+            cells = list(cells)
         try:
             first = cells[0]
         except IndexError:
@@ -155,7 +161,8 @@ class _ProdFiltrationMeta(type):
         return isinstance(obj, _PROD_FILTRATION_TYPES)
 
     def __subclasscheck__(cls, sub):
-        return issubclass(sub, _PROD_FILTRATION_TYPES)
+        # `sub is cls` keeps the relation reflexive (see _FiltrationMeta).
+        return sub is cls or issubclass(sub, _PROD_FILTRATION_TYPES)
 
 
 class ProdFiltration(metaclass=_ProdFiltrationMeta):

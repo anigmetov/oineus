@@ -350,5 +350,19 @@ def test_min_filtration_rejects_mismatched_sizes():
         oin.min_filtration(K, L, with_indices=True)
 
 
+def test_filtration_facade_reflexive_subclass_and_generator_input():
+    # the facade metaclasses were non-reflexive: issubclass(Filtration, Filtration)
+    # returned False because the facade is not itself a concrete C++ type.
+    assert issubclass(oin.Filtration, oin.Filtration)
+    assert issubclass(oin.ProdFiltration, oin.ProdFiltration)
+
+    # Filtration(...) accepts a generator, not only an indexable sequence.
+    cells = [oin.Simplex([0], 0.0), oin.Simplex([1], 0.1), oin.Simplex([0, 1], 0.5)]
+    fil_gen = oin.Filtration(c for c in cells)
+    fil_list = oin.Filtration(cells)
+    assert fil_gen.size() == fil_list.size() == 3
+    assert isinstance(fil_gen, oin.Filtration)
+
+
 if __name__ == "__main__":
     test_prod_filtration_api()
