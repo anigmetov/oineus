@@ -202,3 +202,13 @@ def test_distance_array_shape_validation():
 
     with pytest.raises(ValueError):
         _ = oin.wasserstein_distance(good, bad)
+
+
+def test_diagram_point_index_persistence():
+    # index_persistence was mistakenly bound to DgmPoint::persistence (the value
+    # gap) instead of DgmPoint::index_persistence (the sorted-index gap).
+    p = oin.DiagramPoint(0.25, 1.0)
+    p.birth_index = 2
+    p.death_index = 9
+    assert p.index_persistence == 7
+    assert abs(p.persistence - 0.75) < ABS_TOL
