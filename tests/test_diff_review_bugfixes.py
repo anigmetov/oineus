@@ -113,6 +113,27 @@ def test_diff_filtration_delegates_methods_correctly():
     assert df.values is not None
 
 
+def test_diff_filtration_copy_and_pickle_roundtrip():
+    # __getattr__ indexed self.__dict__["under_fil"] directly, so the special-method
+    # probes copy/deepcopy/pickle perform before state restoration raised
+    # KeyError("under_fil") instead of AttributeError -- breaking all three.
+    import copy
+    import pickle
+
+    rng = np.random.default_rng(0)
+    data = torch.tensor(rng.uniform(0, 1, size=(3, 3)).astype(REAL_DTYPE), dtype=TORCH_DTYPE)
+    df = od.freudenthal_filtration(data, max_dim=2)
+
+    df_shallow = copy.copy(df)
+    assert df_shallow.under_fil is df.under_fil
+
+    df_deep = copy.deepcopy(df)
+    assert df_deep.size() == df.size()
+
+    df_pickled = pickle.loads(pickle.dumps(df))
+    assert df_pickled.size() == df.size()
+
+
 # ---------------------------------------------------------------------------
 # Fix #4 -- freudenthal_filtration has working defaults
 # ---------------------------------------------------------------------------
@@ -271,6 +292,29 @@ def test_max_distance_chunked_matches_naive():
         diff = x[:, np.newaxis, :] - x[np.newaxis, :, :]
         naive = 1.00001 * np.sqrt(np.min(np.max(np.sum(diff**2, axis=2), axis=1)))
         assert oin.max_distance(data) == pytest.approx(naive, rel=1e-9)
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_max_distance_rejects_nonfinite(bad):
+    # a non-finite coordinate used to slip through and return inf (min(inf, nan)
+    # then max(inf, 0.0)) instead of failing loudly
+    data = np.ones((5, 2), dtype=np.float64)
+    data[2, 1] = bad
+    with pytest.raises(ValueError):
+        oin.max_distance(data)
+
+
+def test_max_distance_genuinely_multichunk_matches_naive():
+    # n > sqrt(2**24) == 4096 makes chunk = 2**24 // n < n, so the row loop
+    # runs more than once -- the chunked path the small tests never exercised
+    n, d = 4200, 3
+    assert (2 ** 24) // n < n
+    rng = np.random.default_rng(11)
+    x = rng.standard_normal((n, d))
+    # memory-frugal naive: min_i max_j ||x_i - x_j|| without the (n, n, d) temporary
+    row_max = np.array([np.sqrt(np.max(np.sum((x - x[i]) ** 2, axis=1))) for i in range(n)])
+    naive = 1.00001 * row_max.min()
+    assert oin.max_distance(x) == pytest.approx(naive, rel=1e-9)
 
 
 def test_compute_diagrams_vr_rejects_non_2d():

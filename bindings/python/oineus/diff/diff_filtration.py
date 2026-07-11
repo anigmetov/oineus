@@ -16,4 +16,14 @@ class DiffFiltration:
         # Fires only when normal attribute lookup fails on self, so
         # `under_fil` and `values` (set in __init__) still resolve directly.
         # Everything else is delegated to the wrapped filtration.
-        return getattr(self.__dict__["under_fil"], name)
+        #
+        # During unpickling / copy.deepcopy the instance is created via __new__
+        # without __init__, so special-method probes (__setstate__, __deepcopy__,
+        # __reduce_ex__, ...) arrive before under_fil exists. Raise AttributeError
+        # (not the bare KeyError from indexing __dict__) so those protocols fall
+        # back to their defaults instead of crashing.
+        try:
+            under_fil = self.__dict__["under_fil"]
+        except KeyError:
+            raise AttributeError(name)
+        return getattr(under_fil, name)

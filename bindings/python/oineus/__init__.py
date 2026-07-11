@@ -1287,16 +1287,29 @@ def max_distance(data: np.ndarray, from_pwdists: bool=False):
         # ||x||^2 at the data's intrinsic scale, avoiding catastrophic
         # cancellation when the cloud sits far from the origin.
         x = np.asarray(data, dtype=np.float64)
+        # A non-finite coordinate makes the enclosing radius meaningless: the
+        # centering below turns any nan/inf into an all-non-finite array, and the
+        # min(inf, nan) / max(inf, 0.0) reductions below would silently return inf
+        # rather than propagating. Reject it explicitly instead.
+        if not np.all(np.isfinite(x)):
+            raise ValueError("max_distance: data contains non-finite values (nan/inf)")
         x = np.ascontiguousarray(x - x.mean(axis=0))
         n = x.shape[0]
         sq_norms = np.einsum('ij,ij->i', x, x)
-        chunk = max(1, (2 ** 24) // n)  # ~128 MB of float64 per chunk
+        # ~128 MB per (chunk, n) float64 block; the Gram sum builds a few such
+        # temporaries, so peak is a small multiple of that
+        chunk = max(1, (2 ** 24) // n)
         min_of_max = np.inf
         for beg in range(0, n, chunk):
             sq_dists = sq_norms[beg:beg + chunk, np.newaxis] + sq_norms[np.newaxis, :] - 2.0 * (x[beg:beg + chunk] @ x.T)
             min_of_max = min(min_of_max, np.max(sq_dists, axis=1).min())
         # cancellation in the Gram identity can produce tiny negative squares
-        return 1.00001 * np.sqrt(max(min_of_max, 0.0))
+        result = 1.00001 * np.sqrt(max(min_of_max, 0.0))
+        # overflow (||x||^2 exceeds float64 range for extreme-magnitude clouds)
+        # surfaces here as a non-finite result -- fail loudly rather than hand back inf
+        if not np.isfinite(result):
+            raise ValueError("max_distance: computation overflowed; data magnitude is too large")
+        return result
 
 
 def freudenthal_filtration(data: np.ndarray,
