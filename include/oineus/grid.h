@@ -746,7 +746,10 @@ private:
 template<typename Int, typename Real, size_t D>
 std::ostream& operator<<(std::ostream& out, const Grid<Int, Real, D>& g)
 {
-    out << "Grid(" << g.domain_ << ", data_location=" << g.data_location_as_string() << ", data = " << g.data_ << ")";
+    // omit the raw data_ pointer: a bare address is non-deterministic noise in a
+    // repr and says nothing useful; the domain (shape + wrap) and data_location do.
+    // (data_domain_, not the misspelled domain_ the never-instantiated original used.)
+    out << "Grid(" << g.data_domain_ << ", data_location=" << g.data_location_as_string() << ")";
     return out;
 }
 

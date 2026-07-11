@@ -362,6 +362,8 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
                     nb::keep_alive<1, 2>()) \
             /*.def_prop_ro("shape", [](const Grid_##DIM##D& g) { return g.domain().shape(); }) */ \
             .def_prop_ro("data_location", &Grid_##DIM##D::data_location_as_string) \
+            .def("__repr__", [](const Grid_##DIM##D& g) { std::stringstream ss; ss << g; return ss.str(); }) \
+            .def("__str__", [](const Grid_##DIM##D& g) { std::stringstream ss; ss << g; return ss.str(); }) \
             .def("cube_filtration", &Grid_##DIM##D::cube_filtration, \
                   nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1) \
             .def("cube_filtration_and_critical_indices", &Grid_##DIM##D::cube_filtration_and_critical_indices, \

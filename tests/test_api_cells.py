@@ -382,3 +382,14 @@ def test_prod_simplex_constructor_validation():
         oin.ProdSimplex([0, 0], [1], 0.0)
     with pytest.raises(ValueError):
         oin.ProdSimplex([0], [-1], 0.0)
+
+
+def test_grid_repr_is_bounded_and_deterministic():
+    # grids had no repr (default <object at 0x...>); the wired operator<< also
+    # carried a latent domain_ typo that only surfaced once it was instantiated.
+    g = oin.Grid_2D(np.zeros((3, 4)), wrap=False, values_on="vertices")
+    r = repr(g)
+    assert r.startswith("Grid(")
+    assert "data_location=vertices" in r
+    # deterministic: no raw pointer address in the repr
+    assert repr(g) == repr(oin.Grid_2D(np.zeros((3, 4))))
