@@ -208,3 +208,24 @@ def test_csc_exports_raise_when_matrix_absent():
     dcmp3.reduce(oin.ReductionParams(n_threads=1))
     d = dcmp3.d_as_csc()
     assert d.shape == (fil.size(), fil.size())
+
+
+def test_rectangular_csc_export_shape():
+    # 3 rows x 2 cols: col 0 has boundary rows {0, 1}, col 1 has {1, 2}. The CSC
+    # helper used to reverse rows/cols and callers passed the column count as the
+    # row dimension, so this returned (2, 2) instead of (3, 2) (square tests never
+    # caught it). R and D live in the boundary row space (n_rows x n_cols); V is
+    # the column change-of-basis and stays square (n_cols x n_cols).
+    d = [[0, 1], [1, 2]]
+    dcmp = oin.Decomposition(d, 3, False, False)  # (matrix, n_rows, dualize, skip_check)
+    params = oin.ReductionParams()
+    params.compute_v = True
+    dcmp.reduce(params)
+
+    assert dcmp.d_as_csc().shape == (3, 2)
+    assert dcmp.r_as_csc().shape == (3, 2)
+    assert dcmp.v_as_csc().shape == (2, 2)
+
+    # D round-trips to the input boundary (mod 2)
+    dense = (np.asarray(dcmp.d_as_csc().todense()) % 2).astype(int)
+    assert np.array_equal(dense, np.array([[1, 0], [1, 1], [0, 1]]))
