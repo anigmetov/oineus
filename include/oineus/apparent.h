@@ -22,6 +22,8 @@
 #include <functional>
 #include <type_traits>
 #include <ostream>
+#include <chrono>
+#include <future>
 
 #include "common_defs.h"
 #include "interrupt.h"
@@ -240,7 +242,20 @@ detect_apparent_local(const Fil& fil, int n_threads = 1)
                     am.apparent_pivot_of_row[fstar] = static_cast<Int>(c);
                 }
             });
-    executor.run(taskflow).get();
+    // Poll the running taskflow so a Ctrl-C during detection actually cancels it.
+    // The per-1024 flag check inside the lambda only skips in-flight cells; without
+    // cancel() the executor keeps scheduling the remaining ~n cells to completion,
+    // so a pre-set interrupt took essentially as long as a full run. cancel() stops
+    // scheduling new cells (running ones finish, non-preemptive); the orchestrator
+    // then throws once they have drained.
+    tf::Future<void> fut = executor.run(taskflow);
+    while (fut.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready) {
+        if (oineus::interrupted()) {
+            fut.cancel();
+            break;
+        }
+    }
+    fut.get();
     if (oineus::interrupted())
         throw oineus::interrupted_exception{};
 
