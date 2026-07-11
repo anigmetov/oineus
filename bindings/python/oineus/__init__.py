@@ -1278,45 +1278,42 @@ def to_scipy_matrix(sparse_cols, shape=None):
 
 
 def max_distance(data: np.ndarray, from_pwdists: bool=False):
-    # 1.00001 is a small fudge factor so the returned bound is strictly
-    # greater than every pairwise distance even after floating-point
-    # rounding; callers use this as a max_diameter that must enclose all
-    # edges
+    # Returns the ENCLOSING RADIUS min_i max_j d(x_i, x_j) -- the smallest radius
+    # from which one point covers all others -- scaled by 1.00001 so the bound sits
+    # strictly above it after rounding. This is the standard Vietoris-Rips cutoff
+    # (beyond it the complex is a cone, as in Ripser); it is NOT the diameter
+    # max_i max_j d: for three collinear points 0, 1, 2 it is 1, not 2.
     if from_pwdists:
         return 1.00001 * np.min(np.max(data, axis=1))
-    else:
-        if data.ndim != 2 or data.shape[0] < 2:
-            raise ValueError("max_distance: data must be a 2D array with at least 2 rows")
-        # enclosing radius min_i max_j d(x_i, x_j) via the Gram identity
-        # ||x-y||^2 = ||x||^2 + ||y||^2 - 2<x,y>, computed on row chunks so
-        # peak extra memory is O(chunk * n) instead of the (n, n, d) temporary
-        # a broadcasted difference would materialize. Centering first keeps
-        # ||x||^2 at the data's intrinsic scale, avoiding catastrophic
-        # cancellation when the cloud sits far from the origin.
-        x = np.asarray(data, dtype=np.float64)
-        # A non-finite coordinate makes the enclosing radius meaningless: the
-        # centering below turns any nan/inf into an all-non-finite array, and the
-        # min(inf, nan) / max(inf, 0.0) reductions below would silently return inf
-        # rather than propagating. Reject it explicitly instead.
-        if not np.all(np.isfinite(x)):
-            raise ValueError("max_distance: data contains non-finite values (nan/inf)")
-        x = np.ascontiguousarray(x - x.mean(axis=0))
-        n = x.shape[0]
-        sq_norms = np.einsum('ij,ij->i', x, x)
-        # ~128 MB per (chunk, n) float64 block; the Gram sum builds a few such
-        # temporaries, so peak is a small multiple of that
-        chunk = max(1, (2 ** 24) // n)
-        min_of_max = np.inf
-        for beg in range(0, n, chunk):
-            sq_dists = sq_norms[beg:beg + chunk, np.newaxis] + sq_norms[np.newaxis, :] - 2.0 * (x[beg:beg + chunk] @ x.T)
-            min_of_max = min(min_of_max, np.max(sq_dists, axis=1).min())
-        # cancellation in the Gram identity can produce tiny negative squares
-        result = 1.00001 * np.sqrt(max(min_of_max, 0.0))
-        # overflow (||x||^2 exceeds float64 range for extreme-magnitude clouds)
-        # surfaces here as a non-finite result -- fail loudly rather than hand back inf
-        if not np.isfinite(result):
-            raise ValueError("max_distance: computation overflowed; data magnitude is too large")
-        return result
+    if data.ndim != 2 or data.shape[0] < 2:
+        raise ValueError("max_distance: data must be a 2D array with at least 2 rows")
+    x = np.asarray(data, dtype=np.float64)
+    # A non-finite coordinate makes the radius meaningless; reject it rather than
+    # let it propagate to inf/nan downstream.
+    if not np.all(np.isfinite(x)):
+        raise ValueError("max_distance: data contains non-finite values (nan/inf)")
+    x = np.ascontiguousarray(x)
+    n, d = x.shape
+    # Direct pairwise differences, NOT the ||x||^2 + ||y||^2 - 2<x,y> Gram identity:
+    # the Gram form overflows and emits spurious "matmul" RuntimeWarnings on large
+    # or extreme-magnitude data, and loses a constant cloud to catastrophic
+    # cancellation (its true radius is 0). Differences are exact for identical
+    # points, so a constant cloud correctly gives 0. Chunk the rows so the
+    # (chunk, n, d) block stays bounded (~32 MB) instead of the full (n, n, d)
+    # temporary a single broadcast would build.
+    chunk = max(1, (2 ** 22) // (n * max(1, d)))
+    min_of_max = np.inf
+    for beg in range(0, n, chunk):
+        diffs = x[beg:beg + chunk, np.newaxis, :] - x[np.newaxis, :, :]
+        dists = np.sqrt(np.einsum('ijk,ijk->ij', diffs, diffs))
+        min_of_max = min(min_of_max, dists.max(axis=1).min())
+    result = 1.00001 * min_of_max
+    # a constant cloud gives 0 (finite); only genuinely extreme coordinate spread
+    # (> ~1.3e154 in a dimension) overflows diffs**2 to inf -- fail loud rather than
+    # hand back an infinite max_diameter
+    if not np.isfinite(result):
+        raise ValueError("max_distance: coordinate spread overflows float64; rescale the data")
+    return result
 
 
 def freudenthal_filtration(data: np.ndarray,

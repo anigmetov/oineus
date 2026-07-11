@@ -317,6 +317,37 @@ def test_max_distance_genuinely_multichunk_matches_naive():
     assert oin.max_distance(x) == pytest.approx(naive, rel=1e-9)
 
 
+def test_max_distance_constant_cloud_is_zero():
+    # a constant cloud has enclosing radius 0; the old Gram identity lost it to
+    # catastrophic cancellation and (post-guard) raised on extreme magnitudes.
+    assert oin.max_distance(np.zeros((10, 3))) == 0.0
+    assert oin.max_distance(np.full((10, 2), 1e170)) == 0.0
+
+
+def test_max_distance_extreme_spread_raises():
+    # a constant cloud at 1e170 is 0, but a cloud that actually SPANS ~1e170
+    # overflows the squared distance -- fail loud instead of returning inf
+    with pytest.raises(ValueError):
+        oin.max_distance(np.array([[-1e170], [1e170]]))
+
+
+def test_max_distance_is_enclosing_radius_not_diameter():
+    # min_i max_j d, not the diameter: three collinear points 0, 1, 2 -> 1, not 2
+    r = oin.max_distance(np.array([[0.0], [1.0], [2.0]]))
+    assert r == pytest.approx(1.00001, rel=1e-9)
+
+
+def test_max_distance_no_warnings_on_large_data():
+    # the direct-difference path must not emit the spurious "matmul" RuntimeWarnings
+    # the Gram identity produced on ordinary large clouds
+    import warnings
+    rng = np.random.default_rng(3)
+    data = rng.standard_normal((4200, 3))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _ = oin.max_distance(data)
+
+
 def test_compute_diagrams_vr_rejects_non_2d():
     with pytest.raises(ValueError):
         oin.compute_diagrams_vr(np.zeros(5, dtype=REAL_DTYPE))
