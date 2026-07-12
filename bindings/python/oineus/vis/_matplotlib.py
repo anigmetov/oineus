@@ -1203,7 +1203,7 @@ def _resolve_source_kind(filtration, override):
             FK = _oineus.FiltrationKind
             if kind in (FK.Cubical, FK.Freudenthal):
                 return "field"
-            if kind in (FK.Vr, FK.Alpha, FK.WeakAlpha, FK.CechDelaunay):
+            if kind in (FK.Vr, FK.Alpha, FK.WeakAlpha, FK.CechDelaunay, FK.Cech):
                 return "points"
         except (ImportError, AttributeError):
             pass

@@ -93,7 +93,7 @@ def triangle_meb(p0, p1, p2, eps=1e-12):
     return centers, radii_sq
 
 
-def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False):
+def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False, flat_tol=1e-9):
     """
     Compute minimum enclosing ball center and radius squared for tetrahedra.
 
@@ -102,12 +102,20 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False):
     2. A face's MEB (if opposite vertex is inside that MEB)
     3. An edge's MEB (if other two vertices are inside that MEB)
 
+    Handles arbitrary tetrahedra, including the (near-)flat ones that occur
+    in full Cech complexes (the alpha/Delaunay path never produces them):
+    for tets whose volume is below flat_tol relative to their edge lengths
+    the ill-conditioned circumsphere candidate is discarded, which is exact
+    because the MEB of a flat 4-point set is always attained on a face.
+
     torch-only for now: raises ImportError without torch and TypeError for
     non-torch (e.g. jax) inputs.
 
     Args:
         p0, p1, p2, p3: Tensor of shape (n, 3) for n tetrahedra
         eps: Small value for numerical stability
+        flat_tol: Relative flatness threshold; a tet is treated as flat when
+            |6*volume| <= flat_tol * longest_edge**3
 
     Returns:
         centers: Tensor of shape (n, 3) - MEB centers
@@ -134,9 +142,27 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False):
     volume_6 = torch.sum(a * cross_bc, dim=1)
 
     numerator_vec = a_sq * cross_bc + b_sq * cross_ca + c_sq * cross_ab
-    circum_disp = numerator_vec / (2 * volume_6.unsqueeze(1) + eps)
+    # copysign keeps eps from cancelling the denominator when volume_6 < 0.
+    # Finite intermediates are load-bearing: torch backward through the
+    # unselected torch.where/min branches must stay NaN-free.
+    denom = 2 * volume_6 + torch.copysign(torch.full_like(volume_6, eps), volume_6)
+    circum_disp = numerator_vec / denom.unsqueeze(1)
     circum_center = p0 + circum_disp
     circum_radii_sq = torch.sum(circum_disp ** 2, dim=1)
+
+    # Near-flat tets make the circumsphere solve ill-conditioned, and a
+    # degenerate one can even yield a spuriously SMALL radius. The MEB of a
+    # flat 4-point set is always attained by a face candidate below, so
+    # discarding the circumsphere for flat tets is exact. The mask only
+    # selects a branch; it is computed from detached values.
+    with torch.no_grad():
+        e12_sq = torch.sum((p2 - p1) ** 2, dim=1)
+        e13_sq = torch.sum((p3 - p1) ** 2, dim=1)
+        e23_sq = torch.sum((p3 - p2) ** 2, dim=1)
+        scale_sq = torch.max(torch.stack([
+            a_sq.squeeze(1), b_sq.squeeze(1), c_sq.squeeze(1),
+            e12_sq, e13_sq, e23_sq]), dim=0)[0]
+        flat_mask = volume_6.abs() <= flat_tol * scale_sq ** 1.5
 
     # Compute MEB for each of the 4 faces
     face_centers_0, face_radii_sq_0 = triangle_meb(p1, p2, p3, eps)  # opposite to p0
@@ -150,17 +176,26 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False):
     dist_sq_2 = torch.sum((p2 - face_centers_2) ** 2, dim=1)
     dist_sq_3 = torch.sum((p3 - face_centers_3) ** 2, dim=1)
 
-    contains_0 = dist_sq_0 <= face_radii_sq_0 + eps
-    contains_1 = dist_sq_1 <= face_radii_sq_1 + eps
-    contains_2 = dist_sq_2 <= face_radii_sq_2 + eps
-    contains_3 = dist_sq_3 <= face_radii_sq_3 + eps
+    # Relative slack: for a flat tet (circumsphere masked out below) the true
+    # MEB is a face ball whose contains-test compares a vertex lying ON the
+    # ball with its radius -- a 1-ulp failure would leave no candidate at all
+    rel_slack = 4 * torch.finfo(dtype).eps
+    contains_0 = dist_sq_0 <= face_radii_sq_0 * (1 + rel_slack) + eps
+    contains_1 = dist_sq_1 <= face_radii_sq_1 * (1 + rel_slack) + eps
+    contains_2 = dist_sq_2 <= face_radii_sq_2 * (1 + rel_slack) + eps
+    contains_3 = dist_sq_3 <= face_radii_sq_3 * (1 + rel_slack) + eps
 
     # Build candidate radii and centers
     inf_val = torch.tensor(float('inf'), dtype=dtype, device=device)
 
-    # Stack all candidates: circumsphere, 4 faces, 6 edges = 11 candidates
+    # Candidates: circumsphere + the 4 contains-masked face MEBs. This set is
+    # complete: the MEB support is 4 points (circumsphere), 3 points (an acute
+    # face circumball, caught by the contains test), or 2 points (an edge's
+    # diametral ball -- but then every face containing that edge has the same
+    # ball as ITS MEB via the obtuse fallback in triangle_meb, so it already
+    # appears here as a face candidate).
     all_radii_sq = torch.stack([
-        circum_radii_sq,
+        torch.where(flat_mask, inf_val, circum_radii_sq),
         torch.where(contains_0, face_radii_sq_0, inf_val),
         torch.where(contains_1, face_radii_sq_1, inf_val),
         torch.where(contains_2, face_radii_sq_2, inf_val),

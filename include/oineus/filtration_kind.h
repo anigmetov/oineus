@@ -21,6 +21,8 @@ namespace oineus {
         Cubical,
         MinFil,
         MappingCylinder,
+        // appended last: kind_ is pickled by value, keep old codes stable
+        Cech,
     };
 
     inline const char* filtration_kind_name(FiltrationKind k)
@@ -31,6 +33,7 @@ namespace oineus {
             case FiltrationKind::Alpha:           return "alpha";
             case FiltrationKind::WeakAlpha:       return "weak_alpha";
             case FiltrationKind::CechDelaunay:    return "cech_delaunay";
+            case FiltrationKind::Cech:            return "cech";
             case FiltrationKind::Freudenthal:     return "freudenthal";
             case FiltrationKind::Cubical:         return "cubical";
             case FiltrationKind::MinFil:          return "min_filtration";
