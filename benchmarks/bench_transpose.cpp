@@ -100,6 +100,72 @@ static void bench_matrix(const char* matrix_name, const char* side, const char* 
     }
 }
 
+// Anti-transpose via the bucket transpose plus a parallel per-column
+// reverse-complement remap: antitranspose(a)[j] = { n-1-k : k in
+// transpose(a)[n-1-j] } in ascending order. The remap is one extra
+// sequential O(nnz) pass, so this is an UPPER bound on a native
+// reverse-indexed bucket anti-transpose.
+static MatrixData antitranspose_bucket_emulated(const MatrixData& a, size_t n, int threads)
+{
+    auto t = ST::col_to_row_format_bucket(a, threads, 0, a.size(), static_cast<Int>(n));
+    t.resize(n);
+    MatrixData result(n);
+    const size_t nw = threads > 0 ? static_cast<size_t>(threads) : 1;
+    std::vector<std::thread> ws;
+    ws.reserve(nw);
+    for (size_t w = 0; w < nw; ++w) {
+        ws.emplace_back([&, w]() {
+            for (size_t j = w; j < n; j += nw) {
+                const auto& src = t[n - 1 - j];
+                auto& dst = result[j];
+                dst.resize(src.size());
+                for (size_t p = 0; p < src.size(); ++p)
+                    dst[p] = static_cast<Int>(n - 1 - static_cast<size_t>(src[src.size() - 1 - p]));
+            }
+        });
+    }
+    for (auto& t_ : ws) t_.join();
+    return result;
+}
+
+static void bench_antitranspose(const std::string& matrix_name, const MatrixData& bdry,
+                                size_t n, const std::vector<int>& thread_counts, int reps)
+{
+    size_t nnz = 0;
+    for (const auto& col : bdry)
+        nnz += col.size();
+    std::fprintf(stderr, "# %s_D antitranspose cols=%zu nnz=%zu\n", matrix_name.c_str(), n, nnz);
+
+    // one-time correctness check of the emulation against production
+    {
+        auto prod = oineus::antitranspose(bdry, n, 8);
+        auto emu = antitranspose_bucket_emulated(bdry, n, 8);
+        if (prod != emu) {
+            std::fprintf(stderr, "FATAL: bucket-emulated antitranspose differs from production\n");
+            std::exit(2);
+        }
+    }
+    for (int threads : thread_counts) {
+        const double t_prod = median_of([&] {
+            Timer t;
+            auto r = oineus::antitranspose(bdry, n, threads);
+            double el = t.elapsed();
+            (void)r;
+            return el;
+        }, reps);
+        std::printf("%s_D,both,antitrans,-1,%d,%.6f\n", matrix_name.c_str(), threads, t_prod);
+        const double t_emu = median_of([&] {
+            Timer t;
+            auto r = antitranspose_bucket_emulated(bdry, n, threads);
+            double el = t.elapsed();
+            (void)r;
+            return el;
+        }, reps);
+        std::printf("%s_D,both,antitrans_bucket,-1,%d,%.6f\n", matrix_name.c_str(), threads, t_emu);
+        std::fflush(stdout);
+    }
+}
+
 static Fil load_filtration(const char* path)
 {
     std::FILE* f = std::fopen(path, "rb");
@@ -193,6 +259,15 @@ int main(int argc, char** argv)
     std::fprintf(stderr, "# %s: %ld cells, max_dim %d, mode %s\n",
             matrix_name.c_str(), static_cast<long>(fil->size()), int(fil->max_dim()), mode.c_str());
 
+    // production pattern 3: anti-transpose of the boundary matrix D (the
+    // cohomology path when no direct coboundary is available, e.g. alpha).
+    // Compared against a bucket-transpose emulation (independent of the
+    // reduction, so benchmarked once per input).
+    {
+        auto bdry = fil->boundary_matrix(8);
+        bench_antitranspose(matrix_name, bdry, bdry.size(), thread_counts, reps);
+    }
+
     for (bool dualize : {false, true}) {
         const char* side = dualize ? "coh" : "hom";
         oineus::VRUDecomposition<Int> dcmp(*fil, dualize);
@@ -224,6 +299,12 @@ int main(int argc, char** argv)
             dim_jobs.emplace_back(int(d),
                     std::make_pair(size_t(fil->dim_first(d)), size_t(fil->dim_last(d) + 1)));
         bench_matrix((matrix_name + "_U").c_str(), side, mode.c_str(), u_cols, n,
+                dim_jobs, thread_counts, reps);
+
+        // production pattern 4: per-dimension V transpose (compute_u_from_v,
+        // the VTUT solve V^T U^T = Id, which needs V^T up front; V is
+        // block-diagonal in dim, so production transposes one dim block)
+        bench_matrix((matrix_name + "_Vt").c_str(), side, mode.c_str(), dcmp.v_data, n,
                 dim_jobs, thread_counts, reps);
     }
     return 0;
