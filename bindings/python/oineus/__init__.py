@@ -472,6 +472,7 @@ from .mixup import (
     mixup_barcodes,
     mixup_barcodes_of_filtrations,
 )
+from .function_delaunay import function_delaunay_bifiltration
 # from ._oineus import Z2_Column, Z2_Matrix
 
 try:
@@ -2394,6 +2395,7 @@ _PUBLIC_API_NAMES = [
     "MixupBarcodes",
     "mixup_barcodes",
     "mixup_barcodes_of_filtrations",
+    "function_delaunay_bifiltration",
     "cube_filtration",
     "plot_diagram",
     "plot_diagram_gradient",

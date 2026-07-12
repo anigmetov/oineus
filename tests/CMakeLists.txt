@@ -114,6 +114,7 @@ else()
             fr-dgm-vertebra
             frechet
             float32
+            function-delaunay
             grid-4d
             ind-match
             interrupt
