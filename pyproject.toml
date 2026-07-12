@@ -169,4 +169,6 @@ dev = [
     "diode>=1.2.1",
     # Pretty-printer used in a few example scripts.
     "icecream>=2.2.0",
+    # Independent MEB oracle for py-cech-meb (full-Cech MEB correctness).
+    "miniball",
 ]

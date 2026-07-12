@@ -81,12 +81,15 @@ else()
             api-kicr
             api-reduce
             bot-match
+            cech
+            cech-meb
             cube
             cube-dgm
             dcmp-manips
             dcmp-restore-elz
             dgm-dist
             diff-backend
+            diff-cech
             diff-critical-sets
             diff-cube-fil
             diff-delaunay-arrays

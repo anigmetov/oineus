@@ -134,10 +134,12 @@ More: {doc}`topics/diagrams_distances`.
 The {py:mod}`oineus.diff` subpackage turns the pipeline into a PyTorch
 layer. **This is the canonical way to do topology-aware optimization in
 Oineus**: pick a filtration builder from `oineus.diff`, write the loss
-on the diagram tensor, call `loss.backward()`. The same four filtration
+on the diagram tensor, call `loss.backward()`. The same filtration
 choices are available (`alpha_filtration`, `weak_alpha_filtration`,
-`cech_delaunay_filtration`, `vr_filtration`) plus their function-data
-analogues (`freudenthal_filtration`, `cube_filtration`):
+`cech_delaunay_filtration`, `vr_filtration`, plus the full
+`cech_filtration` -- all C(n, q+1) simplices, small clouds only) and
+their function-data analogues (`freudenthal_filtration`,
+`cube_filtration`):
 
 ```{code-block} python
 import torch

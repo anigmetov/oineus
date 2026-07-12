@@ -35,6 +35,10 @@ def triangle_meb(p0, p1, p2, eps=1e-12):
     b_sq = torch.sum(b ** 2, dim=1)
     c_sq = torch.sum(c ** 2, dim=1)
 
+    abc_sq = torch.stack((a_sq, b_sq, c_sq), dim=0)
+    s_abc_sq, sort_idx = torch.sort(abc_sq, dim=0)
+    obtuse_mask = s_abc_sq[2, :] > s_abc_sq[0, :] + s_abc_sq[1, :]
+
     d = p0.shape[1]
     if d == 2:
         cross = a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]
@@ -43,27 +47,32 @@ def triangle_meb(p0, p1, p2, eps=1e-12):
         cross = torch.cross(a, b, dim=1)
         area_2_sq = torch.sum(cross ** 2, dim=1)
 
-    circum_radii_sq = (a_sq * b_sq * c_sq + eps) / (4 * area_2_sq + eps)
+    # obtuse rows get a dummy denominator of 1 BEFORE the division: their
+    # circumball values are overwritten by the diametral branch below, but a
+    # 0-denominator (exactly degenerate triangle, which is always obtuse)
+    # would poison backward through the overwritten entries (chain rule
+    # multiplies the zeroed upstream gradient by inf/nan). Degenerate
+    # non-obtuse triangles require duplicate points, which are unsupported.
+    one = torch.ones_like(area_2_sq)
+    circum_radii_sq = (a_sq * b_sq * c_sq + eps) / torch.where(obtuse_mask, one, 4 * area_2_sq + eps)
 
     if d == 3:
-        cross_ab = torch.cross(a, b, dim=1)
-        cross_ab_sq = torch.sum(cross_ab ** 2, dim=1, keepdim=True)
+        cross_ab = cross
+        cross_ab_sq = area_2_sq.unsqueeze(1)
         a_dot_a = a_sq.unsqueeze(1)
         b_dot_b = b_sq.unsqueeze(1)
         b_cross_axb = torch.cross(b, cross_ab, dim=1)
         axb_cross_a = torch.cross(cross_ab, a, dim=1)
-        circum_centers = p0 + (a_dot_a * b_cross_axb + b_dot_b * axb_cross_a) / (2 * cross_ab_sq + eps)
+        center_denom = torch.where(obtuse_mask.unsqueeze(1), one.unsqueeze(1), 2 * cross_ab_sq + eps)
+        circum_centers = p0 + (a_dot_a * b_cross_axb + b_dot_b * axb_cross_a) / center_denom
     else:
         a_dot_a = a_sq.unsqueeze(1)
         b_dot_b = b_sq.unsqueeze(1)
         D = 2 * (a[:, 0:1] * b[:, 1:2] - a[:, 1:2] * b[:, 0:1])
-        ux = (b[:, 1:2] * a_dot_a - a[:, 1:2] * b_dot_b) / (D + eps)
-        uy = (a[:, 0:1] * b_dot_b - b[:, 0:1] * a_dot_a) / (D + eps)
+        center_denom = torch.where(obtuse_mask.unsqueeze(1), one.unsqueeze(1), D + eps)
+        ux = (b[:, 1:2] * a_dot_a - a[:, 1:2] * b_dot_b) / center_denom
+        uy = (a[:, 0:1] * b_dot_b - b[:, 0:1] * a_dot_a) / center_denom
         circum_centers = p0 + torch.cat([ux, uy], dim=1)
-
-    abc_sq = torch.stack((a_sq, b_sq, c_sq), dim=0)
-    s_abc_sq, sort_idx = torch.sort(abc_sq, dim=0)
-    obtuse_mask = s_abc_sq[2, :] > s_abc_sq[0, :] + s_abc_sq[1, :]
 
     longest_edge_idx = sort_idx[2, :]
 
@@ -141,15 +150,6 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False, flat_tol=1e
 
     volume_6 = torch.sum(a * cross_bc, dim=1)
 
-    numerator_vec = a_sq * cross_bc + b_sq * cross_ca + c_sq * cross_ab
-    # copysign keeps eps from cancelling the denominator when volume_6 < 0.
-    # Finite intermediates are load-bearing: torch backward through the
-    # unselected torch.where/min branches must stay NaN-free.
-    denom = 2 * volume_6 + torch.copysign(torch.full_like(volume_6, eps), volume_6)
-    circum_disp = numerator_vec / denom.unsqueeze(1)
-    circum_center = p0 + circum_disp
-    circum_radii_sq = torch.sum(circum_disp ** 2, dim=1)
-
     # Near-flat tets make the circumsphere solve ill-conditioned, and a
     # degenerate one can even yield a spuriously SMALL radius. The MEB of a
     # flat 4-point set is always attained by a face candidate below, so
@@ -163,6 +163,18 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False, flat_tol=1e
             a_sq.squeeze(1), b_sq.squeeze(1), c_sq.squeeze(1),
             e12_sq, e13_sq, e23_sq]), dim=0)[0]
         flat_mask = volume_6.abs() <= flat_tol * scale_sq ** 1.5
+
+    numerator_vec = a_sq * cross_bc + b_sq * cross_ca + c_sq * cross_ab
+    # copysign keeps eps from cancelling the denominator when volume_6 < 0,
+    # and flat rows get a dummy denominator of 1 BEFORE the division: their
+    # circumsphere candidate is discarded below, but a 0-denominator here
+    # would poison backward through the unselected torch.where/min branches
+    # (chain rule multiplies the zeroed upstream gradient by inf/nan).
+    denom = 2 * volume_6 + torch.copysign(torch.full_like(volume_6, eps), volume_6)
+    denom = torch.where(flat_mask, torch.ones_like(denom), denom)
+    circum_disp = numerator_vec / denom.unsqueeze(1)
+    circum_center = p0 + circum_disp
+    circum_radii_sq = torch.sum(circum_disp ** 2, dim=1)
 
     # Compute MEB for each of the 4 faces
     face_centers_0, face_radii_sq_0 = triangle_meb(p1, p2, p3, eps)  # opposite to p0
@@ -204,6 +216,22 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False, flat_tol=1e
 
     # Find minimum radius for each tetrahedron
     min_radii_sq, min_idx = torch.min(all_radii_sq, dim=0)
+
+    # Belt-and-suspenders for flat tets whose on-boundary vertex rounds
+    # outside every face ball by more than rel_slack (all candidates inf):
+    # grow the best face ball just enough to contain its opposite vertex.
+    # Exact up to ulps in this tie case. Radii only -- centers gathered via
+    # min_idx below are unreliable for such rows (return_centers callers
+    # never see flat tets on the Delaunay path).
+    no_candidate = torch.isinf(min_radii_sq)
+    if no_candidate.any():
+        grown = torch.min(torch.stack([
+            torch.maximum(face_radii_sq_0, dist_sq_0),
+            torch.maximum(face_radii_sq_1, dist_sq_1),
+            torch.maximum(face_radii_sq_2, dist_sq_2),
+            torch.maximum(face_radii_sq_3, dist_sq_3),
+        ], dim=0), dim=0)[0]
+        min_radii_sq = torch.where(no_candidate, grown, min_radii_sq)
 
     centers = None
 

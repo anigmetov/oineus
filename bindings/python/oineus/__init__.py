@@ -1859,6 +1859,281 @@ def _delaunay_combinatorics(points: np.ndarray, exact: bool=False, packed: bool=
     return alpha_filtration(points, exact=exact, packed=packed, n_threads=n_threads)
 
 
+def _triangle_meb_np(p0, p1, p2, eps=0.0):
+    """Numpy mirror of oineus.diff.cech_delaunay.triangle_meb.
+
+    Returns (centers, radii_sq) of the minimum enclosing balls of n
+    triangles given as (n, d) arrays, d in {2, 3}. Vertices of a triangle
+    must be pairwise distinct points.
+    """
+    p0 = np.asarray(p0, dtype=np.float64)
+    p1 = np.asarray(p1, dtype=np.float64)
+    p2 = np.asarray(p2, dtype=np.float64)
+    a = p1 - p0
+    b = p2 - p0
+    c = p2 - p1
+
+    a_sq = np.sum(a * a, axis=1)
+    b_sq = np.sum(b * b, axis=1)
+    c_sq = np.sum(c * c, axis=1)
+
+    d = p0.shape[1]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        if d == 2:
+            cross = a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]
+            area_2_sq = cross ** 2
+        else:
+            cross = np.cross(a, b)
+            area_2_sq = np.sum(cross * cross, axis=1)
+
+        circum_radii_sq = (a_sq * b_sq * c_sq + eps) / (4 * area_2_sq + eps)
+
+        if d == 3:
+            cross_ab_sq = area_2_sq[:, None]
+            b_cross_axb = np.cross(b, cross)
+            axb_cross_a = np.cross(cross, a)
+            circum_centers = p0 + (a_sq[:, None] * b_cross_axb + b_sq[:, None] * axb_cross_a) / (2 * cross_ab_sq + eps)
+        else:
+            D = 2 * cross[:, None]
+            ux = (b[:, 1:2] * a_sq[:, None] - a[:, 1:2] * b_sq[:, None]) / (D + eps)
+            uy = (a[:, 0:1] * b_sq[:, None] - b[:, 0:1] * a_sq[:, None]) / (D + eps)
+            circum_centers = p0 + np.concatenate([ux, uy], axis=1)
+
+    abc_sq = np.stack((a_sq, b_sq, c_sq), axis=0)
+    sort_idx = np.argsort(abc_sq, axis=0)
+    s_abc_sq = np.take_along_axis(abc_sq, sort_idx, axis=0)
+    # degenerate (collinear) triangles are always obtuse, so they take the
+    # exact diametral-ball branch and never see the circumsphere formula
+    obtuse_mask = s_abc_sq[2, :] > s_abc_sq[0, :] + s_abc_sq[1, :]
+    longest_edge_idx = sort_idx[2, :]
+
+    midpoints = np.stack(((p0 + p1) / 2, (p0 + p2) / 2, (p1 + p2) / 2), axis=0)
+    diametral_centers = np.take_along_axis(midpoints, longest_edge_idx[None, :, None], axis=0)[0]
+
+    centers = np.where(obtuse_mask[:, None], diametral_centers, circum_centers)
+    radii_sq = np.where(obtuse_mask, s_abc_sq[2, :] / 4, circum_radii_sq)
+    return centers, radii_sq
+
+
+def _triangle_meb_sq_np(p0, p1, p2, eps=0.0):
+    """Squared MEB radii of n triangles; numpy, see _triangle_meb_np."""
+    return _triangle_meb_np(p0, p1, p2, eps)[1]
+
+
+def _tetrahedron_meb_sq_np(p0, p1, p2, p3, eps=0.0, flat_tol=1e-9):
+    """Numpy mirror of oineus.diff.cech_delaunay.tetrahedron_meb (radii only).
+
+    Handles arbitrary tetrahedra given as (n, 3) arrays, including
+    (near-)flat and coplanar ones: the ill-conditioned circumsphere
+    candidate is discarded for flat tets, whose MEB is always attained on
+    a face. Vertices of a tetrahedron must be pairwise distinct points.
+    """
+    p0 = np.asarray(p0, dtype=np.float64)
+    p1 = np.asarray(p1, dtype=np.float64)
+    p2 = np.asarray(p2, dtype=np.float64)
+    p3 = np.asarray(p3, dtype=np.float64)
+
+    a = p1 - p0
+    b = p2 - p0
+    c = p3 - p0
+
+    a_sq = np.sum(a * a, axis=1)
+    b_sq = np.sum(b * b, axis=1)
+    c_sq = np.sum(c * c, axis=1)
+
+    cross_bc = np.cross(b, c)
+    cross_ca = np.cross(c, a)
+    cross_ab = np.cross(a, b)
+
+    volume_6 = np.sum(a * cross_bc, axis=1)
+
+    numerator_vec = a_sq[:, None] * cross_bc + b_sq[:, None] * cross_ca + c_sq[:, None] * cross_ab
+    denom = 2 * volume_6 + np.copysign(np.full_like(volume_6, eps), volume_6)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        circum_disp = numerator_vec / denom[:, None]
+        circum_radii_sq = np.sum(circum_disp * circum_disp, axis=1)
+
+    # same flat-tet mask as the torch version: for flat 4-point sets the MEB
+    # is attained on a face, so dropping the circumsphere candidate is exact
+    e12_sq = np.sum((p2 - p1) ** 2, axis=1)
+    e13_sq = np.sum((p3 - p1) ** 2, axis=1)
+    e23_sq = np.sum((p3 - p2) ** 2, axis=1)
+    scale_sq = np.max(np.stack([a_sq, b_sq, c_sq, e12_sq, e13_sq, e23_sq]), axis=0)
+    flat_mask = np.abs(volume_6) <= flat_tol * scale_sq ** 1.5
+
+    face_centers_0, face_radii_sq_0 = _triangle_meb_np(p1, p2, p3, eps)
+    face_centers_1, face_radii_sq_1 = _triangle_meb_np(p0, p2, p3, eps)
+    face_centers_2, face_radii_sq_2 = _triangle_meb_np(p0, p1, p3, eps)
+    face_centers_3, face_radii_sq_3 = _triangle_meb_np(p0, p1, p2, eps)
+
+    dist_sq_0 = np.sum((p0 - face_centers_0) ** 2, axis=1)
+    dist_sq_1 = np.sum((p1 - face_centers_1) ** 2, axis=1)
+    dist_sq_2 = np.sum((p2 - face_centers_2) ** 2, axis=1)
+    dist_sq_3 = np.sum((p3 - face_centers_3) ** 2, axis=1)
+
+    rel_slack = 4 * np.finfo(np.float64).eps
+    contains_0 = dist_sq_0 <= face_radii_sq_0 * (1 + rel_slack) + eps
+    contains_1 = dist_sq_1 <= face_radii_sq_1 * (1 + rel_slack) + eps
+    contains_2 = dist_sq_2 <= face_radii_sq_2 * (1 + rel_slack) + eps
+    contains_3 = dist_sq_3 <= face_radii_sq_3 * (1 + rel_slack) + eps
+
+    inf = np.float64(np.inf)
+    all_radii_sq = np.stack([
+        np.where(flat_mask, inf, circum_radii_sq),
+        np.where(contains_0, face_radii_sq_0, inf),
+        np.where(contains_1, face_radii_sq_1, inf),
+        np.where(contains_2, face_radii_sq_2, inf),
+        np.where(contains_3, face_radii_sq_3, inf),
+    ], axis=0)
+    # NaNs can only appear in the circumsphere row of flat tets (0/0 with
+    # eps=0); the flat mask has already replaced those with inf
+    min_radii_sq = np.min(all_radii_sq, axis=0)
+
+    # Belt-and-suspenders for flat tets whose on-boundary vertex rounds
+    # outside every face ball by more than rel_slack (all candidates inf):
+    # grow the best face ball just enough to contain its opposite vertex.
+    # Exact up to ulps in this tie case; an inf here would silently drop a
+    # valid simplex from a Cech complex.
+    no_candidate = np.isinf(min_radii_sq)
+    if np.any(no_candidate):
+        grown = np.min(np.stack([
+            np.maximum(face_radii_sq_0, dist_sq_0),
+            np.maximum(face_radii_sq_1, dist_sq_1),
+            np.maximum(face_radii_sq_2, dist_sq_2),
+            np.maximum(face_radii_sq_3, dist_sq_3),
+        ], axis=0), axis=0)
+        min_radii_sq = np.where(no_candidate, grown, min_radii_sq)
+    return min_radii_sq
+
+
+def _pack_vertex_rows(rows, n_points):
+    # canonical int64 key per row-sorted vertex row (base-n_points digits).
+    # Overflow would alias keys and silently corrupt membership tests, so
+    # fail loud instead (unreachable for any enumerable complex size).
+    if len(rows) and n_points ** rows.shape[1] >= 2 ** 63:
+        raise ValueError("_pack_vertex_rows: n_points too large for int64 row keys")
+    key = np.zeros(len(rows), dtype=np.int64)
+    for col in range(rows.shape[1]):
+        key = key * n_points + rows[:, col]
+    return key
+
+
+def cech_filtration(points: np.ndarray,
+                    max_dim: int = -1,
+                    max_radius: float = -1.0,
+                    *,
+                    vertex_ids: typing.Optional[np.ndarray] = None,
+                    eps: float = 0.0,
+                    n_threads: int = 1):
+    """Build a full Cech filtration of a point cloud (non-differentiable).
+
+    Enumerates ALL simplices on the input points up to max_dim whose minimum
+    enclosing ball (MEB) radius is at most max_radius; the filtration value
+    of a simplex is its SQUARED MEB radius (the same convention as
+    alpha_filtration and oineus.diff.cech_delaunay_filtration, so diagrams
+    are directly comparable).
+
+    With the default max_radius (the enclosing radius of the cloud) the
+    complex contains the complete max_dim-skeleton of the simplex on all n
+    vertices, so diagrams in dimensions 0 .. max_dim-1 are complete; the
+    dimension-max_dim diagram is skeleton-truncated and unreliable. Mind the
+    combinatorial cost: at the default radius the number of q-simplices is
+    C(n, q+1); pass an explicit smaller max_radius beyond a few hundred
+    points at max_dim=3.
+
+    Args:
+        points: (n, d) array, d in {2, 3}, pairwise-distinct points.
+        max_dim: Largest simplex dimension; default d. Must be <= d (in
+            2D, 3-simplices would need 4-coplanar-point MEBs; if needed,
+            z-pad the points to 3D instead).
+        max_radius: Unsquared radius threshold; a simplex is kept iff
+            meb_radius_sq <= max_radius**2. Default: enclosing radius
+            (oineus.max_distance).
+        vertex_ids: Optional (n,) integer array relabeling vertex i to
+            vertex_ids[i]. With ids drawn from a larger cloud this makes the
+            result a genuine subcomplex (equal uids and values) of the full
+            cloud's cech_filtration -- pass the SAME explicit max_radius to
+            both calls, since the defaults differ.
+        eps: Numerical-stability epsilon of the MEB formulas.
+        n_threads: Threads for the Filtration constructor sort.
+
+    Returns:
+        Filtration with kind=FiltrationKind.Cech and squared-MEB values.
+    """
+    points = np.asarray(points)
+    if points.ndim != 2 or points.shape[0] < 2:
+        raise ValueError("cech_filtration: points must be a 2D array with at least 2 rows")
+    n, d = points.shape
+    if d not in (2, 3):
+        raise ValueError(f"cech_filtration: ambient dimension must be 2 or 3, got {d}")
+    if max_dim < 0:
+        max_dim = d
+    if max_dim > d:
+        raise ValueError(f"cech_filtration: max_dim={max_dim} > ambient dimension {d} is not supported "
+                         "(MEBs of degenerate simplices; z-pad the points to 3D if you need 2D tetrahedra)")
+    if max_radius < 0:
+        max_radius = max_distance(points)
+
+    dt = detect_real_dtype(points)
+    sub = REAL_MODULES[dt]
+    pts64 = np.ascontiguousarray(points, dtype=np.float64)
+
+    # combinatorics via the VR enumerator: meb_radius <= R implies
+    # diameter <= 2R (tight for edges and diametral simplices; Jung's
+    # theorem bounds the other direction and cannot shrink this), so the
+    # VR complex at diameter 2R is a superset of the Cech complex at R
+    vr_fil = vr_filtration(pts64, max_dim=max_dim, max_diameter=2 * max_radius,
+                           packed=True, n_threads=n_threads)
+
+    verts_by_dim = []
+    vals_by_dim = []
+    max_radius_sq = max_radius * max_radius
+    kept_keys_prev = None
+    for q in range(max_dim + 1):
+        # a dim can be empty (or absent) when max_radius truncates hard; all
+        # higher dims are then empty too (VR structure + closure pruning)
+        if q > vr_fil.max_dim or vr_fil.size_in_dimension(q) == 0:
+            break
+        verts = np.ascontiguousarray(vr_fil.get_simplices_as_arr(q), dtype=np.int64)
+        verts = np.sort(verts, axis=1)
+        if q == 0:
+            vals = np.zeros(len(verts), dtype=np.float64)
+        elif q == 1:
+            vals = 0.25 * np.sum((pts64[verts[:, 0]] - pts64[verts[:, 1]]) ** 2, axis=1)
+        elif q == 2:
+            vals = _triangle_meb_sq_np(pts64[verts[:, 0]], pts64[verts[:, 1]], pts64[verts[:, 2]], eps)
+        else:
+            vals = _tetrahedron_meb_sq_np(pts64[verts[:, 0]], pts64[verts[:, 1]],
+                                          pts64[verts[:, 2]], pts64[verts[:, 3]], eps)
+        keep = vals <= max_radius_sq
+        # closure repair: MEB radius is monotone under faces, so this can
+        # only fire on last-ulp non-monotonicity exactly at the threshold;
+        # without it a dropped facet of a kept simplex would break the
+        # boundary lookups during reduction
+        if q >= 2:
+            for i in range(q + 1):
+                facet_keys = _pack_vertex_rows(np.delete(verts, i, axis=1), n)
+                keep &= np.isin(facet_keys, kept_keys_prev)
+        verts, vals = verts[keep], vals[keep]
+        if len(verts) == 0:
+            break
+        kept_keys_prev = _pack_vertex_rows(verts, n)
+        verts_by_dim.append(verts)
+        vals_by_dim.append(np.ascontiguousarray(vals, dtype=dt))
+
+    if vertex_ids is not None:
+        vertex_ids = np.asarray(vertex_ids, dtype=np.int64)
+        if vertex_ids.shape != (n,):
+            raise ValueError("cech_filtration: vertex_ids must have shape (n_points,)")
+        if np.unique(vertex_ids).size != n:
+            raise ValueError("cech_filtration: vertex_ids must be pairwise distinct")
+        verts_by_dim = [np.ascontiguousarray(vertex_ids[verts]) for verts in verts_by_dim]
+
+    fil = sub._filtration_from_arrays(verts_by_dim, vals_by_dim, n_threads=n_threads)
+    fil.kind = _oineus.FiltrationKind.Cech
+    return fil
+
+
 def compute_diagrams_alpha(points: np.ndarray,
                            weights: typing.Optional[np.ndarray]=None,
                            params: typing.Optional[ReductionParams]=None,
@@ -2111,6 +2386,7 @@ _PUBLIC_API_NAMES = [
     "compute_diagrams_ls",
     "compute_diagrams_vr",
     "alpha_filtration",
+    "cech_filtration",
     "compute_diagrams_alpha",
     "list_to_filtration",
     "compute_kernel_image_cokernel_reduction",

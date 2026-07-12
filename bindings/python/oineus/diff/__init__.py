@@ -18,6 +18,7 @@ from .weak_alpha import weak_alpha_filtration
 # torch-only for now: these import without torch and raise a clear
 # ImportError/TypeError when called without torch / with non-torch arrays
 from .cech_delaunay import triangle_meb, tetrahedron_meb, cech_delaunay_filtration
+from .cech import cech_filtration
 from .sliced_wasserstein import sliced_wasserstein_distance, sliced_wasserstein_distance_diag_corrected
 from .wasserstein import wasserstein_cost
 

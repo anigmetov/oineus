@@ -20,6 +20,7 @@ types are accurate; prose will improve over time.
    vr_filtration
    cube_filtration
    alpha_filtration
+   cech_filtration
    compute_diagrams_alpha
    list_to_filtration
    mapping_cylinder
@@ -183,6 +184,7 @@ types are accurate; prose will improve over time.
    alpha_filtration
    weak_alpha_filtration
    cech_delaunay_filtration
+   cech_filtration
    mapping_cylinder_filtration
    min_filtration
    persistence_diagram

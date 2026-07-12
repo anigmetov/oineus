@@ -62,6 +62,21 @@ fil = diff.cech_delaunay_filtration(pts)
 dgms = diff.persistence_diagram(fil)
 ```
 
+### Full Cech
+
+`cech_filtration` builds the full Cech complex: ALL simplices up to
+`max_dim` with squared-MEB values, not just Delaunay ones -- useful for
+comparing filtrations in optimization experiments and as an exact
+subcomplex oracle (Cech of a subset is a genuine subcomplex of Cech of
+the whole cloud). Diagrams agree with Cech-Delaunay in dimensions below
+`max_dim`. Mind the cost: with the default `max_radius` the complex has
+C(n, q+1) q-simplices, so keep the cloud small or pass an explicit
+`max_radius`.
+
+```{code-block} python
+fil = diff.cech_filtration(pts, max_radius=0.7)
+```
+
 ### Weak alpha
 
 Weak alpha is the cheaper sibling: it uses the same Delaunay
