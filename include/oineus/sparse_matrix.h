@@ -539,21 +539,24 @@ struct SimpleSparseMatrixTraits<Int_, 2> {
         }
 
         // Routing. Default: the bucket transpose whenever the output rows span
-        // far more memory than any cache AND the rows are sparse (measured
-        // 3-23x over both scatter modes at 10M and 50M rows on x86, and
-        // 1.5-3.5x with monotone thread scaling on Apple Silicon, where the
-        // plain scatters regress beyond 8 threads: the column scatter's random
-        // writes and the row scatter's every-worker-scans-all-columns term
-        // both collapse into sequential band-local passes). DENSE rows invert
-        // the preference: at nnz/row ~ 70-90 (VR homology V and top-dim U)
-        // the column scatter's row cursors get enough reuse to stay
-        // cache-resident and beat the bucket's extra materialization pass
-        // 2-3x, while every bucket-winning case measured at nnz/row <= 3.3 --
-        // the threshold of 16 sits at the geometric midpoint of that gap.
-        // Below the size threshold the transpose is milliseconds either way
-        // and the (side,dim)-routed scatters keep their measured preference.
-        // OINEUS_TRANSPOSE_MODE in {col,row,bucket} force-routes for
-        // characterization (benchmarks/bench_transpose.cpp).
+        // far more memory than any cache AND the rows are sparse. Calibrated
+        // on two architectures with benchmarks/bench_transpose.cpp (V and U
+        // matrices of real hom/coh reductions; lower-star, Cech-Delaunay,
+        // VR): on 16-core Apple Silicon the bucket wins sparse-row inputs
+        // 1.5-3.5x and is the only variant that scales monotonically past 8
+        // threads; on a 20c/40t Xeon Gold 6230 it wins them 2.4-3.2x and
+        // plateaus flat while col/row regress up to 2.7x at 40 threads
+        // (their per-worker count arrays are O(n_threads * num_rows); the
+        // bucket's band counters are thread-independent). DENSE rows invert
+        // the preference on BOTH machines: at nnz/row ~ 70-90 (VR homology V
+        // and top-dim U) the column scatter's row cursors get enough reuse
+        // to stay cache-resident and beat the bucket's extra materialization
+        // pass 1.8-3x, while every bucket-winning case measured at
+        // nnz/row <= 4.7 -- the threshold of 16 sits in the geometric middle
+        // of that gap. Below the size threshold the transpose is milliseconds
+        // either way and the (side,dim)-routed scatters keep their measured
+        // preference. OINEUS_TRANSPOSE_MODE in {col,row,bucket} force-routes
+        // for characterization on new machines.
         const bool fits_u32 =
                 static_cast<size_t>(num_rows) <= std::numeric_limits<std::uint32_t>::max()
                 && col_end <= std::numeric_limits<std::uint32_t>::max();
