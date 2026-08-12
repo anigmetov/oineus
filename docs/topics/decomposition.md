@@ -146,6 +146,30 @@ for p in pts:
 `sorted_id` values), so you can map every diagram point back to the pair of
 cells that created and killed the homology class.
 
+You can also extract all of those index pairs directly. For the filled
+triangle from the manual workflow above, the $H_1$ class is created by the
+last edge and killed by the triangle:
+
+```{code-block} python
+finite_dgms = dcmp.diagram(fil, include_inf_points=False)
+index_h1 = finite_dgms.index_diagram_in_dimension(1)
+print(index_h1)  # [[5 6]]
+
+birth_idx, death_idx = map(int, index_h1[0])
+birth_cell = fil.cell(birth_idx)
+death_cell = fil.cell(death_idx)
+
+print(birth_cell.vertices)  # [0, 1]
+print(death_cell.vertices)  # [0, 1, 2]
+```
+
+Thus, for each finite `(birth_idx, death_idx)` pair, the integers are
+filtration-order indices and `fil.cell(birth_idx)` / `fil.cell(death_idx)`
+are the cells that create and kill the class. For a simplicial filtration,
+`fil.simplices()[i]` is equivalent to `fil.cell(i)`. An essential point has
+no death cell; its index pair uses an integer sentinel for the death entry.
+Use `include_inf_points=False`, as above, before mapping both entries to cells.
+
 ## Zero-persistence diagrams
 
 The standard diagram filters out pairs with `birth == death` -- these are
