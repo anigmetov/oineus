@@ -1,6 +1,7 @@
 import pickle
 
 import numpy as np
+import pytest
 
 import oineus as oin
 
@@ -48,6 +49,19 @@ def _make_prod_segment_inclusion_filtrations():
     l = oin.Filtration([l_v0, l_v1, l_e01], negate=False, n_threads=1)
 
     return k, l
+
+
+def _make_hand_traced_inclusion_filtrations():
+    k_data = [
+        [0, [0], 10.0], [1, [1], 30.0], [2, [2], 10.0], [3, [3], 0.0],
+        [4, [0, 1], 30.0], [5, [1, 2], 30.0],
+        [6, [0, 3], 10.0], [7, [2, 3], 10.0],
+    ]
+    l_data = [
+        [0, [0], 10.0], [1, [1], 30.0], [2, [2], 10.0],
+        [3, [0, 1], 30.0], [4, [1, 2], 30.0],
+    ]
+    return oin.list_to_filtration(k_data), oin.list_to_filtration(l_data)
 
 
 def test_kicr_reduced_simplex_api():
@@ -107,6 +121,57 @@ def test_kicr_reduced_prod_api():
     for s in (repr(kicr), str(kicr)):
         assert s.startswith("KerImCokReduced(")
         assert "0x" not in s
+
+
+def test_kicr_index_diagram_spaces_and_essential_sentinel():
+    k, l = _make_hand_traced_inclusion_filtrations()
+    params = oin.KICRParams(codomain=True)
+    kicr = oin.compute_kernel_image_cokernel_reduction(k, l, params)
+
+    kernel = kicr.kernel_diagrams()
+    np.testing.assert_array_equal(kernel.index_diagram_in_dimension(0), [[5, 7]])
+
+    point = kernel.in_dimension(0, as_numpy=False)[0]
+    assert (point.birth_index, point.death_index) == (5, 7)
+    assert list(kicr.fil_K.cell(point.birth_index).vertices) == [2, 3]
+    assert list(kicr.fil_K.cell(point.death_index).vertices) == [1, 2]
+
+    # The death edge belongs to L, but KICR stores its index in ambient K
+    assert l.sorted_id_by_uid(k.cell(point.death_index).uid) == 4
+    assert point.death_index != 4
+
+    image_indices = kicr.image_diagrams().index_diagram_in_dimension(0)
+    sentinel = np.iinfo(image_indices.dtype).max
+    np.testing.assert_array_equal(image_indices, [[1, sentinel]])
+    assert list(kicr.fil_K.cell(1).vertices) == [0]
+    assert l.sorted_id_by_uid(kicr.fil_K.cell(1).uid) == 0
+
+    zero_params = oin.KICRParams(include_zero_persistence=True)
+    with_zero = oin.compute_kernel_image_cokernel_reduction(k, l, zero_params)
+    image_with_zero = with_zero.image_diagrams().index_diagram_in_dimension(0)
+    np.testing.assert_array_equal(image_with_zero, [[2, 5], [3, 6], [1, sentinel]])
+    assert list(with_zero.fil_K.cell(2).vertices) == [2]
+    assert list(with_zero.fil_K.cell(5).vertices) == [2, 3]
+    assert list(with_zero.fil_K.cell(3).vertices) == [1]
+    assert list(with_zero.fil_K.cell(6).vertices) == [0, 1]
+
+    cokernel_indices = kicr.cokernel_diagrams().index_diagram_in_dimension(0)
+    np.testing.assert_array_equal(cokernel_indices, [[0, 4]])
+    assert list(kicr.fil_K.cell(0).vertices) == [3]
+    assert list(kicr.fil_K.cell(4).vertices) == [0, 3]
+
+    domain_indices = kicr.domain_diagrams().index_diagram_in_dimension(0)
+    np.testing.assert_array_equal(domain_indices, [[0, sentinel], [1, 4]])
+    assert list(kicr.fil_L.cell(1).vertices) == [2]
+    assert list(kicr.fil_L.cell(4).vertices) == [1, 2]
+
+    codomain_indices = kicr.codomain_diagrams().index_diagram_in_dimension(1)
+    np.testing.assert_array_equal(codomain_indices, [[7, sentinel]])
+    assert list(kicr.fil_K.cell(7).vertices) == [1, 2]
+
+    without_codomain = oin.compute_kernel_image_cokernel_reduction(k, l)
+    with pytest.raises(RuntimeError, match=r"params\.codomain was false"):
+        without_codomain.codomain_diagrams()
 
 
 def test_kicr_cube_smoke():

@@ -92,11 +92,16 @@ void init_oineus_kicr_class(nb::module_& m, const std::string& class_name)
     auto cls = nb::class_<KICR>(m, class_name.c_str())
             .def(nb::init<const Fil&, const Fil&, oin::KICRParams&>(), nb::arg("K"), nb::arg("L"), nb::arg("params"),
                  nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("domain_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_domain_diagrams()); })
-            .def("codomain_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_codomain_diagrams()); })
-            .def("kernel_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_kernel_diagrams()); })
-            .def("cokernel_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_cokernel_diagrams()); })
-            .def("image_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_image_diagrams()); })
+            .def("domain_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_domain_diagrams()); },
+                 "Return persistence diagrams of L. Finite endpoint indices are sorted_id values in fil_L; an essential death uses the integer sentinel.")
+            .def("codomain_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_codomain_diagrams()); },
+                 "Return persistence diagrams of K. Finite endpoint indices are sorted_id values in fil_K; an essential death uses the integer sentinel. Requires params.codomain=True.")
+            .def("kernel_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_kernel_diagrams()); },
+                 "Return kernel diagrams. Call index_diagram_in_dimension(dim) on the result. Finite endpoint indices are sorted_id values in ambient fil_K; an essential death uses the integer sentinel.")
+            .def("cokernel_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_cokernel_diagrams()); },
+                 "Return cokernel diagrams. Call index_diagram_in_dimension(dim) on the result. Finite endpoint indices are sorted_id values in ambient fil_K; an essential death uses the integer sentinel.")
+            .def("image_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_image_diagrams()); },
+                 "Return image diagrams. Call index_diagram_in_dimension(dim) on the result. Finite endpoint indices are sorted_id values in ambient fil_K; an essential death uses the integer sentinel.")
             .def("old_order_to_new", [](const KICR& self) { return self.get_old_order_to_new(); })
             .def("new_order_to_old", [](const KICR& self) { return self.get_new_order_to_old(); })
             .def("sorted_L_to_sorted_K", [](const KICR& self) { return size_t_vector_to_numpy(self.get_sorted_L_to_sorted_K()); })

@@ -107,6 +107,13 @@ types are accurate; prose will improve over time.
 
 ## Kernel / image / cokernel
 
+The `kernel_diagrams()`, `image_diagrams()`, and `cokernel_diagrams()`
+methods return {py:class}`oineus.Diagrams`. Call
+`.index_diagram_in_dimension(d)` on that result for the integer pairing, or
+`.in_dimension(d, as_numpy=False)` for `DiagramPoint` values and indices.
+These family indices are filtration-order positions in the ambient $K$; see
+{doc}`../topics/kicr` for cell lookup and essential points.
+
 ```{eval-rst}
 .. autosummary::
    :toctree: _autosummary

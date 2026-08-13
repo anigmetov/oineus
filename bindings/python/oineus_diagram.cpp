@@ -111,7 +111,7 @@ void register_oineus_diagram(nb::module_& m, bool reg_indep)
                       } catch (const std::out_of_range&) {
                           throw nb::index_error("Diagram dimension out of range");
                       }
-                    }, "return persistence diagram in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
+                    }, "Return the persistence diagram in dimension dim as an (n, 2) NumPy array by default; with as_numpy=False, return a list of DiagramPoint objects.",
                     nb::arg("dim"), nb::arg("as_numpy") = true)
             .def("index_diagram_in_dimension", [](Diagram& self, dim_type dim, bool as_numpy) -> std::variant<nb::ndarray<size_t, nb::numpy>, IndexDgmPtVec> {
                       try {
@@ -122,7 +122,7 @@ void register_oineus_diagram(nb::module_& m, bool reg_indep)
                       } catch (const std::out_of_range&) {
                           throw nb::index_error("Diagram dimension out of range");
                       }
-                    }, "return persistence pairing (index diagram) in dimension dim: if as_numpy is False (default), the diagram is returned as list of DgmPoints, else as NumPy array",
+                    }, "Return the persistence pairing in dimension dim as an (n, 2) NumPy array by default; with as_numpy=False, return a list of IndexDiagramPoint objects. Essential deaths use the maximum unsigned integer as a sentinel.",
                     nb::arg("dim"), nb::arg("as_numpy") = true)
             .def("__getitem__", [](Diagram& self, dim_type dim) {
                 try {

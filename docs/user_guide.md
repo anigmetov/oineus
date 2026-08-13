@@ -177,6 +177,16 @@ print(kicr.image_diagrams().in_dimension(0))
 print(kicr.cokernel_diagrams().in_dimension(0))
 ```
 
+Each family result also carries its cell pairing. For example,
+`kicr.kernel_diagrams().index_diagram_in_dimension(0)` returns an integer
+array of `(birth_index, death_index)` pairs. For kernel, image, and cokernel
+these are filtration-order indices in the ambient ("big") filtration $K$;
+look up finite endpoints with `kicr.fil_K.cell(i)`. To keep values, indices,
+and essential-point information together, use
+`kicr.kernel_diagrams().in_dimension(0, as_numpy=False)`. See
+{doc}`topics/kicr` for the essential-point sentinel and the domain-diagram
+exception.
+
 For maps that are not literal inclusions, build a mapping cylinder
 first; see {doc}`topics/mapping_cylinder`.
 

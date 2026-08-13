@@ -106,10 +106,10 @@ public:
     Dgms im_diagrams_;   // image diagrams
     Dgms cok_diagrams_;  // cokernel diagrams
 // private:
-    std::vector<size_t> sorted_K_to_sorted_L_; // given sorted_id i of cell in K, sorted_K_to_sorted_L_[i] is its sorted_id in L; for cells not in K, stores k_invalid_index
+    std::vector<size_t> sorted_K_to_sorted_L_; // given sorted_id i of cell in K, sorted_K_to_sorted_L_[i] is its sorted_id in L; for K cells not in L, stores k_invalid_index
     std::vector<size_t> sorted_L_to_sorted_K_; // given sorted_id i of cell in L, sorted_L_to_sorted_K_[i] is its sorted_id in K
-    std::vector<size_t> new_order_to_old_;     // given sorted_id i of cell in K, new_order_to_old[i] is its index in the ordering 'first L, then K-L', used in D_im
-    std::vector<size_t> old_order_to_new_;     // the inverse of the above
+    std::vector<size_t> new_order_to_old_;     // given an index in the 'first L, then K-L' order used in D_im, returns its sorted_id in K
+    std::vector<size_t> old_order_to_new_;     // given a sorted_id in K, returns its index in the 'first L, then K-L' order
     std::vector<size_t> K_to_ker_column_index_;
     KICRParams params_;
 
@@ -811,7 +811,7 @@ public:
     const Dgms& get_codomain_diagrams() const
     {
         if (not params_.codomain)
-            throw std::runtime_error("codomain diagrams were not computed because params.cokernel was false in constructor");
+            throw std::runtime_error("codomain diagrams were not computed because params.codomain was false in constructor");
         return cod_diagrams_;
     }
 

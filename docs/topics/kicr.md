@@ -15,14 +15,15 @@ Oineus computes all three diagrams in one pass.
 ```{code-block} python
 import oineus as oin
 
-# K: a hollow square (4 vertices + 4 edges).
+# K: a hollow square (4 vertices + 4 edges). Values are chosen so
+# that the kernel and cokernel both have a finite H0 point.
 K = [
     [0, [0],    10.0],
-    [1, [1],    10.0],
+    [1, [1],    30.0],
     [2, [2],    10.0],
-    [3, [3],    10.0],
-    [4, [0, 1], 10.0],
-    [5, [1, 2], 10.0],
+    [3, [3],     0.0],
+    [4, [0, 1], 30.0],
+    [5, [1, 2], 30.0],
     [6, [0, 3], 10.0],
     [7, [2, 3], 10.0],
 ]
@@ -30,10 +31,10 @@ K = [
 # L: a 2-edge subcomplex (vertices + two edges).
 L = [
     [0, [0],    10.0],
-    [1, [1],    10.0],
+    [1, [1],    30.0],
     [2, [2],    10.0],
-    [3, [0, 1], 10.0],
-    [4, [1, 2], 10.0],
+    [3, [0, 1], 30.0],
+    [4, [1, 2], 30.0],
 ]
 
 kicr = oin.compute_kernel_image_cokernel_reduction(K, L)
@@ -56,13 +57,61 @@ filtration value -- this is what "inclusion" means.
 {py:class}`oineus.KerImCokReduced` object with five diagram accessors:
 
 - `kicr.domain_diagrams()` -- persistence of $L$ alone.
-- `kicr.codomain_diagrams()` -- persistence of $K$ alone.
+- `kicr.codomain_diagrams()` -- persistence of $K$ alone (available when
+  `KICRParams.codomain=True`).
 - `kicr.kernel_diagrams()` -- diagram of $\ker f_*$.
 - `kicr.image_diagrams()` -- diagram of $\mathrm{im}\, f_*$.
 - `kicr.cokernel_diagrams()` -- diagram of $\mathrm{coker}\, f_*$.
 
 Each accessor returns a {py:class}`oineus.Diagrams` object indexed by
 homology dimension; use `.in_dimension(d)` to extract a 2D NumPy array.
+
+### Index diagrams and cell lookup
+
+The returned {py:class}`oineus.Diagrams` also contains the persistence
+pairing. Continuing the example above:
+
+```{code-block} python
+import numpy as np
+
+kernel_dgms = kicr.kernel_diagrams()
+index_h0 = kernel_dgms.index_diagram_in_dimension(0)
+print(index_h0)  # [[5 7]]
+
+# Filter essential rows before treating both columns as cell indices
+sentinel = np.iinfo(index_h0.dtype).max
+finite_index_h0 = index_h0[index_h0[:, 1] != sentinel]
+
+# Keep the values and index metadata together as DiagramPoint objects
+for point in kernel_dgms.in_dimension(0, as_numpy=False):
+    birth_cell = kicr.fil_K.cell(point.birth_index)
+    death_cell = None if point.is_inf() else kicr.fil_K.cell(point.death_index)
+    print(point.birth_index, birth_cell)
+    if death_cell is not None:
+        print(point.death_index, death_cell)
+```
+
+For the **kernel, image, and cokernel** diagrams, every birth index and
+every finite death index is a position in the filtration order of the
+ambient, or "big", filtration $K$ -- a `sorted_id` in `kicr.fil_K`. Use
+`kicr.fil_K.cell(i)` for the lookup, not `kicr.fil_L.cell(i)`. This is true
+even when the endpoint cell belongs to $L$: Oineus has already translated
+its $L$ index to the corresponding position in $K$. The pair `[5, 7]`
+above, for example, ends at edge `[1, 2]`; that edge has index 7 in $K$ but
+index 4 in $L$.
+
+Essential points have no death cell and store an integer sentinel in
+`death_index`. In the NumPy index diagram it is the largest value of the
+array's unsigned integer dtype; filter those rows, as above, before looking
+up both endpoints or casting the array to a signed dtype. When using
+`DiagramPoint` objects, test `point.is_inf()` before looking up the death
+cell. The index spaces of the two ordinary diagram accessors are different:
+`domain_diagrams()` uses filtration order in $L$, while
+`codomain_diagrams()` uses filtration order in $K$.
+
+For a mapping-cylinder computation, the ambient $K$ is the product/cylinder
+filtration stored in `kicr.fil_K`; map its product cells back to the original
+filtrations afterward if needed.
 
 ## Configuring what gets computed
 
