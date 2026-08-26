@@ -6,7 +6,7 @@ try:
 except ImportError:  # torch-only module; guarded at call time
     torch = None
 
-from .. import _delaunay_combinatorics, _oineus
+from .. import _delaunay_combinatorics, _periodic_delaunay_combinatorics, _oineus
 from ._backend import require_torch
 from ._tensor_utils import real_buffer_for
 from .diff_filtration import DiffFiltration
@@ -186,7 +186,17 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False):
     return centers, min_radii_sq
 
 
-def cech_delaunay_filtration(points, eps: float = 0.0, *, packed: bool = False, print_time: bool = False):
+def cech_delaunay_filtration(
+    points,
+    eps: float = 0.0,
+    *,
+    periodic: bool = False,
+    bbox_min=None,
+    bbox_max=None,
+    exact: bool = False,
+    packed: bool = False,
+    print_time: bool = False,
+):
     """Build a differentiable Cech-Delaunay filtration from a point cloud.
 
     The combinatorics of the alpha complex are computed via diode (CGAL); the
@@ -199,6 +209,12 @@ def cech_delaunay_filtration(points, eps: float = 0.0, *, packed: bool = False, 
     Args:
         points: ``(n, d)`` torch.Tensor with ``d in {2, 3}``. Differentiable.
         eps: Small value for numerical stability in the MEB computation.
+        periodic: Use periodic Delaunay combinatorics and coherent simplex
+            lifts on a flat torus.
+        bbox_min, bbox_max: Fixed corners of the periodic axis-aligned box.
+            Both are required when ``periodic=True``. Points must already be
+            wrapped into the half-open domain ``[bbox_min, bbox_max)``.
+        exact: Use diode's exact CGAL kernel for the detached combinatorics.
         packed: Use the compact bit-packed cell encoding for the Delaunay
             combinatorics when the vertex ids fit a 64/128-bit word. The values
             (and gradients) are recomputed here regardless of encoding.
@@ -208,18 +224,67 @@ def cech_delaunay_filtration(points, eps: float = 0.0, *, packed: bool = False, 
         DiffFiltration whose values are squared MEB radii.
     """
     require_torch(points, "cech_delaunay_filtration")
+    if points.ndim != 2:
+        raise ValueError("points must be a 2D tensor of shape (n_points, dim)")
+    if points.shape[0] == 0:
+        raise ValueError("points must be nonempty")
+    if points.shape[1] not in (2, 3):
+        raise ValueError("Cech-Delaunay only supports 2D and 3D point clouds")
+    if not points.is_floating_point():
+        raise TypeError("points must have a floating-point dtype")
+    if not bool(torch.isfinite(points).all()):
+        raise ValueError("points must be finite")
+
+    box_width = None
+    vertices_by_dim = None
+    offsets_by_dim = None
+    if periodic:
+        if bbox_min is None or bbox_max is None:
+            raise ValueError("bbox_min and bbox_max are required when periodic=True")
+        bbox_min_tensor = torch.as_tensor(
+            bbox_min, dtype=points.dtype, device=points.device
+        ).detach()
+        bbox_max_tensor = torch.as_tensor(
+            bbox_max, dtype=points.dtype, device=points.device
+        ).detach()
+        expected_shape = (points.shape[1],)
+        if bbox_min_tensor.shape != expected_shape or bbox_max_tensor.shape != expected_shape:
+            raise ValueError(f"bbox_min and bbox_max must have shape {expected_shape}")
+        bounds_are_finite = (
+            bool(torch.isfinite(bbox_min_tensor).all())
+            and bool(torch.isfinite(bbox_max_tensor).all())
+        )
+        if not bounds_are_finite:
+            raise ValueError("bbox_min and bbox_max must be finite")
+        box_width = bbox_max_tensor - bbox_min_tensor
+        if not bool(torch.isfinite(box_width).all()):
+            raise ValueError("bbox width must be finite in the points dtype")
+        if not bool((box_width > 0).all()):
+            raise ValueError("bbox_max must be greater than bbox_min on every axis")
+        if not bool(((points >= bbox_min_tensor) & (points < bbox_max_tensor)).all()):
+            raise ValueError("periodic points must lie in the half-open domain [bbox_min, bbox_max)")
+
     if print_time:
         start = time.time()
 
     points_np = points.detach().cpu().numpy()
-    alpha_fil = _delaunay_combinatorics(points_np, packed=packed)
+    if periodic:
+        alpha_fil, vertices_by_dim, offsets_by_dim = _periodic_delaunay_combinatorics(
+            points_np,
+            bbox_min_tensor.cpu().tolist(),
+            bbox_max_tensor.cpu().tolist(),
+            exact=exact,
+            packed=packed,
+        )
+    else:
+        alpha_fil = _delaunay_combinatorics(points_np, exact=exact, packed=packed)
     if print_time:
         elapsed = time.time() - start
-        print(f"alpha_fil construction elapsed: {elapsed:.3f}")
+        print(f"Delaunay construction elapsed: {elapsed:.3f}")
 
     if print_time:
         start = time.time()
-    values_in_dim = [torch.zeros(alpha_fil.size_in_dimension(0), requires_grad=True, device=points.device)]
+    values_in_dim = [points.new_zeros(alpha_fil.size_in_dimension(0))]
     if print_time:
         elapsed = time.time() - start
         print(f"initialize dim-0 values elapsed: {elapsed:.3f}")
@@ -230,14 +295,26 @@ def cech_delaunay_filtration(points, eps: float = 0.0, *, packed: bool = False, 
         if dim == 1:
             if print_time:
                 start = time.time()
-            edges = torch.LongTensor(alpha_fil.get_edges().astype(np.uint64))
+            simplex_rows = vertices_by_dim[dim] if periodic else alpha_fil.get_edges()
+            edges = torch.as_tensor(
+                np.asarray(simplex_rows, dtype=np.int64),
+                dtype=torch.long,
+                device=points.device,
+            )
+            if periodic:
+                offsets = torch.as_tensor(
+                    offsets_by_dim[dim], dtype=points.dtype, device=points.device
+                )
+                edge_points = points[edges] + offsets * box_width
+            else:
+                edge_points = points[edges]
             if print_time:
                 elapsed = time.time() - start
                 print(f"dim 1 get edges elapsed: {elapsed:.3f}")
 
             if print_time:
                 start = time.time()
-            sqdists = torch.sum((points[edges[:, 0]] - points[edges[:, 1]]) ** 2, axis=1)
+            sqdists = torch.sum((edge_points[:, 0] - edge_points[:, 1]) ** 2, axis=1)
             radii_sq = 0.25 * sqdists
             if print_time:
                 elapsed = time.time() - start
@@ -247,16 +324,28 @@ def cech_delaunay_filtration(points, eps: float = 0.0, *, packed: bool = False, 
         elif dim == 2:
             if print_time:
                 start = time.time()
-            triangles = torch.LongTensor(alpha_fil.get_triangles().astype(np.uint64))
+            simplex_rows = vertices_by_dim[dim] if periodic else alpha_fil.get_triangles()
+            triangles = torch.as_tensor(
+                np.asarray(simplex_rows, dtype=np.int64),
+                dtype=torch.long,
+                device=points.device,
+            )
+            if periodic:
+                offsets = torch.as_tensor(
+                    offsets_by_dim[dim], dtype=points.dtype, device=points.device
+                )
+                triangle_points = points[triangles] + offsets * box_width
+            else:
+                triangle_points = points[triangles]
             if print_time:
                 elapsed = time.time() - start
                 print(f"dim 2 get triangles elapsed: {elapsed:.3f}")
 
             if print_time:
                 start = time.time()
-            p0 = points[triangles[:, 0]]
-            p1 = points[triangles[:, 1]]
-            p2 = points[triangles[:, 2]]
+            p0 = triangle_points[:, 0]
+            p1 = triangle_points[:, 1]
+            p2 = triangle_points[:, 2]
             if print_time:
                 elapsed = time.time() - start
                 print(f"dim 2 gather triangle points elapsed: {elapsed:.3f}")
@@ -274,17 +363,29 @@ def cech_delaunay_filtration(points, eps: float = 0.0, *, packed: bool = False, 
         elif dim == 3:
             if print_time:
                 start = time.time()
-            tetra = torch.LongTensor(alpha_fil.get_tetrahedra().astype(np.uint64))
+            simplex_rows = vertices_by_dim[dim] if periodic else alpha_fil.get_tetrahedra()
+            tetra = torch.as_tensor(
+                np.asarray(simplex_rows, dtype=np.int64),
+                dtype=torch.long,
+                device=points.device,
+            )
+            if periodic:
+                offsets = torch.as_tensor(
+                    offsets_by_dim[dim], dtype=points.dtype, device=points.device
+                )
+                tetra_points = points[tetra] + offsets * box_width
+            else:
+                tetra_points = points[tetra]
             if print_time:
                 elapsed = time.time() - start
                 print(f"dim 3 get tetrahedra elapsed: {elapsed:.3f}")
 
             if print_time:
                 start = time.time()
-            p0 = points[tetra[:, 0]]
-            p1 = points[tetra[:, 1]]
-            p2 = points[tetra[:, 2]]
-            p3 = points[tetra[:, 3]]
+            p0 = tetra_points[:, 0]
+            p1 = tetra_points[:, 1]
+            p2 = tetra_points[:, 2]
+            p3 = tetra_points[:, 3]
             if print_time:
                 elapsed = time.time() - start
                 print(f"dim 3 gather tetra points elapsed: {elapsed:.3f}")
