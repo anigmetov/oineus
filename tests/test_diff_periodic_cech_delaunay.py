@@ -56,6 +56,19 @@ def minimum_enclosing_radius_sq(points):
     return best
 
 
+def shortest_periodic_edge_signature(points):
+    points_np = points.detach().numpy()
+    vertices, offsets = diode.fill_periodic_delaunay_lifts_arrays(
+        points_np, bbox_min=[0, 0], bbox_max=[1, 1]
+    )
+    edge_vertices = vertices[1]
+    edge_offsets = offsets[1]
+    lifted = points_np[edge_vertices] + edge_offsets
+    values = 0.25 * np.sum((lifted[:, 0] - lifted[:, 1]) ** 2, axis=1)
+    edge_idx = np.argmin(values)
+    return tuple(edge_vertices[edge_idx]), tuple(edge_offsets[edge_idx].ravel())
+
+
 @pytest.mark.parametrize("exact", [False, True])
 @pytest.mark.parametrize("packed", [False, True])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -166,12 +179,20 @@ def test_periodic_translation_and_rewrap_preserve_values():
         torch.ones(2, dtype=points.dtype),
     )
     values = []
+    diagrams = []
     for cloud in (points, translated):
         filtration = od.cech_delaunay_filtration(
             cloud, periodic=True, bbox_min=[0, 0], bbox_max=[1, 1], exact=True
         )
         values.append(filtration.values.detach())
+        diagrams.append(od.persistence_diagram(filtration))
     torch.testing.assert_close(values[0], values[1], rtol=1e-9, atol=1e-11)
+    for dim in diagrams[0]:
+        first = diagrams[0][dim].detach().numpy()
+        second = diagrams[1][dim].detach().numpy()
+        first = first[np.lexsort((first[:, 1], first[:, 0]))]
+        second = second[np.lexsort((second[:, 1], second[:, 0]))]
+        np.testing.assert_allclose(first, second, rtol=1e-9, atol=1e-11)
 
 
 def test_periodic_cech_scales_lifts_by_box_width():
@@ -235,6 +256,9 @@ def test_periodic_h0_gradient_matches_finite_difference():
     minus = initial.clone()
     plus[0, 0] += delta
     minus[0, 0] -= delta
+    signature = shortest_periodic_edge_signature(initial)
+    assert shortest_periodic_edge_signature(plus) == signature
+    assert shortest_periodic_edge_signature(minus) == signature
     finite_difference = (loss_at(plus) - loss_at(minus)).item() / (2 * delta)
     assert analytical == pytest.approx(finite_difference, rel=1e-6, abs=1e-9)
 

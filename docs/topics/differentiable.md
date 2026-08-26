@@ -42,17 +42,18 @@ gradient flow back to `fil.values`, which in turn is a function of the
 input tensor.
 
 `include_inf_points=False` is the only currently-supported option (the
-forward pass throws if you ask for `True`). The standard fix is to cap
-`max_diameter` (VR) or pick a `max_dim` (Cech-Delaunay) so the
-topological features you care about die finitely; in most loss designs
-you do not want essentials anyway.
+forward pass throws if you ask for `True`). For VR, `max_diameter` can cap
+the filtration. Cech-Delaunay retains every simplex dimension through the
+ambient dimension and has no `max_dim` option. Essential classes do not appear
+in the returned diagram tensors; in most loss designs you do not want them
+anyway.
 
 ## Point clouds
 
 ### Cech-Delaunay
 
 The differentiable Cech-Delaunay filtration assigns each Delaunay simplex
-the radius of its minimum enclosing ball. The combinatorics come from
+the squared radius of its minimum enclosing ball. The combinatorics come from
 CGAL via `diode`; the values are recomputed analytically in PyTorch so
 gradients flow back to the points.
 
@@ -61,6 +62,38 @@ pts = torch.tensor(points_np, dtype=torch.float64, requires_grad=True)
 fil = diff.cech_delaunay_filtration(pts)
 dgms = diff.persistence_diagram(fil)
 ```
+
+For a periodic point cloud, provide a fixed axis-aligned box and keep the
+points wrapped into its half-open fundamental domain:
+
+```{code-block} python
+bbox_min = torch.zeros(2, dtype=pts.dtype)
+bbox_max = torch.ones(2, dtype=pts.dtype)
+fil = diff.cech_delaunay_filtration(
+    pts, periodic=True, bbox_min=bbox_min, bbox_max=bbox_max
+)
+```
+
+The periodic path requires a diode build that provides
+`fill_periodic_delaunay_lifts_arrays`. Diode exports one coherent integer
+lattice offset for every vertex of every simplex; choosing a minimum-image
+offset independently for each edge would not define a consistent triangle or
+tetrahedron. The box, Delaunay combinatorics, and offsets are detached. The MEB
+values remain differentiable with respect to `pts` between Delaunay flips,
+offset changes, MEB support changes, and exact ties.
+
+After an optimizer step, wrap the existing leaf tensor in place so the
+optimizer does not retain a stale tensor:
+
+```{code-block} python
+opt.step()
+with torch.no_grad():
+    pts.copy_(torch.remainder(pts - bbox_min, bbox_max - bbox_min) + bbox_min)
+```
+
+This implements the periodic Delaunay-Cech filtration. It should not be read as
+a claim that periodic balls form a good-cover Cech nerve at arbitrarily large
+radii.
 
 ### Weak alpha
 
@@ -270,12 +303,12 @@ counts**: raising `n_threads` changes the speed, not the result.
   gradient steps can flip the pairing, and the gradient changes abruptly
   across that flip. This is intrinsic, not a bug.
 - **Inf points.** `include_inf_points=False` is currently required.
-  Choose `max_diameter` (VR) or `max_dim` (Cech-Delaunay) so the
-  topological features you care about die finitely; otherwise they will
-  not appear in the diagram tensor.
-- **Filtration data type.** Pass `torch.float64` tensors. The C++ side
-  is double-precision; `float32` inputs are silently up-cast and the
-  resulting gradient is float64 too, which can be surprising.
+  For VR, `max_diameter` can cap the filtration. Cech-Delaunay retains all
+  dimensions through the ambient dimension; essential classes do not appear
+  in the diagram tensor.
+- **Filtration data type.** The standard build supports both `torch.float32`
+  and `torch.float64`. Point tensors route to the matching C++ backend, and
+  filtration values and gradients retain that dtype.
 - **Requires-grad on `fil.values`.** Gradients propagate through
   `fil.values`, which is constructed from your input tensor. Anything
   that breaks the autograd graph between `input_tensor` and
@@ -293,4 +326,5 @@ counts**: raising `n_threads` changes the speed, not the result.
 - {doc}`optimization` -- the low-level, non-PyTorch critical-set
   interface (advanced).
 - `examples/python/example_diff_alpha_grad.py`, `example_diff_vr_pts.py`,
-  `weak_alpha_expand_loop.py`, `bench_alpha_vs_cd.py` -- runnable demos.
+  `example_opt_periodic_cech_delaunay.py`, `weak_alpha_expand_loop.py`,
+  `bench_alpha_vs_cd.py`, `bench_periodic_cech_delaunay.py` -- runnable demos.
