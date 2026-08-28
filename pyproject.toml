@@ -165,8 +165,8 @@ dev = [
     # CGAL alpha-shape filtration tests (py-plot-gradient,
     # diff/cech_delaunay). 1.2.1+ ships the structured-array exporters
     # (fill_*_arrays) that the bit-packed alpha path and py-packed-alpha need;
-    # older builds silently downgrade packed=True to the fat filtration.
-    "diode>=1.2.1",
+    # 1.2.2 adds periodic lifts used by periodic Cech-Delaunay.
+    "diode>=1.2.2",
     # Pretty-printer used in a few example scripts.
     "icecream>=2.2.0",
     # Independent MEB oracle for py-cech-meb (full-Cech MEB correctness).

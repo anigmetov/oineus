@@ -486,6 +486,8 @@ except:
 # when False, the code falls back to the list-of-(vertices, value) API.
 _HAS_DIODE_ARRAYS = _HAS_DIODE and hasattr(diode, "fill_delaunay_arrays") \
     and hasattr(diode, "fill_alpha_shapes_arrays")
+_HAS_DIODE_PERIODIC_LIFTS = _HAS_DIODE \
+    and hasattr(diode, "fill_periodic_delaunay_lifts_arrays")
 
 
 # Maps each filtration cell encoding to its C++ TopologyOptimizer instantiation. The
@@ -2133,6 +2135,76 @@ def cech_filtration(points: np.ndarray,
     fil = sub._filtration_from_arrays(verts_by_dim, vals_by_dim, n_threads=n_threads)
     fil.kind = _oineus.FiltrationKind.Cech
     return fil
+def _periodic_delaunay_combinatorics(points: np.ndarray,
+                                     bbox_min,
+                                     bbox_max,
+                                     exact: bool=False,
+                                     packed: bool=False,
+                                     n_threads: int=1):
+    """Build periodic Delaunay combinatorics and aligned coherent lifts.
+
+    The temporary values are strictly increasing in diode row order, with all
+    lower-dimensional rows before higher-dimensional rows. This makes the
+    filtration retain the array order until the caller replaces the values, so
+    the returned offset rows stay aligned without Python per-simplex maps.
+
+    Returns:
+        A tuple ``(filtration, vertices_by_dim, offsets_by_dim)``.
+    """
+    if not _HAS_DIODE_PERIODIC_LIFTS:
+        raise RuntimeError(
+            "Differentiable periodic Cech-Delaunay requires a diode build with "
+            "fill_periodic_delaunay_lifts_arrays"
+        )
+
+    vertices_by_dim, offsets_by_dim = diode.fill_periodic_delaunay_lifts_arrays(
+        points,
+        exact=exact,
+        bbox_min=bbox_min,
+        bbox_max=bbox_max,
+    )
+    if len(vertices_by_dim) != len(offsets_by_dim):
+        raise RuntimeError("diode returned misaligned periodic vertex and offset dimensions")
+
+    placeholder_values = []
+    next_value = 0
+    for dim, (vertices, offsets) in enumerate(zip(vertices_by_dim, offsets_by_dim)):
+        expected_width = dim + 1
+        expected_offset_shape = (vertices.shape[0], expected_width, points.shape[1])
+        if vertices.ndim != 2 or vertices.shape[1] != expected_width:
+            raise RuntimeError(f"diode returned invalid periodic vertex array in dimension {dim}")
+        if offsets.shape != expected_offset_shape:
+            raise RuntimeError(f"diode returned invalid periodic offset array in dimension {dim}")
+        count = vertices.shape[0]
+        placeholder_values.append(
+            np.arange(next_value, next_value + count, dtype=points.dtype)
+        )
+        next_value += count
+
+    sub = real_module_for(points)
+    suffix = _vr_packed_word_suffix(points.shape[0], points.shape[1]) if packed else None
+    if suffix is not None:
+        filtration = getattr(sub, "_filtration_from_arrays_packed" + suffix)(
+            vertices_by_dim,
+            placeholder_values,
+            n_threads=n_threads,
+            bits=_packed_bits(points.shape[0]),
+        )
+    else:
+        filtration = sub._filtration_from_arrays(
+            vertices_by_dim, placeholder_values, n_threads=n_threads
+        )
+
+    getters = ("get_vertices", "get_edges", "get_triangles", "get_tetrahedra")
+    for dim, vertices in enumerate(vertices_by_dim):
+        emitted = getattr(filtration, getters[dim])()
+        if not np.array_equal(emitted, vertices):
+            raise RuntimeError(
+                "Periodic Delaunay row order changed while building the filtration; "
+                "coherent offsets cannot be aligned safely"
+            )
+
+    return filtration, vertices_by_dim, offsets_by_dim
 
 
 def compute_diagrams_alpha(points: np.ndarray,

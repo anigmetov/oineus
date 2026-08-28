@@ -90,6 +90,7 @@ else()
             dgm-dist
             diff-backend
             diff-cech
+            diff-periodic-cech-delaunay
             diff-cochains
             diff-critical-sets
             diff-cube-fil
