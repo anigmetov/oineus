@@ -114,9 +114,8 @@ def test_diff_filtration_delegates_methods_correctly():
 
 
 def test_diff_filtration_copy_and_pickle_roundtrip():
-    # __getattr__ indexed self.__dict__["under_fil"] directly, so the special-method
-    # probes copy/deepcopy/pickle perform before state restoration raised
-    # KeyError("under_fil") instead of AttributeError -- breaking all three.
+    # The wrapper must own its dictionary state rather than delegating the
+    # copy/pickle protocol to the wrapped native filtration.
     import copy
     import pickle
 
@@ -132,6 +131,12 @@ def test_diff_filtration_copy_and_pickle_roundtrip():
 
     df_pickled = pickle.loads(pickle.dumps(df))
     assert df_pickled.size() == df.size()
+
+    # 0.9.33 and earlier serialized the ordinary dictionary state.
+    df_legacy = type(df).__new__(type(df))
+    df_legacy.__setstate__({"under_fil": df.under_fil, "values": df.values})
+    assert df_legacy.under_fil is df.under_fil
+    assert df_legacy.values is df.values
 
 
 # ---------------------------------------------------------------------------
