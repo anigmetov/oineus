@@ -170,13 +170,21 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     nb::arg("dim"), "make points with persistence less than epsilon go to the diagonal")
             .def("get_nth_persistence", &TopologyOptimizer::get_nth_persistence,
                     nb::arg("dim"), nb::arg("n"), "return n-th persistence value in d-dimensional persistence diagram")
-            .def("match", [](TopologyOptimizer& opt, Diagram& template_dgm, dim_type d, oin_real wasserstein_q, oin_real wasserstein_delta, bool return_wasserstein_distance, bool dualize) ->
-                std::variant<IndicesValues, std::pair<IndicesValues, oin_real>>
-                    {
-                      if (return_wasserstein_distance)
-                          return opt.match_and_distance(template_dgm, d, wasserstein_q, wasserstein_delta, dualize);
-                      else
-                          return opt.match(template_dgm, d, wasserstein_q, wasserstein_delta, dualize);
+            .def("match",
+                    [](TopologyOptimizer& opt, Diagram& template_dgm,
+                       dim_type d, oin_real wasserstein_q,
+                       oin_real wasserstein_delta,
+                       bool return_wasserstein_distance, bool dualize,
+                       oin_real internal_p)
+                        -> std::variant<IndicesValues,
+                            std::pair<IndicesValues, oin_real>> {
+                        if (return_wasserstein_distance)
+                            return opt.match_and_distance(template_dgm, d,
+                                wasserstein_q, wasserstein_delta, dualize,
+                                internal_p);
+                        else
+                            return opt.match(template_dgm, d, wasserstein_q,
+                                wasserstein_delta, dualize, internal_p);
                     },
                     nb::arg("template_dgm"),
                     nb::arg("dim"),
@@ -184,6 +192,7 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     nb::arg("wasserstein_delta")=0.01,
                     nb::arg("return_wasserstein_distance")=false,
                     nb::arg("dualize")=false,
+                    nb::arg("internal_p")=hera::get_infinity<oin_real>(),
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "return target from Wasserstein matching"
             )

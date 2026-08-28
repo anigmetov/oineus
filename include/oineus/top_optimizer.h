@@ -758,7 +758,8 @@ public:
 
     std::pair<IndicesValues, Real> match_and_distance(typename
         Diagrams<Real>::Dgm& template_dgm, dim_type d, Real wasserstein_q,
-        Real delta, bool dualize = false)
+        Real delta, bool dualize = false,
+        Real internal_p = hera::get_infinity<Real>())
     {
         // set ids in template diagram
         for(size_t i = 0 ; i < template_dgm.size() ; ++i) {
@@ -777,6 +778,7 @@ public:
         hera_params.match_inf_points = false;
         hera_params.wasserstein_power = wasserstein_q;
         hera_params.delta = delta;
+        hera_params.internal_p = internal_p;
 
         // Reduce the requested side if the caller didn't already. The
         // diagram/pairing is identical either way; dualize is the caller's
@@ -835,9 +837,11 @@ public:
     }
 
     IndicesValues match(typename Diagrams<Real>::Dgm& template_dgm, dim_type
-        d, Real wasserstein_q, Real delta, bool dualize = false)
+        d, Real wasserstein_q, Real delta, bool dualize = false,
+        Real internal_p = hera::get_infinity<Real>())
     {
-        return match_and_distance(template_dgm, d, wasserstein_q, delta, dualize).first;
+        return match_and_distance(template_dgm, d, wasserstein_q, delta,
+            dualize, internal_p).first;
     }
 
     IndicesValues combine_loss(const CriticalSets& critical_sets, ConflictStrategy strategy)

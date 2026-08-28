@@ -182,20 +182,25 @@ def test_dgm_loss_backward_with_inf_points():
 
 
 # ---------------------------------------------------------------------------
-# Fix #6 -- TopologyOptimizer.match forwards wasserstein_delta and respects
+# Fix #6 -- TopologyOptimizer.match forwards Wasserstein options and respects
 # filtration-kind dualize defaults
 # ---------------------------------------------------------------------------
 
-def test_topology_optimizer_match_accepts_wasserstein_delta():
+def test_topology_optimizer_match_forwards_wasserstein_options():
     rng = np.random.default_rng(0)
     pts = torch.tensor(rng.uniform(-1, 1, size=(8, 2)).astype(REAL_DTYPE),
                        dtype=TORCH_DTYPE, requires_grad=True)
     df = od.vr_filtration(pts, max_dim=1)
     opt = od.TopologyOptimizer(df)
     template = [oin.DiagramPoint(0.0, 0.5)]
-    iv = opt.match(template_dgm=template, dim=0, wasserstein_q=1.0,
-                   wasserstein_delta=0.05)
-    assert iv is not None
+    _, distance_l_inf = opt.match(
+        template_dgm=template, dim=0, wasserstein_q=1.0,
+        wasserstein_delta=0.05, return_wasserstein_distance=True)
+    _, distance_l1 = opt.match(
+        template_dgm=template, dim=0, wasserstein_q=1.0,
+        wasserstein_delta=0.05, return_wasserstein_distance=True,
+        internal_p=1.0)
+    assert distance_l_inf != pytest.approx(distance_l1)
     assert opt.is_coh_built
     assert not opt.is_hom_built
 

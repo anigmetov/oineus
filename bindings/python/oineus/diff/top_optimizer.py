@@ -76,7 +76,7 @@ class TopologyOptimizer:
     def match(self, template_dgm, dim: int, wasserstein_q: float = 1.0,
               wasserstein_delta: float = 0.01,
               return_wasserstein_distance: bool = False,
-              dualize=None):
+              dualize=None, internal_p: float = -1.0):
         if dualize is None:
             dualize = default_dualize_for_filtration(self.under_fil)
         if dualize:
@@ -90,6 +90,7 @@ class TopologyOptimizer:
             wasserstein_delta=wasserstein_delta,
             return_wasserstein_distance=return_wasserstein_distance,
             dualize=dualize,
+            internal_p=internal_p,
         )
 
     # decomposition handles
