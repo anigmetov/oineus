@@ -87,7 +87,8 @@ void init_oineus_common(nb::module_& m)
             .value("BitTree", oin::ColumnRepr::BitTree, "hierarchical 64-ary bitset (PHAT A-Bit-Tree, default)");
 
     using ReductionTimings = oin::ReductionTimings;
-    using TimingsStateTuple = std::tuple<double, double, double, double, double, double>;
+    using TimingsStateTuple = std::tuple<double, double, double, double, double, double,
+                                         double>;
 
     nb::class_<ReductionTimings>(m, "ReductionTimings",
             "Per-phase wall-clock breakdown (seconds) of the last reduce() call, "
@@ -101,13 +102,17 @@ void init_oineus_common(nb::module_& m)
             .def_rw("restore_elz", &ReductionTimings::restore_elz, "ELZ-restore phase (only if dims_to_restore_elz set)")
             .def_rw("copy_back", &ReductionTimings::copy_back, "move working matrix back into r_data/v_data (parallel only)")
             .def_rw("copy_pivots", &ReductionTimings::copy_pivots, "copy pivots into the at-rest pivot array (parallel only)")
+            .def_rw("compute_u", &ReductionTimings::compute_u,
+                    "full post-reduction parallel VTUT solve (serial in-band U "
+                    "is included in reduce)")
             .def_prop_ro("reduction_total", &ReductionTimings::reduction_total,
                     "Total reduction wall-clock across every phase -- comparable across serial and parallel paths.")
             .def_prop_ro("total", &ReductionTimings::total, "Synonym for reduction_total.")
             .def("reset", &ReductionTimings::reset)
             .def("__repr__", [](const ReductionTimings& self) { std::stringstream ss; ss << self; return ss.str(); })
             .def("__getstate__", [](const ReductionTimings& t) -> TimingsStateTuple {
-                return std::make_tuple(t.prepare, t.reduce, t.bauer, t.restore_elz, t.copy_back, t.copy_pivots);
+                return std::make_tuple(t.prepare, t.reduce, t.bauer, t.restore_elz,
+                        t.copy_back, t.copy_pivots, t.compute_u);
             })
             .def("__setstate__", [](ReductionTimings& t, const TimingsStateTuple& s) {
                 new (&t) ReductionTimings();
@@ -117,6 +122,7 @@ void init_oineus_common(nb::module_& m)
                 t.restore_elz = std::get<3>(s);
                 t.copy_back   = std::get<4>(s);
                 t.copy_pivots = std::get<5>(s);
+                t.compute_u   = std::get<6>(s);
             });
 
     using UComputeTimings = oin::UComputeTimings;
@@ -205,8 +211,11 @@ void init_oineus_common(nb::module_& m)
                 }, nb::arg("n_threads")=def_rp.n_threads, nb::arg("chunk_size")=def_rp.advanced.chunk_size, nb::arg("use_clearing")=def_rp.use_clearing, nb::arg("compute_v")=def_rp.compute_v, nb::arg("compute_u")=def_rp.compute_u, nb::arg("dims_to_restore_elz")=def_rp.advanced.dims_to_restore_elz, nb::arg("col_repr")=def_rp.advanced.col_repr, nb::arg("verbose")=def_rp.verbose, nb::arg("use_apparent_pairs").none()=nb::none())
             .def_rw("n_threads", &ReductionParams::n_threads)
             .def_rw("use_clearing", &ReductionParams::use_clearing)
-            .def_rw("compute_v", &ReductionParams::compute_v)
-            .def_rw("compute_u", &ReductionParams::compute_u)
+            .def_rw("compute_v", &ReductionParams::compute_v,
+                    "Compute and retain the reduction matrix V.")
+            .def_rw("compute_u", &ReductionParams::compute_u,
+                    "Compute a complete U. With n_threads > 1 this also computes "
+                    "and retains the matching V.")
             .def_prop_rw("use_apparent_pairs",
                     [apparent_to_py](const ReductionParams& p) { return apparent_to_py(p.use_apparent_pairs); },
                     [apparent_from_py](ReductionParams& p, std::optional<bool> value) { p.use_apparent_pairs = apparent_from_py(value); },

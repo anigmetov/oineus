@@ -35,7 +35,7 @@ on top via one of:
 
 | u_strategy | Algorithm | Output | Notes |
 |---|---|---|---|
-| `legacy_in_band` | ELZ in-band U during reduction | full dim, in-band | clearing off; **serial reduction only** (parallel reducer doesn't support `compute_u=true`). Backward compat with `gradient_method='crit-sets'`. |
+| `legacy_in_band` | ELZ in-band U during reduction | full dim, in-band | clearing off; **serial reduction only** to preserve its in-band ELZ semantics. Generic parallel `compute_u=true` instead runs VTUT after reduction and only restores ELZ when requested. Backward compat with `gradient_method='crit-sets'`. |
 | `col_R` | R U = D, Algorithm 3 | full dim | `compute_u_from_v(dim)`. Pivots non-monotonic in iteration; bound truncation is post-filter only. |
 | `col_V` | V U = I, Algorithm 4 | full dim | `compute_u_from_v_1(dim)`. Columns inverted then transposed to row form. |
 | `col_partial` | V U = I (Phase-3), partial | subset of cols, then col->row | `compute_partial_u_from_v_1(cols, bounds)`. Kept for back-compat; consistently loses to `row_partial`. |

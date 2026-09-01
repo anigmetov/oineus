@@ -11,7 +11,8 @@ namespace oineus {
 // serial path reduces in place, so it has no prepare / copy_back / copy_pivots;
 // the parallel paths build a working (atomic-pointer) matrix (prepare), reduce it
 // (reduce), optionally restore ELZ, then move it back into r_data/v_data
-// (copy_back) and copy pivots (copy_pivots).
+// (copy_back), copy pivots (copy_pivots), and optionally recover U with a
+// post-reduction parallel VTUT solve (compute_u).
 //
 // reduction_total() is the apples-to-apples number to compare across the serial
 // and parallel paths.
@@ -23,11 +24,13 @@ struct ReductionTimings {
     double restore_elz {0.0};   // ELZ-restore phase; only if dims_to_restore_elz is set
     double copy_back {0.0};     // move working matrix back into r_data/v_data; parallel only
     double copy_pivots {0.0};   // copy pivots into _pivots; parallel only
+    double compute_u {0.0};     // full parallel VTUT recovery; serial in-band U is in reduce
 
     // Total wall-clock of the reduction across every phase -- comparable across paths.
     double reduction_total() const
     {
-        return prepare + reduce + bauer + restore_elz + copy_back + copy_pivots;
+        return prepare + reduce + bauer + restore_elz + copy_back + copy_pivots
+                + compute_u;
     }
 
     // Synonym for reduction_total().
@@ -44,7 +47,8 @@ inline std::ostream& operator<<(std::ostream& out, const ReductionTimings& t)
     out << ", bauer = " << t.bauer;
     out << ", restore_elz = " << t.restore_elz;
     out << ", copy_back = " << t.copy_back;
-    out << ", copy_pivots = " << t.copy_pivots << ")";
+    out << ", copy_pivots = " << t.copy_pivots;
+    out << ", compute_u = " << t.compute_u << ")";
     return out;
 }
 

@@ -71,6 +71,7 @@ namespace oineus {
         int n_threads{1};
         bool use_clearing{true};
         bool compute_v{false};
+        // With n_threads > 1, compute_u also computes and retains the matching V.
         bool compute_u{false};
         // Apparent-pairs optimization (Bauer/Ripser): skip building + storing the
         // apparent columns; pre-seed their pivots. Tri-state:

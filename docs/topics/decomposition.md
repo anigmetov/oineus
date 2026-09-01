@@ -37,8 +37,8 @@ dcmp = oin.Decomposition(fil, dualize=False)
 # 3. Configure and reduce
 params = oin.ReductionParams()
 params.n_threads = 2          # parallel reduction
-params.compute_v = True       # we want matrix V (cycle representatives)
-params.compute_u = False      # cannot directly compute U with parallel reduction
+params.compute_v = True       # retain V (also implied by parallel compute_u)
+params.compute_u = True       # recover U by parallel VTUT after reduction
 params.use_clearing = True
 dcmp.reduce(params)
 
@@ -76,16 +76,21 @@ exactly as for `Decomposition`.
 
 Two post-reduce details, both invisible if you only call `dcmp.diagram(fil)`:
 
-- **`compute_v=False`, parallel.** Once the pairing is known the reduced
+- **`compute_v=False`, `compute_u=False`, parallel.** Once the pairing is known the reduced
   columns are freed ("pivots-only" state). The diagram still works -- it reads
   the pivots -- but `dcmp.r_data` / `dcmp.r_as_csc()` then raise a clear error
   instead of returning an empty matrix. Use `compute_v=True`, or the explicit
   `Decomposition(fil) + reduce`, if you need the reduced $R$ itself.
-- **`compute_v=True`, parallel.** $R$ and $V$ are kept in a compact working
+- **`compute_v=True`, `compute_u=False`, parallel.** $R$ and $V$ are kept in a compact working
   form and **materialized lazily**: the first access to `dcmp.r_data` /
   `dcmp.v_data`, pickling, or `sanity_check` reconstructs the at-rest matrices.
   `dcmp.diagram(fil)` does not trigger that, so diagram-only callers never pay
   for it.
+- **`compute_u=True`, parallel.** This implies `compute_v=True`: cleared
+  columns are Bauer-filled, $V$ is retained, and the full $U=V^{-1}$ is
+  recovered by a parallel solve of $V^T U^T=I$. Because VTUT needs the matrix
+  immediately, this path returns materialized $R$, $V$, and $U$ rather than a
+  lazy working representation.
 
 The serial path (`n_threads=1`) reduces in place and always leaves `r_data`
 populated. A fused decomposition does not hold the original boundary $D$, so
@@ -94,33 +99,45 @@ populated. A fused decomposition does not hold the original boundary $D$, so
 
 ## What the matrices are
 
-The reduction maintains
+Every stored $R,V$ factorization satisfies
 
-$$ R \;=\; D V, R U \;=\; D, \qquad D, R, U, V \in \mathrm{GL}(\mathbb{F}_2). $$
+$$ R \;=\; D V. $$
+
+On the parallel `compute_u=True` path, the retained $V$ and computed $U$
+additionally satisfy
+
+$$ U=V^{-1}, \qquad R U \;=\; D, $$
+
+where $U$ and $V$ are unit upper-triangular over $\mathbb{F}_2$.
 
 After {py:meth}`oineus.Decomposition.reduce`:
 
 - `dcmp.r_data` -- columns of the reduced boundary matrix $R$.
 - `dcmp.v_data` -- columns of $V$, the column operations applied during
-  reduction. Populated when `params.compute_v = True`.
-- `dcmp.u_data_t` -- rows of the inverse $U$ (such that $D U^{-1} = R$, in
-  the standard convention). Populated when `params.compute_u = True`.
+  reduction. Populated when `params.compute_v = True`; parallel
+  `params.compute_u = True` also computes and retains it automatically.
+- `dcmp.u_data_t` -- stored rows of $U$. Parallel `compute_u=True` fills it
+  with the complete inverse of the retained $V$.
 - `dcmp.r_as_csc()`, `dcmp.v_as_csc()`, `dcmp.d_as_csc()`,
   `dcmp.u_as_csr()` -- SciPy-compatible sparse views over $\mathbb{F}_2$.
 
 Only `has_full_matrix_u() == True` guarantees that the stored rows form a
-complete canonical $U$. In particular, the critical-set implementation may
-use `u_data_t` as scratch storage for bounded row prefixes when
-`params.compute_u = False`; those internal rows carry no public completeness
-guarantee. `n_computed_u_rows` reports row-solve work, while `n_valid_u_rows`
-is either zero or the size of a complete canonical $U$. Post-reduction $U$
-solvers still expose their raw row results through `u_row`, but do not upgrade
-that global guarantee. Oineus deliberately does not keep a per-simplex
-validity bitmap.
+complete $U$ for the reduction recipe that produced them. In particular, the
+critical-set implementation may use `u_data_t` as scratch storage for bounded
+row prefixes when `params.compute_u = False`; those internal rows carry no
+public completeness guarantee. `n_computed_u_rows` reports row-solve work,
+while `n_valid_u_rows` is either zero or the size of a complete $U$.
+Post-reduction $U$ solvers still expose their raw row results through `u_row`,
+but do not upgrade that global guarantee. Oineus deliberately does not keep a
+per-simplex validity bitmap.
 
-`compute_u = True` cannot currently be combined with multi-threaded reduction;
-set `n_threads = 1`. Parallel full-$U$ recovery is planned as a separate
-post-reduction VTUT pass.
+With `n_threads > 1`, `compute_u = True` runs reduction first and full VTUT
+second. `advanced.dims_to_restore_elz` keeps its independent meaning. If it is
+empty, the returned matrices satisfy $R=DV$ and $U=V^{-1}$, but the parallel
+reduction's Bauer-filled $V$ need not be in canonical ELZ form. If dimensions
+are requested, their ELZ restoration runs before VTUT, so U is the inverse of
+the restored V. VTUT always uses the full V, including unrecovered Bauer
+columns in dimensions that were not requested for restoration.
 
 ## Reduction parameters
 

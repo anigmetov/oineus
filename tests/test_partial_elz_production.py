@@ -147,7 +147,7 @@ def test_selected_u_rows_are_exact_and_never_expand_to_full_dimension():
     assert hom.n_computed_u_rows == 1
     assert hom.n_valid_u_rows == 0
     assert not hom.has_full_matrix_u()
-    with pytest.raises(RuntimeError, match="complete canonical U matrix"):
+    with pytest.raises(RuntimeError, match="complete U matrix"):
         hom.u_as_csr()
 
 
@@ -247,6 +247,33 @@ def test_reduce_all_recomputes_complete_u_after_selected_only_storage():
     coh = opt.cohomology_decomposition_ref()
     for decmp in (hom, coh):
         assert decmp.has_full_matrix_u()
+        assert decmp.has_matrix_v()
         assert decmp.n_valid_u_rows == fil.size()
+        assert decmp.n_elz_violators(n_threads=4) == 0
+        assert decmp.timings.compute_u > 0.0
         uv = np.asarray((decmp.u_as_csr() @ decmp.v_as_csc()).todense()) % 2
         assert np.array_equal(uv, np.eye(fil.size()))
+
+
+def test_reduce_all_recomputes_complete_non_elz_parallel_u():
+    rng = np.random.default_rng(23)
+    fil = oineus.freudenthal_filtration(
+        np.ascontiguousarray(rng.random((10, 10))),
+    )
+    opt = oineus.TopologyOptimizer(fil, n_threads=4)
+    opt.ensure_hom_built()
+    hom = opt.homology_decomposition_ref()
+    hom.reduce(oineus.ReductionParams(
+        compute_u=True, use_clearing=True, n_threads=4,
+    ))
+
+    assert hom.has_full_matrix_u()
+    assert hom.n_elz_violators(n_threads=4) > 0
+
+    opt.reduce_all()
+
+    assert hom.has_full_matrix_u()
+    assert hom.has_matrix_v()
+    assert hom.n_elz_violators(n_threads=4) == 0
+    uv = np.asarray((hom.u_as_csr() @ hom.v_as_csc()).todense()) % 2
+    assert np.array_equal(uv, np.eye(fil.size()))

@@ -34,6 +34,10 @@ def _finite(dgm):
     return dgm[np.isfinite(dgm).all(axis=1)] if len(dgm) else dgm.reshape(0, 2)
 
 
+def _dense_mod2(matrix):
+    return np.asarray(matrix.todense(), dtype=np.int64) % 2
+
+
 def _exact_points(dgms_obj, ndims):
     # full diagram points (birth, death, birth_index, death_index) per dimension, sorted,
     # so two extractions can be compared for EXACT identity (not just value-closeness)
@@ -151,6 +155,124 @@ def test_reduce_rv_parallel_exposes_r_and_v():
     assert len(dcmp.v_data) == fil.size()
 
 
+@pytest.mark.parametrize("factory", ["classic", "fused"])
+@pytest.mark.parametrize("dualize", [False, True])
+@pytest.mark.parametrize("compute_v", [False, True])
+@pytest.mark.parametrize("restore_elz", [False, True])
+def test_parallel_compute_u_is_full_inverse_of_retained_v(
+        factory, dualize, compute_v, restore_elz):
+    fil = _grid_fil(n=9, seed=14)
+    original = oin.Decomposition(fil, dualize)
+    d = original.d_as_csc()
+    params = oin.ReductionParams(
+        n_threads=4,
+        use_clearing=True,
+        compute_v=compute_v,
+        compute_u=True,
+        dims_to_restore_elz=list(range(fil.max_dim + 1))
+            if restore_elz else [],
+    )
+
+    if factory == "classic":
+        dcmp = original
+        dcmp.reduce(params)
+    else:
+        dcmp = oin.reduce(fil, params, dualize)
+
+    # Parallel compute_u implies retained compute_v, even if compute_v was
+    # false in the input recipe. Cleared columns must therefore have been
+    # Bauer-filled before VTUT.
+    assert dcmp.has_matrix_v()
+    assert len(dcmp.v_data) == fil.size()
+    assert dcmp.has_full_matrix_u()
+    assert dcmp.n_computed_u_rows == fil.size()
+    assert dcmp.n_valid_u_rows == fil.size()
+
+    r = dcmp.r_as_csc()
+    v = dcmp.v_as_csc()
+    u = dcmp.u_as_csr()
+    identity = np.eye(fil.size(), dtype=np.int64)
+    assert np.array_equal(_dense_mod2(d @ v), _dense_mod2(r))
+    assert np.array_equal(_dense_mod2(u @ v), identity)
+    assert np.array_equal(_dense_mod2(r @ u), _dense_mod2(d))
+
+    assert dcmp.u_timings.transpose_v > 0.0
+    assert dcmp.u_timings.row_solve > 0.0
+    assert dcmp.u_timings.col_solve == 0.0
+    assert dcmp.u_timings.col_to_row == 0.0
+    assert dcmp.timings.compute_u == pytest.approx(dcmp.u_timings.total)
+    if restore_elz:
+        assert dcmp.n_elz_violators(n_threads=4) == 0
+    else:
+        assert dcmp.timings.restore_elz == 0.0
+
+
+@pytest.mark.parametrize("dualize", [False, True])
+def test_parallel_compute_u_runs_requested_restore_before_vtut(dualize):
+    fil = _grid_fil(n=9, seed=16)
+    original = oin.Decomposition(fil, dualize)
+    d = original.d_as_csc()
+    dcmp = original
+    dcmp.reduce(oin.ReductionParams(
+        n_threads=4,
+        use_clearing=True,
+        compute_u=True,
+        dims_to_restore_elz=[1],
+    ))
+
+    # The requested dimension is restored first, then VTUT inverts that exact
+    # (partially restored) full V. No other ELZ dimensions are implied.
+    assert dcmp.n_elz_violators_in_dim(1, n_threads=4) == 0
+    assert np.array_equal(
+        _dense_mod2(dcmp.u_as_csr() @ dcmp.v_as_csc()),
+        np.eye(fil.size(), dtype=np.int64),
+    )
+    assert np.array_equal(
+        _dense_mod2(d @ dcmp.v_as_csc()),
+        _dense_mod2(dcmp.r_as_csc()),
+    )
+
+
+def test_parallel_compute_u_ignores_out_of_range_restore_dimensions():
+    fil = _grid_fil(n=7, seed=17)
+    dcmp = oin.reduce(fil, oin.ReductionParams(
+        n_threads=4,
+        use_clearing=True,
+        compute_u=True,
+        dims_to_restore_elz=[fil.max_dim + 1],
+    ))
+
+    assert dcmp.has_matrix_v()
+    assert dcmp.has_full_matrix_u()
+    assert np.array_equal(
+        _dense_mod2(dcmp.u_as_csr() @ dcmp.v_as_csc()),
+        np.eye(fil.size(), dtype=np.int64),
+    )
+
+
+@pytest.mark.parametrize("col_repr", [
+    oin.ColumnRepr.Set,
+    oin.ColumnRepr.Heap,
+    oin.ColumnRepr.Full,
+    oin.ColumnRepr.BitTree,
+])
+def test_parallel_compute_u_honors_column_representation(col_repr):
+    fil = _grid_fil(n=7, seed=15)
+    dcmp = oin.reduce(fil, oin.ReductionParams(
+        n_threads=4,
+        use_clearing=True,
+        compute_u=True,
+        col_repr=col_repr,
+    ))
+
+    assert dcmp.has_matrix_v()
+    assert dcmp.has_full_matrix_u()
+    assert np.array_equal(
+        _dense_mod2(dcmp.u_as_csr() @ dcmp.v_as_csc()),
+        np.eye(fil.size(), dtype=np.int64),
+    )
+
+
 def test_reduce_sanity_check_without_d_returns_false():
     # The fused path does not hold D; the no-argument sanity_check must
     # fail cleanly (return False) instead of pretending to verify.
@@ -201,15 +323,17 @@ def test_reduce_kwargs_equivalent_to_params():
 
     # same timings shape: every phase field is present and non-negative
     for t in (dcmp_params.timings, dcmp_kwargs.timings):
-        for phase in ("prepare", "reduce", "bauer", "restore_elz", "copy_back", "copy_pivots"):
+        for phase in ("prepare", "reduce", "bauer", "restore_elz", "copy_back",
+                      "copy_pivots", "compute_u"):
             assert getattr(t, phase) >= 0.0
         assert t.total >= 0.0
 
     # the method form: dcmp.reduce(n_threads=..., compute_u=...) must work
     dcmp_m = oin.Decomposition(fil, False)
-    dcmp_m.reduce(n_threads=1, compute_u=True, compute_v=True)
+    dcmp_m.reduce(n_threads=4, compute_u=True)
     assert dcmp_m.has_matrix_u()
     assert dcmp_m.has_matrix_v()
+    assert dcmp_m.has_full_matrix_u()
 
     # kwargs must not mutate the caller's params object
     base = oin.ReductionParams()

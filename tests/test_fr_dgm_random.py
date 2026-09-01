@@ -49,8 +49,6 @@ def test_random():
                 for compute_u in [True, False]:
                     for compute_v in [True, False]:
                         for n_threads in [1, 4, 7]:
-                            if n_threads > 1 and compute_u:
-                                continue
                             helper_test_random(n=n, negate=negate, n_threads=n_threads, dualize=dualize, compute_v=compute_v, compute_u=compute_u)
 
 

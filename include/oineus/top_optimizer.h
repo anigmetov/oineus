@@ -1213,10 +1213,25 @@ public:
         ensure_coh_built();
         params_hom_.use_clearing = false;
         params_hom_.compute_u = params_hom_.compute_v = true;
-        params_hom_.n_threads = 1;
-        if (not decmp_hom_.is_reduced or not decmp_hom_.has_full_matrix_u()) {
+        params_hom_.n_threads = std::max(1, n_threads_);
+        params_hom_.advanced.dims_to_restore_elz.clear();
+        for(dim_type dim = 0; dim < fil_.dims_first().size(); ++dim)
+            params_hom_.advanced.dims_to_restore_elz.push_back(dim);
+        auto has_complete_elz = [](const Decomposition& decmp) {
+            if (not decmp.is_reduced or not decmp.factorization_valid()
+                    or not decmp.has_matrix_v() or not decmp.has_full_matrix_u())
+                return false;
+            for(dim_type dim = 0; dim < decmp._dim_first.size(); ++dim) {
+                const auto it = decmp.is_elz_in_dim_.find(dim);
+                if (it == decmp.is_elz_in_dim_.end() or not it->second)
+                    return false;
+            }
+            return true;
+        };
+        if (not has_complete_elz(decmp_hom_)) {
             // Rebuild from D instead of reducing an already-reduced R, which
-            // would produce U = I.
+            // would produce U = I. reduce_all needs canonical critical-set
+            // matrices, so full ELZ restoration precedes parallel VTUT.
             decmp_hom_ = Decomposition(boundary_data_, fil_.dims_first(),
                     fil_.dims_last(), /*dualize=*/false, n_threads_);
             decmp_hom_.reduce(params_hom_);
@@ -1224,8 +1239,10 @@ public:
 
         params_coh_.use_clearing = false;
         params_coh_.compute_u = params_coh_.compute_v = true;
-        params_coh_.n_threads = 1;
-        if (not decmp_coh_.is_reduced or not decmp_coh_.has_full_matrix_u()) {
+        params_coh_.n_threads = std::max(1, n_threads_);
+        params_coh_.advanced.dims_to_restore_elz =
+                params_hom_.advanced.dims_to_restore_elz;
+        if (not has_complete_elz(decmp_coh_)) {
             decmp_coh_ = Decomposition(boundary_data_, fil_.dims_first(),
                     fil_.dims_last(), /*dualize=*/true, n_threads_);
             decmp_coh_.reduce(params_coh_);

@@ -15,7 +15,7 @@ params = oin.ReductionParams(
     chunk_size=256,     # advanced knob (params.advanced); rarely worth tuning
     use_clearing=True,  # default; turn off only to compare with literature
     compute_v=False,    # default; True if you need cycle reps
-    compute_u=False,    # default; cannot be combined with n_threads > 1
+    compute_u=False,    # True adds a parallel full-U solve and retains V
 )
 dcmp = oin.Decomposition(fil, dualize=True)
 dcmp.reduce(params)
@@ -37,9 +37,11 @@ What actually matters:
   dimensions. The Morozov-Nigmetov SPAA 2020 paper has the details. Turn
   off only for benchmark comparisons with codes that do not implement it.
 - **`compute_v` / `compute_u`.** Each one significantly increases the
-  memory footprint (you are storing a full $V$ or $U$ matrix alongside
-  $R$). Only enable them when you actually need cycle representatives,
-  matrix sanity checks, or critical-set / ELZ workflows.
+  memory footprint. With parallel reduction, `compute_u=True` implies
+  `compute_v=True`: Oineus Bauer-fills cleared V columns, retains the full V,
+  and then computes $U=V^{-1}$ by parallel VTUT. Only enable these outputs
+  when you actually need cycle representatives, matrix sanity checks, or
+  critical-set / ELZ workflows.
 
 ### Column representation (advanced -- you almost never need this)
 
@@ -93,9 +95,11 @@ seconds:
 |---|---|---|
 | `prepare` | build the working atomic-pointer column array | parallel only |
 | `reduce` | the lock-free reduction core itself | always |
+| `bauer` | dedicated eager fill of cleared V columns from paired R columns | parallel R+V when keeping/restoring working columns |
 | `restore_elz` | restore the canonical ELZ form of $V$ | only if `dims_to_restore_elz` is set |
 | `copy_back` | move the working columns back into `r_data`/`v_data` | parallel, *materializing* paths |
 | `copy_pivots` | copy the pivot array into the at-rest `_pivots` | parallel only |
+| `compute_u` | solve $V^T U^T=I$ for every row | parallel `compute_u=True` |
 
 `dcmp.timings.reduction_total` (synonym: `dcmp.timings.total`) is the
 path-comparable sum. The serial path reduces in place, so it has no
@@ -112,6 +116,10 @@ What the fuse changes in this breakdown:
   working form and materialized into `r_data`/`v_data` only lazily, on first
   access. That materialization runs *after* `reduce` returns and so is not part
   of these timings.
+- Parallel `compute_u=True` is different: VTUT needs V immediately, so R and V
+  are materialized before the solve and `compute_u` records the full transpose
+  plus row-solve time. The plain copy-back performs any required Bauer fills;
+  any requested `restore_elz` phase runs first.
 
 On realistic inputs the boundary build dominates `fil -> reduced`; everything
 above it is the reduction-side plumbing the fuse trims (do not assume the

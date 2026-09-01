@@ -658,7 +658,7 @@ namespace oineus {
         // Partial row solves use full-size u_data_t storage but write only the
         // requested rows. Keep scalar telemetry rather than one validity byte
         // per simplex. Only reduce(compute_u=true) or an explicit complete-U
-        // assignment gives the stored U a public validity guarantee.
+        // assignment gives the stored U a public completeness guarantee.
         size_t n_computed_u_rows_ {0};
         size_t n_valid_u_rows_ {0};
         double lazy_restore_elz_time_ {0.0};
@@ -1026,9 +1026,9 @@ namespace oineus {
         }
 
         // Resolve the tri-state params.use_apparent_pairs for one fused branch
-        // (call sites sit past the can_fuse check, so n_threads > 1 and no
-        // compute_u here; explicit On is still subject to the per-branch support
-        // gate at the call site). Auto enables the optimization only in its
+        // (call sites sit past the can_fuse check; explicit On is still subject to
+        // the per-branch support gate at the call site). Auto enables the
+        // optimization only in its
         // measured pure-win corner -- the fused R-only homology reduction of a
         // complete cubical grid, where it ties-or-wins on wall time AND sets the
         // peak-RSS floor. Everywhere else (RV, cohomology, Freudenthal) it
@@ -1052,7 +1052,7 @@ namespace oineus {
         // _pivots either way. For the parallel R-only path this leaves the
         // pivots-only state (r_data empty); for the parallel RV path R and V are
         // materialized into r_data/v_data. col_repr is honored via the same switch
-        // the classic reducers use. Serial, compute_u, the empty complex, and
+        // the classic reducers use. Serial, the empty complex, and
         // R-only-with-restore-ELZ fall back to the classic fused path
         // (init_fused_ + reduce), which handles them correctly.
         template<class C, class R>
@@ -1061,9 +1061,11 @@ namespace oineus {
             VRUDecomposition dcmp;
             const size_t n_cols = fil.size();
 
-            const bool restore_elz_r_only = (not params.advanced.dims_to_restore_elz.empty() and not params.compute_v);
+            const bool needs_v = params.compute_v or params.compute_u;
+            const bool restore_elz_r_only =
+                    not params.advanced.dims_to_restore_elz.empty() and not needs_v;
             const bool can_fuse = params.n_threads > 1 and n_cols > 0
-                    and not params.compute_u and not restore_elz_r_only;
+                    and not restore_elz_r_only;
 
             if (not can_fuse) {
                 dcmp.init_fused_(fil, dualize, params.n_threads);
@@ -1084,7 +1086,7 @@ namespace oineus {
             init_pivots_(executor, pivots, dcmp.n_rows);
 
             Timer timer_build;
-            if (params.compute_v) {
+            if (needs_v) {
                 RVWorkingMatrix rv;
                 bool used_apparent = false;
 
@@ -1098,7 +1100,8 @@ namespace oineus {
                     // The apparent lean form skips the eager Bauer fill, which also
                     // hosts the ELZ-restore pass; refuse the combination so a
                     // requested ELZ restore is never silently dropped.
-                    const bool apparent_active = apparent_requested_(params, fil, dualize, /*r_only=*/false)
+                    const bool apparent_active = not params.compute_u
+                            and apparent_requested_(params, fil, dualize, /*r_only=*/false)
                             and params.advanced.dims_to_restore_elz.empty()
                             and (fil.kind() == FiltrationKind::Cubical
                                     or fil.kind() == FiltrationKind::Freudenthal)
@@ -1144,11 +1147,19 @@ namespace oineus {
                     rv = dualize ? fil.coboundary_matrix_for_par_with_v(params.n_threads)
                                  : fil.boundary_matrix_for_par_with_v(params.n_threads);
                 }
-                // Keep the working RV columns: r_data/v_data stay empty and are
-                // reconstructed lazily on first matrix/pickle access. diagram(fil)
-                // reads _pivots, so diagram-only callers never pay the copy-back.
+                // Keep the working RV columns unless compute_u needs V immediately
+                // for the post-reduction VTUT solve. Diagram-only callers still
+                // avoid copy-back.
                 dcmp.timings_.prepare = timer_build.elapsed();
-                dcmp.run_rv_core_dispatch_(params, executor, rv, pivots, n_cols, n_threads, /*keep_working=*/true);
+                const bool keep_rv_working = not params.compute_u;
+                if (not keep_rv_working) {
+                    dcmp.r_data = MatrixData(n_cols);
+                    dcmp.v_data = MatrixData(n_cols);
+                }
+                dcmp.run_rv_core_dispatch_(params, executor, rv, pivots, n_cols,
+                        n_threads, keep_rv_working);
+                if (params.compute_u)
+                    dcmp.finish_parallel_u_(params);
             } else {
                 RWorkingMatrix ar;
                 bool used_apparent = false;
@@ -1262,7 +1273,7 @@ namespace oineus {
         // antitransposes it -- both leave `bdry` intact so the optimizer can build
         // the other side. With keep_working the reduced RVColumns are kept (no
         // copy-back) and read via r_low/r_is_zero/v_col. Falls back to the classic
-        // boundary ctor + reduce for serial / compute_u / empty / R-only+restoreELZ.
+        // boundary ctor + reduce for serial / empty / R-only+restoreELZ.
         static VRUDecomposition reduce_from_boundary_fused(const MatrixData& bdry,
                 std::vector<Int> dim_first_, std::vector<Int> dim_last_,
                 bool dualize, const ReductionParams& params, bool keep_working)
@@ -1270,9 +1281,11 @@ namespace oineus {
             VRUDecomposition dcmp;
             const size_t n_cols = bdry.size();
 
-            const bool restore_elz_r_only = (not params.advanced.dims_to_restore_elz.empty() and not params.compute_v);
+            const bool needs_v = params.compute_v or params.compute_u;
+            const bool restore_elz_r_only =
+                    not params.advanced.dims_to_restore_elz.empty() and not needs_v;
             const bool can_fuse = params.n_threads > 1 and n_cols > 0
-                    and not params.compute_u and not restore_elz_r_only;
+                    and not restore_elz_r_only;
 
             if (not can_fuse) {
                 dcmp = VRUDecomposition(bdry, std::move(dim_first_), std::move(dim_last_), dualize, params.n_threads);
@@ -1292,7 +1305,7 @@ namespace oineus {
             init_pivots_(executor, pivots, dcmp.n_rows);
 
             Timer timer_build;
-            if (params.compute_v) {
+            if (needs_v) {
                 RVWorkingMatrix rv(n_cols);
                 if (dualize) {
                     auto cb = antitranspose(bdry, n_cols);
@@ -1311,7 +1324,15 @@ namespace oineus {
                     executor.run(tf_build).get();
                 }
                 dcmp.timings_.prepare = timer_build.elapsed();
-                dcmp.run_rv_core_dispatch_(params, executor, rv, pivots, n_cols, n_threads, keep_working);
+                const bool keep_rv_working = keep_working and not params.compute_u;
+                if (not keep_rv_working) {
+                    dcmp.r_data = MatrixData(n_cols);
+                    dcmp.v_data = MatrixData(n_cols);
+                }
+                dcmp.run_rv_core_dispatch_(params, executor, rv, pivots, n_cols,
+                        n_threads, keep_rv_working);
+                if (params.compute_u)
+                    dcmp.finish_parallel_u_(params);
             } else {
                 RWorkingMatrix ar(n_cols);
                 if (dualize) {
@@ -1496,6 +1517,9 @@ namespace oineus {
         // its dispatcher uses a BitTree residual while retaining the same V.
         template<class WorkCol> void compute_u_from_v_impl(dim_type dim, size_t n_threads, bool verbose);
         template<class WorkCol> void compute_u_from_v_1_impl(dim_type dim, size_t n_threads, bool verbose);
+        template<class WorkCol> void compute_full_u_vt_impl_(size_t n_threads, bool verbose);
+        void compute_full_u_vt_(size_t n_threads, bool verbose);
+        void finish_parallel_u_(const ReductionParams& params);
         template<class WorkCol, typename Real, typename ValueAt, typename CmpOp>
         void compute_partial_u_rows_impl(const std::vector<size_t>& rows,
                                          const std::vector<Real>& bounds,
@@ -2556,20 +2580,29 @@ namespace oineus {
             return;
         }
 
-        if (params.n_threads > 1 and params.compute_u)
-            throw std::runtime_error("Cannot compute U matrix in parallel");
+        const bool parallel_compute_u = params.n_threads > 1 and params.compute_u;
+        const bool needs_v = params.compute_v or parallel_compute_u;
 
         // Serial + no clearing already produces ELZ, so restore_elz is ignored there.
         const bool serial_without_clearing = (params.n_threads == 1 && !params.use_clearing);
-        if (not params.advanced.dims_to_restore_elz.empty() and not params.compute_v and not serial_without_clearing)
+        if (not params.advanced.dims_to_restore_elz.empty() and not needs_v
+                and not serial_without_clearing)
             throw std::runtime_error("Cannot restore ELZ during reduction without V matrix");
 
         if (params.n_threads == 1)
             reduce_serial(params);
-        else if (params.compute_v)
-            reduce_parallel_rv(params);
-        else
+        else if (needs_v) {
+            // Parallel U is recovered after reduction from the complete working V.
+            // compute_u therefore implies retained compute_v on this path.
+            ReductionParams parallel_params = params;
+            parallel_params.compute_v = true;
+            parallel_params.compute_u = false;
+            reduce_parallel_rv(parallel_params);
+            if (parallel_compute_u)
+                finish_parallel_u_(params);
+        } else {
             reduce_parallel_r_only(params);
+        }
     }
 
     // ---- working-column dispatchers: pick WorkCol from params.advanced.col_repr ----
@@ -4321,6 +4354,8 @@ namespace oineus {
                 // ELZ restore over the requested dims (others stay unrestored but
                 // still have valid Bauer-filled V columns).
                 for(dim_type dim: params.advanced.dims_to_restore_elz) {
+                    if (dim >= dim_first.size())
+                        continue;
                     // Dedicated parallel restore: each worker owns one reusable
                     // (v_work, r_work) WorkCol pair (the col_repr-chosen
                     // representation) and reuses it across its contiguous column
@@ -5280,6 +5315,120 @@ namespace oineus {
         // increase), so no explicit sort needed.
 
         return result;
+    }
+
+    // Full parallel VTUT recovery used by reduce(compute_u=true,
+    // n_threads>1). Unlike the bounded critical-set driver, this solves every
+    // row against the entire current V and therefore needs no ELZ readiness:
+    // any unit upper-triangular reduction V has a well-defined inverse. If ELZ
+    // restoration was requested, the reduction core completed it before this
+    // method is called.
+    template<typename Int_>
+    void VRUDecomposition<Int_>::compute_full_u_vt_(size_t n_threads,
+                                                    bool verbose)
+    {
+        switch (col_repr_) {
+            case ColumnRepr::Set:
+                compute_full_u_vt_impl_<SetColumn<Int_>>(n_threads, verbose);
+                break;
+            case ColumnRepr::Full:
+                compute_full_u_vt_impl_<FullColumn<Int_>>(n_threads, verbose);
+                break;
+            case ColumnRepr::BitTree:
+                compute_full_u_vt_impl_<BitTreeColumn<Int_>>(n_threads, verbose);
+                break;
+            case ColumnRepr::Heap:
+                // VTUT needs the minimum residual index; HeapColumn is
+                // max-oriented, so use the same BitTree fallback as the bounded
+                // row solver.
+                compute_full_u_vt_impl_<BitTreeColumn<Int_>>(n_threads, verbose);
+                break;
+        }
+    }
+
+    template<typename Int_>
+    template<class WorkCol>
+    void VRUDecomposition<Int_>::compute_full_u_vt_impl_(size_t n_threads,
+                                                         bool verbose)
+    {
+        require_v_for_u_solve_("parallel compute_u VTUT solve");
+        u_timings_.reset();
+
+        const size_t nc = v_data.size();
+        u_data_t = MatrixData(nc);
+        n_computed_u_rows_ = 0;
+        n_valid_u_rows_ = 0;
+        if (nc == 0)
+            return;
+
+        if (n_threads == 0)
+            n_threads = 1;
+        n_threads = std::min(n_threads, nc);
+
+        if (oineus::interrupted())
+            throw oineus::interrupted_exception{};
+
+        Timer timer;
+        using MatrixTraits = SimpleSparseMatrixTraits<Int_, 2>;
+        // Use every V column, including positive Bauer-filled columns. The
+        // large sparse case is automatically routed to the bucket transpose.
+        MatrixData vt_data = MatrixTraits::col_to_row_format_parallel(
+                v_data, static_cast<int>(n_threads), 0, nc,
+                static_cast<Int_>(nc), /*prefer_row_scatter=*/false);
+        u_timings_.transpose_v = timer.elapsed_reset();
+        if (oineus::interrupted())
+            throw oineus::interrupted_exception{};
+
+        std::atomic<size_t> next_free_row(0);
+        std::vector<std::thread> workers;
+        workers.reserve(n_threads);
+        auto value_at = [](Int_) { return 0; };
+        auto never_stop = [](int, int) { return false; };
+
+        for(size_t tid = 0; tid < n_threads; ++tid) {
+            workers.emplace_back([this, &vt_data, &next_free_row, &value_at,
+                                  &never_stop, nc]() {
+                WorkCol residual;
+                residual.reserve(nc);
+                size_t rows_since_interrupt_poll = 0;
+                while(true) {
+                    // Poll the signal flag on a thread-local cadence. Reading it
+                    // for every trivial row measurably slows sparse full-U solves.
+                    if ((rows_since_interrupt_poll++ & 255) == 0
+                            and oineus::interrupted())
+                        break;
+                    const size_t row = next_free_row.fetch_add(
+                            1, std::memory_order_relaxed);
+                    if (row >= nc)
+                        break;
+                    u_data_t[row] = compute_u_row_bounded(
+                            row, vt_data, 0, value_at, never_stop, residual);
+                }
+            });
+        }
+        for(auto& worker : workers)
+            worker.join();
+
+        u_timings_.row_solve = timer.elapsed_reset();
+        if (oineus::interrupted())
+            throw oineus::interrupted_exception{};
+        n_computed_u_rows_ = nc;
+        n_valid_u_rows_ = nc;
+
+        if (verbose)
+            IC(u_timings_.transpose_v, u_timings_.row_solve);
+    }
+
+    template<typename Int_>
+    void VRUDecomposition<Int_>::finish_parallel_u_(
+            const ReductionParams& params)
+    {
+        compute_full_u_vt_(static_cast<size_t>(std::max(1, params.n_threads)),
+                           params.verbose);
+        timings_.compute_u = u_timings_.total();
+
+        // Parallel compute_u implies compute_v: VTUT used the Bauer-filled V and
+        // the decomposition retains that same matrix as part of its public state.
     }
 
     template<typename Int_>

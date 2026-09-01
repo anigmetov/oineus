@@ -377,7 +377,7 @@ def reduce(filtration, params=None, dualize=False, **kwargs):
 
 
 # pythonic kwargs layer over the C++ Decomposition.reduce(params) method:
-# dcmp.reduce(n_threads=1, compute_u=True) works like the free reduce above
+# dcmp.reduce(n_threads=8, compute_u=True) works like the free reduce above
 _decomposition_reduce_cpp = Decomposition.reduce
 
 
@@ -385,7 +385,7 @@ def _decomposition_reduce(self, params=None, **kwargs):
     """Reduce this decomposition with the given ReductionParams.
 
     ReductionParams fields can be given directly as keyword arguments, e.g.
-    ``dcmp.reduce(n_threads=1, compute_u=True)``; they are set on a copy of
+    ``dcmp.reduce(n_threads=8, compute_u=True)``; they are set on a copy of
     params (or of a default ReductionParams), so the caller's params object is
     never mutated. An unknown field name raises TypeError.
     """

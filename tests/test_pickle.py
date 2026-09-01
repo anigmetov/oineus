@@ -132,14 +132,15 @@ def test_decomposition_pickle_preserves_col_repr_and_timings():
         assert list(dcmp_back.u_row(row)) == list(dcmp.u_row(row))
 
     # timings, u_timings and restore thread times survive the round-trip
-    dcmp2 = oin.Decomposition(fil, dualize=False, n_threads=1)
-    dcmp2.reduce(oin.ReductionParams(compute_v=True, use_clearing=False, n_threads=1))
-    dcmp2.compute_full_u_rows(fil, dim=0)
+    dcmp2 = oin.Decomposition(fil, dualize=False, n_threads=4)
+    dcmp2.reduce(oin.ReductionParams(compute_u=True, n_threads=4))
+    assert dcmp2.timings.compute_u > 0
     assert dcmp2.timings.reduction_total > 0
     assert dcmp2.u_timings.total > 0
 
     dcmp2_back = pickle.loads(pickle.dumps(dcmp2))
     assert dcmp2_back.timings.reduction_total == dcmp2.timings.reduction_total
+    assert dcmp2_back.timings.compute_u == dcmp2.timings.compute_u
     assert dcmp2_back.u_timings.total == dcmp2.u_timings.total
 
     params3 = oin.ReductionParams(compute_v=True, n_threads=4)

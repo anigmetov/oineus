@@ -50,11 +50,11 @@ static void require_u_matrix(const Decomposition& self, const char* what)
     if (not self.has_matrix_u())
         throw std::runtime_error(
                 std::string(what) + " is not available: U was not computed. Reduce with "
-                "compute_u=True before exporting a complete canonical U matrix.");
+                "compute_u=True before exporting a complete U matrix.");
     if (not self.has_full_matrix_u())
         throw std::runtime_error(
                 std::string(what) + " is not available: U was not produced by a "
-                "compute_u=True reduction and is not certified as a complete canonical U "
+                "compute_u=True reduction and is not certified as a complete U "
                 "matrix. Reduce with compute_u=True before exporting it.");
 }
 
@@ -467,7 +467,7 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                     nb::arg("dim"))
             .def("u_row", &Decomposition::u_row, nb::arg("row"),
                     "Raw internal U row storage. Unless has_full_matrix_u() is true, "
-                    "its presence does not imply a complete canonical row.")
+                    "its presence does not imply a row of the complete inverse.")
             .def_prop_ro("n_computed_u_rows", &Decomposition::n_computed_u_rows)
             .def_prop_ro("n_valid_u_rows", &Decomposition::n_valid_u_rows)
             .def_prop_ro("lazy_restore_elz_time", [](const Decomposition& self) {

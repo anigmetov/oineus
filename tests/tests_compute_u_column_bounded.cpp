@@ -403,12 +403,32 @@ TEST_CASE("compute_partial_u_rows writes only requested rows, hom")
 // The bauer phase (recovering cleared V columns) is split out of restore_elz in
 // the timings, but must still be part of the comparable reduction_total. Guard
 // the formula so it cannot be silently dropped from the total.
-TEST_CASE("ReductionTimings.reduction_total includes the bauer phase")
+TEST_CASE("ReductionTimings.reduction_total includes Bauer and parallel U")
 {
     oineus::ReductionTimings t;
     t.prepare = 1.0; t.reduce = 2.0; t.bauer = 4.0;
     t.restore_elz = 8.0; t.copy_back = 16.0; t.copy_pivots = 32.0;
-    REQUIRE(t.reduction_total() == 63.0);  // fails if bauer (4) is dropped
+    t.compute_u = 64.0;
+    REQUIRE(t.reduction_total() == 127.0);
+}
+
+
+TEST_CASE("parallel full VTUT observes a pending interruption")
+{
+    using Int = long;
+    using Real = double;
+    auto fil = make_test_filtration<Int, Real>(5, 5);
+    auto decmp = reduce_with_params<Int, Real>(fil, /*clearing=*/true,
+                                               /*compute_u=*/false,
+                                               /*restore_elz=*/false,
+                                               /*n_threads=*/4);
+
+    struct StopReset {
+        ~StopReset() { oineus::clear_stop(); }
+    } stop_reset;
+    oineus::request_stop();
+    REQUIRE_THROWS_AS(decmp.compute_full_u_vt_(4, false),
+                      oineus::interrupted_exception);
 }
 
 
