@@ -1211,24 +1211,24 @@ public:
         // before reducing them.
         ensure_hom_built();
         ensure_coh_built();
-        if (not decmp_hom_.factorization_valid()) {
-            decmp_hom_ = Decomposition(boundary_data_, fil_.dims_first(),
-                    fil_.dims_last(), /*dualize=*/false, n_threads_);
-        }
-        if (not decmp_coh_.factorization_valid()) {
-            decmp_coh_ = Decomposition(boundary_data_, fil_.dims_first(),
-                    fil_.dims_last(), /*dualize=*/true, n_threads_);
-        }
         params_hom_.use_clearing = false;
         params_hom_.compute_u = params_hom_.compute_v = true;
-        if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u())) {
-            decmp_hom_.reduce_serial(params_hom_);
+        params_hom_.n_threads = 1;
+        if (not decmp_hom_.is_reduced or not decmp_hom_.has_full_matrix_u()) {
+            // Rebuild from D instead of reducing an already-reduced R, which
+            // would produce U = I.
+            decmp_hom_ = Decomposition(boundary_data_, fil_.dims_first(),
+                    fil_.dims_last(), /*dualize=*/false, n_threads_);
+            decmp_hom_.reduce(params_hom_);
         }
 
         params_coh_.use_clearing = false;
         params_coh_.compute_u = params_coh_.compute_v = true;
-        if (!decmp_coh_.is_reduced or (params_coh_.compute_u and not decmp_coh_.has_matrix_u())) {
-            decmp_coh_.reduce_serial(params_coh_);
+        params_coh_.n_threads = 1;
+        if (not decmp_coh_.is_reduced or not decmp_coh_.has_full_matrix_u()) {
+            decmp_coh_ = Decomposition(boundary_data_, fil_.dims_first(),
+                    fil_.dims_last(), /*dualize=*/true, n_threads_);
+            decmp_coh_.reduce(params_coh_);
         }
     }
 

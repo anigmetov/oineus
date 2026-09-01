@@ -655,10 +655,12 @@ namespace oineus {
         std::map<dim_type, bool> negative_v_elz_in_dim_;
         bool rv_invariant_valid_ {true};
 
-        // compute_partial_u_rows sizes u_data_t to the full matrix but writes
-        // only selected rows. Track those rows so partial storage is never
-        // exported as a complete inverse matrix.
-        std::vector<char> u_row_valid_;
+        // Partial row solves use full-size u_data_t storage but write only the
+        // requested rows. Keep scalar telemetry rather than one validity byte
+        // per simplex. Only reduce(compute_u=true) or an explicit complete-U
+        // assignment gives the stored U a public validity guarantee.
+        size_t n_computed_u_rows_ {0};
+        size_t n_valid_u_rows_ {0};
         double lazy_restore_elz_time_ {0.0};
 
         // in parallel versions we use atomic pivots, in serial - normal
@@ -760,7 +762,8 @@ namespace oineus {
             is_elz_in_dim_ = other.is_elz_in_dim_;
             negative_v_elz_in_dim_ = other.negative_v_elz_in_dim_;
             rv_invariant_valid_ = other.rv_invariant_valid_;
-            u_row_valid_ = other.u_row_valid_;
+            n_computed_u_rows_ = other.n_computed_u_rows_;
+            n_valid_u_rows_ = other.n_valid_u_rows_;
             lazy_restore_elz_time_ = other.lazy_restore_elz_time_;
             _pivots = other._pivots;
             ri_r_ = other.ri_r_;
@@ -796,7 +799,8 @@ namespace oineus {
             is_elz_in_dim_ = std::move(other.is_elz_in_dim_);
             negative_v_elz_in_dim_ = std::move(other.negative_v_elz_in_dim_);
             rv_invariant_valid_ = other.rv_invariant_valid_;
-            u_row_valid_ = std::move(other.u_row_valid_);
+            n_computed_u_rows_ = other.n_computed_u_rows_;
+            n_valid_u_rows_ = other.n_valid_u_rows_;
             lazy_restore_elz_time_ = other.lazy_restore_elz_time_;
             _pivots = std::move(other._pivots);
             ri_r_ = std::move(other.ri_r_);
@@ -1454,7 +1458,8 @@ namespace oineus {
                 && is_elz_in_dim_ == other.is_elz_in_dim_
                 && negative_v_elz_in_dim_ == other.negative_v_elz_in_dim_
                 && rv_invariant_valid_ == other.rv_invariant_valid_
-                && u_row_valid_ == other.u_row_valid_
+                && n_computed_u_rows_ == other.n_computed_u_rows_
+                && n_valid_u_rows_ == other.n_valid_u_rows_
                 && _pivots == other._pivots
                 && dim_first == other.dim_first
                 && dim_last == other.dim_last
@@ -1532,24 +1537,15 @@ namespace oineus {
         bool has_full_matrix_u() const
         {
             return not u_data_t.empty()
-                && u_row_valid_.size() == u_data_t.size()
-                && std::all_of(u_row_valid_.begin(), u_row_valid_.end(),
-                        [](char x) { return x != 0; });
+                && n_valid_u_rows_ == u_data_t.size();
         }
-        bool is_u_row_valid(size_t row) const
-        {
-            return row < u_row_valid_.size() && u_row_valid_[row] != 0;
-        }
+        size_t n_computed_u_rows() const { return n_computed_u_rows_; }
         size_t n_valid_u_rows() const
         {
-            return static_cast<size_t>(std::count_if(u_row_valid_.begin(),
-                    u_row_valid_.end(), [](char x) { return x != 0; }));
+            return n_valid_u_rows_;
         }
         const IntSparseColumn& u_row(size_t row) const
         {
-            if (not is_u_row_valid(row))
-                throw std::runtime_error(
-                        "u_row: requested U row has not been computed");
             return u_data_t.at(row);
         }
         bool negative_v_elz_in_dim(dim_type dim) const
@@ -1865,24 +1861,24 @@ namespace oineus {
         {
             rv_invariant_valid_ = true;
             lazy_restore_elz_time_ = 0.0;
-            u_row_valid_.clear();
+            n_computed_u_rows_ = 0;
+            n_valid_u_rows_ = 0;
             for(auto& kv : negative_v_elz_in_dim_)
                 kv.second = false;
         }
 
-        void mark_u_rows_valid_(size_t n, const std::vector<size_t>& rows)
+        void mark_u_rows_computed_(size_t n_rows)
         {
-            if (u_row_valid_.size() != n)
-                u_row_valid_.assign(n, 0);
-            for(size_t row : rows)
-                u_row_valid_.at(row) = 1;
+            n_computed_u_rows_ += n_rows;
+            // A selected solve may overwrite a previously complete row. Without
+            // per-row metadata, conservatively drop every complete-U guarantee.
+            n_valid_u_rows_ = 0;
         }
 
-        void mark_u_range_valid_(size_t n, size_t begin, size_t end)
+        void mark_u_storage_replaced_(size_t n_rows)
         {
-            u_row_valid_.assign(n, 0);
-            for(size_t row = begin; row < end; ++row)
-                u_row_valid_[row] = 1;
+            n_computed_u_rows_ = n_rows;
+            n_valid_u_rows_ = 0;
         }
 
         // Shared entry gate of the U-from-V solvers: reconstruct the at-rest
@@ -2314,7 +2310,8 @@ namespace oineus {
         }
         if (not v_only and has_matrix_u() and not has_full_matrix_u()) {
             u_data_t.clear();
-            u_row_valid_.clear();
+            n_computed_u_rows_ = 0;
+            n_valid_u_rows_ = 0;
         }
 
         size_t n_violators = 0;
@@ -2350,7 +2347,8 @@ namespace oineus {
                 rv_invariant_valid_ = false;
                 if (not u_data_t.empty())
                     u_data_t.clear();
-                u_row_valid_.clear();
+                n_computed_u_rows_ = 0;
+                n_valid_u_rows_ = 0;
             }
             if (_dim != k_all_dims)
                 negative_v_elz_in_dim_[_dim] = true;
@@ -2526,7 +2524,8 @@ namespace oineus {
         if (changed_count > 0) {
             if (rv_invariant_valid_ && not u_data_t.empty()) {
                 u_data_t.clear();
-                u_row_valid_.clear();
+                n_computed_u_rows_ = 0;
+                n_valid_u_rows_ = 0;
             }
             rv_invariant_valid_ = false;
         }
@@ -2737,9 +2736,11 @@ namespace oineus {
         }
 
         if (params.compute_u) {
-            u_row_valid_.assign(u_data_t.size(), 1);
+            n_computed_u_rows_ = u_data_t.size();
+            n_valid_u_rows_ = u_data_t.size();
         } else {
-            u_row_valid_.clear();
+            n_computed_u_rows_ = 0;
+            n_valid_u_rows_ = 0;
         }
 
         is_reduced = true;
@@ -3112,7 +3113,8 @@ namespace oineus {
         // U (= V^{-1} transposed) is now stale.
         if (not u_data_t.empty())
             u_data_t.clear();
-        u_row_valid_.clear();
+        n_computed_u_rows_ = 0;
+        n_valid_u_rows_ = 0;
         for(auto& kv : is_elz_in_dim_)
             kv.second = false;
         for(auto& kv : negative_v_elz_in_dim_)
@@ -3442,7 +3444,8 @@ namespace oineus {
         is_reduced = true;
         if (not u_data_t.empty())
             u_data_t.clear();
-        u_row_valid_.clear();
+        n_computed_u_rows_ = 0;
+        n_valid_u_rows_ = 0;
         for(auto& kv : is_elz_in_dim_)
             kv.second = false;
         for(auto& kv : negative_v_elz_in_dim_)
@@ -3583,7 +3586,8 @@ namespace oineus {
         is_reduced = true;
         if (not u_data_t.empty())
             u_data_t.clear();
-        u_row_valid_.clear();
+        n_computed_u_rows_ = 0;
+        n_valid_u_rows_ = 0;
 
         if (stats) {
             stats->n_column_additions_r += inner.n_column_additions_r + ar;
@@ -3829,7 +3833,8 @@ namespace oineus {
         n_rows = n_new;
         if (not u_data_t.empty())
             u_data_t.clear();
-        u_row_valid_.clear();
+        n_computed_u_rows_ = 0;
+        n_valid_u_rows_ = 0;
         is_elz_in_dim_.clear();
         negative_v_elz_in_dim_.clear();
         for(dim_type d = 0; d < dim_first.size(); ++d) {
@@ -5127,7 +5132,7 @@ namespace oineus {
         u_data_t = MatrixTraits::col_to_row_format_parallel(
                 u_data, n_threads, col_start, col_end, v_data.size(),
                 /*prefer_row_scatter=*/(dim == 1 && dualize_));
-        mark_u_range_valid_(u_data_t.size(), col_start, col_end);
+        mark_u_storage_replaced_(col_end - col_start);
 
         u_timings_.col_to_row = timer.elapsed_reset();
 
@@ -5199,7 +5204,7 @@ namespace oineus {
         u_data_t = MatrixTraits::col_to_row_format_parallel(
                 u_data, n_threads, col_start, col_end, v_data.size(),
                 /*prefer_row_scatter=*/(dim == 1 && dualize_));
-        mark_u_range_valid_(u_data_t.size(), col_start, col_end);
+        mark_u_storage_replaced_(col_end - col_start);
 
         u_timings_.col_to_row = timer.elapsed_reset();
 
@@ -5335,7 +5340,8 @@ namespace oineus {
         const size_t nc = has_working_rv_ ? n_cols_total() : v_data.size();
         if (u_data_t.size() != nc) {
             u_data_t = MatrixData(nc);
-            u_row_valid_.assign(nc, 0);
+            n_computed_u_rows_ = 0;
+            n_valid_u_rows_ = 0;
         }
 
         if (rows.empty())
@@ -5417,7 +5423,7 @@ namespace oineus {
 
         for (auto& w : workers) w.join();
 
-        mark_u_rows_valid_(nc, rows);
+        mark_u_rows_computed_(rows.size());
 
         u_timings_.row_solve = timer.elapsed_reset();
 
@@ -5439,7 +5445,8 @@ namespace oineus {
         if (cend <= cstart) {
             if (u_data_t.size() != v_data.size())
                 u_data_t = MatrixData(v_data.size());
-            u_row_valid_.assign(u_data_t.size(), 0);
+            n_computed_u_rows_ = 0;
+            n_valid_u_rows_ = 0;
             return;
         }
         std::vector<size_t> rows;

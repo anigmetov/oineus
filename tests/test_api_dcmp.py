@@ -131,7 +131,7 @@ def test_compute_u_from_v_1_fused_keep_working():
     assert np.array_equal(prod, identity_rows)
 
     # A dimension-only solve is not a complete global U matrix
-    with pytest.raises(RuntimeError, match="selected canonical U rows"):
+    with pytest.raises(RuntimeError, match="complete canonical U matrix"):
         dcmp.u_as_csr()
 
 

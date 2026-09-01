@@ -108,8 +108,20 @@ After {py:meth}`oineus.Decomposition.reduce`:
 - `dcmp.r_as_csc()`, `dcmp.v_as_csc()`, `dcmp.d_as_csc()`,
   `dcmp.u_as_csr()` -- SciPy-compatible sparse views over $\mathbb{F}_2$.
 
-`compute_u = True` cannot be combined with multi-threaded reduction; Oineus
-will silently use a single thread if you set both.
+Only `has_full_matrix_u() == True` guarantees that the stored rows form a
+complete canonical $U$. In particular, the critical-set implementation may
+use `u_data_t` as scratch storage for bounded row prefixes when
+`params.compute_u = False`; those internal rows carry no public completeness
+guarantee. `n_computed_u_rows` reports row-solve work, while `n_valid_u_rows`
+is either zero or the size of a complete canonical $U$. Post-reduction $U$
+solvers still expose their raw row results through `u_row`, but do not upgrade
+that global guarantee. Oineus deliberately does not keep a per-simplex
+validity bitmap.
+
+`compute_u = True` cannot currently be combined with multi-threaded reduction;
+set `n_threads = 1`. Parallel full-$U$ recovery is planned as a separate
+post-reduction VTUT pass.
+
 ## Reduction parameters
 
 {py:class}`oineus.ReductionParams` controls the algorithm. 

@@ -50,12 +50,12 @@ static void require_u_matrix(const Decomposition& self, const char* what)
     if (not self.has_matrix_u())
         throw std::runtime_error(
                 std::string(what) + " is not available: U was not computed. Reduce with "
-                "compute_u=True, or call compute_u_from_v / compute_full_u_rows first.");
+                "compute_u=True before exporting a complete canonical U matrix.");
     if (not self.has_full_matrix_u())
         throw std::runtime_error(
-                std::string(what) + " is not available: only selected canonical U rows "
-                "have been computed for critical sets; request rows individually or "
-                "re-reduce before exporting a complete U matrix.");
+                std::string(what) + " is not available: U was not produced by a "
+                "compute_u=True reduction and is not certified as a complete canonical U "
+                "matrix. Reduce with compute_u=True before exporting it.");
 }
 
 Eigen::SparseMatrix<oin_int, Eigen::ColMajor>  z2_col_matrix_to_csc(const oin::VRUDecomposition<oin_int>::MatrixData& col_matrix, size_t num_rows)
@@ -343,7 +343,8 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                                                decltype(Decomposition::dbg_restore_thread_times_),
                                                decltype(Decomposition::negative_v_elz_in_dim_),
                                                decltype(Decomposition::rv_invariant_valid_),
-                                               decltype(Decomposition::u_row_valid_),
+                                               decltype(Decomposition::n_computed_u_rows_),
+                                               decltype(Decomposition::n_valid_u_rows_),
                                                decltype(Decomposition::lazy_restore_elz_time_)>;
     using Simplex = oin::Simplex<oin_int>;
     using SimplexFiltration = oin::Filtration<Simplex, oin_real>;
@@ -446,7 +447,8 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                     [](Decomposition& self, const typename Decomposition::MatrixData& value) {
                         self.require_factorization_valid_("u_data_t");
                         self.u_data_t = value;
-                        self.u_row_valid_.assign(value.size(), 1);
+                        self.n_computed_u_rows_ = value.size();
+                        self.n_valid_u_rows_ = value.size();
                     })
             .def_ro("timings", &Decomposition::timings_,
                     "Per-phase wall-clock breakdown of the last reduce() call (ReductionTimings).")
@@ -463,8 +465,10 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
             .def_prop_ro("factorization_valid", &Decomposition::factorization_valid)
             .def("negative_v_elz_in_dim", &Decomposition::negative_v_elz_in_dim,
                     nb::arg("dim"))
-            .def("is_u_row_valid", &Decomposition::is_u_row_valid, nb::arg("row"))
-            .def("u_row", &Decomposition::u_row, nb::arg("row"))
+            .def("u_row", &Decomposition::u_row, nb::arg("row"),
+                    "Raw internal U row storage. Unless has_full_matrix_u() is true, "
+                    "its presence does not imply a complete canonical row.")
+            .def_prop_ro("n_computed_u_rows", &Decomposition::n_computed_u_rows)
             .def_prop_ro("n_valid_u_rows", &Decomposition::n_valid_u_rows)
             .def_prop_ro("lazy_restore_elz_time", [](const Decomposition& self) {
                 return self.lazy_restore_elz_time_;
@@ -671,7 +675,8 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                         self._dim_first, self._dim_last, self.is_elz_in_dim_, self.n_rows, self.has_d_data_,
                         static_cast<int>(self.col_repr_), self.timings_, self.u_timings_,
                         self.dbg_restore_thread_times_, self.negative_v_elz_in_dim_,
-                        self.rv_invariant_valid_, self.u_row_valid_,
+                        self.rv_invariant_valid_, self.n_computed_u_rows_,
+                        self.n_valid_u_rows_,
                         self.lazy_restore_elz_time_);
             })
             .def("__setstate__", [](Decomposition& self, const DecompositionStateTuple& t) {
@@ -696,8 +701,9 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                 self.dbg_restore_thread_times_ = std::get<17>(t);
                 self.negative_v_elz_in_dim_ = std::get<18>(t);
                 self.rv_invariant_valid_ = std::get<19>(t);
-                self.u_row_valid_ = std::get<20>(t);
-                self.lazy_restore_elz_time_ = std::get<21>(t);
+                self.n_computed_u_rows_ = std::get<20>(t);
+                self.n_valid_u_rows_ = std::get<21>(t);
+                self.lazy_restore_elz_time_ = std::get<22>(t);
             })
                     ;
 

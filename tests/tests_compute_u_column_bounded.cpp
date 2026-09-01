@@ -702,8 +702,8 @@ TEST_CASE("negative-target V-only restore matches canonical negative columns and
                     value_at, never_stop, /*n_threads=*/4);
             REQUIRE(decmp.u_data_t[negative_row]
                     == oracle.u_data_t[negative_row]);
-            REQUIRE(decmp.n_valid_u_rows() == 1);
-            REQUIRE(decmp.is_u_row_valid(negative_row));
+            REQUIRE(decmp.n_computed_u_rows() == 1);
+            REQUIRE(decmp.n_valid_u_rows() == 0);
 
             REQUIRE_THROWS_AS(
                     decmp.compute_partial_u_rows<Real>(
@@ -724,7 +724,9 @@ TEST_CASE("negative-target V-only restore matches canonical negative columns and
             auto copied = decmp;
             REQUIRE(copied.factorization_valid() == decmp.factorization_valid());
             REQUIRE(copied.negative_v_elz_in_dim(dim));
-            REQUIRE(copied.is_u_row_valid(negative_row));
+            REQUIRE(copied.n_computed_u_rows()
+                    == decmp.n_computed_u_rows());
+            REQUIRE(copied.n_valid_u_rows() == decmp.n_valid_u_rows());
             REQUIRE(copied.u_data_t[negative_row]
                     == oracle.u_data_t[negative_row]);
         }

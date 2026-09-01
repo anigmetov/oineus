@@ -128,6 +128,12 @@ cell already running, so an interrupt raised during that phase can take nearly a
 long as the phase itself to take effect. It always terminates and raises -- it
 never hangs -- but it is markedly less responsive than the rest of the library.
 
+An interrupted mutating operation does not provide a transactional rollback.
+The object may contain partially updated matrices or stale readiness metadata
+after `KeyboardInterrupt`; discard it and construct or reduce a new object
+before continuing. The interruption guarantee covers prompt thread cleanup and
+exception delivery, not reuse of the interrupted object's state.
+
 ## Numeric types
 
 Integers are `long int`. Both `float64` and `float32` reals ship in the standard
