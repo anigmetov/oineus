@@ -128,6 +128,7 @@ else()
             packed-alpha
             packed-vr
             parallel-dgm
+            partial-elz-production
             pd-core
             pickle
             plot

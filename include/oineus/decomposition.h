@@ -552,6 +552,63 @@ namespace oineus {
         return true;
     }
 
+    // Restore one negative V column without changing R. The caller visits target
+    // columns in increasing order, so every negative source column this repair
+    // reads has already been published. Positive Bauer columns are deliberately
+    // left untouched and remain available as source representatives.
+    template<class Int, class WorkCol, class RIsZero, class RLow, class VColumn>
+    bool restore_negative_v_column_repr(size_t current_col,
+            WorkCol& v_work, SparseColumn<Int>& kept_v,
+            RIsZero&& r_is_zero, RLow&& r_low, VColumn&& v_column,
+            SparseColumn<Int>& result)
+    {
+        const auto& current_v = v_column(current_col);
+        const Int current_r_low = r_low(current_col);
+
+        // Most columns need no repair. Mirror the working loop with a reverse
+        // scan before loading scratch storage.
+        bool violation = false;
+        for (size_t k = current_v.size(); k-- > 0;) {
+            const Int added_col = current_v[k];
+            const bool added_is_zero = r_is_zero(static_cast<size_t>(added_col));
+            if ((added_col < static_cast<Int>(current_col) && added_is_zero)
+                || (not added_is_zero
+                    && current_r_low > r_low(static_cast<size_t>(added_col)))) {
+                violation = true;
+                break;
+            }
+        }
+        if (not violation)
+            return false;
+
+        v_work.load(current_v);
+        kept_v.clear();
+
+        while (true) {
+            const Int added_col = v_work.low();
+            if (added_col < 0)
+                break;
+
+            const bool added_is_zero = r_is_zero(static_cast<size_t>(added_col));
+            const bool added_zero_column =
+                    added_col < static_cast<Int>(current_col) && added_is_zero;
+            const bool added_non_killing_column =
+                    not added_is_zero
+                    && current_r_low > r_low(static_cast<size_t>(added_col));
+
+            if (added_zero_column || added_non_killing_column) {
+                v_work.add(v_column(static_cast<size_t>(added_col)));
+            } else {
+                kept_v.push_back(added_col);
+                const std::array<Int, 1> one{added_col};
+                v_work.add(one);
+            }
+        }
+
+        result.assign(kept_v.rbegin(), kept_v.rend());
+        return true;
+    }
+
     template<typename Int_>
     struct VRUDecomposition {
         // types
@@ -589,6 +646,20 @@ namespace oineus {
         // re-check via is_elz() walks the whole matrix and is too
         // expensive for the gradient-loop hot path.
         std::map<dim_type, bool> is_elz_in_dim_;
+
+        // Partial critical-sets state. A true entry says every negative V
+        // target in this matrix-dimension block has been restored to its ELZ
+        // representative; positive Bauer columns may still be non-canonical.
+        // Once any such V-only repair changes a column, R remains valid for
+        // pairings/lows but no longer satisfies R = D V.
+        std::map<dim_type, bool> negative_v_elz_in_dim_;
+        bool rv_invariant_valid_ {true};
+
+        // compute_partial_u_rows sizes u_data_t to the full matrix but writes
+        // only selected rows. Track those rows so partial storage is never
+        // exported as a complete inverse matrix.
+        std::vector<char> u_row_valid_;
+        double lazy_restore_elz_time_ {0.0};
 
         // in parallel versions we use atomic pivots, in serial - normal
         std::vector<Int> _pivots;
@@ -687,6 +758,10 @@ namespace oineus {
             u_timings_ = other.u_timings_;
             dbg_restore_thread_times_ = other.dbg_restore_thread_times_;
             is_elz_in_dim_ = other.is_elz_in_dim_;
+            negative_v_elz_in_dim_ = other.negative_v_elz_in_dim_;
+            rv_invariant_valid_ = other.rv_invariant_valid_;
+            u_row_valid_ = other.u_row_valid_;
+            lazy_restore_elz_time_ = other.lazy_restore_elz_time_;
             _pivots = other._pivots;
             ri_r_ = other.ri_r_;
             ri_v_ = other.ri_v_;
@@ -719,6 +794,10 @@ namespace oineus {
             u_timings_ = other.u_timings_;
             dbg_restore_thread_times_ = std::move(other.dbg_restore_thread_times_);
             is_elz_in_dim_ = std::move(other.is_elz_in_dim_);
+            negative_v_elz_in_dim_ = std::move(other.negative_v_elz_in_dim_);
+            rv_invariant_valid_ = other.rv_invariant_valid_;
+            u_row_valid_ = std::move(other.u_row_valid_);
+            lazy_restore_elz_time_ = other.lazy_restore_elz_time_;
             _pivots = std::move(other._pivots);
             ri_r_ = std::move(other.ri_r_);
             ri_v_ = std::move(other.ri_v_);
@@ -828,6 +907,7 @@ namespace oineus {
 
             for(dim_type _dim = 0; _dim < dim_first.size(); ++_dim) {
                 is_elz_in_dim_[_dim] = false;
+                negative_v_elz_in_dim_[_dim] = false;
             }
         }
 
@@ -867,8 +947,10 @@ namespace oineus {
                 _dim_first = std::move(new_dim_first);
                 _dim_last = std::move(new_dim_last);
             }
-            for(dim_type _dim = 0; _dim < static_cast<dim_type>(dim_first.size()); ++_dim)
+            for(dim_type _dim = 0; _dim < static_cast<dim_type>(dim_first.size()); ++_dim) {
                 is_elz_in_dim_[_dim] = false;
+                negative_v_elz_in_dim_[_dim] = false;
+            }
         }
 
         // init_fused_ / reduce_from_filtration_fused convenience: pull dims from a
@@ -1291,6 +1373,7 @@ namespace oineus {
             }
             for(dim_type _dim = 0; _dim < static_cast<dim_type>(dim_first.size()); ++_dim) {
                 is_elz_in_dim_[_dim] = false;
+                negative_v_elz_in_dim_[_dim] = false;
             }
             (void) n_threads;
         }
@@ -1309,6 +1392,7 @@ namespace oineus {
         {
             for(dim_type _dim = 0; _dim < dim_first.size(); ++_dim) {
                 is_elz_in_dim_[_dim] = false;
+                negative_v_elz_in_dim_[_dim] = false;
             }
 
             if (!skip_check) {
@@ -1367,6 +1451,10 @@ namespace oineus {
                 && u_data_t == other.u_data_t
                 && is_reduced == other.is_reduced
                 && dualize_ == other.dualize_
+                && is_elz_in_dim_ == other.is_elz_in_dim_
+                && negative_v_elz_in_dim_ == other.negative_v_elz_in_dim_
+                && rv_invariant_valid_ == other.rv_invariant_valid_
+                && u_row_valid_ == other.u_row_valid_
                 && _pivots == other._pivots
                 && dim_first == other.dim_first
                 && dim_last == other.dim_last
@@ -1399,8 +1487,8 @@ namespace oineus {
         // Templated U-solve kernels. The public compute_u_from_v / _1 /
         // compute_partial_u_rows dispatch on col_repr_ and call these with the
         // matching WorkCol residual (same set of column types as the reduction).
-        // The row form (compute_partial_u_rows) needs top(), so Heap is excluded
-        // there (see the dispatcher).
+        // The row form needs the minimum pivot. HeapColumn is max-oriented, so
+        // its dispatcher uses a BitTree residual while retaining the same V.
         template<class WorkCol> void compute_u_from_v_impl(dim_type dim, size_t n_threads, bool verbose);
         template<class WorkCol> void compute_u_from_v_1_impl(dim_type dim, size_t n_threads, bool verbose);
         template<class WorkCol, typename Real, typename ValueAt, typename CmpOp>
@@ -1440,6 +1528,36 @@ namespace oineus {
 
         bool has_matrix_u() const { return u_data_t.size() > 0; }
         bool has_matrix_v() const { return v_data.size() > 0 or has_working_rv_; }
+        bool factorization_valid() const { return rv_invariant_valid_; }
+        bool has_full_matrix_u() const
+        {
+            return not u_data_t.empty()
+                && u_row_valid_.size() == u_data_t.size()
+                && std::all_of(u_row_valid_.begin(), u_row_valid_.end(),
+                        [](char x) { return x != 0; });
+        }
+        bool is_u_row_valid(size_t row) const
+        {
+            return row < u_row_valid_.size() && u_row_valid_[row] != 0;
+        }
+        size_t n_valid_u_rows() const
+        {
+            return static_cast<size_t>(std::count_if(u_row_valid_.begin(),
+                    u_row_valid_.end(), [](char x) { return x != 0; }));
+        }
+        const IntSparseColumn& u_row(size_t row) const
+        {
+            if (not is_u_row_valid(row))
+                throw std::runtime_error(
+                        "u_row: requested U row has not been computed");
+            return u_data_t.at(row);
+        }
+        bool negative_v_elz_in_dim(dim_type dim) const
+        {
+            const auto _dim = _dim_from_dim(dim);
+            auto it = negative_v_elz_in_dim_.find(static_cast<dim_type>(_dim));
+            return it != negative_v_elz_in_dim_.end() && it->second;
+        }
 
         int is_column_elz(size_t col_idx) const;
 
@@ -1449,6 +1567,14 @@ namespace oineus {
         // std::vector<int8_t> mark_elz_violators_in_dim(dim_type dim, int n_threads) const;
 
         void restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads);
+
+        // Internal critical-sets primitive. Restores only negative V targets in
+        // one geometric dimension and deliberately leaves R unchanged.
+        void restore_negative_v_in_dim(dim_type dim, int n_threads = 1,
+                                       bool verbose = false);
+        template<class WorkCol>
+        void restore_negative_v_in_dim_impl(dim_type dim, int n_threads,
+                                            bool verbose);
 
         size_t n_dims() const { return dim_first.size(); }
 
@@ -1683,11 +1809,13 @@ namespace oineus {
 
         const MatrixData& get_V() const
         {
+            require_factorization_valid_("get_V");
             return v_data;
         }
 
         const MatrixData& get_R() const
         {
+            require_factorization_valid_("get_R");
             return r_data;
         }
 
@@ -1724,12 +1852,46 @@ namespace oineus {
         }
         void compute_u_from_v_1(dim_type dim, size_t n_threads=1, bool verbose=false);
 
+        void require_factorization_valid_(const char* what) const
+        {
+            if (not rv_invariant_valid_)
+                throw std::runtime_error(std::string(what)
+                        + ": unavailable after partial V-only ELZ restoration because "
+                          "the stored R no longer satisfies R = D V; re-reduce to obtain "
+                          "a canonical decomposition");
+        }
+
+        void reset_partial_state_()
+        {
+            rv_invariant_valid_ = true;
+            lazy_restore_elz_time_ = 0.0;
+            u_row_valid_.clear();
+            for(auto& kv : negative_v_elz_in_dim_)
+                kv.second = false;
+        }
+
+        void mark_u_rows_valid_(size_t n, const std::vector<size_t>& rows)
+        {
+            if (u_row_valid_.size() != n)
+                u_row_valid_.assign(n, 0);
+            for(size_t row : rows)
+                u_row_valid_.at(row) = 1;
+        }
+
+        void mark_u_range_valid_(size_t n, size_t begin, size_t end)
+        {
+            u_row_valid_.assign(n, 0);
+            for(size_t row = begin; row < end; ++row)
+                u_row_valid_[row] = 1;
+        }
+
         // Shared entry gate of the U-from-V solvers: reconstruct the at-rest
         // R/V from the kept working form of the fused reduce (no-op otherwise)
         // and fail on the calling thread -- the per-column checks throw inside
         // worker std::threads, which would call std::terminate.
         void require_v_for_u_solve_(const char* what)
         {
+            require_factorization_valid_(what);
             materialize_from_working_();
             if (not is_reduced)
                 throw std::runtime_error(std::string(what) + ": decomposition is not reduced, call reduce() first");
@@ -1860,6 +2022,7 @@ namespace oineus {
     template<class Int>
     bool VRUDecomposition<Int>::sanity_check(const MatrixData& d_provided)
     {
+        require_factorization_valid_("sanity_check");
         bool verbose = true;
         // Keep-working decompositions hold R/V only in the working form; build the
         // at-rest matrices this check reads.
@@ -2126,9 +2289,11 @@ namespace oineus {
     {
         if (_dim != k_all_dims) {
             is_elz_in_dim_[_dim] = new_value;
+            negative_v_elz_in_dim_[_dim] = new_value;
         } else {
             for(dim_type d = 0; d < _dim_first.size(); ++d) {
                 is_elz_in_dim_[d] = new_value;
+                negative_v_elz_in_dim_[d] = new_value;
             }
         }
     }
@@ -2137,6 +2302,8 @@ namespace oineus {
     void VRUDecomposition<Int>::restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads)
     {
         (void)n_threads;
+        if (not rv_invariant_valid_)
+            require_factorization_valid_("restore_elz");
         // The restore reads and rewrites the at-rest R/V columns; reconstruct
         // them from the kept working form of the fused reduce first (no-op
         // otherwise). Without this, the has_matrix_v gate passes on a
@@ -2144,6 +2311,10 @@ namespace oineus {
         materialize_from_working_();
         if (not has_matrix_v()) {
             throw std::runtime_error("VRUDecomposition: cannot restore ELZ without V matrix");
+        }
+        if (not v_only and has_matrix_u() and not has_full_matrix_u()) {
+            u_data_t.clear();
+            u_row_valid_.clear();
         }
 
         size_t n_violators = 0;
@@ -2163,15 +2334,207 @@ namespace oineus {
         Timer timer;
 
         for (size_t current_col = range_start_idx; current_col < range_end_idx; ++current_col) {
-            n_violators += restore_elz_column_serial(r_data, v_data, has_matrix_u() ? &u_data_t : nullptr, current_col, v_only);
+            n_violators += restore_elz_column_serial(r_data, v_data,
+                    (not v_only and has_full_matrix_u()) ? &u_data_t : nullptr,
+                    current_col, v_only);
 
             if (current_col % 100 == 0 && oineus::interrupted())
                 throw oineus::interrupted_exception{};
         }
 
-        set_is_elz_flag(_dim, true);
+        if (v_only) {
+            // This compatibility mode repairs every V target but deliberately
+            // leaves R unchanged. The invariant becomes stale only if a repair
+            // actually changed V; a no-op call preserves any existing valid U.
+            if (n_violators > 0) {
+                rv_invariant_valid_ = false;
+                if (not u_data_t.empty())
+                    u_data_t.clear();
+                u_row_valid_.clear();
+            }
+            if (_dim != k_all_dims)
+                negative_v_elz_in_dim_[_dim] = true;
+            else
+                for(auto& kv : negative_v_elz_in_dim_)
+                    kv.second = true;
+        } else {
+            set_is_elz_flag(_dim, true);
+        }
 
         if (verbose) { IC(n_violators, size(), timer.elapsed()); }
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::restore_negative_v_in_dim(
+            dim_type dim, int n_threads, bool verbose)
+    {
+        switch (col_repr_) {
+            case ColumnRepr::Set:
+                restore_negative_v_in_dim_impl<SetColumn<Int>>(dim, n_threads, verbose);
+                break;
+            case ColumnRepr::Heap:
+                restore_negative_v_in_dim_impl<HeapColumn<Int>>(dim, n_threads, verbose);
+                break;
+            case ColumnRepr::Full:
+                restore_negative_v_in_dim_impl<FullColumn<Int>>(dim, n_threads, verbose);
+                break;
+            case ColumnRepr::BitTree:
+                restore_negative_v_in_dim_impl<BitTreeColumn<Int>>(dim, n_threads, verbose);
+                break;
+        }
+    }
+
+    template<class Int>
+    template<class WorkCol>
+    void VRUDecomposition<Int>::restore_negative_v_in_dim_impl(
+            dim_type dim, int n_threads, bool verbose)
+    {
+        if (not is_reduced)
+            throw std::runtime_error(
+                    "restore_negative_v_in_dim: decomposition is not reduced");
+        if (not has_matrix_v())
+            throw std::runtime_error(
+                    "restore_negative_v_in_dim: V matrix was not computed");
+        if (static_cast<size_t>(dim) >= n_dims())
+            throw std::runtime_error(
+                    "restore_negative_v_in_dim: dimension out of range");
+        if (apparent_)
+            materialize_from_working_();
+
+        const auto _dim = static_cast<dim_type>(_dim_from_dim(dim));
+        if (negative_v_elz_in_dim_.at(_dim))
+            return;
+
+        const size_t begin = range_start_(_dim);
+        const size_t end = range_end_(_dim);
+        const size_t nc = n_cols_total();
+        Timer timer;
+        const size_t n_columns = end - begin;
+        if (n_columns == 0) {
+            negative_v_elz_in_dim_[_dim] = true;
+            return;
+        }
+
+        const size_t n_workers = std::min(n_columns,
+                static_cast<size_t>(std::max(1, n_threads)));
+        std::vector<std::atomic<bool>> ready(n_columns);
+        for(auto& flag : ready)
+            flag.store(false, std::memory_order_relaxed);
+        std::atomic<size_t> next_column(begin);
+        std::atomic<size_t> n_changed(0);
+        std::vector<std::thread> workers;
+        std::vector<std::vector<RVColumn<Int, 2>*>> retired_columns(n_workers);
+        workers.reserve(n_workers);
+
+        for(size_t tid = 0; tid < n_workers; ++tid) {
+            workers.emplace_back([this, begin, end, nc, &ready,
+                                  &next_column, &n_changed, &retired_columns,
+                                  tid]() {
+                std::unique_ptr<WorkCol> v_work;
+                SparseColumn<Int> kept_v;
+                SparseColumn<Int> result;
+                auto r_zero = [this](size_t c) { return r_is_zero(c); };
+                auto low_r = [this](size_t c) { return r_low(c); };
+
+                while(true) {
+                    const size_t current_col = next_column.fetch_add(
+                            1, std::memory_order_relaxed);
+                    if (current_col >= end)
+                        break;
+
+                    // This is the first target-column branch. Positive targets
+                    // allocate no working-column scratch and are published ready
+                    // immediately for any later negative dependent.
+                    if (r_is_zero(current_col)) {
+                        ready[current_col - begin].store(
+                                true, std::memory_order_release);
+                        continue;
+                    }
+
+                    if (not v_work) {
+                        v_work = std::make_unique<WorkCol>();
+                        v_work->reserve(nc);
+                    }
+
+                    // V is upper triangular, so a target can depend only on an
+                    // earlier negative target. Wait for that exact source's
+                    // repaired V publication; independent targets may proceed.
+                    auto wait_for_source = [this, begin, end, current_col,
+                                            &ready](size_t c) {
+                        if (c == current_col || c < begin || c >= end
+                            || r_is_zero(c))
+                            return;
+                        while(not ready[c - begin].load(
+                                std::memory_order_acquire))
+                            std::this_thread::yield();
+                    };
+
+                    bool changed;
+                    if (has_working_rv_) {
+                        auto v_column = [this, &wait_for_source](size_t c)
+                                -> const IntSparseColumn& {
+                            wait_for_source(c);
+                            return working_rv_[c].load(
+                                    std::memory_order_acquire)->v_column;
+                        };
+                        changed = restore_negative_v_column_repr<Int>(
+                                current_col, *v_work, kept_v, r_zero, low_r,
+                                v_column, result);
+                        if (changed) {
+                            auto* old_col = working_rv_[current_col].load(
+                                    std::memory_order_acquire);
+                            auto* new_col = new RVColumn<Int, 2>(
+                                    IntSparseColumn(old_col->r_column),
+                                    IntSparseColumn(result));
+                            old_col = working_rv_[current_col].exchange(
+                                    new_col, std::memory_order_acq_rel);
+                            // Other workers may still hold the old wrapper while
+                            // reading its immutable R metadata. Reclaim only after
+                            // every restore worker has stopped reading sources.
+                            retired_columns[tid].push_back(old_col);
+                        }
+                    } else {
+                        auto v_column = [this, &wait_for_source](size_t c)
+                                -> const IntSparseColumn& {
+                            wait_for_source(c);
+                            return v_data[c];
+                        };
+                        changed = restore_negative_v_column_repr<Int>(
+                                current_col, *v_work, kept_v, r_zero, low_r,
+                                v_column, result);
+                        if (changed)
+                            v_data[current_col] = result;
+                    }
+
+                    n_changed.fetch_add(static_cast<size_t>(changed),
+                                        std::memory_order_relaxed);
+                    ready[current_col - begin].store(
+                            true, std::memory_order_release);
+                }
+            });
+        }
+        for(auto& worker : workers)
+            worker.join();
+        for(auto& retired_by_worker : retired_columns)
+            for(auto* column : retired_by_worker)
+                delete column;
+
+        if (oineus::interrupted())
+            throw oineus::interrupted_exception{};
+
+        const size_t changed_count = n_changed.load(std::memory_order_relaxed);
+        if (changed_count > 0) {
+            if (rv_invariant_valid_ && not u_data_t.empty()) {
+                u_data_t.clear();
+                u_row_valid_.clear();
+            }
+            rv_invariant_valid_ = false;
+        }
+        negative_v_elz_in_dim_[_dim] = true;
+        lazy_restore_elz_time_ += timer.elapsed();
+
+        if (verbose)
+            IC(dim, begin, end, changed_count, lazy_restore_elz_time_);
     }
 
     template<class Int>
@@ -2181,6 +2544,9 @@ namespace oineus {
 
         invalidate_dynamic_();   // R, V are rebuilt; any row index is now stale
         timings_.reset();
+        reset_partial_state_();
+        if (not params.compute_u)
+            u_data_t.clear();
 
         // Record the working-column repr so a later compute_u_* uses the same
         // residual data structure (not a hardcoded BitTree).
@@ -2370,6 +2736,12 @@ namespace oineus {
                       << std::endl;
         }
 
+        if (params.compute_u) {
+            u_row_valid_.assign(u_data_t.size(), 1);
+        } else {
+            u_row_valid_.clear();
+        }
+
         is_reduced = true;
     }
 
@@ -2380,6 +2752,7 @@ namespace oineus {
     template<class Int>
     void VRUDecomposition<Int>::check_manip_preconditions_(const char* who) const
     {
+        require_factorization_valid_(who);
         // Homology and cohomology are both fine: the manipulation methods are
         // generic R = D V maintenance in MATRIX-index space. For cohomology
         // (dualize), the matrix stores the antitransposed boundary in reversed
@@ -2739,7 +3112,10 @@ namespace oineus {
         // U (= V^{-1} transposed) is now stale.
         if (not u_data_t.empty())
             u_data_t.clear();
+        u_row_valid_.clear();
         for(auto& kv : is_elz_in_dim_)
+            kv.second = false;
+        for(auto& kv : negative_v_elz_in_dim_)
             kv.second = false;
 
         if (stats) {
@@ -2973,6 +3349,7 @@ namespace oineus {
     template<class Int>
     bool VRUDecomposition<Int>::is_reduced_consistent() const
     {
+        require_factorization_valid_("is_reduced_consistent");
         using ST = SimpleSparseMatrixTraits<Int, 2>;
         if (not is_matrix_reduced(r_data))
             return false;
@@ -3065,7 +3442,10 @@ namespace oineus {
         is_reduced = true;
         if (not u_data_t.empty())
             u_data_t.clear();
+        u_row_valid_.clear();
         for(auto& kv : is_elz_in_dim_)
+            kv.second = false;
+        for(auto& kv : negative_v_elz_in_dim_)
             kv.second = false;
 
         if (stats) {
@@ -3183,8 +3563,11 @@ namespace oineus {
         _dim_first = new_dim_first;
         _dim_last = new_dim_last;
         is_elz_in_dim_.clear();
-        for(dim_type d = 0; d < dim_first.size(); ++d)
+        negative_v_elz_in_dim_.clear();
+        for(dim_type d = 0; d < dim_first.size(); ++d) {
             is_elz_in_dim_[d] = false;
+            negative_v_elz_in_dim_[d] = false;
+        }
         if (stats)
             stats->elapsed_resize += t_resize.elapsed();
 
@@ -3200,6 +3583,7 @@ namespace oineus {
         is_reduced = true;
         if (not u_data_t.empty())
             u_data_t.clear();
+        u_row_valid_.clear();
 
         if (stats) {
             stats->n_column_additions_r += inner.n_column_additions_r + ar;
@@ -3239,6 +3623,8 @@ namespace oineus {
                                                  DecompositionManipStats* stats, int n_threads)
     {
         using ST = SimpleSparseMatrixTraits<Int, 2>;
+
+        require_factorization_valid_("remove_simplices");
 
         // Lighter preconditions than check_manip_preconditions_: SiRUP reads
         // only R and V, never D, so d_data is not required.
@@ -3443,9 +3829,13 @@ namespace oineus {
         n_rows = n_new;
         if (not u_data_t.empty())
             u_data_t.clear();
+        u_row_valid_.clear();
         is_elz_in_dim_.clear();
-        for(dim_type d = 0; d < dim_first.size(); ++d)
+        negative_v_elz_in_dim_.clear();
+        for(dim_type d = 0; d < dim_first.size(); ++d) {
             is_elz_in_dim_[d] = false;
+            negative_v_elz_in_dim_[d] = false;
+        }
         invalidate_dynamic_();         // ri_v_ is now stale / wrong-sized
         is_reduced = true;
 
@@ -4737,6 +5127,7 @@ namespace oineus {
         u_data_t = MatrixTraits::col_to_row_format_parallel(
                 u_data, n_threads, col_start, col_end, v_data.size(),
                 /*prefer_row_scatter=*/(dim == 1 && dualize_));
+        mark_u_range_valid_(u_data_t.size(), col_start, col_end);
 
         u_timings_.col_to_row = timer.elapsed_reset();
 
@@ -4808,6 +5199,7 @@ namespace oineus {
         u_data_t = MatrixTraits::col_to_row_format_parallel(
                 u_data, n_threads, col_start, col_end, v_data.size(),
                 /*prefer_row_scatter=*/(dim == 1 && dualize_));
+        mark_u_range_valid_(u_data_t.size(), col_start, col_end);
 
         u_timings_.col_to_row = timer.elapsed_reset();
 
@@ -4896,8 +5288,8 @@ namespace oineus {
             size_t n_threads,
             bool verbose)
     {
-        // Row form needs top() (min index). A max-heap cannot expose it cheaply,
-        // so Heap is unsupported here; Set/Full/BitTree all work.
+        // Row form needs the minimum pivot. A max-heap cannot expose it cheaply,
+        // so a decomposition reduced with Heap uses BitTree row residuals.
         switch (col_repr_) {
             case ColumnRepr::Set:
                 compute_partial_u_rows_impl<SetColumn<Int_>>(rows, bounds, dim,
@@ -4912,10 +5304,9 @@ namespace oineus {
                         std::forward<ValueAt>(value_at), std::forward<CmpOp>(cmp_op), n_threads, verbose);
                 break;
             case ColumnRepr::Heap:
-                throw std::runtime_error(
-                    "compute_partial_u_rows (row-form U solve) does not support "
-                    "ColumnRepr::Heap: a max-heap has no efficient top(). Use "
-                    "Set, Full, or BitTree.");
+                compute_partial_u_rows_impl<BitTreeColumn<Int_>>(rows, bounds, dim,
+                        std::forward<ValueAt>(value_at), std::forward<CmpOp>(cmp_op), n_threads, verbose);
+                break;
         }
     }
 
@@ -4944,6 +5335,7 @@ namespace oineus {
         const size_t nc = has_working_rv_ ? n_cols_total() : v_data.size();
         if (u_data_t.size() != nc) {
             u_data_t = MatrixData(nc);
+            u_row_valid_.assign(nc, 0);
         }
 
         if (rows.empty())
@@ -4951,16 +5343,26 @@ namespace oineus {
 
         const auto _dim = _dim_from_dim(dim);
 
-        // The row solver assumes V is in ELZ form. Silent drift here
-        // yields wrong gradients; consult the cached flag. A full
-        // is_elz() walk would be O(matrix) per call, far too
-        // expensive for the gradient loop. The flag is set by
-        // restore_elz() and by serial reduction without clearing.
-        if (not is_elz_in_dim_.at(_dim))
+        // Full ELZ readiness admits every row. Partial readiness admits only
+        // negative rows: those are the canonical rows guaranteed by the
+        // negative-target factorization argument.
+        const bool full_elz = is_elz_in_dim_.at(_dim);
+        const bool negative_elz = negative_v_elz_in_dim_.at(_dim);
+        if (not full_elz and not negative_elz)
             throw std::runtime_error(
-                "compute_partial_u_rows: V is not known to be in ELZ "
-                "form. Call restore_elz() or reduce serially without "
-                "clearing before this entry point.");
+                "compute_partial_u_rows: V is neither fully ELZ nor partially "
+                "ready for negative-row solves in this dimension");
+
+        const size_t cs = range_start_(_dim), ce = range_end_(_dim);
+        for(size_t row : rows) {
+            if (row < cs or row >= ce)
+                throw std::runtime_error(
+                        "compute_partial_u_rows: requested row is outside the given dimension");
+            if (not full_elz and r_is_zero(row))
+                throw std::runtime_error(
+                        "compute_partial_u_rows: positive U rows are not canonical "
+                        "after partial negative-V restoration");
+        }
 
         if (n_threads == 0) n_threads = 1;
         n_threads = std::min(n_threads, rows.size());
@@ -4972,7 +5374,6 @@ namespace oineus {
         // V is block-diagonal in dim, so transposing only the dim's
         // matrix-column range gives us exactly the rows of V^T that
         // any row solve in dim d will read.
-        const size_t cs = range_start_(_dim), ce = range_end_(_dim);
         MatrixData vt_data;
         if (has_working_rv_) {
             // Read V from the kept working form. V is block-diagonal in dim, so
@@ -5016,6 +5417,8 @@ namespace oineus {
 
         for (auto& w : workers) w.join();
 
+        mark_u_rows_valid_(nc, rows);
+
         u_timings_.row_solve = timer.elapsed_reset();
 
         if (verbose) IC(u_timings_.transpose_v, u_timings_.row_solve);
@@ -5028,6 +5431,7 @@ namespace oineus {
                                                      size_t n_threads,
                                                      bool verbose)
     {
+        require_factorization_valid_("compute_full_u_rows");
         u_timings_.reset();
         const auto _dim = _dim_from_dim(dim);
         const size_t cstart = range_start_(_dim);
@@ -5035,6 +5439,7 @@ namespace oineus {
         if (cend <= cstart) {
             if (u_data_t.size() != v_data.size())
                 u_data_t = MatrixData(v_data.size());
+            u_row_valid_.assign(u_data_t.size(), 0);
             return;
         }
         std::vector<size_t> rows;
@@ -5057,8 +5462,11 @@ namespace oineus {
         out << "Decomposition(n_rows=" << m.n_rows
             << ", dualize=" << (m.dualize() ? "true" : "false")
             << ", reduced=" << (m.is_reduced ? "true" : "false")
+            << ", factorization_valid="
+            << (m.factorization_valid() ? "true" : "false")
             << ", has_V=" << (m.has_matrix_v() ? "true" : "false")
             << ", has_U=" << (m.has_matrix_u() ? "true" : "false")
+            << ", full_U=" << (m.has_full_matrix_u() ? "true" : "false")
             << "; stored columns D=" << m.d_data.size()
             << " R=" << m.r_data.size()
             << " V=" << m.v_data.size()

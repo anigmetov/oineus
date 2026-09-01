@@ -51,6 +51,11 @@ static void require_u_matrix(const Decomposition& self, const char* what)
         throw std::runtime_error(
                 std::string(what) + " is not available: U was not computed. Reduce with "
                 "compute_u=True, or call compute_u_from_v / compute_full_u_rows first.");
+    if (not self.has_full_matrix_u())
+        throw std::runtime_error(
+                std::string(what) + " is not available: only selected canonical U rows "
+                "have been computed for critical sets; request rows individually or "
+                "re-reduce before exporting a complete U matrix.");
 }
 
 Eigen::SparseMatrix<oin_int, Eigen::ColMajor>  z2_col_matrix_to_csc(const oin::VRUDecomposition<oin_int>::MatrixData& col_matrix, size_t num_rows)
@@ -130,6 +135,7 @@ Eigen::SparseMatrix<Real, Eigen::RowMajor> densify_v_for_selinv_1(
         throw std::runtime_error("densify_v_for_selinv called on matrix without V");
     if (not dcmp.is_reduced)
         throw std::runtime_error("densify_v_for_selinv called on unreduced decomposition");
+    dcmp.require_factorization_valid_("densify_v_for_selinv");
 
     if (rows_to_invert.size() != u_targets.size())
         throw std::runtime_error("rows_to_invert and u_targets must have the same size");
@@ -232,6 +238,7 @@ Eigen::SparseMatrix<Real, Eigen::RowMajor> densify_v_for_selinv(
         throw std::runtime_error("densify_v_for_selinv called on matrix without V");
     if (not dcmp.is_reduced)
         throw std::runtime_error("densify_v_for_selinv called on unreduced decomposition");
+    dcmp.require_factorization_valid_("densify_v_for_selinv");
 
     const size_t num_rows = num_rows_;
 
@@ -333,7 +340,11 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                                                int,    // col_repr_ (ColumnRepr as int, matching the RPAdvanced pickle)
                                                decltype(Decomposition::timings_),
                                                decltype(Decomposition::u_timings_),
-                                               decltype(Decomposition::dbg_restore_thread_times_)>;
+                                               decltype(Decomposition::dbg_restore_thread_times_),
+                                               decltype(Decomposition::negative_v_elz_in_dim_),
+                                               decltype(Decomposition::rv_invariant_valid_),
+                                               decltype(Decomposition::u_row_valid_),
+                                               decltype(Decomposition::lazy_restore_elz_time_)>;
     using Simplex = oin::Simplex<oin_int>;
     using SimplexFiltration = oin::Filtration<Simplex, oin_real>;
     using ProdSimplex = oin::ProductCell<Simplex, Simplex>;
@@ -408,18 +419,35 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                     nb::call_guard<nb::gil_scoped_release>())
             .def_prop_rw("r_data",
                     [](Decomposition& self) -> const typename Decomposition::MatrixData& {
+                        self.require_factorization_valid_("r_data");
                         self.materialize_from_working_();
                         require_r_materialized(self, "r_data");
                         return self.r_data;
                     },
-                    [](Decomposition& self, const typename Decomposition::MatrixData& value) { self.r_data = value; })
+                    [](Decomposition& self, const typename Decomposition::MatrixData& value) {
+                        self.require_factorization_valid_("r_data");
+                        self.r_data = value;
+                    })
             .def_prop_rw("v_data",
                     [](Decomposition& self) -> const typename Decomposition::MatrixData& {
+                        self.require_factorization_valid_("v_data");
                         self.materialize_from_working_();
                         return self.v_data;
                     },
-                    [](Decomposition& self, const typename Decomposition::MatrixData& value) { self.v_data = value; })
-            .def_rw("u_data_t", &Decomposition::u_data_t)
+                    [](Decomposition& self, const typename Decomposition::MatrixData& value) {
+                        self.require_factorization_valid_("v_data");
+                        self.v_data = value;
+                    })
+            .def_prop_rw("u_data_t",
+                    [](Decomposition& self) -> const typename Decomposition::MatrixData& {
+                        require_u_matrix(self, "u_data_t");
+                        return self.u_data_t;
+                    },
+                    [](Decomposition& self, const typename Decomposition::MatrixData& value) {
+                        self.require_factorization_valid_("u_data_t");
+                        self.u_data_t = value;
+                        self.u_row_valid_.assign(value.size(), 1);
+                    })
             .def_ro("timings", &Decomposition::timings_,
                     "Per-phase wall-clock breakdown of the last reduce() call (ReductionTimings).")
             .def_ro("u_timings", &Decomposition::u_timings_,
@@ -431,6 +459,16 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
             .def_ro("is_reduced", &Decomposition::is_reduced)
             .def("has_matrix_v", &Decomposition::has_matrix_v)
             .def("has_matrix_u", &Decomposition::has_matrix_u)
+            .def("has_full_matrix_u", &Decomposition::has_full_matrix_u)
+            .def_prop_ro("factorization_valid", &Decomposition::factorization_valid)
+            .def("negative_v_elz_in_dim", &Decomposition::negative_v_elz_in_dim,
+                    nb::arg("dim"))
+            .def("is_u_row_valid", &Decomposition::is_u_row_valid, nb::arg("row"))
+            .def("u_row", &Decomposition::u_row, nb::arg("row"))
+            .def_prop_ro("n_valid_u_rows", &Decomposition::n_valid_u_rows)
+            .def_prop_ro("lazy_restore_elz_time", [](const Decomposition& self) {
+                return self.lazy_restore_elz_time_;
+            })
             .def("n_apparent_pairs", &Decomposition::n_apparent_pairs,
                     "Number of apparent pairs detected by the lean (use_apparent_pairs) "
                     "reduction; 0 if the apparent path was not taken or the lean state "
@@ -438,8 +476,8 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
             // R and D live in the boundary row space (n_rows x n_cols); V is the
             // column change-of-basis and is square (n_cols x n_cols), so its row
             // dimension is v_data.size(), not n_rows.
-            .def("r_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { self.materialize_from_working_(); require_r_materialized(self, "r_as_csc"); return z2_col_matrix_to_csc(self.r_data, self.n_rows); })
-            .def("v_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { self.materialize_from_working_(); return z2_col_matrix_to_csc(self.v_data, self.v_data.size()); })
+            .def("r_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { self.require_factorization_valid_("r_as_csc"); self.materialize_from_working_(); require_r_materialized(self, "r_as_csc"); return z2_col_matrix_to_csc(self.r_data, self.n_rows); })
+            .def("v_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { self.require_factorization_valid_("v_as_csc"); self.materialize_from_working_(); return z2_col_matrix_to_csc(self.v_data, self.v_data.size()); })
             .def("d_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { require_d_data(self, "d_as_csc"); return z2_col_matrix_to_csc(self.d_data, self.n_rows); })
             .def("u_as_csr", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::RowMajor> { require_u_matrix(self, "u_as_csr"); return z2_row_matrix_to_csr(self.u_data_t, self.u_data_t.size()); })
             // .def("u_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { return z2_col_matrix_to_csc(self.u_data, self.u_data_t.size()); })
@@ -632,7 +670,9 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                         self.dualize_, self._pivots, self.dim_first, self.dim_last,
                         self._dim_first, self._dim_last, self.is_elz_in_dim_, self.n_rows, self.has_d_data_,
                         static_cast<int>(self.col_repr_), self.timings_, self.u_timings_,
-                        self.dbg_restore_thread_times_);
+                        self.dbg_restore_thread_times_, self.negative_v_elz_in_dim_,
+                        self.rv_invariant_valid_, self.u_row_valid_,
+                        self.lazy_restore_elz_time_);
             })
             .def("__setstate__", [](Decomposition& self, const DecompositionStateTuple& t) {
                 new (&self) Decomposition();
@@ -654,6 +694,10 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                 self.timings_ = std::get<15>(t);
                 self.u_timings_ = std::get<16>(t);
                 self.dbg_restore_thread_times_ = std::get<17>(t);
+                self.negative_v_elz_in_dim_ = std::get<18>(t);
+                self.rv_invariant_valid_ = std::get<19>(t);
+                self.u_row_valid_ = std::get<20>(t);
+                self.lazy_restore_elz_time_ = std::get<21>(t);
             })
                     ;
 

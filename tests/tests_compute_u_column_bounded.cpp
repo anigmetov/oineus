@@ -534,7 +534,7 @@ TEST_CASE("compute_u_from_v / _1 honor col_repr (column form, all four)")
 }
 
 
-TEST_CASE("compute_full_u_rows honors col_repr (row form: Set/Full/BitTree)")
+TEST_CASE("compute_full_u_rows honors col_repr (row form, all four)")
 {
     using Int = long;
     using Real = double;
@@ -546,7 +546,8 @@ TEST_CASE("compute_full_u_rows honors col_repr (row form: Set/Full/BitTree)")
         auto ref = reduce_col_repr<Int, Real>(fil, dualize, oineus::ColumnRepr::BitTree);
         ref.compute_full_u_rows<Real>(dim, value_at, /*n_threads=*/1);
 
-        for (auto cr : {oineus::ColumnRepr::Set, oineus::ColumnRepr::Full,
+        for (auto cr : {oineus::ColumnRepr::Set, oineus::ColumnRepr::Heap,
+                        oineus::ColumnRepr::Full,
                         oineus::ColumnRepr::BitTree}) {
             auto d = reduce_col_repr<Int, Real>(fil, dualize, cr);
             d.compute_full_u_rows<Real>(dim, value_at, /*n_threads=*/4);
@@ -555,12 +556,6 @@ TEST_CASE("compute_full_u_rows honors col_repr (row form: Set/Full/BitTree)")
                 REQUIRE(d.u_data_t[r] == ref.u_data_t[r]);
         }
 
-        // Heap has no efficient top(), so the row form must reject it loudly
-        // rather than silently fall back or hang.
-        auto d_heap = reduce_col_repr<Int, Real>(fil, dualize, oineus::ColumnRepr::Heap);
-        REQUIRE_THROWS_AS(
-            d_heap.compute_full_u_rows<Real>(dim, value_at, /*n_threads=*/1),
-            std::runtime_error);
     }
 }
 
@@ -615,6 +610,206 @@ TEST_CASE("parallel restore_elz runs with every col_repr (Set/Heap/Full/BitTree)
             }
         }
     }
+}
+
+
+TEST_CASE("negative-target V-only restore matches canonical negative columns and U rows")
+{
+    using Int = long;
+    using Real = double;
+    auto fil = make_test_filtration<Int, Real>(20, 20, /*seed=*/42);
+
+    for(bool dualize : {false, true}) {
+        auto oracle = reduce_with_params_dualize<Int, Real>(
+                fil, dualize, /*clearing=*/false,
+                /*compute_u=*/true, /*restore_elz=*/false);
+
+        for(auto cr : {oineus::ColumnRepr::Set, oineus::ColumnRepr::Heap,
+                       oineus::ColumnRepr::Full, oineus::ColumnRepr::BitTree}) {
+            INFO("dualize=" << dualize << ", col_repr=" << cr);
+            oineus::VRUDecomposition<Int> decmp(fil, dualize);
+            oineus::ReductionParams params;
+            params.compute_v = true;
+            params.compute_u = false;
+            params.use_clearing = true;
+            params.n_threads = 4;
+            params.advanced.col_repr = cr;
+            decmp.reduce(params);
+
+            const auto r_before = decmp.r_data;
+            const auto v_before = decmp.v_data;
+            std::vector<Int> lows_before(decmp.size());
+            std::vector<char> zeros_before(decmp.size());
+            for(size_t c = 0; c < decmp.size(); ++c) {
+                lows_before[c] = decmp.r_low(c);
+                zeros_before[c] = decmp.r_is_zero(c);
+            }
+
+            oineus::dim_type dim = decmp.n_dims();
+            for(oineus::dim_type d = 0;
+                d < static_cast<oineus::dim_type>(decmp.n_dims()); ++d) {
+                const size_t d_begin = decmp.range_start_(decmp._dim_from_dim(d));
+                const size_t d_end = decmp.range_end_(decmp._dim_from_dim(d));
+                for(size_t c = d_begin; c < d_end; ++c) {
+                    if (not decmp.r_is_zero(c)
+                        and decmp.v_data[c] != oracle.v_data[c]) {
+                        dim = d;
+                        break;
+                    }
+                }
+                if (dim < decmp.n_dims())
+                    break;
+            }
+            if (dim == decmp.n_dims())
+                dim = 1;
+            decmp.restore_negative_v_in_dim(dim, /*n_threads=*/4);
+
+            REQUIRE(decmp.r_data == r_before);
+            REQUIRE(decmp.negative_v_elz_in_dim(dim));
+            REQUIRE(not decmp.is_elz_in_dim_.at(decmp._dim_from_dim(dim)));
+
+            size_t n_changed_negative = 0;
+            size_t negative_row = decmp.size();
+            size_t positive_row = decmp.size();
+            const size_t begin = decmp.range_start_(decmp._dim_from_dim(dim));
+            const size_t end = decmp.range_end_(decmp._dim_from_dim(dim));
+            for(size_t c = 0; c < decmp.size(); ++c) {
+                REQUIRE(decmp.r_low(c) == lows_before[c]);
+                REQUIRE(decmp.r_is_zero(c) == static_cast<bool>(zeros_before[c]));
+                if (c < begin or c >= end) {
+                    REQUIRE(decmp.v_data[c] == v_before[c]);
+                    continue;
+                }
+                if (zeros_before[c]) {
+                    REQUIRE(decmp.v_data[c] == v_before[c]);
+                    if (positive_row == decmp.size())
+                        positive_row = c;
+                } else {
+                    REQUIRE(decmp.v_data[c] == oracle.v_data[c]);
+                    n_changed_negative += decmp.v_data[c] != v_before[c];
+                    if (negative_row == decmp.size())
+                        negative_row = c;
+                }
+            }
+            REQUIRE(decmp.factorization_valid() == (n_changed_negative == 0));
+            REQUIRE(negative_row < decmp.size());
+            REQUIRE(positive_row < decmp.size());
+
+            auto value_at = make_value_at<Int, Real>(fil, dualize);
+            auto never_stop = [](Real, Real) { return false; };
+            decmp.compute_partial_u_rows<Real>(
+                    {negative_row}, {std::numeric_limits<Real>::max()}, dim,
+                    value_at, never_stop, /*n_threads=*/4);
+            REQUIRE(decmp.u_data_t[negative_row]
+                    == oracle.u_data_t[negative_row]);
+            REQUIRE(decmp.n_valid_u_rows() == 1);
+            REQUIRE(decmp.is_u_row_valid(negative_row));
+
+            REQUIRE_THROWS_AS(
+                    decmp.compute_partial_u_rows<Real>(
+                            {positive_row}, {std::numeric_limits<Real>::max()},
+                            dim, value_at, never_stop, /*n_threads=*/1),
+                    std::runtime_error);
+            REQUIRE_THROWS_AS(
+                    decmp.compute_full_u_rows<Real>(dim, value_at,
+                                                    /*n_threads=*/1),
+                    std::runtime_error);
+            if (n_changed_negative > 0)
+                REQUIRE_THROWS_AS(decmp.sanity_check(), std::runtime_error);
+
+            const auto v_once = decmp.v_data;
+            decmp.restore_negative_v_in_dim(dim, /*n_threads=*/1);
+            REQUIRE(decmp.v_data == v_once);
+
+            auto copied = decmp;
+            REQUIRE(copied.factorization_valid() == decmp.factorization_valid());
+            REQUIRE(copied.negative_v_elz_in_dim(dim));
+            REQUIRE(copied.is_u_row_valid(negative_row));
+            REQUIRE(copied.u_data_t[negative_row]
+                    == oracle.u_data_t[negative_row]);
+        }
+    }
+}
+
+
+TEST_CASE("negative-target restore operates directly on retained working columns")
+{
+    using Int = long;
+    using Real = double;
+    auto fil = make_test_filtration<Int, Real>(20, 20, /*seed=*/17);
+    auto oracle = reduce_with_params_dualize<Int, Real>(
+            fil, /*dualize=*/false, /*clearing=*/false,
+            /*compute_u=*/true, /*restore_elz=*/false);
+
+    oineus::ReductionParams params;
+    params.compute_v = true;
+    params.compute_u = false;
+    params.use_clearing = true;
+    params.n_threads = 4;
+    auto decmp = oineus::VRUDecomposition<Int>::reduce_from_boundary_fused(
+            fil.boundary_matrix(/*n_threads=*/1), fil.dims_first(),
+            fil.dims_last(), /*dualize=*/false, params,
+            /*keep_working=*/true);
+    REQUIRE(decmp.has_working_rv_);
+    REQUIRE(decmp.r_data.empty());
+    REQUIRE(decmp.v_data.empty());
+
+    std::vector<typename decltype(decmp)::IntSparseColumn> r_before(decmp.size());
+    std::vector<typename decltype(decmp)::IntSparseColumn> v_before(decmp.size());
+    for(size_t c = 0; c < decmp.size(); ++c) {
+        auto* p = decmp.working_rv_[c].load(std::memory_order_relaxed);
+        r_before[c] = p->r_column;
+        v_before[c] = p->v_column;
+    }
+
+    oineus::dim_type dim = decmp.n_dims();
+    for(oineus::dim_type d = 0;
+        d < static_cast<oineus::dim_type>(decmp.n_dims()); ++d) {
+        const size_t begin = decmp.range_start_(decmp._dim_from_dim(d));
+        const size_t end = decmp.range_end_(decmp._dim_from_dim(d));
+        for(size_t c = begin; c < end; ++c) {
+            if (not decmp.r_is_zero(c) && decmp.v_col(c) != oracle.v_data[c]) {
+                dim = d;
+                break;
+            }
+        }
+        if (dim < decmp.n_dims())
+            break;
+    }
+    if (dim == decmp.n_dims())
+        dim = 1;
+
+    decmp.restore_negative_v_in_dim(dim, /*n_threads=*/4);
+    REQUIRE(decmp.has_working_rv_);
+    REQUIRE(decmp.r_data.empty());
+    REQUIRE(decmp.v_data.empty());
+
+    size_t negative_row = decmp.size();
+    size_t n_changed_negative = 0;
+    const size_t begin = decmp.range_start_(decmp._dim_from_dim(dim));
+    const size_t end = decmp.range_end_(decmp._dim_from_dim(dim));
+    for(size_t c = 0; c < decmp.size(); ++c) {
+        auto* p = decmp.working_rv_[c].load(std::memory_order_relaxed);
+        REQUIRE(p->r_column == r_before[c]);
+        if (c < begin or c >= end or decmp.r_is_zero(c)) {
+            REQUIRE(p->v_column == v_before[c]);
+        } else {
+            REQUIRE(p->v_column == oracle.v_data[c]);
+            n_changed_negative += p->v_column != v_before[c];
+            if (negative_row == decmp.size())
+                negative_row = c;
+        }
+    }
+    REQUIRE(decmp.factorization_valid() == (n_changed_negative == 0));
+    REQUIRE(negative_row < decmp.size());
+
+    auto value_at = make_value_at<Int, Real>(fil, /*dualize=*/false);
+    auto never_stop = [](Real, Real) { return false; };
+    decmp.compute_partial_u_rows<Real>(
+            {negative_row}, {std::numeric_limits<Real>::max()}, dim,
+            value_at, never_stop, /*n_threads=*/4);
+    REQUIRE(decmp.has_working_rv_);
+    REQUIRE(decmp.u_data_t[negative_row] == oracle.u_data_t[negative_row]);
 }
 
 

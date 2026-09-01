@@ -112,6 +112,8 @@ def _random_grid_filtration():
 
 
 def test_compute_u_from_v_1_fused_keep_working():
+    import pytest
+
     # fused RV reduce keeps the working columns (r_data/v_data empty at rest);
     # compute_u_from_v_1 used to index the empty at-rest V and segfault.
     # It must materialize and produce a correct U (U V == I on the solved block).
@@ -119,12 +121,18 @@ def test_compute_u_from_v_1_fused_keep_working():
     dcmp = oin.reduce(fil, oin.ReductionParams(compute_v=True, n_threads=4), False)
     dcmp.compute_u_from_v_1(dim=1)
 
-    u = dcmp.u_as_csr()
     v = dcmp.v_as_csc()
-    prod = (u @ v).toarray() % 2
     lo, hi = dcmp.dim_first[1], dcmp.dim_last[1] + 1
-    identity = np.eye(fil.size())
-    assert np.array_equal(prod[:, lo:hi], identity[:, lo:hi])
+    u_rows = np.zeros((hi - lo, fil.size()))
+    for row in range(lo, hi):
+        u_rows[row - lo, np.asarray(dcmp.u_row(row), dtype=np.int64)] = 1
+    prod = np.asarray(u_rows @ v) % 2
+    identity_rows = np.eye(fil.size())[lo:hi]
+    assert np.array_equal(prod, identity_rows)
+
+    # A dimension-only solve is not a complete global U matrix
+    with pytest.raises(RuntimeError, match="selected canonical U rows"):
+        dcmp.u_as_csr()
 
 
 def test_compute_u_from_v_guards():
@@ -167,25 +175,26 @@ def test_densify_v_for_selinv_fused_keep_working():
 
 
 def test_fused_reduce_records_col_repr():
-    import pytest
-
     # the fused factories used to skip recording col_repr_ (only member
-    # reduce() set it), so the row-form U solve's documented Heap rejection
-    # silently did not fire after a fused Heap reduce
+    # reduce() set it). Heap reductions now use a BitTree residual for the
+    # row-form solve, so compare those rows with the default representation.
     fil = _random_grid_filtration()
     params = oin.ReductionParams(compute_v=True, n_threads=4)
     params.advanced.col_repr = oin.ColumnRepr.Heap
     params.advanced.dims_to_restore_elz = [0]
 
     dcmp = oin.reduce(fil, params, False)
-    with pytest.raises(RuntimeError, match="Heap"):
-        dcmp.compute_full_u_rows(fil, dim=0)
+    dcmp.compute_full_u_rows(fil, dim=0)
 
-    # same fused config minus Heap: the row-form solve goes through
+    # same fused config minus Heap is the oracle
     params2 = oin.ReductionParams(compute_v=True, n_threads=4)
     params2.advanced.dims_to_restore_elz = [0]
     dcmp2 = oin.reduce(fil, params2, False)
     dcmp2.compute_full_u_rows(fil, dim=0)
+
+    lo, hi = dcmp.dim_first[0], dcmp.dim_last[0] + 1
+    for row in range(lo, hi):
+        assert list(dcmp.u_row(row)) == list(dcmp2.u_row(row))
 
 
 def test_csc_exports_raise_when_matrix_absent():

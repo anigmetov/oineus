@@ -19,11 +19,11 @@ Two `gradient_method` options:
 - "crit-sets": gradient propagates through the full critical set of
                each moved pair, with conflicts resolved by the
                selected `conflict_strategy`. The forward reduces one
-               side with parallel + clearing + V + restore_ELZ in
-               `dims_to_backprop` so the backward can recover U on
-               demand without re-reducing. The other decomposition
-               is reduced lazily in backward only if
-               `determine_needed_matrices` says we need it.
+               side with parallel + clearing + V but no ELZ or U work.
+               Backward restores negative V targets only in the needed
+               side/dim blocks and solves only selected U rows. The
+               other decomposition is reduced only when an actual
+               target needs it.
 
 JAX notes: oineus.diff is an eager boundary -- diagram sizes are
 data-dependent, so do not jit/vmap through the filtration/diagram
@@ -169,9 +169,10 @@ def persistence_diagram(
         u_strategy: "auto" (default), "row_partial", or
             "legacy_in_band", or any _oineus.UStrategy. Used only for
             crit-sets.
-        dims_to_backprop: list of geometric dims to restore ELZ in
-            during the forward reduction. None defaults to all dims
-            of the filtration. Used only for crit-sets.
+        dims_to_backprop: allowlist of geometric dims eligible for lazy
+            negative-V restoration during crit-sets backward. None permits
+            all dims needed by the returned diagrams. Forward does no ELZ
+            restoration.
 
     Returns:
         PersistenceDiagrams: dict-like, dim -> tensor (N, 2). Gradients

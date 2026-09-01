@@ -115,24 +115,21 @@ def test_decomposition_pickle():
 
 
 def test_decomposition_pickle_preserves_col_repr_and_timings():
-    import pytest
-
     np.random.seed(1)
     fil = oin.freudenthal_filtration(np.random.rand(12, 12))
 
-    # col_repr_ is behavioral: the row-form U solve rejects Heap. The
-    # rejection must survive a pickle round-trip (col_repr_ used to be
-    # dropped, so an unpickled Heap decomposition silently succeeded).
+    # Heap reductions use a BitTree residual for row-form U solves. The
+    # resulting rows and that behavioral choice survive a pickle round-trip.
     params = oin.ReductionParams(compute_v=True, use_clearing=False, n_threads=1)
     params.advanced.col_repr = oin.ColumnRepr.Heap
     dcmp = oin.Decomposition(fil, dualize=False, n_threads=1)
     dcmp.reduce(params)
-    with pytest.raises(RuntimeError, match="Heap"):
-        dcmp.compute_full_u_rows(fil, dim=0)
+    dcmp.compute_full_u_rows(fil, dim=0)
 
     dcmp_back = pickle.loads(pickle.dumps(dcmp))
-    with pytest.raises(RuntimeError, match="Heap"):
-        dcmp_back.compute_full_u_rows(fil, dim=0)
+    dcmp_back.compute_full_u_rows(fil, dim=0)
+    for row in range(dcmp.dim_first[0], dcmp.dim_last[0] + 1):
+        assert list(dcmp_back.u_row(row)) == list(dcmp.u_row(row))
 
     # timings, u_timings and restore thread times survive the round-trip
     dcmp2 = oin.Decomposition(fil, dualize=False, n_threads=1)

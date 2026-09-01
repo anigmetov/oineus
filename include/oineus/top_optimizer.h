@@ -14,12 +14,9 @@ namespace oineus {
 // Pick the U-computation strategy used by the crit-sets backward in
 // oineus.diff. Exposed to Python via nanobind.
 //   Auto          -- production default; resolves to RowPartial today.
-//   RowPartial    -- parallel V-only with restore_elz (cheap), then a
-//                    row-form partial U pass via Decomposition::
-//                    compute_partial_u_rows over only the rows the
-//                    walker reads. Falls back to compute_full_u_rows
-//                    when the requested row count exceeds a fraction
-//                    of the dim's matrix-column range.
+//   RowPartial    -- ordered negative-target V-only restoration followed by
+//                    selected-row V^T U^T solves over exactly the rows the
+//                    current critical-set request reads.
 //   LegacyInBand  -- clearing off, U built in-band during reduction
 //                    (serial). Available as a control / cross-check.
 enum class UStrategy { Auto, RowPartial, LegacyInBand };
@@ -185,8 +182,8 @@ public:
     // for the lifetime of the optimizer (one autograd backward).
     //
     //   !with_crit_sets:                  R only, parallel + clearing.
-    //   with_crit_sets, !LegacyInBand:    R + V, parallel + clearing,
-    //                                     restore_elz in dims_to_restore_elz.
+    //   with_crit_sets, !LegacyInBand:    R + V, parallel + clearing;
+    //                                     ELZ work is deferred until targets.
     //   with_crit_sets, LegacyInBand:     R + V + U, serial + clearing off.
     TopologyOptimizer(const Fil& fil,
                       bool with_crit_sets = true,
@@ -208,24 +205,14 @@ public:
         const bool legacy_in_band =
             with_crit_sets_ and u_strategy_ == UStrategy::LegacyInBand;
 
-        // If the caller didn't pin which dims to restore ELZ in, default
-        // to "all dims" for crit-sets. Otherwise downstream partial-U
-        // calls would throw because is_elz_in_dim_ has nothing flipped on.
-        if (with_crit_sets_ and not legacy_in_band and dims_to_restore_elz_.empty()) {
-            for (dim_type d = 0;
-                 d <= fil_.max_dim(); ++d) {
-                dims_to_restore_elz_.push_back(d);
-            }
-        }
-
         // Mirror constructor inputs into both params; reduction
         // drivers read from ReductionParams.
         params_hom_.n_threads = legacy_in_band ? 1 : n_threads_;
         params_coh_.n_threads = legacy_in_band ? 1 : n_threads_;
-        // ELZ restoration only happens when V is being built, so the
-        // dgm-loss branch below clears this back to empty.
-        params_hom_.advanced.dims_to_restore_elz = dims_to_restore_elz_;
-        params_coh_.advanced.dims_to_restore_elz = dims_to_restore_elz_;
+        // dims_to_restore_elz_ is only an allowlist for lazy backward work.
+        // Forward reduction must not restore any dimension eagerly.
+        params_hom_.advanced.dims_to_restore_elz.clear();
+        params_coh_.advanced.dims_to_restore_elz.clear();
 
         if (not with_crit_sets_) {
             // dgm-loss: only the pairing in R is needed.
@@ -235,8 +222,6 @@ public:
             params_coh_.compute_u = false;
             params_hom_.use_clearing = true;
             params_coh_.use_clearing = true;
-            params_hom_.advanced.dims_to_restore_elz.clear();
-            params_coh_.advanced.dims_to_restore_elz.clear();
         } else if (legacy_in_band) {
             // In-band U: clearing off, serial. The forward already
             // builds U during reduction; ensure_has_u_* will be a no-op.
@@ -351,6 +336,43 @@ private:
         return -1;
     }
 
+    void ensure_dim_allowed_(dim_type geom_dim, const char* who) const
+    {
+        if (dims_to_restore_elz_.empty())
+            return;
+        if (std::find(dims_to_restore_elz_.begin(),
+                      dims_to_restore_elz_.end(), geom_dim)
+            == dims_to_restore_elz_.end())
+            throw std::runtime_error(std::string(who)
+                    + ": target dimension is outside dims_to_restore_elz");
+    }
+
+    // Deduplicate selected U rows. If one row appears with several targets,
+    // retain the farthest bound in the walk direction so the one solve covers
+    // every term in the current request.
+    std::pair<Indices, Values> deduplicate_u_rows_(
+            const Indices& rows, const Values& bounds, bool death_side) const
+    {
+        std::pair<Indices, Values> out;
+        std::unordered_map<Int, size_t> position;
+        position.reserve(rows.size());
+        for(size_t i = 0; i < rows.size(); ++i) {
+            auto [it, inserted] = position.emplace(rows[i], out.first.size());
+            if (inserted) {
+                out.first.push_back(rows[i]);
+                out.second.push_back(bounds[i]);
+                continue;
+            }
+            Real& kept = out.second[it->second];
+            const bool farther = death_side
+                ? cmp(kept, bounds[i])
+                : cmp(bounds[i], kept);
+            if (farther)
+                kept = bounds[i];
+        }
+        return out;
+    }
+
 public:
     // Make U-row data available on the hom side over the rows the
     // crit-set walker will read for death moves. rows_fil are
@@ -361,34 +383,34 @@ public:
     // this is a no-op.
     void ensure_has_u_hom(dim_type /*dim*/, Indices rows_fil, Values bounds)
     {
-        ensure_hom_reduced();
-        if (u_strategy_ == UStrategy::LegacyInBand) return;
         if (rows_fil.empty()) return;
         if (rows_fil.size() != bounds.size())
             throw std::runtime_error("ensure_has_u_hom: rows/bounds size mismatch");
+
+        ensure_hom_reduced();
+        if (u_strategy_ == UStrategy::LegacyInBand) return;
 
         // The geometric dim of the death simplex on the hom side is
         // (diagram_dim + 1). Infer it from the first row's
         // filtration index (== matrix index on hom).
         const auto geom_dim = _find_geom_dim(decmp_hom_, static_cast<size_t>(rows_fil[0]));
-        if (geom_dim < 0)
+        if (geom_dim >= decmp_hom_.n_dims())
             throw std::runtime_error("ensure_has_u_hom: row index out of range");
+        ensure_dim_allowed_(geom_dim, "ensure_has_u_hom");
+        for(auto row : rows_fil)
+            if (_find_geom_dim(decmp_hom_, static_cast<size_t>(row)) != geom_dim)
+                throw std::runtime_error(
+                        "ensure_has_u_hom: all rows must belong to one dimension");
+
+        decmp_hom_.restore_negative_v_in_dim(geom_dim, n_threads_);
+        auto unique = deduplicate_u_rows_(rows_fil, bounds, /*death_side=*/true);
+        rows_fil = std::move(unique.first);
+        bounds = std::move(unique.second);
 
         auto value_at = [this](size_t midx) -> Real {
             return fil_.get_cell_value(
                 fil_.index_in_filtration(midx, /*dualize=*/false));
         };
-
-        // For partial-vs-full sizing we want the count of cells in
-        // this dim block on the matrix layout.
-        const auto _dim = decmp_hom_._dim_from_dim(geom_dim);
-        const size_t dim_size = decmp_hom_._dim_last[_dim]
-                              - decmp_hom_._dim_first[_dim] + 1;
-        if (4 * rows_fil.size() > 3 * dim_size) {
-            decmp_hom_.template compute_full_u_rows<Real>(geom_dim, value_at,
-                                           static_cast<size_t>(n_threads_));
-            return;
-        }
 
         // Auto/RowPartial: V^T U^T = I. Hom-side U is read for
         // increase_death; on non-negate the walker truncates from
@@ -413,37 +435,37 @@ public:
     // first matrix-layout row index.
     void ensure_has_u_coh(dim_type /*dim*/, Indices rows_fil, Values bounds)
     {
-        ensure_coh_reduced();
-        if (u_strategy_ == UStrategy::LegacyInBand) return;
         if (rows_fil.empty()) return;
         if (rows_fil.size() != bounds.size())
             throw std::runtime_error("ensure_has_u_coh: rows/bounds size mismatch");
+
+        ensure_coh_reduced();
+        if (u_strategy_ == UStrategy::LegacyInBand) return;
+
+        const auto geom_dim = _find_geom_dim(decmp_coh_,
+                static_cast<size_t>(rows_fil[0]));
+        if (geom_dim >= decmp_coh_.n_dims())
+            throw std::runtime_error("ensure_has_u_coh: row index out of range");
+        ensure_dim_allowed_(geom_dim, "ensure_has_u_coh");
+        for(auto row : rows_fil)
+            if (_find_geom_dim(decmp_coh_, static_cast<size_t>(row)) != geom_dim)
+                throw std::runtime_error(
+                        "ensure_has_u_coh: all rows must belong to one dimension");
+
+        decmp_coh_.restore_negative_v_in_dim(geom_dim, n_threads_);
+        auto unique = deduplicate_u_rows_(rows_fil, bounds, /*death_side=*/false);
+        rows_fil = std::move(unique.first);
+        bounds = std::move(unique.second);
 
         const size_t n = fil_.size();
         std::vector<size_t> rows_mat;
         rows_mat.reserve(rows_fil.size());
         for (auto r : rows_fil) rows_mat.push_back(n - 1 - static_cast<size_t>(r));
 
-        // The geometric dim of the birth simplex on the coh side is
-        // the diagram dim itself. Infer from the first row's
-        // filtration index (rows_fil[0]).
-        const auto geom_dim = _find_geom_dim(decmp_coh_, static_cast<size_t>(rows_fil[0]));
-        if (geom_dim < 0)
-            throw std::runtime_error("ensure_has_u_coh: row index out of range");
-
         auto value_at = [this](size_t midx) -> Real {
             return fil_.get_cell_value(
                 fil_.index_in_filtration(midx, /*dualize=*/true));
         };
-
-        const auto _dim = decmp_coh_._dim_from_dim(geom_dim);
-        const size_t dim_size = decmp_coh_._dim_last[_dim]
-                              - decmp_coh_._dim_first[_dim] + 1;
-        if (4 * rows_mat.size() > 3 * dim_size) {
-            decmp_coh_.template compute_full_u_rows<Real>(geom_dim, value_at,
-                                           static_cast<size_t>(n_threads_));
-            return;
-        }
 
         // Coh-side U is read for decrease_birth; matrix order is
         // reverse filtration order, so the walker truncates from
@@ -573,12 +595,53 @@ public:
                 "critical sets require with_crit_sets=true at construction "
                 "(the optimizer was built dgm-loss only, without V/U)");
 
+        if (indices.size() != values.size())
+            throw std::runtime_error("prepare_targets_: indices/values size mismatch");
+
+        bool any_move = false;
+        for(size_t i = 0; i < indices.size(); ++i)
+            any_move = any_move
+                || fil_.get_cell_value(static_cast<size_t>(indices[i])) != values[i];
+        if (not any_move)
+            return;
+
         ensure_hom_reduced();
 
-        auto flags = get_flags(indices, values);
-        if (flags.compute_cohomology)
+        std::vector<char> hom_dims(fil_.max_dim() + 1, 0);
+        std::vector<char> coh_dims(fil_.max_dim() + 1, 0);
+        bool need_coh = false;
+        for(size_t i = 0; i < indices.size(); ++i) {
+            const size_t idx = static_cast<size_t>(indices[i]);
+            if (fil_.get_cell_value(idx) == values[i])
+                continue;
+            const auto geom_dim = fil_.dim_by_sorted_id(indices[i]);
+            if (decmp_hom_.is_negative(idx)) {
+                hom_dims.at(static_cast<size_t>(geom_dim)) = 1;
+            } else {
+                need_coh = true;
+                coh_dims.at(static_cast<size_t>(geom_dim)) = 1;
+            }
+        }
+
+        if (need_coh)
             ensure_coh_reduced();
 
+        if (u_strategy_ != UStrategy::LegacyInBand) {
+            for(dim_type d = 0; d < static_cast<dim_type>(hom_dims.size()); ++d) {
+                if (not hom_dims[d])
+                    continue;
+                ensure_dim_allowed_(d, "prepare_targets_");
+                decmp_hom_.restore_negative_v_in_dim(d, n_threads_);
+            }
+            for(dim_type d = 0; d < static_cast<dim_type>(coh_dims.size()); ++d) {
+                if (not coh_dims[d])
+                    continue;
+                ensure_dim_allowed_(d, "prepare_targets_");
+                decmp_coh_.restore_negative_v_in_dim(d, n_threads_);
+            }
+        }
+
+        auto flags = get_flags(indices, values);
         if (flags.compute_homology_u)
             ensure_u_rows_(indices, values, /*death_side=*/true);
         if (flags.compute_cohomology_u)
@@ -613,6 +676,94 @@ public:
             else
                 ensure_has_u_coh(d, rows_bounds.first, rows_bounds.second);
         }
+    }
+
+    void ensure_typed_u_rows_(const Indices& indices, const Values& values,
+                              bool death_side)
+    {
+        std::unordered_map<dim_type, std::pair<Indices, Values>> by_dim;
+        for(size_t i = 0; i < indices.size(); ++i) {
+            const size_t idx = static_cast<size_t>(indices[i]);
+            const Real current = fil_.get_cell_value(idx);
+            const bool selected = death_side
+                ? cmp(current, values[i])
+                : cmp(values[i], current);
+            if (not selected)
+                continue;
+            const auto d = fil_.dim_by_sorted_id(indices[i]);
+            by_dim[d].first.push_back(indices[i]);
+            by_dim[d].second.push_back(values[i]);
+        }
+        for(auto&& [d, rows_bounds] : by_dim) {
+            if (death_side)
+                ensure_has_u_hom(d, rows_bounds.first, rows_bounds.second);
+            else
+                ensure_has_u_coh(d, rows_bounds.first, rows_bounds.second);
+        }
+    }
+
+    // Role-aware planner used by persistence-diagram backward. Birth/death roles
+    // are already known from the index diagram, so a birth-only callback need not
+    // reduce homology merely to rediscover positivity.
+    void prepare_role_targets_(const Indices& birth_indices,
+            const Values& birth_values, const Indices& death_indices,
+            const Values& death_values)
+    {
+        if (not with_crit_sets_)
+            throw std::runtime_error(
+                    "critical sets require with_crit_sets=true at construction");
+        if (birth_indices.size() != birth_values.size()
+            or death_indices.size() != death_values.size())
+            throw std::runtime_error(
+                    "prepare_role_targets_: indices/values size mismatch");
+
+        std::vector<char> hom_dims(fil_.max_dim() + 1, 0);
+        std::vector<char> coh_dims(fil_.max_dim() + 1, 0);
+        bool need_hom = false;
+        bool need_coh = false;
+        for(size_t i = 0; i < death_indices.size(); ++i) {
+            const size_t idx = static_cast<size_t>(death_indices[i]);
+            if (fil_.get_cell_value(idx) == death_values[i])
+                continue;
+            need_hom = true;
+            hom_dims.at(static_cast<size_t>(
+                    fil_.dim_by_sorted_id(death_indices[i]))) = 1;
+        }
+        for(size_t i = 0; i < birth_indices.size(); ++i) {
+            const size_t idx = static_cast<size_t>(birth_indices[i]);
+            if (fil_.get_cell_value(idx) == birth_values[i])
+                continue;
+            need_coh = true;
+            coh_dims.at(static_cast<size_t>(
+                    fil_.dim_by_sorted_id(birth_indices[i]))) = 1;
+        }
+
+        if (need_hom)
+            ensure_hom_reduced();
+        if (need_coh)
+            ensure_coh_reduced();
+
+        if (u_strategy_ != UStrategy::LegacyInBand) {
+            for(dim_type d = 0; d < static_cast<dim_type>(hom_dims.size()); ++d) {
+                if (not hom_dims[d])
+                    continue;
+                ensure_dim_allowed_(d, "prepare_role_targets_");
+                decmp_hom_.restore_negative_v_in_dim(d, n_threads_);
+            }
+            for(dim_type d = 0; d < static_cast<dim_type>(coh_dims.size()); ++d) {
+                if (not coh_dims[d])
+                    continue;
+                ensure_dim_allowed_(d, "prepare_role_targets_");
+                decmp_coh_.restore_negative_v_in_dim(d, n_threads_);
+            }
+        }
+
+        if (need_hom)
+            ensure_typed_u_rows_(death_indices, death_values,
+                                 /*death_side=*/true);
+        if (need_coh)
+            ensure_typed_u_rows_(birth_indices, birth_values,
+                                 /*death_side=*/false);
     }
 
     // Dispatch one (index -> value) move. Assumes prepare_targets_ has
@@ -902,13 +1053,9 @@ public:
         return combine_loss(singletons(indices, values), strategy);
     }
 
-    // Fused per-pair critical-set walk + conflict resolution, in one
-    // C++ call with no intermediate Python lists. Caller responsibility:
-    //   - call ensure_reduced_hom(need_u_hom) and ensure_reduced_coh(need_u_coh)
-    //     beforehand with flags that match the move directions in
-    //     (indices, values), or use ensure_reduced_for_partial_u_*
-    //     followed by a partial-U pass when only a subset of rows of
-    //     U is needed. This is what the oineus.diff backward does.
+    // Fused preparation, per-pair critical-set walk, and conflict resolution.
+    // The target planner lazily reduces sides, restores negative V targets in
+    // the required dimensions, and solves exact U rows before walking.
     // For FCA the (indices, values) input doubles as the per-critical-
     // simplex target map: each input pair declares one critical simplex
     // whose target is its accompanying value.
@@ -924,10 +1071,7 @@ public:
         if (indices.size() != values.size())
             throw std::runtime_error("crit_sets_apply: indices and values must have the same size");
 
-        // Per-pair dispatch reads decmp_hom_.is_negative(idx), so hom
-        // must be at least R-reduced. ensure_hom_reduced is a no-op
-        // if the forward already reduced this side.
-        ensure_hom_reduced();
+        prepare_targets_(indices, values);
 
         // First pass: per-pair walk, accumulate into a flat (id -> values)
         // multimap. Critical simplices (the input ones, for FCA) are
@@ -1017,6 +1161,43 @@ public:
         return out;
     }
 
+    IndicesValues crit_sets_apply_typed(const Indices& birth_indices,
+            const Values& birth_values, const Indices& death_indices,
+            const Values& death_values, ConflictStrategy strategy)
+    {
+        CALI_CXX_MARK_FUNCTION;
+        prepare_role_targets_(birth_indices, birth_values,
+                              death_indices, death_values);
+
+        CriticalSets critical_sets;
+        critical_sets.reserve(birth_indices.size() + death_indices.size());
+        Target prescribed;
+        if (strategy == ConflictStrategy::FixCritAvg)
+            prescribed.reserve(birth_indices.size() + death_indices.size());
+
+        auto append = [&](const Indices& indices, const Values& values,
+                          bool birth_side) {
+            for(size_t i = 0; i < indices.size(); ++i) {
+                const size_t idx = static_cast<size_t>(indices[i]);
+                const Real current = fil_.get_cell_value(idx);
+                const Real target = values[i];
+                Indices crit;
+                if (current != target)
+                    crit = birth_side
+                        ? change_birth(idx, target)
+                        : change_death(idx, target);
+                critical_sets.emplace_back(target, std::move(crit));
+                if (strategy == ConflictStrategy::FixCritAvg)
+                    prescribed.insert_or_assign(idx,
+                            SimplexTarget{current, target, birth_side});
+            }
+        };
+
+        append(birth_indices, birth_values, /*birth_side=*/true);
+        append(death_indices, death_values, /*birth_side=*/false);
+        return combine_loss(critical_sets, prescribed, strategy);
+    }
+
     Dgms compute_diagram(bool include_inf_points)
     {
         auto& decmp = ensure_pairing_reduced();
@@ -1030,6 +1211,14 @@ public:
         // before reducing them.
         ensure_hom_built();
         ensure_coh_built();
+        if (not decmp_hom_.factorization_valid()) {
+            decmp_hom_ = Decomposition(boundary_data_, fil_.dims_first(),
+                    fil_.dims_last(), /*dualize=*/false, n_threads_);
+        }
+        if (not decmp_coh_.factorization_valid()) {
+            decmp_coh_ = Decomposition(boundary_data_, fil_.dims_first(),
+                    fil_.dims_last(), /*dualize=*/true, n_threads_);
+        }
         params_hom_.use_clearing = false;
         params_hom_.compute_u = params_hom_.compute_v = true;
         if (!decmp_hom_.is_reduced or (params_hom_.compute_u and not decmp_hom_.has_matrix_u())) {
@@ -1245,10 +1434,8 @@ public:
     // compute_partial_u_rows / compute_full_u_rows.
     int n_threads_ { 1 };
 
-    // Geometric dims (filtration-layout) in which we restore ELZ
-    // during the forward reduction, so that partial-U is admissible.
-    // For dgm-loss this is unused (restore_elz block in reduce_serial
-    // is gated on compute_v).
+    // Optional allowlist of geometric dims eligible for on-demand negative-V
+    // restoration. Empty means all dimensions; forward never restores them.
     DimVec dims_to_restore_elz_;
 
     // Which equation to solve for U on demand (V^T U^T = I row-form,

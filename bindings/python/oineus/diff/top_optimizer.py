@@ -41,12 +41,11 @@ class TopologyOptimizer:
     recipe is fixed at construction time::
 
         with_crit_sets=False  -> R only (parallel + clearing).
-        with_crit_sets=True   -> R + V + restore_ELZ in the given dims.
-                                  U is recovered on demand via
-                                  ensure_has_u_hom / ensure_has_u_coh,
-                                  unless u_strategy=LegacyInBand, in
-                                  which case U is built in-band
-                                  (serial, clearing off).
+        with_crit_sets=True   -> R + V with clearing; negative V targets
+                                  and selected U rows are recovered lazily
+                                  when the current critical-set targets are
+                                  known. LegacyInBand remains the serial
+                                  full-ELZ oracle.
     """
 
     def __init__(self, fil, *, with_crit_sets: bool = True,
@@ -147,6 +146,11 @@ class TopologyOptimizer:
 
     def crit_sets_apply(self, indices, values, strategy):
         return self.under_opt.crit_sets_apply(indices, values, strategy)
+
+    def crit_sets_apply_typed(self, birth_indices, birth_values,
+                              death_indices, death_values, strategy):
+        return self.under_opt.crit_sets_apply_typed(
+            birth_indices, birth_values, death_indices, death_values, strategy)
 
     def singleton(self, index: int, value: float):
         return self.under_opt.singleton(index, value)

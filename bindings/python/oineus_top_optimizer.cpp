@@ -157,8 +157,9 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                  "Construct a TopologyOptimizer for one autograd backward. "
                  "with_crit_sets=false sets up the cheapest reduction (R only, "
                  "no V, no U) for diagram-loss; with_crit_sets=true sets up V "
-                 "(plus restore_ELZ in dims_to_restore_elz) so that "
-                 "ensure_has_u_* can recover U on demand. u_strategy picks "
+                 "with clearing and treats dims_to_restore_elz as an allowlist "
+                 "for lazy negative-V restoration. ensure_has_u_* solves only "
+                 "the selected target rows. u_strategy picks "
                  "which equation to solve for U; LegacyInBand forces a "
                  "serial in-band U during the reduction.")
             .def("compute_diagram", [](TopologyOptimizer& opt, bool include_inf_points) { return PyOineusDiagrams<oin_real>(opt.compute_diagram(include_inf_points)); },
@@ -249,6 +250,14 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     "when U is needed. Returns IndicesValues; use "
                     ".indices_array() / .values_array() for zero-copy "
                     "numpy.")
+            .def("crit_sets_apply_typed", &TopologyOptimizer::crit_sets_apply_typed,
+                    nb::arg("birth_indices"), nb::arg("birth_values"),
+                    nb::arg("death_indices"), nb::arg("death_values"),
+                    nb::arg("strategy"),
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Role-aware critical-set preparation and application for "
+                    "persistence-diagram backward. Only non-empty birth/death "
+                    "target lists cause their corresponding side to be reduced.")
             .def("ensure_hom_built", &TopologyOptimizer::ensure_hom_built,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Materialize the homology Decomposition from the cached "

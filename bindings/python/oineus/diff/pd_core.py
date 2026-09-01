@@ -163,9 +163,8 @@ def pd_forward(under_fil, values_np, *, dualize, method, dims_to_backprop,
         dualize = default_dualize_for_filtration(under_fil)
 
     if dims_to_backprop is None:
-        # Cover all simplex dims so partial-U is admissible everywhere.
-        # For H_k pairs the birth simplex has dim k and the death simplex
-        # has dim k+1, so we need range(max_dim + 1).
+        # Permit every simplex dim a returned diagram can target lazily. For
+        # H_k pairs the birth has dim k and the death has dim k+1.
         dims_to_backprop = list(range(max_dim + 1))
 
     n_threads = max(1, int(n_threads) if n_threads is not None else 1)
@@ -216,7 +215,6 @@ def _backward_crit_sets(fwd, dim, grad_np):
     index_dgm = fwd.index_dgm[dim]
     fil_values = fwd.values_np
     top_opt = fwd.top_opt
-    negate = fwd.negate
 
     grad_vals = np.zeros_like(fil_values)
     if index_dgm.size == 0:
@@ -231,31 +229,20 @@ def _backward_crit_sets(fwd, dim, grad_np):
     b_move = b_tgt != b_cur
     d_move = d_tgt != d_cur
 
-    v_hom, u_hom, v_coh, u_coh = determine_needed_matrices(grad_np, negate)
-
-    if v_hom or u_hom:
-        top_opt.ensure_hom_reduced()
-    if v_coh or u_coh:
-        top_opt.ensure_coh_reduced()
-
-    if u_hom:
-        rows, bounds = select_u_moves(d_idx, d_cur, d_tgt, d_move,
-                                      side="hom", negate=negate)
-        top_opt.ensure_has_u_hom(dim, rows, bounds)
-    if u_coh:
-        rows, bounds = select_u_moves(b_idx, b_cur, b_tgt, b_move,
-                                      side="coh", negate=negate)
-        top_opt.ensure_has_u_coh(dim, rows, bounds)
-
-    flat_idx = np.concatenate([b_idx[b_move], d_idx[d_move]])
-    flat_tgt = np.concatenate([b_tgt[b_move], d_tgt[d_move]])
-    if flat_idx.size == 0:
+    birth_idx = b_idx[b_move]
+    birth_tgt = b_tgt[b_move]
+    death_idx = d_idx[d_move]
+    death_tgt = d_tgt[d_move]
+    if birth_idx.size == 0 and death_idx.size == 0:
         return grad_vals
 
-    # crit_sets_apply handles the dispatch reduction (ensure_hom_reduced)
-    # internally and raises if the optimizer is dgm-loss only.
-    indvals = top_opt.crit_sets_apply(flat_idx.astype(np.uintp).tolist(),
-                                      flat_tgt.tolist(), fwd.strategy)
+    # Birth/death roles are known here, so the C++ planner can avoid reducing
+    # homology for a birth-only callback merely to rediscover positivity.
+    indvals = top_opt.crit_sets_apply_typed(
+        birth_idx.astype(np.uintp).tolist(), birth_tgt.tolist(),
+        death_idx.astype(np.uintp).tolist(), death_tgt.tolist(),
+        fwd.strategy,
+    )
     out_idx = np.asarray(indvals.indices_array(), copy=True).astype(np.int64)
     # cast the C++ targets to the values dtype BEFORE subtracting, as the
     # torch path always did: keeps float32 values on a float64 backend

@@ -100,9 +100,10 @@ def test_restore_elz_fused_keep_working():
     dcmp.compute_partial_u_rows(fil, rows=[0], bounds=[1e9], dim=0, cmp="above")
 
     # the solved U row satisfies U[0] * V == e_0 over Z/2
-    u = dcmp.u_as_csr()
     v = dcmp.v_as_csc()
-    row = np.asarray((u[[0], :] @ v).todense()).ravel() % 2
+    u_row = np.zeros(fil.size())
+    u_row[np.asarray(dcmp.u_row(0), dtype=np.int64)] = 1
+    row = np.asarray(u_row @ v).ravel() % 2
     expected = np.zeros(fil.size())
     expected[0] = 1
     assert np.array_equal(row, expected)
@@ -123,21 +124,22 @@ def test_restore_elz_default_dim_records_flags_under_dualize():
 
     assert all(dcmp.n_elz_violators_in_dim(d, n_threads=1) == 0 for d in range(3))
 
-    # rejected with 'V is not known to be in ELZ form' before the fix
-    dcmp.compute_partial_u_rows(fil, rows=[0], bounds=[1e9], dim=0, cmp="below")
-
     # a genuine dim-0 block row (last matrix index is a vertex under dualize):
     # the solved row must satisfy U[r] * V == e_r over Z/2
     r = fil.size() - 1
     dcmp.compute_partial_u_rows(fil, rows=[r], bounds=[1e9], dim=0, cmp="below")
-    u = dcmp.u_as_csr()
     v = dcmp.v_as_csc()
-    row = np.asarray((u[[r], :] @ v).todense()).ravel() % 2
+    u_row = np.zeros(fil.size())
+    u_row[np.asarray(dcmp.u_row(r), dtype=np.int64)] = 1
+    row = np.asarray(u_row @ v).ravel() % 2
     expected = np.zeros(fil.size())
     expected[r] = 1
     assert np.array_equal(row, expected)
 
-    dcmp.compute_partial_u_rows(fil, rows=[200], bounds=[1e9], dim=1, cmp="below")
+    edge_row = fil.size() - 1 - dcmp.dim_first[1]
+    dcmp.compute_partial_u_rows(
+        fil, rows=[edge_row], bounds=[1e9], dim=1, cmp="below",
+    )
 
 
 def test_restore_elz_explicit_dim_records_only_that_dim_under_dualize():
@@ -149,9 +151,15 @@ def test_restore_elz_explicit_dim_records_only_that_dim_under_dualize():
     dcmp.reduce(params)
     dcmp.restore_elz(1)
 
-    dcmp.compute_partial_u_rows(fil, rows=[200], bounds=[1e9], dim=1, cmp="below")
+    edge_row = fil.size() - 1 - dcmp.dim_first[1]
+    dcmp.compute_partial_u_rows(
+        fil, rows=[edge_row], bounds=[1e9], dim=1, cmp="below",
+    )
+    vertex_row = fil.size() - 1
     with pytest.raises(RuntimeError, match="ELZ"):
-        dcmp.compute_partial_u_rows(fil, rows=[0], bounds=[1e9], dim=0, cmp="below")
+        dcmp.compute_partial_u_rows(
+            fil, rows=[vertex_row], bounds=[1e9], dim=0, cmp="below",
+        )
 
 
 def test_restore_elz_requires_compute_v():
