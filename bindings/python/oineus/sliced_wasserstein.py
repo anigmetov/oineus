@@ -16,6 +16,7 @@ Inputs are single-dimension diagrams in the same forms accepted by
 from a multi-dimensional ``oineus.Diagrams`` object.
 """
 
+import math
 import operator
 
 import numpy as np
@@ -89,20 +90,51 @@ def _validate_n_directions(n_directions):
     return n
 
 
+def _validate_q(q):
+    try:
+        q = float(q)
+    except (TypeError, ValueError) as exc:
+        raise TypeError("q must be a positive finite number") from exc
+    if not math.isfinite(q) or q <= 0.0:
+        raise ValueError("q must be a positive finite number")
+    return q
+
+
+def _coerce_seed(seed):
+    if seed is None:
+        return None
+    try:
+        seed = operator.index(seed)
+    except TypeError as exc:
+        raise TypeError("seed must be a non-negative integer or None") from exc
+    if seed < 0:
+        raise ValueError("seed must be a non-negative integer or None")
+    return seed
+
+
 def _prepare_directions(n_directions, seed, directions):
     if directions is None:
         return _sample_unit_directions(
             _validate_n_directions(n_directions),
-            np.random.default_rng(seed),
+            np.random.default_rng(_coerce_seed(seed)),
         )
 
-    U = np.asarray(directions, dtype=np.float64).reshape(-1, 2)
+    try:
+        U = np.asarray(directions, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise TypeError("directions must be an array with shape (n_directions, 2)") from exc
+    if U.ndim != 2 or U.shape[1] != 2:
+        raise ValueError("directions must have shape (n_directions, 2)")
     if U.shape[0] == 0:
         raise ValueError("directions must contain at least one direction")
+    if not np.all(np.isfinite(U)):
+        raise ValueError("directions must contain only finite values")
+    if np.any(np.linalg.norm(U, axis=1) == 0.0):
+        raise ValueError("directions must be nonzero")
     return U
 
 
-def _slice_costs_standard(fin1, fin2, U):
+def _slice_costs_standard(fin1, fin2, U, q=1.0):
     """Per-direction sliced cost, diagonal points participating symmetrically."""
     n1, n2 = fin1.shape[0], fin2.shape[0]
     if n1 == 0 and n2 == 0:
@@ -120,10 +152,10 @@ def _slice_costs_standard(fin1, fin2, U):
         L2 = np.concatenate([proj2, proj2_diag], axis=0)
         L1s = np.sort(L1, axis=0)
         L2s = np.sort(L2, axis=0)
-        return np.sum(np.abs(L1s - L2s), axis=0)
+        return np.sum(np.abs(L1s - L2s) ** q, axis=0)
 
 
-def _slice_costs_corrected(fin1, fin2, U):
+def _slice_costs_corrected(fin1, fin2, U, q=1.0):
     """Per-direction diagonal-corrected sliced cost: a point matched to a
     diagonal projection is charged against its own diagonal projection, and two
     diagonal projections cost nothing."""
@@ -133,9 +165,15 @@ def _slice_costs_corrected(fin1, fin2, U):
 
     with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
         if n1 == 0:
-            return np.sum(np.abs(fin2 @ U.T - _project_to_diagonal(fin2) @ U.T), axis=0)
+            return np.sum(
+                np.abs(fin2 @ U.T - _project_to_diagonal(fin2) @ U.T) ** q,
+                axis=0,
+            )
         if n2 == 0:
-            return np.sum(np.abs(fin1 @ U.T - _project_to_diagonal(fin1) @ U.T), axis=0)
+            return np.sum(
+                np.abs(fin1 @ U.T - _project_to_diagonal(fin1) @ U.T) ** q,
+                axis=0,
+            )
 
         proj1 = fin1 @ U.T
         proj2 = fin2 @ U.T
@@ -145,30 +183,36 @@ def _slice_costs_corrected(fin1, fin2, U):
         L1 = np.concatenate([proj1, _project_to_diagonal(fin2) @ U.T], axis=0)
         L2 = np.concatenate([proj2, _project_to_diagonal(fin1) @ U.T], axis=0)
 
-        idx1 = np.argsort(L1, axis=0)
-        idx2 = np.argsort(L2, axis=0)
+        idx1 = np.argsort(L1, axis=0, kind="stable")
+        idx2 = np.argsort(L2, axis=0, kind="stable")
         L1s = np.take_along_axis(L1, idx1, axis=0)
         L2s = np.take_along_axis(L2, idx2, axis=0)
 
         is_diag1 = idx1 >= n1
         is_diag2 = idx2 >= n2
-        costs = np.abs(L1s - L2s)
+        costs = np.abs(L1s - L2s) ** q
 
         real_idx1 = np.clip(idx1, 0, n1 - 1)
-        case3 = np.abs(np.take_along_axis(proj1, real_idx1, axis=0)
-                       - np.take_along_axis(proj1_self_diag, real_idx1, axis=0))
+        case3 = np.abs(
+            np.take_along_axis(proj1, real_idx1, axis=0)
+            - np.take_along_axis(proj1_self_diag, real_idx1, axis=0)
+        ) ** q
         costs = np.where((~is_diag1) & is_diag2, case3, costs)
 
         real_idx2 = np.clip(idx2, 0, n2 - 1)
-        case2 = np.abs(np.take_along_axis(proj2, real_idx2, axis=0)
-                       - np.take_along_axis(proj2_self_diag, real_idx2, axis=0))
+        case2 = np.abs(
+            np.take_along_axis(proj2, real_idx2, axis=0)
+            - np.take_along_axis(proj2_self_diag, real_idx2, axis=0)
+        ) ** q
         costs = np.where(is_diag1 & (~is_diag2), case2, costs)
 
         costs = np.where(is_diag1 & is_diag2, 0.0, costs)
         return np.sum(costs, axis=0)
 
 
-def _sliced_wasserstein(dgm_1, dgm_2, slice_fn, n_directions, ignore_inf_points, seed, directions):
+def _sliced_wasserstein(dgm_1, dgm_2, slice_fn, n_directions, ignore_inf_points,
+                        seed, directions, q):
+    q = _validate_q(q)
     fin1, fin2 = _coerce_pair(dgm_1, dgm_2)
     fin1, ess1 = _split_finite_essential(fin1)
     fin2, ess2 = _split_finite_essential(fin2)
@@ -180,19 +224,20 @@ def _sliced_wasserstein(dgm_1, dgm_2, slice_fn, n_directions, ignore_inf_points,
                 raise ValueError(
                     f"Essential point cardinalities must match. "
                     f"Got {c1.shape[0]} and {c2.shape[0]} points with {name}.")
-            total += _match_essential_1d(c1, c2)
+            total += _match_essential_1d(c1, c2, q=q)
 
     if fin1.shape[0] == 0 and fin2.shape[0] == 0:
         return float(total)
 
     U = _prepare_directions(n_directions, seed, directions)
 
-    total += float(slice_fn(fin1, fin2, U).mean())
+    total += float(slice_fn(fin1, fin2, U, q=q).mean())
     return float(total)
 
 
 def sliced_wasserstein_distance(dgm_1, dgm_2, n_directions: int = 100,
-                                ignore_inf_points: bool = False, seed=None, directions=None):
+                                ignore_inf_points: bool = False, seed=None,
+                                directions=None, q: float = 1.0):
     """Sliced Wasserstein distance between two single-dimension diagrams.
 
     Standard form: diagonal projections of the opposite diagram are added to
@@ -210,16 +255,19 @@ def sliced_wasserstein_distance(dgm_1, dgm_2, n_directions: int = 100,
         directions: Optional explicit ``(n_directions, 2)`` array of directions;
             overrides ``n_directions``/``seed``. Useful for deterministic runs
             or comparing two distances under identical directions.
+        q: Positive transport power. ``q=1`` gives sliced W1; ``q=2`` gives
+            sliced W2 squared.
 
     Returns:
-        The sliced Wasserstein distance as a Python float.
+        The q-th-power sliced Wasserstein objective as a Python float.
     """
     return _sliced_wasserstein(dgm_1, dgm_2, _slice_costs_standard,
-                               n_directions, ignore_inf_points, seed, directions)
+                               n_directions, ignore_inf_points, seed, directions, q)
 
 
 def sliced_wasserstein_distance_diag_corrected(dgm_1, dgm_2, n_directions: int = 100,
-                                               ignore_inf_points: bool = False, seed=None, directions=None):
+                                               ignore_inf_points: bool = False, seed=None,
+                                               directions=None, q: float = 1.0):
     """Diagonal-corrected sliced Wasserstein distance.
 
     Makes the sliced distance behave like true Wasserstein at the diagonal. The
@@ -236,4 +284,4 @@ def sliced_wasserstein_distance_diag_corrected(dgm_1, dgm_2, n_directions: int =
     Arguments are as in :func:`sliced_wasserstein_distance`.
     """
     return _sliced_wasserstein(dgm_1, dgm_2, _slice_costs_corrected,
-                               n_directions, ignore_inf_points, seed, directions)
+                               n_directions, ignore_inf_points, seed, directions, q)

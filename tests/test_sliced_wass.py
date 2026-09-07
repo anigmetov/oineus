@@ -197,3 +197,43 @@ def test_diag_corrected_empty_diagram():
     torch.manual_seed(42)
     dist_dgm_empty = oin_diff.sliced_wasserstein_distance_diag_corrected(dgm, empty, n_directions=50)
     assert dist_dgm_empty.item() > 0
+
+
+@pytest.mark.parametrize("api_name", [
+    "sliced_wasserstein_distance",
+    "sliced_wasserstein_distance_diag_corrected",
+])
+def test_seed_replays_directions_without_mutating_global_rng(api_name):
+    """A seeded call uses local replay directions and leaves the global RNG untouched."""
+    dgm1 = torch.tensor([[0.0, 1.0], [0.5, 2.0]], dtype=TORCH_DTYPE)
+    dgm2 = torch.tensor([[0.2, 1.2], [0.6, 2.1]], dtype=TORCH_DTYPE)
+    api = getattr(oin_diff, api_name)
+
+    torch.manual_seed(731)
+    state_before = torch.random.get_rng_state().clone()
+    first = api(dgm1, dgm2, n_directions=37, seed=991, q=2.0)
+    assert torch.equal(torch.random.get_rng_state(), state_before)
+    second = api(dgm1, dgm2, n_directions=37, seed=991, q=2.0)
+
+    assert first.item() == pytest.approx(second.item(), abs=0.0)
+
+
+@pytest.mark.parametrize("api_name", [
+    "sliced_wasserstein_distance",
+    "sliced_wasserstein_distance_diag_corrected",
+])
+def test_w2_squared_has_finite_gradients(api_name):
+    dgm1 = torch.tensor(
+        [[0.0, 1.0], [0.5, 2.0], [0.3, 0.7]],
+        dtype=TORCH_DTYPE,
+        requires_grad=True,
+    )
+    dgm2 = torch.tensor([[0.2, 1.2], [0.6, 2.1]], dtype=TORCH_DTYPE)
+
+    actual = getattr(oin_diff, api_name)(
+        dgm1, dgm2, n_directions=41, q=2.0, seed=417
+    )
+    actual.backward()
+
+    assert dgm1.grad is not None
+    assert torch.isfinite(dgm1.grad).all()

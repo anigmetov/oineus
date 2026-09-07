@@ -105,6 +105,8 @@ d = oin.sliced_wasserstein_distance(dgm_a, dgm_b, n_directions=100, seed=0)
 - `ignore_inf_points` -- drop essential pairs and match only the finite
   part. As with the closed-form distances, mismatched essential counts
   otherwise raise.
+- `q` -- positive transport power. The return value is the q-th-power
+  objective: `q=1` gives sliced W1 and `q=2` gives sliced W2 squared.
 
 A diagonal-corrected variant,
 {py:func}`oineus.sliced_wasserstein_distance_diag_corrected`, charges a
@@ -118,9 +120,16 @@ For training loops where you need gradients on the diagram side, the
 import torch
 import oineus.diff as diff
 
-d = diff.sliced_wasserstein_distance(torch.tensor(dgm_a), torch.tensor(dgm_b), n_directions=50)
+d = diff.sliced_wasserstein_distance(
+    torch.tensor(dgm_a), torch.tensor(dgm_b), n_directions=50, q=2, seed=0
+)
 d.backward()
 ```
+
+The differentiable API accepts the same `seed`, `directions`, and `q`
+arguments as the NumPy API. A seed constructs the same half-circle directions
+in both APIs without changing PyTorch's global random state; explicit
+directions override both `n_directions` and `seed`.
 
 See {doc}`differentiable`.
 
