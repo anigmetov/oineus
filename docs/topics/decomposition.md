@@ -119,7 +119,35 @@ After {py:meth}`oineus.Decomposition.reduce`:
 - `dcmp.u_data_t` -- stored rows of $U$. Parallel `compute_u=True` fills it
   with the complete inverse of the retained $V$.
 - `dcmp.r_as_csc()`, `dcmp.v_as_csc()`, `dcmp.d_as_csc()`,
-  `dcmp.u_as_csr()` -- SciPy-compatible sparse views over $\mathbb{F}_2$.
+  `dcmp.u_as_csr()` -- independent SciPy sparse exports over $\mathbb{F}_2$.
+
+The matrix properties export **the entire matrix as new Python lists** on
+every access. For a few columns, use `dcmp.r_col(j)`, `dcmp.v_col(j)`, or
+`dcmp.d_col(j)`: each returns only that column's sorted support as an independent
+list. An empty list denotes a valid zero column; unavailable matrices raise
+an exception. Fused `oineus.reduce` does not retain $D$, and its diagram-only
+parallel path does not retain $R$ or $V$. `dcmp.u_row(i)` likewise copies one
+stored row, without computing it or guaranteeing that it is complete.
+
+Column getters read ordinary retained working storage directly. With explicit
+apparent-pair reduction, the first R/V access resolves deferred columns into
+native storage once. It still exports only the requested column to Python.
+Returned lists survive restoration, other updates, and destruction of the
+decomposition; editing a list does not change native storage. C++ callers can
+use `get_r_col`, `get_v_col`, and `get_d_col` for checked const references,
+which must not be retained across mutation of the decomposition.
+
+For many accesses, exporting once is another option:
+
+```python
+R, V = dcmp.r_data, dcmp.v_data
+for j in indices:
+    r_column, v_column = R[j], V[j]
+```
+
+Fetch these snapshots **after** restoration. Cached CSC exports also work:
+`R.indices[R.indptr[j]:R.indptr[j + 1]]` is a NumPy view into the exported CSC
+matrix, not into the decomposition.
 
 Only `has_full_matrix_u() == True` guarantees that the stored rows form a
 complete $U$ for the reduction recipe that produced them. In particular, the
@@ -138,6 +166,58 @@ reduction's Bauer-filled $V$ need not be in canonical ELZ form. If dimensions
 are requested, their ELZ restoration runs before VTUT, so U is the inverse of
 the restored V. VTUT always uses the full V, including unrecovered Bauer
 columns in dimensions that were not requested for restoration.
+
+## Canonical representatives for selected columns
+
+`dcmp.restore_elz_columns(indices, n_threads=4)` restores only the requested
+$R$ and $V$ columns to their exact serial, no-clearing ELZ values, in place,
+and returns `None`. Both positive and negative columns are supported. Other
+columns are read as sources without being restored. The method performs no
+reduction or $U$ solve and does not export columns.
+
+```python
+params = oin.ReductionParams(n_threads=4, compute_v=True, use_clearing=True)
+dcmp = oin.reduce(fil, params, dualize=False)
+# b and d are sorted filtration indices of a finite homology pair
+dcmp.restore_elz_columns([b, d], n_threads=4)
+birth_cycle = dcmp.v_col(b)       # V_ELZ[:, b]
+death_cycle = dcmp.r_col(d)       # R_ELZ[:, d]
+bounding_chain = dcmp.v_col(d)    # its boundary is death_cycle
+```
+
+All requested indices, returned support indices, and C++ indices are in
+**matrix order**, starting at zero. In homology this is the filtration's
+sorted order, not the original input order or a cell's ID. In cohomology
+(`dualize=True`) matrix index `j` corresponds to sorted filtration index
+`fil.size() - 1 - j`. The same conversion applies to returned supports.
+Restoration supports cohomology too; its matrices represent the reversed
+coboundary factorization, so the homology cycle interpretation above does not
+apply unchanged.
+
+Indices are validated before mutation, duplicates are ignored, and an empty
+request does nothing on a valid reduced decomposition. `n_threads` must be
+positive; one thread runs without spawning workers. Repeating a request is
+idempotent, and overlapping later requests are supported. The decomposition
+must retain $V$ and a valid $R=DV$ factorization. A prior V-only critical-set
+restoration that broke that invariant is rejected; re-reduce before using this
+joint restoration API.
+
+Changed $V$ columns discard **all** stored $U$ rows and their validity/work
+counters, plus dynamic row-incidence caches. A no-op preserves those caches.
+Dimension-wide ELZ flags are conservatively retained: a subset operation never
+certifies a whole dimension, even if successive requests cover it. Use the
+existing dimension-wide `restore_elz` when that certification is needed.
+Workers read immutable sources and stage changed target columns until they
+finish. Worker failures and interrupts detected during staging publish no
+target changes. An interrupt arriving during publication may be reported after
+the complete batch has been committed.
+Normal retained working storage stays in that form; apparent-pair storage is
+resolved once before restoration. As with other mutating methods, do not
+concurrently access the same decomposition from another thread.
+
+A runnable example is in `examples/python/selected_representatives.py`.
+The native entry point is
+`VRUDecomposition<Int>::restore_elz_columns(std::vector<Int>, int)`.
 
 ## Reduction parameters
 
