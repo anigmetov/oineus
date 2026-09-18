@@ -5,8 +5,10 @@
 #include <atomic>
 #include <cassert>
 #include <cstdlib>
+#include <exception>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <numeric>
 #include <pthread.h>
 #include <set>
@@ -14,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -464,17 +467,16 @@ namespace oineus {
     // leaving already-recorded larger survivors final. Otherwise the candidate is a
     // survivor: record it and clear it from the working V. Survivors are produced in
     // decreasing order, so reverse for the ascending at-rest column.
-    template<class Int, class WorkCol>
-    bool restore_elz_column_parallel_repr(
-            typename SimpleRVMatrixTraits<Int, 2>::AMatrix& r_v_matrix,
+    template<class Int, class WorkCol, class ColumnAt, class CheckStop>
+    std::unique_ptr<RVColumn<Int, 2>> restored_elz_column_repr(
             size_t current_col, WorkCol& v_work, WorkCol& r_work,
-            SparseColumn<Int>& kept_v)
+            SparseColumn<Int>& kept_v, ColumnAt&& column_at, CheckStop&& check_stop)
     {
         using RVColumn = typename SimpleRVMatrixTraits<Int, 2>::Column;
 
-        auto current_ptr = r_v_matrix[current_col].load(std::memory_order_relaxed);
-        if (current_ptr == nullptr)
-            return false;
+        auto [current_r, current_v] = column_at(current_col);
+        if (current_r == nullptr)
+            return nullptr;
 
         // Fast path: most columns need no undo at all (violators cluster in a
         // narrow range, especially on cohomology), and for a no-undo column the
@@ -486,52 +488,55 @@ namespace oineus {
         // neighbour leaves the column as-is, the first violation falls through
         // to the full algorithm.
         {
-            const auto& v_col = current_ptr->v_column;
-            const auto& r_col = current_ptr->r_column;
+            const auto& v_col = *current_v;
+            const auto& r_col = *current_r;
             const bool is_current_col_death = not r_col.empty();
             const Int current_r_low = is_current_col_death ? r_col.back() : Int(-1);
             bool violation = false;
             for (size_t k = v_col.size(); k-- > 0;) {
                 const Int added_col = v_col[k];
-                auto added_ptr = r_v_matrix[added_col].load(std::memory_order_relaxed);
-                if (added_ptr == nullptr)
-                    return false;             // neighbour not materialized: leave column as-is
-                const bool is_added_col_zero = added_ptr->r_column.empty();
+                if ((k & 255) == 0) check_stop();
+                auto [added_r, added_v] = column_at(added_col);
+                if (added_r == nullptr)
+                    return nullptr;             // neighbour not materialized: leave column as-is
+                const bool is_added_col_zero = added_r->empty();
                 if ((added_col < static_cast<Int>(current_col) && is_added_col_zero) ||
                     (is_current_col_death && !is_added_col_zero &&
-                     current_r_low > added_ptr->r_column.back())) {
+                     current_r_low > added_r->back())) {
                     violation = true;
                     break;
                 }
             }
             if (not violation)
-                return false;
+                return nullptr;
         }
 
-        v_work.load(current_ptr->v_column);   // clear + fill (O(nnz), reuses buffers)
-        r_work.load(current_ptr->r_column);
+        v_work.load(*current_v);   // clear + fill (O(nnz), reuses buffers)
+        r_work.load(*current_r);
 
         kept_v.clear();                       // survivors, pushed in DECREASING order
         bool changed = false;
+        size_t n_steps = 0;
 
         while (true) {
             const Int added_col = v_work.low();
             if (added_col < 0)
                 break;
 
-            auto added_ptr = r_v_matrix[added_col].load(std::memory_order_relaxed);
-            if (added_ptr == nullptr)
-                return changed;               // neighbour not materialized: leave column as-is
+            if ((n_steps++ & 255) == 0) check_stop();
+            auto [added_r, added_v] = column_at(added_col);
+            if (added_r == nullptr)
+                return nullptr;               // neighbour not materialized: leave column as-is
 
             const bool is_current_col_death = not r_work.is_zero();
-            const bool is_added_col_zero = added_ptr->r_column.empty();
+            const bool is_added_col_zero = added_r->empty();
             const bool added_zero_column = (added_col < static_cast<Int>(current_col) && is_added_col_zero);
             const bool added_non_killing_column = (is_current_col_death && !is_added_col_zero &&
-                    r_work.low() > added_ptr->r_column.back());
+                    r_work.low() > added_r->back());
 
             if (added_zero_column || added_non_killing_column) {
-                v_work.add(added_ptr->v_column);
-                r_work.add(added_ptr->r_column);
+                v_work.add(*added_v);
+                r_work.add(*added_r);
                 changed = true;
             } else {
                 kept_v.push_back(added_col);
@@ -541,14 +546,31 @@ namespace oineus {
         }
 
         if (not changed)
-            return false;                     // result equals the original column -> don't republish
+            return nullptr;                     // result equals the original column -> don't republish
 
         SparseColumn<Int> v_result(kept_v.rbegin(), kept_v.rend());   // descending -> ascending
         SparseColumn<Int> r_result;
         r_work.to_vector(r_result);
 
-        auto* new_col = new RVColumn(std::move(r_result), std::move(v_result));
-        r_v_matrix[current_col].store(new_col, std::memory_order_relaxed);
+        return std::make_unique<RVColumn>(std::move(r_result), std::move(v_result));
+    }
+
+    template<class Int, class WorkCol>
+    bool restore_elz_column_parallel_repr(
+            typename SimpleRVMatrixTraits<Int, 2>::AMatrix& r_v_matrix,
+            size_t current_col, WorkCol& v_work, WorkCol& r_work,
+            SparseColumn<Int>& kept_v)
+    {
+        auto column_at = [&r_v_matrix](size_t c) {
+            auto* p = r_v_matrix[c].load(std::memory_order_relaxed);
+            return std::make_pair(p ? &p->r_column : nullptr,
+                                  p ? &p->v_column : nullptr);
+        };
+        auto result = restored_elz_column_repr<Int>(current_col, v_work, r_work,
+                kept_v, column_at, [] {});
+        if (not result)
+            return false;
+        r_v_matrix[current_col].store(result.release(), std::memory_order_relaxed);
         return true;
     }
 
@@ -826,11 +848,20 @@ namespace oineus {
         // working form. Lazy-cache idiom: logically const (the observable at-rest
         // matrices are the same whether built eagerly by copy-back or here), so the
         // const wrapper const_casts. No-op when there is no working form.
-        void materialize_from_working_();
+        void materialize_from_working_(bool interruptible = false);
         void ensure_materialized_() const
         {
             if (has_working_rv_)
                 const_cast<VRUDecomposition*>(this)->materialize_from_working_();
+        }
+
+        // Reconstruct through the noexcept move constructor: small_vector swap
+        // can allocate in older Boost versions when only one operand is inline.
+        static void replace_column_(IntSparseColumn& target, IntSparseColumn&& source) noexcept
+        {
+            static_assert(std::is_nothrow_move_constructible_v<IntSparseColumn>);
+            std::destroy_at(&target);
+            std::construct_at(&target, std::move(source));
         }
 
         // Column count valid in both states: size() reads r_data.size(), which is
@@ -876,6 +907,35 @@ namespace oineus {
             if (has_working_rv_)
                 return working_rv_[col].load(std::memory_order_relaxed)->v_column;
             return v_data[col];
+        }
+
+        // Checked public accessors. References are invalidated by mutation;
+        // Python's column caster exports an independent list for each call.
+        const IntSparseColumn& get_r_col(size_t col) const
+        {
+            require_factorization_valid_("r_col");
+            if (is_pivots_only())
+                throw std::runtime_error("r_col: R is unavailable after diagram-only reduction");
+            if (apparent_) ensure_materialized_();
+            if (has_working_rv_)
+                return working_rv_.at(col).load(std::memory_order_relaxed)->r_column;
+            return r_data.at(col);
+        }
+        const IntSparseColumn& get_v_col(size_t col) const
+        {
+            require_factorization_valid_("v_col");
+            if (not has_matrix_v())
+                throw std::runtime_error("v_col: V matrix was not computed");
+            if (apparent_) ensure_materialized_();
+            if (has_working_rv_)
+                return working_rv_.at(col).load(std::memory_order_relaxed)->v_column;
+            return v_data.at(col);
+        }
+        const IntSparseColumn& get_d_col(size_t col) const
+        {
+            if (not has_d_data_)
+                throw std::runtime_error("d_col: D is unavailable after fused reduction");
+            return d_data.at(col);
         }
 
         template<class C, class R>
@@ -1587,6 +1647,12 @@ namespace oineus {
         // std::vector<int8_t> mark_elz_violators_in_dim(dim_type dim, int n_threads) const;
 
         void restore_elz(dim_type dim, bool v_only, bool verbose, int n_threads);
+
+        // Matrix indices, including under dualize. Only the requested R/V
+        // columns change; U and dynamic indices are discarded if any do change.
+        void restore_elz_columns(std::vector<Int> indices, int n_threads = 1);
+        template<class WorkCol>
+        void restore_elz_columns_impl(const std::vector<Int>& indices, int n_threads);
 
         // Internal critical-sets primitive. Restores only negative V targets in
         // one geometric dimension and deliberately leaves R unchanged.
@@ -2384,6 +2450,125 @@ namespace oineus {
         }
 
         if (verbose) { IC(n_violators, size(), timer.elapsed()); }
+    }
+
+    template<class Int>
+    void VRUDecomposition<Int>::restore_elz_columns(std::vector<Int> indices, int n_threads)
+    {
+        require_factorization_valid_("restore_elz_columns");
+        if (not is_reduced)
+            throw std::runtime_error("restore_elz_columns: decomposition is not reduced");
+        if (n_threads < 1)
+            throw std::invalid_argument("restore_elz_columns: n_threads must be positive");
+        // Check the entire request before materializing or changing any state
+        const size_t nc = n_cols_total();
+        for (Int c : indices)
+            if (c < 0 || static_cast<size_t>(c) >= nc)
+                throw std::out_of_range("restore_elz_columns: column index out of range");
+        if (indices.empty())
+            return;
+        if (not has_matrix_v())
+            throw std::runtime_error("restore_elz_columns: V matrix was not computed");
+        std::sort(indices.begin(), indices.end());
+        indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
+        // Apparent columns must be resolved before workers read their sources
+        if (oineus::interrupted())
+            throw oineus::interrupted_exception{};
+        if (apparent_)
+            materialize_from_working_(true);
+
+        switch (col_repr_) {
+            case ColumnRepr::Set:
+                restore_elz_columns_impl<SetColumn<Int>>(indices, n_threads); break;
+            case ColumnRepr::Heap:
+                restore_elz_columns_impl<HeapColumn<Int>>(indices, n_threads); break;
+            case ColumnRepr::Full:
+                restore_elz_columns_impl<FullColumn<Int>>(indices, n_threads); break;
+            case ColumnRepr::BitTree:
+                restore_elz_columns_impl<BitTreeColumn<Int>>(indices, n_threads); break;
+        }
+    }
+
+    template<class Int>
+    template<class WorkCol>
+    void VRUDecomposition<Int>::restore_elz_columns_impl(
+            const std::vector<Int>& indices, int n_threads)
+    {
+        const size_t n_workers = std::min(indices.size(), static_cast<size_t>(n_threads));
+        const size_t nc = n_cols_total();
+        // Sources remain immutable until all workers finish. Undoing entry k
+        // toggles only smaller V entries, whether or not source k is canonical.
+        // The resulting ELZ column is thus independent of which other targets
+        // were requested. Stage only changed columns, never a matrix snapshot.
+        std::vector<std::unique_ptr<RVColumn<Int, 2>>> results(indices.size());
+        auto column_at = [this](size_t c) {
+            if (has_working_rv_) {
+                auto* p = working_rv_[c].load(std::memory_order_relaxed);
+                return std::make_pair(&p->r_column, &p->v_column);
+            }
+            return std::make_pair(&r_data[c], &v_data[c]);
+        };
+        std::atomic<size_t> next(0);
+        std::atomic<bool> stopped(false);
+        std::vector<std::exception_ptr> errors(n_workers);
+        auto work = [&](size_t tid) {
+            try {
+                auto check_stop = [&] {
+                    if (stopped.load(std::memory_order_relaxed) || oineus::interrupted())
+                        throw oineus::interrupted_exception{};
+                };
+                WorkCol v_work, r_work;
+                v_work.reserve(nc);
+                r_work.reserve(n_rows);
+                IntSparseColumn kept_v;
+                while (true) {
+                    check_stop();
+                    const size_t i = next.fetch_add(1, std::memory_order_relaxed);
+                    if (i >= indices.size())
+                        break;
+                    results[i] = restored_elz_column_repr<Int>(indices[i], v_work,
+                            r_work, kept_v, column_at, check_stop);
+                }
+            } catch (...) {
+                if (not stopped.exchange(true, std::memory_order_relaxed))
+                    errors[tid] = std::current_exception();
+            }
+        };
+        if (n_workers == 1) {
+            work(0);
+        } else {
+            // jthread also joins already-started workers if thread creation fails
+            std::vector<std::jthread> workers;
+            workers.reserve(n_workers);
+            for (size_t tid = 0; tid < n_workers; ++tid)
+                workers.emplace_back(work, tid);
+        }
+        for (const auto& error : errors)
+            if (error)
+                std::rethrow_exception(error);
+        if (oineus::interrupted())
+            throw oineus::interrupted_exception{};
+        if (std::none_of(results.begin(), results.end(), [](const auto& p) { return bool(p); }))
+            return;
+
+        // No allocations after this point. Old U rows cannot remain readable
+        // after changing V; computing their replacements is a separate operation.
+        u_data_t.clear();
+        n_computed_u_rows_ = n_valid_u_rows_ = 0;
+        invalidate_dynamic_();
+        for (size_t i = 0; i < indices.size(); ++i) {
+            if (not results[i])
+                continue;
+            const size_t c = indices[i];
+            if (has_working_rv_) {
+                delete working_rv_[c].exchange(results[i].release(), std::memory_order_relaxed);
+            } else {
+                replace_column_(r_data[c], std::move(results[i]->r_column));
+                replace_column_(v_data[c], std::move(results[i]->v_column));
+            }
+        }
+        // Existing true dimension flags remain true. A subset never promotes a
+        // false flag, even when the caller happens to request every column.
     }
 
     template<class Int>
@@ -4550,48 +4735,55 @@ namespace oineus {
     // After this runs the decomposition is a self-contained at-rest R = D V, so the
     // apparent state is dropped.
     template<class Int>
-    void VRUDecomposition<Int>::materialize_from_working_()
+    void VRUDecomposition<Int>::materialize_from_working_(bool interruptible)
     {
         if (not has_working_rv_)
             return;
         const size_t nc = working_rv_.size();
-        r_data = MatrixData(nc);
-        v_data = MatrixData(nc);
+        MatrixData next_r(nc), next_v(nc);
+        auto check_stop = [interruptible](size_t col) {
+            if (interruptible && (col & 255) == 0 && oineus::interrupted())
+                throw oineus::interrupted_exception{};
+        };
 
         const bool apparent = (apparent_ and not apparent_->empty());
-
-        if (not apparent) {
-            for(size_t col = 0; col < nc; ++col) {
-                auto* p = working_rv_[col].load(std::memory_order_relaxed);
-                r_data[col] = std::move(p->r_column);
-                v_data[col] = std::move(p->v_column);
-                delete p;
-            }
-        } else {
-            // Pass 1: move the genuine columns, resolve the apparent ones, and record
-            // the cleared births (null, non-apparent) to Bauer-fill in pass 2.
+        if (apparent) {
+            // Resolve every deferred column before moving or freeing any live
+            // storage. A resolver/allocation failure leaves the original intact.
             std::vector<size_t> cleared_births;
-            for(size_t col = 0; col < nc; ++col) {
-                auto* p = working_rv_[col].load(std::memory_order_relaxed);
-                if (p != nullptr) {
-                    r_data[col] = std::move(p->r_column);
-                    v_data[col] = std::move(p->v_column);
-                    delete p;
-                } else if (apparent_->is_apparent(static_cast<Int>(col))) {
-                    r_data[col] = apparent_resolve_fn_(static_cast<Int>(col));
-                    v_data[col] = IntSparseColumn{static_cast<Int>(col)};
+            for (size_t col = 0; col < nc; ++col) {
+                check_stop(col);
+                if (working_rv_[col].load(std::memory_order_relaxed) != nullptr)
+                    continue;
+                if (apparent_->is_apparent(static_cast<Int>(col))) {
+                    next_r[col] = apparent_resolve_fn_(static_cast<Int>(col));
+                    next_v[col] = IntSparseColumn{static_cast<Int>(col)};
                 } else {
-                    // cleared birth: V filled by Bauer's trick in pass 2
                     if (col >= _pivots.size() or _pivots[col] < 0)
                         throw std::runtime_error("materialize_from_working_: null column is neither apparent nor a cleared birth");
                     cleared_births.push_back(col);
                 }
             }
-            // Pass 2: V[birth] = R[death], with R[death] now fully materialized.
-            for(size_t col : cleared_births)
-                v_data[col] = r_data.at(static_cast<size_t>(_pivots[col]));
+            for (size_t i = 0; i < cleared_births.size(); ++i) {
+                check_stop(i);
+                const size_t col = cleared_births[i];
+                const size_t death = static_cast<size_t>(_pivots[col]);
+                auto* p = working_rv_.at(death).load(std::memory_order_relaxed);
+                next_v[col] = p ? p->r_column : next_r.at(death);
+            }
         }
-
+        check_stop(0);
+        // Only nonthrowing moves and teardown remain
+        for (size_t col = 0; col < nc; ++col) {
+            auto* p = working_rv_[col].load(std::memory_order_relaxed);
+            if (p != nullptr) {
+                replace_column_(next_r[col], std::move(p->r_column));
+                replace_column_(next_v[col], std::move(p->v_column));
+                delete p;
+            }
+        }
+        r_data.swap(next_r);
+        v_data.swap(next_v);
         working_rv_.clear();
         has_working_rv_ = false;
         apparent_.reset();

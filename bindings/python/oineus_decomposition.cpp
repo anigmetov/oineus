@@ -468,6 +468,15 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
             .def("u_row", &Decomposition::u_row, nb::arg("row"),
                     "Raw internal U row storage. Unless has_full_matrix_u() is true, "
                     "its presence does not imply a row of the complete inverse.")
+            .def("r_col", &Decomposition::get_r_col, nb::arg("column"),
+                    "Copy one R column's support as a list of matrix row indices. "
+                    "Raises if R is unavailable or the R = D V factorization is invalid.")
+            .def("v_col", &Decomposition::get_v_col, nb::arg("column"),
+                    "Copy one V column's support as a list of matrix row indices. "
+                    "Raises if V is unavailable or the R = D V factorization is invalid.")
+            .def("d_col", &Decomposition::get_d_col, nb::arg("column"),
+                    "Copy one D column's support as a list of matrix row indices. "
+                    "Fused reduce() does not retain D; use the filtration or classic constructor.")
             .def_prop_ro("n_computed_u_rows", &Decomposition::n_computed_u_rows)
             .def_prop_ro("n_valid_u_rows", &Decomposition::n_valid_u_rows)
             .def_prop_ro("lazy_restore_elz_time", [](const Decomposition& self) {
@@ -547,6 +556,14 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
             .def("n_elz_violators_in_dim", &Decomposition::n_elz_violators_in_dim, nb::arg("dim"), nb::arg("n_threads")=8)
             .def("is_column_elz", &Decomposition::is_column_elz, nb::arg("column_idx"))
             .def("restore_elz", &Decomposition::restore_elz, nb::arg("dim")=oin::k_invalid_index, nb::arg("v_only")=false, nb::arg("verbose")=false, nb::arg("n_threads")=1)
+            .def("restore_elz_columns", &Decomposition::restore_elz_columns,
+                    nb::arg("indices"), nb::arg("n_threads")=1,
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Restore only the requested R/V columns in place to serial ELZ form; return None. "
+                    "Indices are matrix indices (n - 1 - filtration_index under dualize). "
+                    "Duplicates are ignored; an empty request is a no-op. Repeated calls are idempotent. "
+                    "Requires a reduced, valid R = D V factorization with V retained. "
+                    "Any change discards cached U; dimension-wide restoration flags are not promoted.")
             .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false)
             .def("compute_u_from_v_1", &Decomposition::compute_u_from_v_1, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false);
 

@@ -868,3 +868,96 @@ TEST_CASE("compute_partial_u_rows is deterministic across thread counts")
         REQUIRE(u1[r] == u4[r]);
     }
 }
+
+TEST_CASE("selected ELZ preserves working storage and aborts without publication", "[selected-elz]")
+{
+    using Int = long;
+    auto fil = make_test_filtration<Int, double>(10, 10, 7);
+    oineus::ReductionParams params;
+    params.compute_v = true;
+    params.n_threads = 4;
+    params.use_clearing = true;
+    auto boundary = fil.boundary_matrix();
+    auto dcmp = oineus::VRUDecomposition<Int>::reduce_from_boundary_fused(
+            boundary, fil.dims_first(), fil.dims_last(), /*dualize=*/false,
+            params, /*keep_working=*/true);
+    REQUIRE(dcmp.has_working_rv_);
+    const auto flags = dcmp.is_elz_in_dim_;
+    const auto negative_flags = dcmp.negative_v_elz_in_dim_;
+    std::vector<oineus::RVColumn<Int, 2>*> pointers;
+    for (size_t j = 0; j < fil.size(); ++j) {
+        auto* p = dcmp.working_rv_[j].load();
+        pointers.push_back(p);
+        REQUIRE(&dcmp.get_r_col(j) == &p->r_column);
+        REQUIRE(&dcmp.get_v_col(j) == &p->v_column);
+    }
+    REQUIRE(dcmp.r_data.empty());
+    REQUIRE(dcmp.v_data.empty());
+    REQUIRE_THROWS_AS(dcmp.restore_elz_columns({0, -1}, 4), std::out_of_range);
+    REQUIRE(dcmp.has_working_rv_);
+    dcmp.restore_elz_columns({}, 4);
+    std::vector<Int> indices;
+    for (Int j = 2; j < static_cast<Int>(fil.size()); j += 7)
+        indices.push_back(j);
+    oineus::request_stop();
+    bool interrupted = false;
+    try {
+        dcmp.restore_elz_columns(indices, 4);
+    } catch (const oineus::interrupted_exception&) {
+        interrupted = true;
+    }
+    oineus::clear_stop();
+    REQUIRE(interrupted);
+    for (size_t j = 0; j < fil.size(); ++j)
+        REQUIRE(dcmp.working_rv_[j].load() == pointers[j]);
+    REQUIRE(dcmp.is_elz_in_dim_ == flags);
+    REQUIRE(dcmp.negative_v_elz_in_dim_ == negative_flags);
+
+    auto oracle = reduce_with_params<Int, double>(fil, false, false, false, 1);
+    dcmp.restore_elz_columns(indices, 4);
+    REQUIRE(dcmp.has_working_rv_);
+    REQUIRE(dcmp.r_data.empty());
+    REQUIRE(dcmp.v_data.empty());
+    for (size_t j = 0; j < fil.size(); ++j) {
+        if (std::binary_search(indices.begin(), indices.end(), static_cast<Int>(j))) {
+            REQUIRE(dcmp.get_r_col(j) == oracle.r_data[j]);
+            REQUIRE(dcmp.get_v_col(j) == oracle.v_data[j]);
+        } else {
+            REQUIRE(dcmp.working_rv_[j].load() == pointers[j]);
+        }
+    }
+    REQUIRE(dcmp.is_elz_in_dim_ == flags);
+    REQUIRE(dcmp.negative_v_elz_in_dim_ == negative_flags);
+    REQUIRE(dcmp.factorization_valid());
+    REQUIRE_FALSE(dcmp.has_matrix_u());
+}
+
+TEST_CASE("selected ELZ preserves apparent storage when its resolver throws", "[selected-elz]")
+{
+    using Int = long;
+    oineus::VRUDecomposition<Int> dcmp;
+    dcmp.is_reduced = true;
+    dcmp.n_rows = 2;
+    dcmp.has_working_rv_ = true;
+    dcmp.working_rv_ = decltype(dcmp.working_rv_)(2);
+    auto* original = new oineus::RVColumn<Int, 2>({}, {0});
+    dcmp.working_rv_[0].store(original);
+    dcmp.working_rv_[1].store(nullptr);
+    dcmp.apparent_ = std::make_unique<oineus::ApparentMatching<Int>>();
+    dcmp.apparent_->init(2);
+    dcmp.apparent_->add(0, 1);
+    dcmp._pivots = {1, -1};
+    dcmp.apparent_resolve_fn_ = [](Int) -> oineus::SparseColumn<Int> {
+        throw std::bad_alloc();
+    };
+    REQUIRE_THROWS_AS(dcmp.restore_elz_columns({0}, 4), std::bad_alloc);
+    REQUIRE(dcmp.has_working_rv_);
+    REQUIRE(dcmp.r_data.empty());
+    REQUIRE(dcmp.v_data.empty());
+    REQUIRE(dcmp.working_rv_[0].load() == original);
+    REQUIRE(original->v_column == oineus::SparseColumn<Int>{0});
+    dcmp.apparent_resolve_fn_ = [](Int) { return oineus::SparseColumn<Int>{0}; };
+    REQUIRE_NOTHROW(dcmp.restore_elz_columns({0}, 4));
+    REQUIRE(dcmp.get_r_col(1) == oineus::SparseColumn<Int>{0});
+    REQUIRE(dcmp.get_v_col(0) == oineus::SparseColumn<Int>{0});
+}

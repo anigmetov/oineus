@@ -87,6 +87,7 @@ else()
             cube-dgm
             dcmp-manips
             dcmp-restore-elz
+            selected-elz
             dgm-dist
             diff-backend
             diff-cech
