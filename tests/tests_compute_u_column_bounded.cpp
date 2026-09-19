@@ -961,3 +961,37 @@ TEST_CASE("selected ELZ preserves apparent storage when its resolver throws", "[
     REQUIRE(dcmp.get_r_col(1) == oineus::SparseColumn<Int>{0});
     REQUIRE(dcmp.get_v_col(0) == oineus::SparseColumn<Int>{0});
 }
+
+TEST_CASE("column replacement handles inline heap and moved-from storage", "[selected-elz]")
+{
+    using Decomposition = oineus::VRUDecomposition<long>;
+    using Column = Decomposition::IntSparseColumn;
+    const size_t inline_capacity = Column{}.capacity();
+    const std::vector<size_t> sizes{0, 1, inline_capacity, inline_capacity + 1, 64};
+    for (size_t target_size : sizes) {
+        for (size_t source_size : sizes) {
+            for (bool reserve_heap : {false, true}) {
+                Column target(target_size, -1);
+                Column source(source_size);
+                std::iota(source.begin(), source.end(), 0L);
+                if (reserve_heap)
+                    source.reserve(128);
+                const Column expected(source);
+                Decomposition::replace_column_(target, std::move(source));
+                REQUIRE(target == expected);
+                source.push_back(999);
+                REQUIRE(target == expected);
+            }
+        }
+    }
+    Column source(64, 1);
+    Column owner(std::move(source));
+    Column target(64, 2);
+    REQUIRE(source.empty());
+    Decomposition::replace_column_(target, std::move(source));
+    REQUIRE(target.empty());
+    REQUIRE(owner == Column(64, 1));
+    source.push_back(3);
+    Decomposition::replace_column_(target, std::move(source));
+    REQUIRE(target == Column{3});
+}

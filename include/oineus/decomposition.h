@@ -855,11 +855,14 @@ namespace oineus {
                 const_cast<VRUDecomposition*>(this)->materialize_from_working_();
         }
 
-        // Reconstruct through the noexcept move constructor: small_vector swap
-        // can allocate in older Boost versions when only one operand is inline.
+        // Same-type column moves cannot allocate: inline integral entries fit in
+        // the destination, and heap storage transfers with our equal allocators.
+        // Boost 1.66 omits noexcept on this move constructor, so its standard
+        // type trait is false. Reconstruct rather than use small_vector::swap,
+        // which can allocate on older Boost when only one operand is inline.
         static void replace_column_(IntSparseColumn& target, IntSparseColumn&& source) noexcept
         {
-            static_assert(std::is_nothrow_move_constructible_v<IntSparseColumn>);
+            static_assert(std::is_integral_v<Int>);
             std::destroy_at(&target);
             std::construct_at(&target, std::move(source));
         }
@@ -2537,11 +2540,20 @@ namespace oineus {
         if (n_workers == 1) {
             work(0);
         } else {
-            // jthread also joins already-started workers if thread creation fails
-            std::vector<std::jthread> workers;
+            // std::jthread requires macOS 11; Intel wheels still target 10.13
+            std::vector<std::thread> workers;
             workers.reserve(n_workers);
-            for (size_t tid = 0; tid < n_workers; ++tid)
-                workers.emplace_back(work, tid);
+            try {
+                for (size_t tid = 0; tid < n_workers; ++tid)
+                    workers.emplace_back(work, tid);
+            } catch (...) {
+                stopped.store(true, std::memory_order_relaxed);
+                for (auto& worker : workers)
+                    worker.join();
+                throw;
+            }
+            for (auto& worker : workers)
+                worker.join();
         }
         for (const auto& error : errors)
             if (error)
