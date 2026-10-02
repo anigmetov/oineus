@@ -7,6 +7,8 @@ the dgm-loss scatter, the crit-sets flow) plus the numpy combine port
 against the C++ combine_loss oracle.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -99,6 +101,85 @@ def test_pd_forward_index_diagram_matches_values():
         dgm = fwd.top_opt.compute_diagram(include_inf_points=False)
         np.testing.assert_allclose(values[idx],
                                    dgm.in_dimension(dim, as_numpy=True))
+
+
+@pytest.mark.parametrize("dualize", [False, True])
+def test_alpha_forward_warns_for_negative_persistence_without_changing_values(dualize):
+    fil = oin.Filtration([([0], 0.0), ([1], 0.0), ([0, 1], -1.0)])
+    fil.kind = oin.FiltrationKind.Alpha
+    values = np.array([fil.cell_value_by_sorted_id(i) for i in range(len(fil))])
+
+    with pytest.warns(RuntimeWarning, match="death <= birth.*exact=True"):
+        fwd = _forward(fil, values, "dgm-loss", max_dim=1, dualize=dualize)
+
+    np.testing.assert_array_equal(values[fwd.index_dgm[0]], [[0.0, -1.0]])
+    np.testing.assert_array_equal(fwd.values_np, values)
+
+
+def test_alpha_forward_warns_when_returned_values_collapse_to_equality():
+    fil = oin.Filtration([([0], 0.0), ([1], 0.0), ([0, 1], 1.0)])
+    fil.kind = oin.FiltrationKind.Alpha
+    values = np.zeros(3)
+
+    with pytest.warns(RuntimeWarning, match="death <= birth"):
+        fwd = _forward(fil, values, "dgm-loss", max_dim=1)
+
+    np.testing.assert_array_equal(values[fwd.index_dgm[0]], [[0.0, 0.0]])
+
+
+@pytest.mark.parametrize("death", [0.0, 1.0])
+def test_alpha_forward_does_not_warn_for_valid_or_filtered_zero_persistence(death):
+    fil = oin.Filtration([([0], 0.0), ([1], 0.0), ([0, 1], death)])
+    fil.kind = oin.FiltrationKind.Alpha
+    values = np.array([fil.cell_value_by_sorted_id(i) for i in range(len(fil))])
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fwd = _forward(fil, values, "dgm-loss", max_dim=1)
+
+    assert not caught
+    assert len(fwd.index_dgm[0]) == int(death > 0.0)
+
+
+def test_nonalpha_descending_forward_does_not_warn():
+    cells = [oin.Simplex([0], 1.0), oin.Simplex([1], 1.0), oin.Simplex([0, 1], 0.0)]
+    fil = oin.Filtration(cells, negate=True)
+    values = np.array([fil.cell_value_by_sorted_id(i) for i in range(len(fil))])
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fwd = _forward(fil, values, "dgm-loss", max_dim=1)
+
+    assert not caught
+    np.testing.assert_array_equal(values[fwd.index_dgm[0]], [[1.0, 0.0]])
+
+
+def test_nondiff_alpha_warns_without_modifying_output(monkeypatch):
+    fil = oin.Filtration([([0], 0.0), ([1], 0.0), ([0, 1], -1.0)])
+    monkeypatch.setattr(oin, "alpha_filtration", lambda *args, **kwargs: fil)
+
+    with pytest.warns(RuntimeWarning, match="death <= birth.*exact=True"):
+        diagrams = oin.compute_diagrams_alpha(np.empty((0, 2)))
+
+    diagram = diagrams.in_dimension(0)
+    finite = diagram[np.isfinite(diagram[:, 1])]
+    np.testing.assert_array_equal(finite, [[0.0, -1.0]])
+    assert np.count_nonzero(np.isposinf(diagram[:, 1])) == 1
+
+
+@pytest.mark.parametrize("death", [0.0, 1.0])
+def test_nondiff_alpha_accepts_essentials_and_filtered_zero_pairs(monkeypatch, death):
+    fil = oin.Filtration([([0], 0.0), ([1], 0.0), ([0, 1], death)])
+    monkeypatch.setattr(oin, "alpha_filtration", lambda *args, **kwargs: fil)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        diagrams = oin.compute_diagrams_alpha(np.empty((0, 2)))
+
+    assert not caught
+    diagram = diagrams.in_dimension(0)
+    assert len(diagram) == 1 + int(death > 0.0)
+    assert np.count_nonzero(np.isposinf(diagram[:, 1])) == 1
 
 
 def test_pd_backward_dgm_loss_is_scatter():

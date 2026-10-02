@@ -127,13 +127,21 @@ dgms = diff.persistence_diagram(fil)
 ### Alpha
 
 Differentiable alpha (squared alpha-shape values on Delaunay simplices)
-needs `diode` for the combinatorics; the values are reconstructed in
-PyTorch:
+uses `diode` for both the combinatorics and forward values. PyTorch or JAX
+differentiates the selected attachers' squared circumradii, preserving
+native ties and zero-persistence filtering:
 
 ```{code-block} python
 fil = diff.alpha_filtration(pts)
 dgms = diff.persistence_diagram(fil)
 ```
+
+`fil.values` remains a differentiable tensor, so losses on the filtration
+itself also backpropagate to the input points. The radius formulas use no
+additive epsilon; an explicitly supplied `eps` must be zero. If an alpha
+diagram contains a point with death less than or equal to birth, Python
+issues a warning suggesting `exact=True` for a filtration built with
+`exact=False`. The warning does not modify the diagram or rerun construction.
 
 For low-D points, alpha and Cech-Delaunay produce nearly the same H1
 above the noise floor; weak alpha is the fastest but does not always

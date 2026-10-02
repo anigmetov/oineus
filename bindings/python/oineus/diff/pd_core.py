@@ -21,6 +21,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .. import _oineus
+from .._diagram_validation import warn_invalid_alpha_diagrams
 from ._reduction_policy import default_dualize_for_filtration
 from .top_optimizer import TopologyOptimizer
 
@@ -185,9 +186,14 @@ def pd_forward(under_fil, values_np, *, dualize, method, dims_to_backprop,
             dim, as_numpy=True).astype(np.int64)
         for dim in range(max_dim)
     }
+    values_np = np.asarray(values_np)
+    if under_fil.kind == _oineus.FiltrationKind.Alpha:
+        warn_invalid_alpha_diagrams(
+            (values_np[idx] for idx in index_dgm.values()), stacklevel=5
+        )
     return PDForward(
         top_opt=top_opt,
-        values_np=np.asarray(values_np),
+        values_np=values_np,
         index_dgm=index_dgm,
         negate=bool(under_fil.negate),
         dualize=dualize,

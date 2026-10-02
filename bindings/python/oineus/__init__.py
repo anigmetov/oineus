@@ -2255,7 +2255,12 @@ def compute_diagrams_alpha(points: np.ndarray,
     )
     dcmp = _oineus.Decomposition(fil, dualize)
     dcmp.reduce(params)
-    return dcmp.diagram(fil=fil, include_inf_points=include_inf_points, n_threads=params.n_threads)
+    diagrams = dcmp.diagram(fil=fil, include_inf_points=include_inf_points, n_threads=params.n_threads)
+    from ._diagram_validation import warn_invalid_alpha_diagrams
+    warn_invalid_alpha_diagrams(
+        (diagrams.in_dimension(dim) for dim in range(len(diagrams))), stacklevel=3
+    )
+    return diagrams
 
 
 def list_to_filtration(data: typing.List[typing.Tuple[int, typing.List[int], float]]):

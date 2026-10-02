@@ -1,10 +1,9 @@
 """Differentiable alpha filtration.
 
-Combinatorics come from CGAL via diode (with attachment information).
-Critical values are recomputed differentiably (torch or jax, via eagerpy)
-as squared circumradii of each simplex's *attacher* tau (a Gabriel
-coface), so gradients flow back to the input point coordinates. Vertices
-are immovable: dim-0 values are zeros without grad.
+Combinatorics and forward values come from CGAL via diode (with attachment
+information). Gradients come from differentiable squared circumradii of
+each simplex's *attacher* tau (a Gabriel coface), using torch or jax via
+eagerpy. Vertex values are zero with zero coordinate gradients.
 """
 import inspect
 import time
@@ -14,9 +13,8 @@ import numpy as np
 import eagerpy as epy
 
 from .. import _oineus
-from .._dtype import real_module_for
-from ._backend import concrete_numpy
-from ._tensor_utils import real_buffer_for
+from .._dtype import dtype_of_oineus_obj, real_module_for
+from ._backend import concrete_numpy, infer_backend
 from .alpha_utils import (
     edge_circumradius_sq,
     tetrahedron_circumradius_sq,
@@ -83,7 +81,7 @@ def _bucket_indices_by_tau_dim(tau_rows):
     return buckets
 
 
-def _compute_values_for_dim(points, sigma_rows, tau_by_sigma_tuple, eps):
+def _compute_values_for_dim(points, sigma_rows, tau_by_sigma_tuple):
     """Compute the differentiable critical-value tensor for one dim block.
 
     points: eagerpy tensor of the input coordinates.
@@ -115,11 +113,11 @@ def _compute_values_for_dim(points, sigma_rows, tau_by_sigma_tuple, eps):
         elif tau_dim == 2:
             vals = epy.astensor(triangle_circumradius_sq(
                 points[tau_arr[:, 0]], points[tau_arr[:, 1]],
-                points[tau_arr[:, 2]], eps))
+                points[tau_arr[:, 2]]))
         elif tau_dim == 3:
             vals = epy.astensor(tetrahedron_circumradius_sq(
                 points[tau_arr[:, 0]], points[tau_arr[:, 1]],
-                points[tau_arr[:, 2]], points[tau_arr[:, 3]], eps))
+                points[tau_arr[:, 2]], points[tau_arr[:, 3]]))
         else:
             raise RuntimeError(f"alpha_filtration: tau_dim={tau_dim} not supported")
         pieces.append(vals)
@@ -133,22 +131,25 @@ def _compute_values_for_dim(points, sigma_rows, tau_by_sigma_tuple, eps):
     return epy.concatenate(pieces)[inv]
 
 
-def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
+def alpha_filtration(points, eps: float = 0.0, exact: bool = False,
                      print_time: bool = False) -> DiffFiltration:
     """Build a differentiable alpha filtration from a point cloud.
 
     Combinatorics and per-simplex *attacher* (a Gabriel coface tau whose
     squared circumradius equals alpha(sigma)) are obtained from diode
-    (CGAL, via ``fill_alpha_shapes(..., with_attachment=True)``). Critical
-    values are recomputed differentiably as squared circumradii of tau, so
-    gradients flow back to ``points``.
+    (CGAL, via ``fill_alpha_shapes(..., with_attachment=True)``). Forward
+    values retain diode's alpha values in the native filtration order.
+    Gradients flow back to ``points`` through the squared circumradii of
+    tau, without perturbing the forward values or splitting native ties.
 
-    Vertices are immovable: dim-0 values are zeros without grad.
+    Vertex values are zero with zero coordinate gradients. Circumradius
+    derivatives require nondegenerate attachers and finite arithmetic.
 
     Args:
         points: ``(n, d)`` torch tensor or jax array with ``d in {2, 3}``.
             Differentiable; the returned values are in the same framework.
-        eps: small value for numerical stability in the closed-form formulas.
+        eps: must be zero. Nonzero epsilon regularization is no longer
+            supported because it changes the geometric derivatives.
         exact: forwarded to diode (selects the exact CGAL kernel).
         print_time: if True, print per-stage timings.
 
@@ -157,9 +158,14 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
         and is wired into the autograd graph.
 
     Raises:
+        ValueError if ``eps`` is nonzero.
         RuntimeError if the installed diode does not support
         ``with_attachment=True``.
     """
+    if eps != 0:
+        raise ValueError("alpha_filtration requires eps=0; epsilon regularization "
+                         "changes the geometric derivatives")
+
     if not _diode_supports_attachment():
         raise RuntimeError(
             "alpha_filtration requires a build of diode that exposes the "
@@ -183,8 +189,7 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
     pairs = [(s, a) for s, a, _ in triples]
     # Route to the backend matching the point dtype so a float32 cloud builds a genuine float32
     # under-filtration (diode's alpha values are double; the float32 _Filtration ctor narrows
-    # them). The recomputed values below already follow the points dtype, so the whole
-    # DiffFiltration stays single-dtype instead of float32 values on a float64 filtration.
+    # them). Narrow the forward tensor identically below.
     sub = real_module_for(points_np)
     alpha_fil = sub._Filtration(pairs, duplicates_possible=False, n_threads=1)
     alpha_fil.kind = _oineus.FiltrationKind.Alpha
@@ -222,7 +227,7 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
         else:
             raise RuntimeError(f"alpha_filtration: dim={dim} not supported")
         sigma_rows = sigma_rows.astype(np.int64)
-        vals = _compute_values_for_dim(tensor, sigma_rows, tau_by_sigma_tuple, eps)
+        vals = _compute_values_for_dim(tensor, sigma_rows, tau_by_sigma_tuple)
         values_in_dim.append(vals)
         if print_time:
             print(f"dim {dim} elapsed: {time.time() - t_dim:.3f}")
@@ -230,12 +235,20 @@ def alpha_filtration(points, eps: float = 1e-12, exact: bool = False,
     if print_time:
         t0 = time.time()
 
-    cd_vals = epy.concatenate(values_in_dim)
-    # contiguous buffer in the filtration's Real dtype -- read directly by set_values
-    alpha_fil.set_values(real_buffer_for(alpha_fil, cd_vals.raw))
-    sorted_vals = epy.concatenate([epy.sort(v) for v in values_in_dim]).raw
+    ad_values = epy.concatenate(values_in_dim).raw
+    # Use the native sorted-id -> input-id permutation, including its tie order
+    native_values = np.asarray([a for _, a in pairs], dtype=dtype_of_oineus_obj(alpha_fil))
+    native_values = native_values[np.asarray(alpha_fil.inv_sorting_permutation(), dtype=np.int64)]
+    native = tensor.from_numpy(native_values).raw
+    if infer_backend(points) == "torch":
+        detached = ad_values.detach()
+    else:
+        import jax
+        detached = jax.lax.stop_gradient(ad_values)
+    # Preserve native values exactly while differentiating the geometric formula
+    values = native + (ad_values - detached)
 
     if print_time:
         print(f"finalize elapsed: {time.time() - t0:.3f}")
 
-    return DiffFiltration(alpha_fil, sorted_vals)
+    return DiffFiltration(alpha_fil, values)
