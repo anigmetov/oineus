@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-__version__ = "0.9.38"
+__version__ = "0.9.39"
 
 import copy
 import typing
