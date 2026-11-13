@@ -99,7 +99,8 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                                                    decltype(TopologyOptimizer::decmp_hom_built_),
                                                    decltype(TopologyOptimizer::decmp_coh_built_)>;
 
-    nb::class_<IndicesValues>(m, ind_vals_name.c_str())
+    nb::class_<IndicesValues>(m, ind_vals_name.c_str(),
+            "Pair of (cell sorted_ids, target filtration values) produced by TopologyOptimizer.")
             .def("__getitem__", [](const IndicesValues& iv, int i) -> std::variant<Indices, Values> {
               if (i == 0)
                   return {iv.indices};
@@ -197,8 +198,10 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "return target from Wasserstein matching"
             )
-            .def_prop_ro("homology_decomposition", &TopologyOptimizer::get_homology_decompostion)
-            .def_prop_ro("cohomology_decomposition", &TopologyOptimizer::get_cohomology_decompostion)
+            .def_prop_ro("homology_decomposition", &TopologyOptimizer::get_homology_decompostion,
+                    "Copy of the internal homology Decomposition.")
+            .def_prop_ro("cohomology_decomposition", &TopologyOptimizer::get_cohomology_decompostion,
+                    "Copy of the internal cohomology Decomposition.")
             // Mutable references to the internal decompositions, used by
             // the partial-U wiring in oineus.diff.persistence_diagram (so
             // it can call decmp.compute_partial_u_from_v_1 or
@@ -211,14 +214,16 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                          throw std::runtime_error("homology_decomposition_ref unavailable; call ensure_hom_built() or ensure_hom_reduced() first");
                      return opt.decmp_hom_;
                  },
-                 nb::rv_policy::reference_internal)
+                 nb::rv_policy::reference_internal,
+                 "Mutable reference to the internal homology Decomposition (must be built first).")
             .def("cohomology_decomposition_ref",
                  [](TopologyOptimizer& opt) -> typename TopologyOptimizer::Decomposition& {
                      if (not opt.decmp_coh_built_)
                          throw std::runtime_error("cohomology_decomposition_ref unavailable; call ensure_coh_built() or ensure_coh_reduced() first");
                      return opt.decmp_coh_;
                  },
-                 nb::rv_policy::reference_internal)
+                 nb::rv_policy::reference_internal,
+                 "Mutable reference to the internal cohomology Decomposition (must be built first).")
             .def_prop_ro("is_hom_built", &TopologyOptimizer::is_hom_built,
                     "True iff the homology Decomposition has been materialized "
                     "from the cached boundary matrix. Set by the first "
@@ -226,11 +231,16 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
             .def_prop_ro("is_coh_built", &TopologyOptimizer::is_coh_built,
                     "True iff the cohomology Decomposition has been "
                     "materialized. Counterpart of is_hom_built.")
-            .def("singleton", &TopologyOptimizer::singleton)
+            .def("singleton", &TopologyOptimizer::singleton,
+                    nb::arg("idx"), nb::arg("new_value"),
+                    "Return critical set for moving cell idx (sorted_id) to new_value.")
             .def("singletons", &TopologyOptimizer::singletons,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+                    nb::arg("indices"), nb::arg("values"),
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Return list of critical sets for each (index, target_value) pair.")
             .def("reduce_all", &TopologyOptimizer::reduce_all,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Eagerly build and reduce both homology and cohomology decompositions.")
             .def("increase_death", nb::overload_cast<size_t>(&TopologyOptimizer::increase_death, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for increasing death to inf")
             .def("decrease_death", nb::overload_cast<size_t>(&TopologyOptimizer::decrease_death, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for decreasing death to -inf")
             .def("increase_birth", nb::overload_cast<size_t>(&TopologyOptimizer::increase_birth, nb::const_), nb::arg("negative_simplex_idx"), "return critical set for increasing birth to inf")
@@ -296,7 +306,8 @@ void init_oineus_top_optimizer_class(nb::module_& m, std::string opt_name, std::
                     "Cohomology-side counterpart of ensure_has_u_hom. The "
                     "row indices are passed as filtration indices; conversion "
                     "to matrix layout (fil_size - 1 - i) is done internally.")
-            .def("update", &TopologyOptimizer::update)
+            .def("update", &TopologyOptimizer::update, nb::arg("new_values"), nb::arg("n_threads")=1,
+                 "Update filtration values (indexed by user id), re-sort, and invalidate cached reductions.")
             .def("__repr__", [](const TopologyOptimizer& opt) {
                 std::stringstream ss;
                 ss << opt;

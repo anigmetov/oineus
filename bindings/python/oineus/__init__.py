@@ -624,7 +624,7 @@ def _diagrams_to_numpy_list(diagrams):
 
     Used by helpers that manipulate diagram points in Python (thresholding,
     persistence scheduling, pairwise distances, ...). For direct pass-through
-    to the C++ Hera bindings, prefer :func:`as_real_numpy` instead — nanobind
+    to the C++ Hera bindings, prefer :func:`as_real_numpy` instead -- nanobind
     picks the correct overload based on input type.
     """
     result = []
@@ -722,14 +722,14 @@ def _resolve_multistart_seed(diagrams,
         ])
         return diagrams[int(c2[int(np.argmin(restricted_scores))])].copy()
 
-    raise ValueError(f"Unknown Fréchet-mean seed '{seed}'")
+    raise ValueError(f"Unknown Frechet-mean seed '{seed}'")
 
 
 def _prepare_distance_args(dgm_1, dgm_2):
     """Coerce two single-dimension diagram inputs for the C++ distance entry.
 
     Both inputs must be a numpy ``(n, 2)`` array or a ``list[DiagramPoint]``.
-    A multi-dimensional ``oineus.Diagrams`` is rejected — the caller must
+    A multi-dimensional ``oineus.Diagrams`` is rejected -- the caller must
     extract a single dimension first via ``dgm.in_dimension(d)``.
     """
     def coerce(dgm):
@@ -829,6 +829,15 @@ def wasserstein_distance(dgm_1, dgm_2, q: float=1.0, delta: float=0.01, internal
 
 
 def init_frechet_mean_first_diagram(diagrams):
+    """Initialize a Frechet-mean barycenter from the first diagram in the sequence.
+
+    Args:
+        diagrams: Non-empty sequence of single-dimension persistence diagrams,
+            each an ``(n_points, 2)`` NumPy array or ``list[DiagramPoint]``.
+
+    Returns:
+        NumPy array of shape ``(n_points, 2)`` suitable as an initial barycenter.
+    """
     return _init_frechet_mean_first_diagram_cpp([as_real_numpy(d) for d in diagrams])
 
 
@@ -837,6 +846,18 @@ def init_frechet_mean_random_diagram(diagrams,
                                      domain=DiagramPlaneDomain.AboveDiagonal,
                                      random_noise_scale: float = 1.0,
                                      random_seed: int = 42):
+    """Initialize a Frechet-mean barycenter by perturbing input diagram points.
+
+    Args:
+        diagrams: Sequence of single-dimension persistence diagrams.
+        domain: Plane domain constraint (``DiagramPlaneDomain.AboveDiagonal`` or
+            ``DiagramPlaneDomain.BelowDiagonal``).
+        random_noise_scale: Standard deviation scale of the random perturbation.
+        random_seed: Seed for deterministic initialization.
+
+    Returns:
+        NumPy array of shape ``(n_points, 2)`` suitable as an initial barycenter.
+    """
     return _init_frechet_mean_random_diagram_cpp(
         [as_real_numpy(d) for d in diagrams],
         domain=domain,
@@ -846,6 +867,19 @@ def init_frechet_mean_random_diagram(diagrams,
 
 
 def init_frechet_mean_medoid_diagram(diagrams, *, weights=None, n_threads: int = 1):
+    """Initialize a Frechet-mean barycenter with the weighted 2-Wasserstein medoid.
+
+    Selects the input diagram minimizing the weighted sum of squared 2-Wasserstein
+    distances to all diagrams in ``diagrams``.
+
+    Args:
+        diagrams: Non-empty sequence of single-dimension persistence diagrams.
+        weights: Optional 1D array of nonnegative diagram weights.
+        n_threads: Number of threads for pairwise Wasserstein evaluations.
+
+    Returns:
+        NumPy array of shape ``(n_points, 2)`` copying the medoid diagram.
+    """
     return _init_frechet_mean_medoid_diagram_cpp(
         [as_real_numpy(d) for d in diagrams], weights=weights, n_threads=n_threads
     )
@@ -857,6 +891,19 @@ def init_frechet_mean_diagonal_grid(diagrams,
                                     domain=DiagramPlaneDomain.AboveDiagonal,
                                     grid_n_x_bins: int = 16,
                                     grid_n_y_bins: int = 16):
+    """Initialize a Frechet-mean barycenter by binning diagram mass onto a grid.
+
+    Args:
+        diagrams: Sequence of single-dimension persistence diagrams.
+        weights: Optional 1D array of nonnegative diagram weights.
+        domain: Plane domain constraint (``DiagramPlaneDomain.AboveDiagonal`` or
+            ``DiagramPlaneDomain.BelowDiagonal``).
+        grid_n_x_bins: Number of bins along the birth-death sum axis.
+        grid_n_y_bins: Number of bins along the persistence axis.
+
+    Returns:
+        NumPy array of shape ``(n_points, 2)`` suitable as an initial barycenter.
+    """
     return _init_frechet_mean_diagonal_grid_cpp(
         [as_real_numpy(d) for d in diagrams],
         weights=weights,
@@ -873,6 +920,19 @@ def frechet_mean_objective(diagrams,
                            wasserstein_delta: float = 0.01,
                            internal_p: float = np.inf,
                            n_threads: int = 1):
+    """Evaluate the weighted Frechet variance sum_i w_i * W_2(barycenter, D_i)^2.
+
+    Args:
+        diagrams: Sequence of single-dimension persistence diagrams.
+        barycenter: Candidate barycenter diagram of shape ``(n_points, 2)``.
+        weights: Optional 1D array of nonnegative weights (normalized to sum to 1).
+        wasserstein_delta: Relative accuracy parameter passed to Hera.
+        internal_p: Ground-metric norm in the plane (``np.inf`` for L_infinity).
+        n_threads: Number of worker threads for evaluating the sum.
+
+    Returns:
+        Weighted mean squared 2-Wasserstein distance as a Python float.
+    """
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
 
     def term(i_diagram):
@@ -898,6 +958,23 @@ def make_frechet_mean_persistence_schedule(diagrams,
                                            initial_threshold_fraction: float = 0.5,
                                            max_active_growth: float = 0.10,
                                            min_persistence: float = 0.0):
+    """Build a decreasing persistence-threshold schedule for progressive Frechet means.
+
+    Starts at ``initial_threshold_fraction`` of the largest finite persistence
+    across ``diagrams`` and steps down to ``min_persistence`` while capping the
+    fractional growth in active point count per stage by ``max_active_growth``.
+
+    Args:
+        diagrams: Sequence of single-dimension persistence diagrams.
+        initial_threshold_fraction: Initial threshold as a fraction of maximum
+            finite persistence (must be positive).
+        max_active_growth: Maximum relative increase in active finite points per
+            stage (must be nonnegative).
+        min_persistence: Final persistence floor for the last stage.
+
+    Returns:
+        Strictly decreasing ``list[float]`` of persistence thresholds.
+    """
     diagrams = _diagrams_to_numpy_list(diagrams)
     if initial_threshold_fraction <= 0.0:
         raise ValueError("initial_threshold_fraction must be positive")
@@ -947,6 +1024,18 @@ def make_frechet_mean_persistence_schedule(diagrams,
 
 
 def frechet_mean_newborn_points_from_newly_active(newly_active_diagrams, *, weights=None):
+    """Synthesize warm-start barycenter points from newly activated diagram points.
+
+    Shrinks each newly active finite point ``(b, d)`` of diagram ``i`` toward its
+    diagonal midpoint ``(b + d) / 2`` according to normalized diagram weight ``w_i``.
+
+    Args:
+        newly_active_diagrams: Sequence of per-diagram newly active point arrays.
+        weights: Optional 1D array of nonnegative diagram weights.
+
+    Returns:
+        Contiguous ``(m, 2)`` NumPy array of newborn barycenter points.
+    """
     newly_active_diagrams = _diagrams_to_numpy_list(newly_active_diagrams)
     normalized_weights = _normalize_frechet_weights(len(newly_active_diagrams), weights)
 
@@ -976,6 +1065,27 @@ def frechet_mean_multistart(diagrams,
                             return_details: bool = False,
                             n_threads: int = 1,
                             **kwargs):
+    """Compute a 2-Wasserstein Frechet mean from multiple initializations.
+
+    Runs Turner's alternating-matching algorithm (:func:`frechet_mean`) from each
+    seed in ``starts`` and returns the barycenter achieving the lowest weighted
+    Frechet objective.
+
+    Args:
+        diagrams: Non-empty sequence of single-dimension persistence diagrams.
+        weights: Optional 1D array of nonnegative diagram weights.
+        starts: Sequence of seed names (``"medoid"``, ``"second_medoid"``,
+            ``"farthest_from_medoid"``, ``"grid"``, ``"random"``, ``"first"``),
+            explicit ``(k, 2)`` NumPy arrays, or per-run override dicts.
+        return_details: If True, return ``(best_barycenter, details_dict)`` with
+            per-run objectives and barycenters.
+        n_threads: Threads for pairwise matching and objective evaluation.
+        **kwargs: Additional keyword arguments forwarded to :func:`frechet_mean`.
+
+    Returns:
+        Best barycenter ``(m, 2)`` NumPy array, or ``(barycenter, details)`` when
+        ``return_details=True``.
+    """
     diagrams = [as_real_numpy(_check_numpy_diagram_shape(d)) for d in diagrams]
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
     if not starts:
@@ -1056,6 +1166,33 @@ def progressive_frechet_mean(diagrams,
                              return_details: bool = False,
                              n_threads: int = 1,
                              **kwargs):
+    """Compute a 2-Wasserstein Frechet mean via coarse-to-fine persistence thresholding.
+
+    Solves a sequence of warm-started Frechet-mean subproblems on progressively
+    lower persistence thresholds so high-persistence structure locks in before
+    near-diagonal noise enters the matching.
+
+    Args:
+        diagrams: Sequence of single-dimension persistence diagrams.
+        weights: Optional 1D array of nonnegative diagram weights.
+        thresholds: Optional explicit decreasing sequence of persistence
+            thresholds; defaults to :func:`make_frechet_mean_persistence_schedule`.
+        initial_threshold_fraction: Schedule start fraction when ``thresholds`` is None.
+        max_active_growth: Maximum active-point growth fraction per stage.
+        min_persistence: Final persistence threshold floor.
+        initial_seed: Seed strategy or ``(k, 2)`` array for the coarsest stage.
+        support_update_predicate: Optional callable deciding whether to inject
+            newborn support points between stages.
+        support_update_fn: Optional callable returning ``(m, 2)`` newborn points
+            when ``support_update_predicate`` returns True.
+        return_details: If True, return ``(barycenter, {"thresholds": ..., "history": ...})``.
+        n_threads: Threads for C++ matching and objective evaluation.
+        **kwargs: Additional keyword arguments forwarded to :func:`frechet_mean`.
+
+    Returns:
+        Final barycenter ``(m, 2)`` NumPy array, or ``(barycenter, details)`` when
+        ``return_details=True``.
+    """
     diagrams = _diagrams_to_numpy_list(diagrams)
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
     ignore_infinite_points = bool(kwargs.get("ignore_infinite_points", False))
@@ -1173,6 +1310,23 @@ def progressive_frechet_mean_multistart(diagrams,
                                         return_details: bool = False,
                                         n_threads: int = 1,
                                         **kwargs):
+    """Combine coarse-to-fine progressive scheduling with multistart initialization.
+
+    Runs :func:`progressive_frechet_mean` from each seed in ``starts`` and keeps
+    the run with the lowest full-diagram Frechet objective.
+
+    Args:
+        diagrams: Non-empty sequence of single-dimension persistence diagrams.
+        weights: Optional 1D array of nonnegative diagram weights.
+        starts: Sequence of initial seeds or per-run configuration dicts.
+        return_details: If True, return ``(best_barycenter, details_dict)``.
+        n_threads: Threads for C++ matching and objective evaluation.
+        **kwargs: Keyword arguments forwarded to :func:`progressive_frechet_mean`.
+
+    Returns:
+        Best barycenter ``(m, 2)`` NumPy array, or ``(barycenter, details)`` when
+        ``return_details=True``.
+    """
     diagrams = [as_real_numpy(_check_numpy_diagram_shape(d)) for d in diagrams]
     normalized_weights = _normalize_frechet_weights(len(diagrams), weights)
     if not starts:
@@ -1237,6 +1391,37 @@ def frechet_mean(diagrams,
                  grid_n_y_bins: int = 16,
                  custom_initial_barycenter=None,
                  n_threads: int = 1):
+    """Compute a locally optimal 2-Wasserstein Frechet mean (barycenter) of diagrams.
+
+    Minimizes ``sum_i w_i * W_2(B, D_i)^2`` via Turner et al.'s alternating
+    optimal-matching and arithmetic-update algorithm using Hera matchings. For
+    non-convex diagram landscapes, consider :func:`frechet_mean_multistart` or
+    :func:`progressive_frechet_mean_multistart`.
+
+    Args:
+        diagrams: Sequence of single-dimension persistence diagrams, each an
+            ``(n_points, 2)`` NumPy array or ``list[DiagramPoint]``.
+        weights: Optional 1D array of nonnegative weights (length ``len(diagrams)``).
+        max_iter: Maximum number of alternating matching/update iterations.
+        tol: Stopping tolerance on barycenter movement between iterations.
+        wasserstein_delta: Relative error parameter passed to Hera matchings.
+        internal_p: Ground-metric norm in the plane (``np.inf`` for L_infinity).
+        init_strategy: Initialization mode (:class:`FrechetMeanInit` member).
+        domain: Half-plane domain (:class:`DiagramPlaneDomain.AboveDiagonal` for
+            sublevel filtrations, ``BelowDiagonal`` for superlevel).
+        ignore_infinite_points: If True, drop essential (+/-inf) points before
+            computing the barycenter.
+        random_noise_scale: Perturbation scale for ``FrechetMeanInit.RandomDiagram``.
+        random_seed: RNG seed for ``FrechetMeanInit.RandomDiagram``.
+        grid_n_x_bins: Birth-death sum bins for ``FrechetMeanInit.Grid``.
+        grid_n_y_bins: Persistence bins for ``FrechetMeanInit.Grid``.
+        custom_initial_barycenter: Explicit ``(k, 2)`` initial barycenter required
+            when ``init_strategy == FrechetMeanInit.Custom``.
+        n_threads: Number of C++ threads used across per-diagram Hera matchings.
+
+    Returns:
+        Barycenter persistence diagram as an ``(m, 2)`` NumPy array.
+    """
     diagrams = [as_real_numpy(_check_numpy_diagram_shape(d)) for d in diagrams]
     if weights is not None:
         weights = np.asarray(weights)
@@ -1270,6 +1455,21 @@ def frechet_mean(diagrams,
 
 
 def to_scipy_matrix(sparse_cols, shape=None):
+    """Convert a list of Z_2 sparse columns into a ``scipy.sparse.csc_matrix``.
+
+    Note: for matrices on a :class:`Decomposition` prefer the zero-copy C++
+    exporters ``dcmp.r_as_csc()``, ``dcmp.v_as_csc()``, ``dcmp.d_as_csc()``, and
+    ``dcmp.u_as_csr()``. Use ``to_scipy_matrix`` for standalone column lists such
+    as ``fil.boundary_matrix()`` or ``fil.coboundary_matrix()``.
+
+    Args:
+        sparse_cols: Sequence of columns, each a list/iterable of row indices.
+        shape: Optional ``(n_rows, n_cols)`` tuple; defaults to square
+            ``(len(sparse_cols), len(sparse_cols))``.
+
+    Returns:
+        ``scipy.sparse.csc_matrix`` with 0/1 entries.
+    """
     import scipy.sparse  # local: keep scipy off the `import oineus` path
     if shape is None:
         shape = (len(sparse_cols), len(sparse_cols))
@@ -1342,6 +1542,36 @@ def freudenthal_filtration(data: np.ndarray,
                            *,
                            slim: bool=True,
                            n_threads: int=1):
+    """Build a lower-star (or upper-star) Freudenthal triangulation filtration on a regular grid.
+
+    Each hypercube of the regular grid defined by ``data`` is subdivided into
+    ``d!`` simplices (Kuhn / Freudenthal triangulation), and every simplex is
+    assigned the maximum (``negate=False``) or minimum (``negate=True``) scalar
+    value among its vertices. Input dtype routes automatically to the float32 or
+    float64 backend.
+
+    Args:
+        data: Scalar array on a regular grid (1D, 2D, 3D, 4D, or higher with
+            ``slim=False``).
+        negate: If False (default), build the sublevel (lower-star) filtration;
+            if True, build the superlevel (upper-star) filtration.
+        wrap: If True, identify opposite grid boundaries to form a flat torus
+            (falls back automatically to the fat cell encoding).
+        max_dim: Maximal simplex dimension to include (clamped to ``data.ndim``).
+            To obtain complete persistence diagrams up to homology dimension ``k``,
+            include simplices up to dimension ``k + 1``.
+        with_critical_vertices: If True, return ``(filtration, critical_vertices)``
+            where ``critical_vertices`` is a 1D ``int64`` array of flat grid
+            indices giving each simplex's defining vertex in sorted filtration order.
+        slim: Use the compact ``(anchor, type)`` slim cell encoding on 1D--4D
+            non-periodic grids (default True). Pass ``slim=False`` to force the
+            universal fat :class:`Simplex` encoding.
+        n_threads: Number of C++ threads for filtration construction and sorting.
+
+    Returns:
+        A :class:`Filtration` instance, or ``(filtration, critical_vertices)``
+        when ``with_critical_vertices=True``.
+    """
     # route to the float32 or float64 backend by the input dtype (float32 numpy/torch
     # arrays build a genuine float32 filtration; everything else defaults to float64)
     dt = detect_real_dtype(data)
@@ -1585,6 +1815,25 @@ def multiply_filtration(fil, sigma, sigma_value=None):
     return module_of_oineus_obj(fil)._multiply_filtration(fil, sigma, sigma_value)
 
 def min_filtration(fil_1, fil_2, with_indices=False):
+    """Build the filtration-order minimum of two filtrations on a common complex.
+
+    Every cell receives the earlier of its values in ``fil_1`` and ``fil_2``
+    under their shared filtration order (``min(v_1, v_2)`` when ``negate=False``,
+    ``max(v_1, v_2)`` when ``negate=True``). Used to compare two filtrations via
+    ``fil_1 <- min(fil_1, fil_2) -> fil_2``.
+
+    Args:
+        fil_1: First :class:`Filtration`.
+        fil_2: Second :class:`Filtration` with compatible cell type, dtype, and
+            ``negate`` flag.
+        with_indices: If True, return ``(min_fil, inds_1, inds_2)`` mapping each
+            sorted cell of ``min_fil`` back to its ``sorted_id`` in ``fil_1`` and
+            ``fil_2``.
+
+    Returns:
+        Combined :class:`Filtration`, or ``(min_fil, inds_1, inds_2)`` when
+        ``with_indices=True``.
+    """
     # route to the backend matching the input filtrations' dtype
     sub = module_of_oineus_obj(fil_1)
     if with_indices:
@@ -1600,36 +1849,94 @@ def min_filtration(fil_1, fil_2, with_indices=False):
 # filtrations and on float32 filtrations -- mirroring min_filtration / mapping_cylinder.
 
 def get_nth_persistence(fil, rv_matrix, dim, n):
-    """The n-th largest persistence value in the given homology dimension."""
+    """Return the n-th largest finite persistence value in homology dimension ``dim``.
+
+    Args:
+        fil: :class:`Filtration` used to construct ``rv_matrix``.
+        rv_matrix: Reduced :class:`Decomposition` of ``fil``.
+        dim: Homological dimension (0-indexed).
+        n: 1-based rank among finite persistence bars (``n=1`` is the longest bar).
+
+    Returns:
+        Persistence value as a float (or 0.0 if fewer than ``n`` finite bars exist).
+    """
     return module_of_oineus_obj(fil).get_nth_persistence(fil, rv_matrix, dim, n)
 
 
 def get_denoise_target(dim, fil, rv_matrix, eps, strategy):
-    """Target values for topological denoising (DiagramToValues)."""
+    """Compute simplex-value targets that suppress bars with persistence ``<= eps``.
+
+    Args:
+        dim: Homological dimension to denoise.
+        fil: :class:`Filtration` used to construct ``rv_matrix``.
+        rv_matrix: Reduced :class:`Decomposition` of ``fil``.
+        eps: Persistence threshold below which bars are collapsed toward the diagonal.
+        strategy: :class:`DenoiseStrategy` (``BirthBirth``, ``DeathDeath``, or ``Midway``).
+
+    Returns:
+        Diagram-to-values mapping consumable by :func:`get_permutation_dtv`.
+    """
     return module_of_oineus_obj(fil).get_denoise_target(dim, fil, rv_matrix, eps, strategy)
 
 
 def get_permutation(target_matching, fil):
-    """Permutation realizing the requested simplex-to-value targets (warm starts)."""
+    """Build a filtration index permutation realizing ``(sorted_id -> target_value)`` edits.
+
+    Args:
+        target_matching: Mapping ``dict[int, float]`` from current ``sorted_id``
+            to target filtration value.
+        fil: Current :class:`Filtration`.
+
+    Returns:
+        ``list[int]`` permutation suitable for ``Decomposition.update_with_permutation``.
+    """
     return module_of_oineus_obj(fil).get_permutation(target_matching, fil)
 
 
 def get_permutation_dtv(diagram_to_values, fil):
-    """Permutation realizing the requested diagram-to-value targets (warm starts)."""
+    """Build a filtration index permutation realizing diagram-to-value targets.
+
+    Args:
+        diagram_to_values: Target map returned by :func:`get_denoise_target`.
+        fil: Current :class:`Filtration`.
+
+    Returns:
+        ``list[int]`` permutation suitable for ``Decomposition.update_with_permutation``.
+    """
     return module_of_oineus_obj(fil).get_permutation_dtv(diagram_to_values, fil)
 
 
 def compute_relative_diagrams(fil, rel, include_inf_points=True):
-    """Relative persistence diagrams of the pair (fil, rel). fil and rel must share
-    the same cell type and Real dtype."""
+    """Compute relative persistence diagrams H_*(fil, rel) of a filtration pair.
+
+    Args:
+        fil: Full :class:`Filtration` K.
+        rel: Subcomplex :class:`Filtration` L (must share cell encoding and dtype
+            with ``fil``).
+        include_inf_points: If True (default), include essential bars at infinity.
+
+    Returns:
+        :class:`Diagrams` of the relative homology pair ``(fil, rel)``.
+    """
     return module_of_oineus_obj(fil).compute_relative_diagrams(
         fil, rel, include_inf_points=include_inf_points)
 
 
 def get_induced_matching(included_filtration, containing_filtration, dim=-1, n_threads=1):
-    """Induced matching between the diagrams of two filtrations on the same complex.
+    """Compute the Bauer-Lesnick induced matching for a sublevel inclusion on a shared complex.
 
-    dim < 0 (the default) matches across all homology dimensions."""
+    Args:
+        included_filtration: Domain :class:`Filtration` ``F_sub`` on a complex ``X``.
+        containing_filtration: Codomain :class:`Filtration` ``F_sup`` on the same
+            underlying complex ``X`` (same cell count per dimension) with cell values
+            dominated by ``included_filtration`` (e.g., ``min_filtration(F_sub, F_other)``).
+        dim: Homological dimension to match, or ``dim < 0`` (default) to match
+            across all dimensions.
+        n_threads: Number of C++ threads for the underlying reductions.
+
+    Returns:
+        Dict mapping dimension (or bar) to matched persistence pairs across ``F_sub -> F_sup``.
+    """
     sub = module_of_oineus_obj(included_filtration)
     # dim_type is unsigned in C++; -1 ("all dims") is its SIZE_MAX default, which a Python -1
     # cannot convert to -- so omit the argument and let the C++ default apply.
@@ -1680,6 +1987,28 @@ def remove_simplices(fil, dcmp, seeds, *, close_star=True, stats=None, n_threads
 def compute_diagrams_ls(data: np.ndarray, negate: bool=False, wrap: bool=False,
                         max_dim: typing.Optional[int]=None, params: typing.Optional[ReductionParams]=None,
                         include_inf_points: bool=True, dualize: bool=False):
+    """Compute lower-star (or upper-star) persistence diagrams of a grid scalar field.
+
+    Builds a Freudenthal triangulation filtration up to simplex dimension
+    ``max_dim + 1`` so all diagrams in dimensions ``0 .. max_dim`` have complete
+    death values, reduces it, and returns the resulting :class:`Diagrams`.
+
+    Args:
+        data: Scalar NumPy array on a regular grid (1D, 2D, 3D, or 4D).
+        negate: If False (default), compute sublevel persistence; if True,
+            compute superlevel persistence.
+        wrap: If True, apply periodic boundary conditions (flat torus).
+        max_dim: Maximal homology diagram dimension to compute; defaults to
+            ``data.ndim - 1``.
+        params: Optional :class:`ReductionParams` (controls ``n_threads``,
+            ``use_clearing``, etc.).
+        include_inf_points: Include essential (+/-inf) bars in the returned diagrams.
+        dualize: If True, reduce the coboundary matrix (persistent cohomology);
+            if False (default), reduce the boundary matrix (persistent homology).
+
+    Returns:
+        :class:`Diagrams` indexed by homology dimension.
+    """
     if max_dim is None:
         max_dim = data.ndim - 1
     if params is None:
@@ -1692,13 +2021,49 @@ def compute_diagrams_ls(data: np.ndarray, negate: bool=False, wrap: bool=False,
 
 
 def compute_diagrams_vr(data: np.ndarray, from_pwdists: bool=False, max_dim: int=-1, max_diameter: float = -1.0, params: typing.Optional[ReductionParams]=None, include_inf_points: bool=True, dualize: bool=True):
+    """Compute Vietoris-Rips persistence diagrams from a point cloud or distance matrix.
+
+    ``max_dim`` specifies the maximal **diagram** (homological) dimension:
+    simplices up to dimension ``max_dim + 1`` are enumerated internally so that
+    diagrams in dimensions ``0 .. max_dim`` have complete death values, and the
+    truncated ``(max_dim + 1)`` slot is trimmed off before returning.
+
+    Args:
+        data: ``(n, d)`` point cloud array, or ``(n, n)`` pairwise distance
+            matrix when ``from_pwdists=True``.
+        from_pwdists: If True, interpret ``data`` as a square distance matrix.
+        max_dim: Maximal homology diagram dimension to return. When ``max_dim < 0``
+            (default), defaults to ``max(0, data.shape[1] - 1)`` for point clouds,
+            and raises ``RuntimeError`` when ``from_pwdists=True``.
+        max_diameter: Maximum edge length / simplex diameter cutoff. Negative
+            values default to the enclosing radius (:func:`max_distance`).
+        params: Optional :class:`ReductionParams` (controls ``n_threads``,
+            ``use_clearing``, ``use_apparent_pairs``, etc.).
+        include_inf_points: Include essential bars at infinity in output diagrams.
+        dualize: If True (default), compute persistent cohomology (typically much
+            faster on Vietoris-Rips complexes with clearing); if False, homology.
+
+    Returns:
+        :class:`Diagrams` containing dimensions ``0 .. max_dim`` (length ``max_dim + 1``).
+    """
     if params is None:
         params = _oineus.ReductionParams()
-    # max_dim is maximal dimension of the _diagram_, we need simplices one dimension higher, hence +1
-    fil = vr_filtration(data, from_pwdists, max_dim=max_dim, max_diameter=max_diameter, with_critical_edges=False, n_threads=params.n_threads)
+    if data.ndim != 2:
+        raise ValueError("data must be a 2D array")
+    if max_dim < 0:
+        if from_pwdists:
+            raise RuntimeError("compute_diagrams_vr: if input is pairwise distance matrix, max_dim must be specified")
+        eff_max_dim = max(0, data.shape[1] - 1)
+    else:
+        eff_max_dim = max_dim
+    # eff_max_dim is maximal dimension of the _diagram_, we need simplices one dimension higher, hence +1
+    fil = vr_filtration(data, from_pwdists, max_dim=eff_max_dim + 1, max_diameter=max_diameter, with_critical_edges=False, n_threads=params.n_threads)
     dcmp = _oineus.Decomposition(fil, dualize)
     dcmp.reduce(params)
-    return dcmp.diagram(fil=fil, include_inf_points=include_inf_points, n_threads=params.n_threads)
+    dgms = dcmp.diagram(fil=fil, include_inf_points=include_inf_points, n_threads=params.n_threads)
+    dgms.trim_to_dim(eff_max_dim)
+    dgms.pad_to_dim(eff_max_dim)
+    return dgms
 
 
 def alpha_filtration(points: np.ndarray,
@@ -2259,11 +2624,41 @@ def compute_diagrams_alpha(points: np.ndarray,
 
 
 def list_to_filtration(data: typing.List[typing.Tuple[int, typing.List[int], float]]):
+    """Construct a simplicial :class:`Filtration` from ``(id, vertices, value)`` tuples.
+
+    Args:
+        data: List of ``(cell_id, vertex_list, filtration_value)`` triples.
+
+    Returns:
+        Simplicial :class:`Filtration` sorted by filtration order.
+    """
     simplices = [ Simplex(id, vertices, val) for id, vertices, val in data ]
     return Filtration(simplices)
 
 
 def compute_kernel_image_cokernel_reduction(K, L, params=None, reduction_params=None):
+    """Compute kernel, image, and cokernel persistence of an inclusion ``L -> K``.
+
+    Implements the Cohen-Steiner, Edelsbrunner, Harer, and Morozov reduction for
+    a subcomplex ``L`` included into ``K`` (sharing filtration values on ``L``).
+    Dispatches automatically across all Oineus cell encodings (simplicial,
+    product, cubical, slim Freudenthal, and bit-packed) and Real dtypes.
+
+    Args:
+        K: Ambient :class:`Filtration` (or list of ``(id, vertices, value)`` tuples).
+        L: Subcomplex :class:`Filtration` of ``K`` with matching cell encoding
+            (or list of ``(id, vertices, value)`` tuples).
+        params: Optional :class:`KICRParams` selecting which of ``kernel``,
+            ``image``, and ``cokernel`` to compute (all True by default).
+        reduction_params: Optional :class:`ReductionParams` applied uniformly to
+            all internal reductions (``params_f``, ``params_g``, ``params_ker``,
+            ``params_im``, ``params_cok``).
+
+    Returns:
+        :class:`KerImCokReduced` object exposing ``kernel_diagrams()``,
+        ``image_diagrams()``, ``cokernel_diagrams()``, ``domain_diagrams()``, and
+        ``codomain_diagrams()``.
+    """
     # simplicial filtrations can be supplied as lists,
     # convert to Oineus filtrations if necessary
     if isinstance(K, list):
@@ -2301,6 +2696,20 @@ def compute_kernel_image_cokernel_reduction(K, L, params=None, reduction_params=
 
 
 def compute_ker_cok_reduction_cyl(fil_2, fil_3):
+    """Compute kernel and cokernel persistence comparing two filtrations via a mapping cylinder.
+
+    Forms ``fil_min = min_filtration(fil_2, fil_3)``, builds the mapping cylinder
+    of ``fil_3 -> fil_min``, embeds ``fil_3`` as the top subcomplex, and runs
+    product-cell KICR with ``kernel=True, cokernel=True, image=False``.
+
+    Args:
+        fil_2: First simplicial :class:`Filtration`.
+        fil_3: Second simplicial :class:`Filtration` on a compatible complex.
+
+    Returns:
+        :class:`KerImCokReducedProd` containing the cylinder kernel and cokernel
+        persistence reductions.
+    """
     fil_min = min_filtration(fil_2, fil_3)
 
     id_domain = fil_3.size() + fil_min.size() + 1
@@ -2339,6 +2748,27 @@ def cube_filtration(data: np.ndarray,
                     max_dim: typing.Optional[int]=None,
                     values_on: str="vertices",
                     n_threads: int=1,):
+    """Build a cubical filtration on a 1D, 2D, 3D, or 4D regular grid.
+
+    Avoids simplicial subdivision by representing pixels/voxels natively as
+    elementary cubes. Input dtype routes automatically to the float32 or float64
+    backend.
+
+    Args:
+        data: 1D, 2D, 3D, or 4D NumPy scalar array.
+        negate: If False (default), build sublevel filtration; if True, superlevel.
+        wrap: Periodic boundary conditions (not yet implemented; raises
+            ``RuntimeError`` if True).
+        max_dim: Maximal cube dimension to include; defaults to ``data.ndim``.
+        values_on: ``"vertices"`` (default, lower-star from grid corners: each
+            cube enters at the max of its incident vertices) or ``"cells"``
+            (top-dimensional voxel mode: input values sit on top-cells and
+            lower-dimensional faces enter at the min of their incident top-cells).
+        n_threads: Number of C++ threads for filtration construction.
+
+    Returns:
+        Cubical :class:`Filtration` instance.
+    """
     if wrap:
         raise RuntimeError("cube_filtration: wrap=True is not implemented yet")
     # route to the float32 or float64 backend by the input dtype
@@ -2404,6 +2834,7 @@ _PUBLIC_API_NAMES = [
     "get_nth_persistence",
     "get_permutation_dtv",
     "get_permutation",
+    "remove_simplices",
     "GridDomain_1D",
     "Grid_1D",
     "CombinatorialCube_1D",

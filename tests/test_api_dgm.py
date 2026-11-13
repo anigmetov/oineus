@@ -212,3 +212,67 @@ def test_diagram_point_index_persistence():
     p.death_index = 9
     assert p.index_persistence == 7
     assert abs(p.persistence - 0.75) < ABS_TOL
+
+
+def test_compute_diagrams_vr_max_dim_is_diagram_dimension():
+    # 12 points evenly spaced on the unit circle: H_1 has one prominent finite loop
+    # killed by 2-simplices across the circle.
+    angles = np.linspace(0.0, 2.0 * np.pi, 12, endpoint=False)
+    circle = np.column_stack([np.cos(angles), np.sin(angles)]).astype(REAL_DTYPE)
+
+    dgms_1 = oin.compute_diagrams_vr(circle, max_dim=1, include_inf_points=True)
+    assert len(dgms_1) == 2
+    h1 = dgms_1.in_dimension(1)
+    assert h1.shape[0] >= 1
+    assert np.all(np.isfinite(h1)), "H_1 bars on a closed circle must die finitely via 2-simplices"
+    assert float(np.max(h1[:, 1] - h1[:, 0])) > 1.0
+
+    # Default max_dim=-1 on 2D points computes H_0 and H_1 (diagram max_dim = d - 1 = 1)
+    dgms_default = oin.compute_diagrams_vr(circle)
+    assert len(dgms_default) == 2
+    assert np.allclose(dgms_default[1], h1, atol=ABS_TOL)
+
+    # max_dim=0 returns only H_0 (killed by 1-simplices)
+    dgms_0 = oin.compute_diagrams_vr(circle, max_dim=0, include_inf_points=True)
+    assert len(dgms_0) == 1
+    assert np.sum(np.isinf(dgms_0[0][:, 1])) == 1
+
+    # Pairwise distances require explicit max_dim and agree with point-cloud VR
+    dists = np.linalg.norm(circle[:, None, :] - circle[None, :, :], axis=-1).astype(REAL_DTYPE)
+    with pytest.raises(RuntimeError):
+        oin.compute_diagrams_vr(dists, from_pwdists=True)
+    dgms_pw = oin.compute_diagrams_vr(dists, from_pwdists=True, max_dim=1, include_inf_points=True)
+    assert len(dgms_pw) == 2
+    assert np.allclose(dgms_pw[1], h1, atol=ABS_TOL)
+
+
+def test_pep561_type_stubs_valid_and_complete():
+    import ast
+    from pathlib import Path
+    import oineus.diff
+    import oineus.vis
+
+    pkg_dir = Path(oin.__file__).resolve().parent
+    assert (pkg_dir / "py.typed").is_file()
+
+    for rel, mod in [
+        ("__init__.pyi", oin),
+        ("vis/__init__.pyi", oineus.vis),
+        ("diff/__init__.pyi", oineus.diff),
+        ("diff/cochains.pyi", None),
+    ]:
+        stub_path = pkg_dir / rel
+        assert stub_path.is_file(), f"Missing stub {stub_path}"
+        tree = ast.parse(stub_path.read_text(encoding="utf-8"))
+        defined = set()
+        for node in tree.body:
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef)):
+                defined.add(node.name)
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                defined.add(node.target.id)
+            elif isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    defined.add(alias.asname or alias.name)
+        if mod is not None:
+            missing = set(mod.__all__) - defined
+            assert not missing, f"{rel} missing __all__ symbols: {sorted(missing)}"

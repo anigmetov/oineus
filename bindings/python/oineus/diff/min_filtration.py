@@ -7,6 +7,21 @@ from .diff_filtration import DiffFiltration
 
 
 def min_filtration(fil_1: DiffFiltration, fil_2: DiffFiltration) -> DiffFiltration:
+    """Build the differentiable filtration-order minimum of two filtrations.
+
+    Combines ``fil_1`` and ``fil_2`` cell-by-cell using ``min(v_1, v_2)`` when
+    ``negate=False`` (or ``max(v_1, v_2)`` when ``negate=True``) in the input
+    tensor's framework (PyTorch or JAX), propagating gradients back to both
+    filtrations.
+
+    Args:
+        fil_1: First :class:`DiffFiltration`.
+        fil_2: Second :class:`DiffFiltration` (must agree on ``negate``, cell
+            type, and tensor framework).
+
+    Returns:
+        Combined :class:`DiffFiltration`.
+    """
     fil_1_under = fil_1.under_fil
     fil_2_under = fil_2.under_fil
 

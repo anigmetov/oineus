@@ -21,12 +21,13 @@ void init_oineus_common(nb::module_& m)
     // nb::bind_vector<Z2_Column>(m, "Z2_Column");
     // nb::bind_vector<Z2_Matrix>(m, "Z2_Matrix");
 
-    nb::class_<VREdge>(m, vr_edge_name.c_str())
+    nb::class_<VREdge>(m, vr_edge_name.c_str(),
+            "Critical Vietoris-Rips edge (x, y) whose length determines a simplex's filtration value.")
             .def("__init__", [](VREdge* p, oin_int x, oin_int y) {
                 new (p) VREdge{x, y};
             }, nb::arg("x")=0, nb::arg("y")=0)
-            .def_rw("x", &VREdge::x)
-            .def_rw("y", &VREdge::y)
+            .def_rw("x", &VREdge::x, "First endpoint vertex index.")
+            .def_rw("y", &VREdge::y, "Second endpoint vertex index.")
             .def("__getitem__", [](const VREdge& p, int i) {
               if (i == 0)
                   return p.x;
@@ -209,8 +210,10 @@ void init_oineus_common(nb::module_& m)
                     p->verbose = verbose;
                     p->use_apparent_pairs = apparent_from_py(use_apparent_pairs);
                 }, nb::arg("n_threads")=def_rp.n_threads, nb::arg("chunk_size")=def_rp.advanced.chunk_size, nb::arg("use_clearing")=def_rp.use_clearing, nb::arg("compute_v")=def_rp.compute_v, nb::arg("compute_u")=def_rp.compute_u, nb::arg("dims_to_restore_elz")=def_rp.advanced.dims_to_restore_elz, nb::arg("col_repr")=def_rp.advanced.col_repr, nb::arg("verbose")=def_rp.verbose, nb::arg("use_apparent_pairs").none()=nb::none())
-            .def_rw("n_threads", &ReductionParams::n_threads)
-            .def_rw("use_clearing", &ReductionParams::use_clearing)
+            .def_rw("n_threads", &ReductionParams::n_threads,
+                    "Number of worker threads for reduction (1 runs the serial in-place path).")
+            .def_rw("use_clearing", &ReductionParams::use_clearing,
+                    "Enable Chen-Kerber clearing optimization (skips positive columns killed in dimension d+1).")
             .def_rw("compute_v", &ReductionParams::compute_v,
                     "Compute and retain the reduction matrix V.")
             .def_rw("compute_u", &ReductionParams::compute_u,
@@ -224,8 +227,10 @@ void init_oineus_common(nb::module_& m)
                     "on only where measured as a pure win (parallel diagram-only "
                     "homology of a complete cubical grid); True = force on wherever "
                     "supported; False = off.")
-            .def_rw("sanity_check", &ReductionParams::sanity_check)
-            .def_rw("advanced", &ReductionParams::advanced)
+            .def_rw("sanity_check", &ReductionParams::sanity_check,
+                    "Verify factorization invariants (R = D V, reducedness) after reduction.")
+            .def_rw("advanced", &ReductionParams::advanced,
+                    "Nested ReductionParamsAdvanced tuning options (chunk_size, col_repr, dims_to_restore_elz).")
             // back-compat aliases for the renamed fields (read+write, no warning)
             .def_prop_rw("clearing_opt",
                     [](const ReductionParams& p) { return p.use_clearing; },
@@ -280,7 +285,8 @@ void init_oineus_common(nb::module_& m)
                                      ReductionParams, ReductionParams,
                                      ReductionParams>;
 
-    nb::class_<KICRParams>(m, "KICRParams")
+    nb::class_<KICRParams>(m, "KICRParams",
+            "Configuration parameters for kernel, image, and cokernel persistence reduction.")
             .def(nb::init<>())
             .def("__init__",
                     [](KICRParams* p, bool codomain, bool kernel, bool image, bool cokernel,
@@ -316,19 +322,19 @@ void init_oineus_common(nb::module_& m)
                     nb::arg("params_ker")=ReductionParams(),
                     nb::arg("params_im")=ReductionParams(),
                     nb::arg("params_cok")=ReductionParams())
-            .def_rw("codomain", &KICRParams::codomain)
-            .def_rw("kernel", &KICRParams::kernel)
-            .def_rw("image", &KICRParams::image)
-            .def_rw("cokernel", &KICRParams::cokernel)
-            .def_rw("include_zero_persistence", &KICRParams::include_zero_persistence)
-            .def_rw("verbose", &KICRParams::verbose)
-            .def_rw("sanity_check", &KICRParams::sanity_check)
-            .def_rw("n_threads", &KICRParams::n_threads)
-            .def_rw("params_f", &KICRParams::params_f)
-            .def_rw("params_g", &KICRParams::params_g)
-            .def_rw("params_ker", &KICRParams::params_ker)
-            .def_rw("params_im", &KICRParams::params_im)
-            .def_rw("params_cok", &KICRParams::params_cok)
+            .def_rw("codomain", &KICRParams::codomain, "Also extract persistence diagrams of the codomain K.")
+            .def_rw("kernel", &KICRParams::kernel, "Compute kernel persistence diagrams.")
+            .def_rw("image", &KICRParams::image, "Compute image persistence diagrams.")
+            .def_rw("cokernel", &KICRParams::cokernel, "Compute cokernel persistence diagrams.")
+            .def_rw("include_zero_persistence", &KICRParams::include_zero_persistence, "Keep zero-persistence bars (birth == death) in extracted diagrams.")
+            .def_rw("verbose", &KICRParams::verbose, "Print per-stage progress and timing diagnostics.")
+            .def_rw("sanity_check", &KICRParams::sanity_check, "Run internal matrix consistency checks.")
+            .def_rw("n_threads", &KICRParams::n_threads, "Default thread count propagated to sub-reductions.")
+            .def_rw("params_f", &KICRParams::params_f, "ReductionParams override for codomain K.")
+            .def_rw("params_g", &KICRParams::params_g, "ReductionParams override for domain L.")
+            .def_rw("params_ker", &KICRParams::params_ker, "ReductionParams override for the kernel matrix.")
+            .def_rw("params_im", &KICRParams::params_im, "ReductionParams override for the image matrix.")
+            .def_rw("params_cok", &KICRParams::params_cok, "ReductionParams override for the cokernel matrix.")
             .def("__repr__", [](const KICRParams& self) { std::stringstream ss; ss << self; return ss.str(); })
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
@@ -355,13 +361,15 @@ void init_oineus_common(nb::module_& m)
                     })
     ;
 
-    nb::enum_<DenoiseStrategy>(m, "DenoiseStrategy")
+    nb::enum_<DenoiseStrategy>(m, "DenoiseStrategy",
+            "Target placement on the diagonal when simplifying low-persistence pairs.")
             .value("BirthBirth", DenoiseStrategy::BirthBirth, "(b, d) maps to (b, b)")
             .value("DeathDeath", DenoiseStrategy::DeathDeath, "(b, d) maps to (d, d)")
             .value("Midway", DenoiseStrategy::Midway, "((b, d) maps to ((b+d)/2, (b+d)/2)")
             .def("as_str", [](const DenoiseStrategy& self) { return denoise_strategy_to_string(self); });
 
-    nb::enum_<ConflictStrategy>(m, "ConflictStrategy")
+    nb::enum_<ConflictStrategy>(m, "ConflictStrategy",
+            "Rule for resolving overlapping critical-set prescriptions on the same cell.")
             .value("Max", ConflictStrategy::Max, "choose maximal displacement")
             .value("Avg", ConflictStrategy::Avg, "average gradients")
             .value("Sum", ConflictStrategy::Sum, "sum gradients")
@@ -385,7 +393,8 @@ void init_oineus_common(nb::module_& m)
             .value("MappingCylinder", FiltrationKind::MappingCylinder)
             .def("as_str", [](const FiltrationKind& self) { return oin::to_string(self); });
 
-    nb::enum_<DiagramPlaneDomain>(m, "DiagramPlaneDomain")
+    nb::enum_<DiagramPlaneDomain>(m, "DiagramPlaneDomain",
+            "Half-plane domain constraint for Frechet-mean initializers and barycenters.")
             .value("AboveDiagonal", DiagramPlaneDomain::AboveDiagonal)
             .value("BelowDiagonal", DiagramPlaneDomain::BelowDiagonal)
             .value("Mixed", DiagramPlaneDomain::Mixed)
@@ -398,7 +407,8 @@ void init_oineus_common(nb::module_& m)
                 }
             });
 
-    nb::enum_<FrechetMeanInit>(m, "FrechetMeanInit")
+    nb::enum_<FrechetMeanInit>(m, "FrechetMeanInit",
+            "Initialization strategy for Frechet-mean (W2 barycenter) Lloyd iterations.")
             .value("Custom", FrechetMeanInit::Custom)
             .value("FirstDiagram", FrechetMeanInit::FirstDiagram)
             .value("MedoidDiagram", FrechetMeanInit::MedoidDiagram)

@@ -35,6 +35,26 @@ def _fatten_under_with_values(under_fil, values):
 def mapping_cylinder_filtration(fil_domain: DiffFiltration, fil_codomain: DiffFiltration,
                                 v_domain, v_codomain,
                                 v_domain_value=None, v_codomain_value=None) -> DiffFiltration:
+    """Build a differentiable mapping cylinder for ``fil_domain -> fil_codomain``.
+
+    Constructs the C++ product-cell mapping cylinder and gathers cell values from
+    the concatenated ``(fil_domain.values, fil_codomain.values)`` tensor so
+    gradients flow back to both input filtrations (PyTorch or JAX).
+
+    Args:
+        fil_domain: Domain :class:`DiffFiltration`.
+        fil_codomain: Codomain :class:`DiffFiltration` (same framework and dtype).
+        v_domain: Auxiliary vertex (:class:`oineus.Simplex` or
+            :class:`oineus.CombinatorialSimplex`) labeling the top of the cylinder.
+        v_codomain: Auxiliary vertex labeling the bottom of the cylinder.
+        v_domain_value: Optional explicit value for ``v_domain`` (defaults to
+            filtration ``-inf``).
+        v_codomain_value: Optional explicit value for ``v_codomain`` (defaults to
+            filtration ``-inf``).
+
+    Returns:
+        Product-cell :class:`DiffFiltration` of the mapping cylinder.
+    """
     assert type(fil_domain) is DiffFiltration
     assert type(fil_codomain) is DiffFiltration
 

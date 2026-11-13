@@ -8,6 +8,27 @@ from ._tensor_utils import tensor_to_real_numpy, gather_values
 
 
 def freudenthal_filtration(data, negate=False, wrap=False, max_dim=3, *, slim=False, n_threads=1):
+    """Build a differentiable Freudenthal triangulation filtration from a grid tensor.
+
+    Constructs the C++ Freudenthal filtration from detached grid values and
+    gathers each simplex's critical vertex value from ``data`` so gradients
+    propagate back to the input PyTorch tensor or JAX array.
+
+    Args:
+        data: 1D, 2D, 3D, or 4D PyTorch tensor or JAX array of scalar grid values.
+        negate: If False (default), build the sublevel (lower-star) filtration;
+            if True, build the superlevel (upper-star) filtration.
+        wrap: If True, apply periodic boundary conditions (flat torus).
+        max_dim: Maximal simplex dimension to include (clamped to ``data.ndim``).
+        slim: If True, use the compact slim Freudenthal cell encoding on 1D--4D
+            non-periodic grids (default False for compatibility with all low-level
+            diff helpers).
+        n_threads: Number of C++ threads for filtration construction.
+
+    Returns:
+        :class:`DiffFiltration` wrapping the Freudenthal filtration and gathered
+        differentiable values.
+    """
     tensor = epy.astensor(data)
     np_data = tensor_to_real_numpy(tensor)
     # a float32 tensor builds a genuine float32 filtration (its diagram and the C++

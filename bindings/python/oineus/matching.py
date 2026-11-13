@@ -4,9 +4,9 @@ The result types live entirely in C++ and are bound by nanobind:
 
     - ``oineus.DiagramMatching``  (= ``hera::WassersteinMatching``)
     - ``oineus.BottleneckMatching`` (subclass; adds ``longest`` view)
-    - ``oineus.EssentialMatches``      — grouped view (m.essential)
-    - ``oineus.LongestEdges``          — bottleneck longest-edge namespace
-    - ``oineus.EssentialLongestEdges`` — per-family longest edges
+    - ``oineus.EssentialMatches``      -- grouped view (m.essential)
+    - ``oineus.LongestEdges``          -- bottleneck longest-edge namespace
+    - ``oineus.EssentialLongestEdges`` -- per-family longest edges
     - ``oineus.FiniteLongestEdge`` / ``oineus.EssentialLongestEdge``
     - ``oineus.InfKind`` enum (the four essential families)
 
@@ -98,7 +98,7 @@ def _to_matching_array(dgm):
 
     Accepts: numpy ``(n, 2)`` arrays and ``list[DiagramPoint]`` (e.g.
     the output of ``Diagrams.in_dimension(d, as_numpy=False)``).
-    Multi-dimensional ``oineus.Diagrams`` is rejected — the caller must
+    Multi-dimensional ``oineus.Diagrams`` is rejected -- the caller must
     extract a single dimension first via ``dgm.in_dimension(d)``.
     """
     # Local import to avoid circular dependency with oineus/__init__.py.

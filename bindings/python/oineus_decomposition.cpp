@@ -403,21 +403,27 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
     // create the (Real-independent) class once, on the top module; later passes add
     // their Real-dependent overloads to the same handle
     if (reg_indep)
-        g_dcmp_cls.emplace(m, "Decomposition");
+        g_dcmp_cls.emplace(m, "Decomposition",
+                "Z_2 matrix factorization R = D V (and U = V^{-1}) for persistent homology "
+                "or cohomology, supporting parallel reduction, representative extraction, "
+                "partial-U recovery, vineyards/warm-start updates, and SiRUP cell removal.");
     auto& dcmp_cls = *g_dcmp_cls;
     // per-filtration-type constructors, folded over the cell types (Decomposition itself is
     // cell-agnostic; only this strongly-typed ctor varies by Filtration<Cell>). Real-dependent.
     oineus_python::for_each_type(DecompFilList{}, [&dcmp_cls]<class Fil>() {
-        dcmp_cls.def(nb::init<const Fil&, bool, int>(), nb::arg("filtration"), nb::arg("dualize"), nb::arg("n_threads")=4);
+        dcmp_cls.def(nb::init<const Fil&, bool, int>(), nb::arg("filtration"), nb::arg("dualize")=false, nb::arg("n_threads")=4,
+                "Build boundary (dualize=False) or coboundary (dualize=True) matrix from filtration.");
     });
     if (reg_indep)
     dcmp_cls
             .def(nb::init<const typename Decomposition::MatrixData&, size_t, bool, bool>(),
-                    nb::arg("d"), nb::arg("n_rows"), nb::arg("dualize")=false, nb::arg("skip_check")=false)
+                    nb::arg("d"), nb::arg("n_rows"), nb::arg("dualize")=false, nb::arg("skip_check")=false,
+                    "Construct directly from a column-wise Z_2 boundary matrix d.")
             // Fast deep copy at C++ speed (the copy constructor), unlike a
             // pickle-backed copy.deepcopy that round-trips through Python lists.
             .def("clone", [](const Decomposition& self) { return Decomposition(self); },
-                    nb::call_guard<nb::gil_scoped_release>())
+                    nb::call_guard<nb::gil_scoped_release>(),
+                    "Return a fast C++ deep copy of this Decomposition.")
             .def_prop_rw("r_data",
                     [](Decomposition& self) -> const typename Decomposition::MatrixData& {
                         self.require_factorization_valid_("r_data");
@@ -428,7 +434,8 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                     [](Decomposition& self, const typename Decomposition::MatrixData& value) {
                         self.require_factorization_valid_("r_data");
                         self.r_data = value;
-                    })
+                    },
+                    "Reduced matrix R as a list of sorted row-index columns.")
             .def_prop_rw("v_data",
                     [](Decomposition& self) -> const typename Decomposition::MatrixData& {
                         self.require_factorization_valid_("v_data");
@@ -438,7 +445,8 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                     [](Decomposition& self, const typename Decomposition::MatrixData& value) {
                         self.require_factorization_valid_("v_data");
                         self.v_data = value;
-                    })
+                    },
+                    "Change-of-basis matrix V (R = D V) as a list of sorted row-index columns.")
             .def_prop_rw("u_data_t",
                     [](Decomposition& self) -> const typename Decomposition::MatrixData& {
                         require_u_matrix(self, "u_data_t");
@@ -449,7 +457,8 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                         self.u_data_t = value;
                         self.n_computed_u_rows_ = value.size();
                         self.n_valid_u_rows_ = value.size();
-                    })
+                    },
+                    "Inverse matrix U = V^{-1} stored row-wise (list of sorted column-index rows).")
             .def_ro("timings", &Decomposition::timings_,
                     "Per-phase wall-clock breakdown of the last reduce() call (ReductionTimings).")
             .def_ro("u_timings", &Decomposition::u_timings_,
@@ -457,22 +466,22 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
             .def_ro("restore_thread_times", &Decomposition::dbg_restore_thread_times_,
                     "Diagnostic: per-worker wall-clock (seconds) of the last parallel ELZ-restore "
                     "pass, to measure load imbalance of the equal-column-count split.")
-            .def_ro("d_data", &Decomposition::d_data)
-            .def_ro("is_reduced", &Decomposition::is_reduced)
-            .def("has_matrix_v", &Decomposition::has_matrix_v)
-            .def("has_matrix_u", &Decomposition::has_matrix_u)
-            .def("has_full_matrix_u", &Decomposition::has_full_matrix_u)
-            .def_prop_ro("factorization_valid", &Decomposition::factorization_valid)
+            .def_ro("d_data", &Decomposition::d_data, "Input boundary/coboundary matrix D as column lists.")
+            .def_ro("is_reduced", &Decomposition::is_reduced, "True once reduce() has completed.")
+            .def("has_matrix_v", &Decomposition::has_matrix_v, "True if matrix V is stored.")
+            .def("has_matrix_u", &Decomposition::has_matrix_u, "True if any U row storage is allocated.")
+            .def("has_full_matrix_u", &Decomposition::has_full_matrix_u, "True if a complete U = V^{-1} matrix is stored.")
+            .def_prop_ro("factorization_valid", &Decomposition::factorization_valid, "True if R = D V invariant holds.")
             .def("negative_v_elz_in_dim", &Decomposition::negative_v_elz_in_dim,
-                    nb::arg("dim"))
+                    nb::arg("dim"), "True if negative V columns in dimension dim are in canonical ELZ form.")
             .def("u_row", &Decomposition::u_row, nb::arg("row"),
                     "Raw internal U row storage. Unless has_full_matrix_u() is true, "
                     "its presence does not imply a row of the complete inverse.")
-            .def_prop_ro("n_computed_u_rows", &Decomposition::n_computed_u_rows)
-            .def_prop_ro("n_valid_u_rows", &Decomposition::n_valid_u_rows)
+            .def_prop_ro("n_computed_u_rows", &Decomposition::n_computed_u_rows, "Number of U rows computed so far.")
+            .def_prop_ro("n_valid_u_rows", &Decomposition::n_valid_u_rows, "Number of currently valid U rows.")
             .def_prop_ro("lazy_restore_elz_time", [](const Decomposition& self) {
                 return self.lazy_restore_elz_time_;
-            })
+            }, "Wall-clock time (seconds) spent in lazy ELZ restoration.")
             .def("n_apparent_pairs", &Decomposition::n_apparent_pairs,
                     "Number of apparent pairs detected by the lean (use_apparent_pairs) "
                     "reduction; 0 if the apparent path was not taken or the lean state "
@@ -480,15 +489,20 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
             // R and D live in the boundary row space (n_rows x n_cols); V is the
             // column change-of-basis and is square (n_cols x n_cols), so its row
             // dimension is v_data.size(), not n_rows.
-            .def("r_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { self.require_factorization_valid_("r_as_csc"); self.materialize_from_working_(); require_r_materialized(self, "r_as_csc"); return z2_col_matrix_to_csc(self.r_data, self.n_rows); })
-            .def("v_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { self.require_factorization_valid_("v_as_csc"); self.materialize_from_working_(); return z2_col_matrix_to_csc(self.v_data, self.v_data.size()); })
-            .def("d_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { require_d_data(self, "d_as_csc"); return z2_col_matrix_to_csc(self.d_data, self.n_rows); })
-            .def("u_as_csr", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::RowMajor> { require_u_matrix(self, "u_as_csr"); return z2_row_matrix_to_csr(self.u_data_t, self.u_data_t.size()); })
+            .def("r_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { self.require_factorization_valid_("r_as_csc"); self.materialize_from_working_(); require_r_materialized(self, "r_as_csc"); return z2_col_matrix_to_csc(self.r_data, self.n_rows); },
+                 "Export reduced matrix R as a scipy.sparse.csc_matrix.")
+            .def("v_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { self.require_factorization_valid_("v_as_csc"); self.materialize_from_working_(); return z2_col_matrix_to_csc(self.v_data, self.v_data.size()); },
+                 "Export change-of-basis matrix V as a scipy.sparse.csc_matrix.")
+            .def("d_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { require_d_data(self, "d_as_csc"); return z2_col_matrix_to_csc(self.d_data, self.n_rows); },
+                 "Export boundary/coboundary matrix D as a scipy.sparse.csc_matrix.")
+            .def("u_as_csr", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::RowMajor> { require_u_matrix(self, "u_as_csr"); return z2_row_matrix_to_csr(self.u_data_t, self.u_data_t.size()); },
+                 "Export complete inverse matrix U as a scipy.sparse.csr_matrix.")
             // .def("u_as_csc", [](Decomposition& self) -> Eigen::SparseMatrix<oin_int, Eigen::ColMajor> { return z2_col_matrix_to_csc(self.u_data, self.u_data_t.size()); })
-            .def_prop_ro("dualize", &Decomposition::dualize)
-            .def_ro("dim_first", &Decomposition::dim_first)
-            .def_ro("dim_last", &Decomposition::dim_last)
-            .def("reduce", &Decomposition::reduce, nb::arg("params")=oin::ReductionParams(), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+            .def_prop_ro("dualize", &Decomposition::dualize, "True if this decomposition represents coboundary (cohomology) reduction.")
+            .def_ro("dim_first", &Decomposition::dim_first, "First matrix column index per dimension.")
+            .def_ro("dim_last", &Decomposition::dim_last, "Last matrix column index (inclusive) per dimension.")
+            .def("reduce", &Decomposition::reduce, nb::arg("params")=oin::ReductionParams(), nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                 "Reduce the matrix with the given ReductionParams.")
             // -- decomposition manipulation (vineyards / moves / warm starts) --
             // Homology only; require a reduced decomposition with V. The
             // optional `stats` (a DecompositionManipStats) collects per-phase
@@ -498,7 +512,7 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Build the row-incidence indices (in parallel) so subsequent manipulations "
                     "cost O(changed support); optional, built on first use otherwise. Dropped by reduce().")
-            .def("is_dynamic", &Decomposition::is_dynamic)
+            .def("is_dynamic", &Decomposition::is_dynamic, "True if dynamic row-incidence indices are currently active.")
             .def("transpose", &Decomposition::transpose,
                     nb::arg("i"), nb::arg("stats").none() = nullptr,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
@@ -513,10 +527,12 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                     "Move the cell at position i to position j.")
             .def("move_right", &Decomposition::move_right,
                     nb::arg("i"), nb::arg("j"), nb::arg("stats").none() = nullptr,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Move the cell at position i rightwards to j >= i.")
             .def("move_left", &Decomposition::move_left,
                     nb::arg("i"), nb::arg("j"), nb::arg("stats").none() = nullptr,
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Move the cell at position i leftwards to j <= i.")
             .def("apply_move_schedule", &Decomposition::apply_move_schedule,
                     nb::arg("new_to_old"), nb::arg("stats").none() = nullptr,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
@@ -542,13 +558,20 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
             .def("is_reduced_consistent", &Decomposition::is_reduced_consistent,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "True if R is reduced and D V == R (does not require V upper-triangular).")
-            .def("is_elz", &Decomposition::is_elz, nb::arg("n_threads")=8)
-            .def("n_elz_violators", &Decomposition::n_elz_violators, nb::arg("n_threads")=8)
-            .def("n_elz_violators_in_dim", &Decomposition::n_elz_violators_in_dim, nb::arg("dim"), nb::arg("n_threads")=8)
-            .def("is_column_elz", &Decomposition::is_column_elz, nb::arg("column_idx"))
-            .def("restore_elz", &Decomposition::restore_elz, nb::arg("dim")=oin::k_invalid_index, nb::arg("v_only")=false, nb::arg("verbose")=false, nb::arg("n_threads")=1)
-            .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false)
-            .def("compute_u_from_v_1", &Decomposition::compute_u_from_v_1, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false);
+            .def("is_elz", &Decomposition::is_elz, nb::arg("n_threads")=8,
+                 "True if V satisfies the canonical Edelsbrunner-Letscher-Zomorodian (ELZ) form.")
+            .def("n_elz_violators", &Decomposition::n_elz_violators, nb::arg("n_threads")=8,
+                 "Count of V columns violating canonical ELZ form across all dimensions.")
+            .def("n_elz_violators_in_dim", &Decomposition::n_elz_violators_in_dim, nb::arg("dim"), nb::arg("n_threads")=8,
+                 "Count of V columns violating canonical ELZ form in dimension dim.")
+            .def("is_column_elz", &Decomposition::is_column_elz, nb::arg("column_idx"),
+                 "True if V column column_idx is in canonical ELZ form.")
+            .def("restore_elz", &Decomposition::restore_elz, nb::arg("dim")=oin::k_invalid_index, nb::arg("v_only")=false, nb::arg("verbose")=false, nb::arg("n_threads")=1,
+                 "Restore V (and U unless v_only=True) to canonical ELZ form in dimension dim (or all dims by default).")
+            .def("compute_u_from_v", &Decomposition::compute_u_from_v, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false,
+                 "Compute U = V^{-1} from V via column-wise back-substitution.")
+            .def("compute_u_from_v_1", &Decomposition::compute_u_from_v_1, nb::arg("dim")=oin::k_invalid_index, nb::arg("n_threads")=1, nb::arg("verbose")=false,
+                 "Compute U = V^{-1} from V using the parallel column solver.");
 
     // Real-DEPENDENT row-form U + densify methods: value_at reads the filtration's
     // Real-typed values, so these are added on every pass (not under reg_indep).
@@ -587,7 +610,9 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
     dcmp_cls
             .def("sanity_check", [](Decomposition& self, const typename Decomposition::MatrixData& d) { return self.sanity_check(d); },
                     nb::arg("d") = typename Decomposition::MatrixData{},
-                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+                    nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                    "Verify reducedness and R = D V (and R U = D when U is present).")
+            ;
     // diagram / diagram_serial / zero_pers_diagram: one strongly-typed binding per filtration
     // type, folded. The heavy extraction is already cell-erased (FiltrationValues POD); these
     // just dispatch nanobind overload resolution to the right Filtration<Cell>.
@@ -595,15 +620,18 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
         dcmp_cls.def("diagram", [](const Decomposition& self, const Fil& fil, bool include_inf_points, int n_threads)
                         { return PyOineusDiagrams<oin_real>(self.diagram(fil, include_inf_points, n_threads)); },
                 nb::arg("fil"), nb::arg("include_inf_points") = true, nb::arg("n_threads") = 1,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                "Extract persistence diagrams (excluding zero-persistence pairs) in all dimensions.");
         dcmp_cls.def("diagram_serial", [](const Decomposition& self, const Fil& fil, bool include_inf_points)
                         { return PyOineusDiagrams<oin_real>(self.diagram_serial(fil, include_inf_points)); },
                 nb::arg("fil"), nb::arg("include_inf_points") = true,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                "Serial persistence diagram extractor (reference path matching diagram(..., n_threads=1)).");
         dcmp_cls.def("zero_pers_diagram", [](const Decomposition& self, const Fil& fil, int n_threads)
                         { return PyOineusDiagrams<oin_real>(self.zero_persistence_diagram(fil, n_threads)); },
                 nb::arg("fil"), nb::arg("n_threads") = 1,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                "Extract zero-persistence pairs (birth == death) in all dimensions.");
         // Row-form U drivers (V^T U^T = Id). cmp picks the truncation direction:
         //   "above" -> hom-side increase_death (values ascend along the solve)
         //   "below" -> coh-side decrease_birth (values descend). Negate not yet supported.
@@ -633,7 +661,8 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                 nb::arg("filtration"), nb::arg("rows"), nb::arg("bounds"),
                 nb::arg("dim"), nb::arg("cmp")="above",
                 nb::arg("n_threads")=1, nb::arg("verbose")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                "Solve selected U rows via V^T U^T = I truncated at target filtration value bounds.");
         dcmp_cls.def("compute_full_u_rows",
                 [](Decomposition& self, const Fil& fil,
                    int dim, int n_threads, bool verbose) {
@@ -646,12 +675,14 @@ void register_oineus_decomposition(nb::module_& m, bool reg_indep)
                 },
                 nb::arg("filtration"), nb::arg("dim"),
                 nb::arg("n_threads")=1, nb::arg("verbose")=false,
-                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>());
+                nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                "Solve all U rows in dimension dim via parallel row-wise forward substitution.");
     });
     // Real-independent tail (filtration_index / repr / equality / pickle)
     if (reg_indep)
     dcmp_cls
-            .def("filtration_index", &Decomposition::filtration_index, nb::arg("matrix_index"))
+            .def("filtration_index", &Decomposition::filtration_index, nb::arg("matrix_index"),
+                 "Convert matrix column/row index to filtration sorted_id (reverses index when dualize is True).")
             .def("__repr__", [](const Decomposition& self) {
                 std::stringstream ss;
                 ss << self;

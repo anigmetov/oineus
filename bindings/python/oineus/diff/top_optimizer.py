@@ -64,18 +64,22 @@ class TopologyOptimizer:
     # diagram + simplification
 
     def compute_diagram(self, include_inf_points: bool):
+        """Compute persistence :class:`oineus.Diagrams` from the reduced decomposition."""
         return self.under_opt.compute_diagram(include_inf_points)
 
     def simplify(self, epsilon: float, strategy, dim: int):
+        """Return :class:`oineus.IndicesValues` targets collapsing bars with persistence <= ``epsilon``."""
         return self.under_opt.simplify(epsilon, strategy, dim)
 
     def get_nth_persistence(self, dim: int, n: int):
+        """Return the ``n``-th largest finite persistence in dimension ``dim``."""
         return self.under_opt.get_nth_persistence(dim=dim, n=n)
 
     def match(self, template_dgm, dim: int, wasserstein_q: float = 1.0,
               wasserstein_delta: float = 0.01,
               return_wasserstein_distance: bool = False,
               dualize=None, internal_p: float = -1.0):
+        """Match the current diagram in ``dim`` to ``template_dgm`` and return target :class:`oineus.IndicesValues`."""
         if dualize is None:
             dualize = default_dualize_for_filtration(self.under_fil)
         if dualize:
@@ -96,79 +100,102 @@ class TopologyOptimizer:
 
     @property
     def homology_decomposition(self):
+        """Copy of the underlying homology :class:`oineus.Decomposition`."""
         return self.under_opt.homology_decomposition
 
     @property
     def cohomology_decomposition(self):
+        """Copy of the underlying cohomology :class:`oineus.Decomposition`."""
         return self.under_opt.cohomology_decomposition
 
     def homology_decomposition_ref(self):
+        """Borrow a live reference to the underlying homology :class:`oineus.Decomposition`."""
         return self.under_opt.homology_decomposition_ref()
 
     def cohomology_decomposition_ref(self):
+        """Borrow a live reference to the underlying cohomology :class:`oineus.Decomposition`."""
         return self.under_opt.cohomology_decomposition_ref()
 
     # reduction control
 
     def ensure_hom_built(self):
+        """Ensure the homology boundary matrix has been initialized."""
         return self.under_opt.ensure_hom_built()
 
     def ensure_coh_built(self):
+        """Ensure the cohomology coboundary matrix has been initialized."""
         return self.under_opt.ensure_coh_built()
 
     @property
     def is_hom_built(self):
+        """Whether the homology matrix has been built."""
         return self.under_opt.is_hom_built
 
     @property
     def is_coh_built(self):
+        """Whether the cohomology matrix has been built."""
         return self.under_opt.is_coh_built
 
     def ensure_hom_reduced(self):
+        """Ensure the homology decomposition is reduced."""
         return self.under_opt.ensure_hom_reduced()
 
     def ensure_coh_reduced(self):
+        """Ensure the cohomology decomposition is reduced."""
         return self.under_opt.ensure_coh_reduced()
 
     def ensure_has_u_hom(self, dim: int, rows_fil, bounds):
+        """Ensure selected rows of homology ``U`` are available."""
         return self.under_opt.ensure_has_u_hom(dim, rows_fil, bounds)
 
     def ensure_has_u_coh(self, dim: int, rows_fil, bounds):
+        """Ensure selected rows of cohomology ``U`` are available."""
         return self.under_opt.ensure_has_u_coh(dim, rows_fil, bounds)
 
     def reduce_all(self):
+        """Reduce both homology and cohomology decompositions."""
         return self.under_opt.reduce_all()
 
     def update(self, new_values, n_threads: int = 1):
+        """Update filtration values and re-reduce decompositions."""
         return self.under_opt.update(new_values, n_threads)
 
     # crit-sets primitives
 
     def crit_sets_apply(self, indices, values, strategy):
+        """Expand ``(indices, values)`` targets to critical sets and combine via ``strategy``."""
         return self.under_opt.crit_sets_apply(indices, values, strategy)
 
     def crit_sets_apply_typed(self, birth_indices, birth_values,
                               death_indices, death_values, strategy):
+        """Expand typed birth/death targets to critical sets and combine via ``strategy``."""
         return self.under_opt.crit_sets_apply_typed(
             birth_indices, birth_values, death_indices, death_values, strategy)
 
     def singleton(self, index: int, value: float):
+        """Build a singleton critical-set target for ``(index, value)``."""
         return self.under_opt.singleton(index, value)
 
     def singletons(self, indices, values):
+        """Build singleton critical-set targets for paired ``(indices, values)``."""
         return self.under_opt.singletons(indices, values)
 
     def combine_loss(self, critical_sets, strategy):
+        """Resolve conflicting simplex targets across ``critical_sets`` using ``strategy``."""
         return self.under_opt.combine_loss(critical_sets, strategy)
 
     def increase_death(self, negative_simplex_idx: int):
+        """Return simplices in the critical set for increasing a death value."""
         return self.under_opt.increase_death(negative_simplex_idx)
 
     def decrease_death(self, negative_simplex_idx: int):
+        """Return simplices in the critical set for decreasing a death value."""
         return self.under_opt.decrease_death(negative_simplex_idx)
 
     def increase_birth(self, positive_simplex_idx: int):
+        """Return simplices in the critical set for increasing a birth value."""
         return self.under_opt.increase_birth(positive_simplex_idx)
 
     def decrease_birth(self, positive_simplex_idx: int):
+        """Return simplices in the critical set for decreasing a birth value."""
         return self.under_opt.decrease_birth(positive_simplex_idx)

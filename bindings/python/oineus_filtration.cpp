@@ -465,7 +465,7 @@ void register_oineus_filtration(nb::module_& m, bool reg_indep)
             .def("__len__", &Filtration::size)
             .def("__iter__", [](Filtration& fil) { return nb::make_iterator(nb::type<Filtration>(), "simplex_iterator", fil.begin(), fil.end()); }, nb::keep_alive<0, 1>())
             .def("__getitem__", [](Filtration& fil, int i) { if (i < 0) i = fil.size() + i; return fil.get_cell(i);})
-            .def_prop_ro("negate", &Filtration::negate)
+            .def_prop_ro("negate", &Filtration::negate, "True when filtration order is descending (superlevel sets).")
             .def("infinity", &Filtration::infinity, "filtration-order +inf: a value strictly later than every cell")
             .def("neg_infinity", &Filtration::neg_infinity, "filtration-order -inf: a value strictly earlier than every cell")
             .def("fil_min", &Filtration::fil_min, nb::arg("a"), nb::arg("b"), "filtration-order min: the value that enters earlier")
@@ -475,24 +475,28 @@ void register_oineus_filtration(nb::module_& m, bool reg_indep)
             .def("simplices", &Filtration::cells_copy, "copy of all simplices (cells) in filtration order")
             .def("size", &Filtration::size, "number of cells in filtration")
             .def("size_in_dimension", &Filtration::size_in_dimension, nb::arg("dim"), "number of cells of dimension dim")
-            .def("n_vertices", &Filtration::n_vertices)
-            .def("simplex_value_by_sorted_id", &Filtration::value_by_sorted_id, nb::arg("sorted_id"))
-            .def("cell_value_by_sorted_id", &Filtration::value_by_sorted_id, nb::arg("sorted_id"))
-            .def("id_by_sorted_id", &Filtration::get_id_by_sorted_id, nb::arg("sorted_id"))
-            .def("sorted_id_by_id", &Filtration::get_sorted_id, nb::arg("id"))
-            .def("cell", &Filtration::get_cell, nb::arg("i"))
-            .def("simplex", &Filtration::get_cell, nb::arg("i"))
-            .def_prop_ro("dim_first", &Filtration::dims_first)
-            .def_prop_ro("dim_last", &Filtration::dims_last)
-            .def("sorting_permutation", &Filtration::get_sorting_permutation)
-            .def("inv_sorting_permutation", &Filtration::get_inv_sorting_permutation)
-            .def("value_by_uid", &Filtration::value_by_uid, nb::arg("uid"))
-            .def("sorted_id_by_uid", &Filtration::get_sorted_id_by_uid, nb::arg("uid"))
-            .def("cell_by_uid", &Filtration::get_cell_by_uid, nb::arg("uid"))
-            .def("boundary_matrix", &Filtration::boundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("boundary_matrix_in_dimension", &Filtration::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("coboundary_matrix", &Filtration::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("boundary_matrix_rel", &Filtration::boundary_matrix_rel)
+            .def("n_vertices", &Filtration::n_vertices, "Number of 0-dimensional cells (vertices) in the filtration.")
+            .def("simplex_value_by_sorted_id", &Filtration::value_by_sorted_id, nb::arg("sorted_id"), "Filtration value of the cell at filtration index sorted_id.")
+            .def("cell_value_by_sorted_id", &Filtration::value_by_sorted_id, nb::arg("sorted_id"), "Filtration value of the cell at filtration index sorted_id.")
+            .def("id_by_sorted_id", &Filtration::get_id_by_sorted_id, nb::arg("sorted_id"), "Original user/input cell id corresponding to sorted_id.")
+            .def("sorted_id_by_id", &Filtration::get_sorted_id, nb::arg("id"), "Filtration index (sorted_id) of the cell with user id.")
+            .def("cell", &Filtration::get_cell, nb::arg("i"), "Return the valued cell at filtration index i.")
+            .def("simplex", &Filtration::get_cell, nb::arg("i"), "Return the valued simplex at filtration index i.")
+            .def_prop_ro("dim_first", &Filtration::dims_first, "First sorted_id in each cell dimension (when grouped) or per-dimension bounds.")
+            .def_prop_ro("dim_last", &Filtration::dims_last, "Last sorted_id (inclusive) in each cell dimension.")
+            .def("sorting_permutation", &Filtration::get_sorting_permutation, "Map from input cell id to filtration sorted_id.")
+            .def("inv_sorting_permutation", &Filtration::get_inv_sorting_permutation, "Map from filtration sorted_id back to input cell id.")
+            .def("value_by_uid", &Filtration::value_by_uid, nb::arg("uid"), "Filtration value of the cell with combinatorial uid.")
+            .def("sorted_id_by_uid", &Filtration::get_sorted_id_by_uid, nb::arg("uid"), "Filtration sorted_id of the cell with combinatorial uid.")
+            .def("cell_by_uid", &Filtration::get_cell_by_uid, nb::arg("uid"), "Valued cell with the given combinatorial uid.")
+            .def("boundary_matrix", &Filtration::boundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                 "Return the Z_2 boundary matrix D as a list of sorted row-index columns.")
+            .def("boundary_matrix_in_dimension", &Filtration::boundary_matrix_in_dimension, nb::arg("dim"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                 "Return the Z_2 boundary matrix block for cells of dimension dim.")
+            .def("coboundary_matrix", &Filtration::coboundary_matrix, nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                 "Return the anti-transposed Z_2 coboundary matrix D^perp.")
+            .def("boundary_matrix_rel", &Filtration::boundary_matrix_rel,
+                 "Return the relative Z_2 boundary matrix zeroing columns in the given subcomplex.")
             .def("star_closure", &Filtration::star_closure, nb::arg("seed_sorted_ids"), nb::arg("n_threads")=1,
                     nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
                     "Coface up-closure (union of stars) of the given cells (sorted_ids); pass to "
@@ -502,7 +506,8 @@ void register_oineus_filtration(nb::module_& m, bool reg_indep)
                     "True if the cells (sorted_ids) are closed under cofaces (removable as a filtration).")
             .def("without_cells", &Filtration::without_cells, nb::arg("cells_to_remove"), nb::rv_policy::move,
                     "Subfiltration with the given cells (sorted_ids) removed; survivors keep order.")
-            .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids)
+            .def("reset_ids_to_sorted_ids", &Filtration::reset_ids_to_sorted_ids,
+                 "Overwrite each cell's user id with its current sorted_id.")
             // Fast path: a contiguous Real-dtype buffer (numpy/torch) is read directly into the
             // cells, no per-element Python conversion and no intermediate vector. Registered before
             // the std::vector overload so a matching-dtype array binds here; lists fall through.
@@ -510,8 +515,10 @@ void register_oineus_filtration(nb::module_& m, bool reg_indep)
                  [](Filtration& self, nb::ndarray<oin_real, nb::ndim<1>, nb::c_contig, nb::device::cpu, nb::ro> vals, int n_threads) {
                      self.set_values_from_buffer(vals.data(), static_cast<size_t>(vals.shape(0)), n_threads);
                  },
-                 nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("set_values", &Filtration::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
+                 nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                 "Update cell values (indexed by user id) and re-sort into filtration order.")
+            .def("set_values", &Filtration::set_values, nb::arg("new_values"), nb::arg("n_threads")=1, nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                 "Update cell values (indexed by user id) and re-sort into filtration order.")
             .def("subfiltration", [](Filtration& self, const
                 std::function<bool(const Simplex&)>& py_pred) -> Filtration {
                 auto pred = [&py_pred](const Filtration::Cell& c) -> bool { return py_pred(c.cell_);
@@ -519,7 +526,8 @@ void register_oineus_filtration(nb::module_& m, bool reg_indep)
                 // auto pred = [](const Filtration::Cell& cell) -> bool { return cell.dim() == 1; };
                 auto result = self.subfiltration(pred);
                 return result;
-             }, nb::arg("predicate"), nb::rv_policy::copy)
+             }, nb::arg("predicate"), nb::rv_policy::copy,
+                "Return the subfiltration of cells satisfying predicate(combinatorial_simplex).")
              // .def("subfiltration", [](Filtration& self, const
                 // std::function<bool(const Filtration::Cell&)>& py_pred) {
                 // Filtration result = self.subfiltration(py_pred);
@@ -527,12 +535,17 @@ void register_oineus_filtration(nb::module_& m, bool reg_indep)
              // }, nb::arg("predicate"))
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
-            .def("get_vertices", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 0); })
-            .def("get_edges", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 1); })
-            .def("get_triangles", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 2); })
-            .def("get_tetrahedra", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 3); })
+            .def("get_vertices", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 0); },
+                 "Return 0-simplices in filtration order as an (n_0, 1) NumPy array of vertex ids.")
+            .def("get_edges", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 1); },
+                 "Return 1-simplices in filtration order as an (n_1, 2) NumPy array of vertex ids.")
+            .def("get_triangles", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 2); },
+                 "Return 2-simplices in filtration order as an (n_2, 3) NumPy array of vertex ids.")
+            .def("get_tetrahedra", [](Filtration& self) -> nb::ndarray<size_t, nb::numpy> { return extract_simplices_as_numpy(self, 3); },
+                 "Return 3-simplices in filtration order as an (n_3, 4) NumPy array of vertex ids.")
             .def("get_simplices_as_arr", [](Filtration& self, dim_type simplex_dim) -> nb::ndarray<size_t, nb::numpy>
-                { return extract_simplices_as_numpy(self, simplex_dim); }, nb::arg("simplex_dim"))
+                { return extract_simplices_as_numpy(self, simplex_dim); }, nb::arg("simplex_dim"),
+                "Return k-simplices in filtration order as an (n_k, k+1) NumPy array of vertex ids.")
             .def("__repr__", [](const Filtration& fil) {
               std::stringstream ss;
               ss << fil;

@@ -475,7 +475,7 @@ void register_oineus_functions(nb::module_& m, bool reg_indep)
     nb::enum_<hera::InfKind>(m, "InfKind",
             "The four families of essential (infinite-coordinate) diagram points.")
         .value("INF_DEATH",      hera::InfKind::InfDeath,
-               "(finite, +inf) — homology class born finitely, never dies.")
+               "(finite, +inf) -- homology class born finitely, never dies.")
         .value("NEG_INF_DEATH",  hera::InfKind::NegInfDeath,
                "(finite, -inf).")
         .value("INF_BIRTH",      hera::InfKind::InfBirth,
@@ -897,7 +897,7 @@ void register_oineus_functions(nb::module_& m, bool reg_indep)
                 return diagram_to_numpy(oin::init_frechet_mean_first_diagram<oin_real>(diagram_vec));
             },
             nb::arg("diagrams"),
-            "Return the first input diagram as a Fréchet-mean initializer.");
+            "Return the first input diagram as a Frechet-mean initializer.");
 
     func_name = "init_frechet_mean_random_diagram";
     m.def(func_name.c_str(),
@@ -916,7 +916,7 @@ void register_oineus_functions(nb::module_& m, bool reg_indep)
             nb::arg("domain") = oin::DiagramPlaneDomain::AboveDiagonal,
             nb::arg("random_noise_scale") = 1.0,
             nb::arg("random_seed") = 42,
-            "Return a random perturbed input diagram as a Fréchet-mean initializer.");
+            "Return a random perturbed input diagram as a Frechet-mean initializer.");
 
     func_name = "init_frechet_mean_medoid_diagram";
     m.def(func_name.c_str(),
@@ -943,7 +943,7 @@ void register_oineus_functions(nb::module_& m, bool reg_indep)
             nb::arg("diagrams"),
             nb::arg("weights") = nb::none(),
             nb::arg("n_threads") = 1,
-            "Return the weighted Wasserstein medoid diagram used as a Fréchet-mean initializer.");
+            "Return the weighted Wasserstein medoid diagram used as a Frechet-mean initializer.");
 
     func_name = "init_frechet_mean_diagonal_grid";
     m.def(func_name.c_str(),
@@ -971,7 +971,7 @@ void register_oineus_functions(nb::module_& m, bool reg_indep)
             nb::arg("domain") = oin::DiagramPlaneDomain::AboveDiagonal,
             nb::arg("grid_n_x_bins") = 16,
             nb::arg("grid_n_y_bins") = 16,
-            "Return the diagonal-grid Fréchet-mean initializer.");
+            "Return the diagonal-grid Frechet-mean initializer.");
 
     func_name = "frechet_mean";
     m.def(func_name.c_str(),

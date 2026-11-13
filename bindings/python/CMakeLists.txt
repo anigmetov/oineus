@@ -22,7 +22,9 @@ endif()
 
 file (MAKE_DIRECTORY "${MODULE_OUTPUT_DIRECTORY}/oineus")
 file (GLOB_RECURSE OINEUS_PYTHON CONFIGURE_DEPENDS
-      "${CMAKE_CURRENT_SOURCE_DIR}/oineus/*.py")
+      "${CMAKE_CURRENT_SOURCE_DIR}/oineus/*.py"
+      "${CMAKE_CURRENT_SOURCE_DIR}/oineus/*.pyi"
+      "${CMAKE_CURRENT_SOURCE_DIR}/oineus/py.typed")
 
 add_custom_target           (oineus ALL ${CMAKE_COMMAND} -E copy_directory
                                        ${CMAKE_CURRENT_SOURCE_DIR}/oineus ${MODULE_OUTPUT_DIRECTORY}/oineus
@@ -72,7 +74,10 @@ endif()
 # Install the compiled C++ module
 install(TARGETS _oineus DESTINATION oineus)
 
-# Install the Python wrapper files
+# Install the Python wrapper files and PEP 561 type stubs
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/oineus/
         DESTINATION oineus
-        FILES_MATCHING PATTERN "*.py")
+        FILES_MATCHING
+        PATTERN "*.py"
+        PATTERN "*.pyi"
+        PATTERN "py.typed")

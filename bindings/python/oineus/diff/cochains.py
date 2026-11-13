@@ -40,6 +40,16 @@ except ImportError:  # torch is only needed by the content losses
 
 from ._backend import require_torch
 
+__all__ = [
+    "Cochain",
+    "birth_cochain",
+    "death_cochain",
+    "birth_death_cochains",
+    "birth_content",
+    "death_content",
+    "persistence_content_loss",
+]
+
 
 def _under(fil):
     return getattr(fil, "under_fil", fil)
@@ -161,7 +171,7 @@ class Cochain:
     """A birth or death cochain of one bar.
 
     sorted_ids are GLOBAL sorted ids of the support simplices (usable to
-    index DiffFiltration.values); weights = |coeffs| / ||coeffs||_1 are
+    index DiffFiltration.values); ``weights = |coeffs| / ||coeffs||_1`` are
     the content gradients w.r.t. the support simplices' values.
     """
     degree: int

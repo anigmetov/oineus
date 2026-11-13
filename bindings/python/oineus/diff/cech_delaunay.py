@@ -124,7 +124,7 @@ def tetrahedron_meb(p0, p1, p2, p3, eps=1e-12, return_centers=False, flat_tol=1e
         p0, p1, p2, p3: Tensor of shape (n, 3) for n tetrahedra
         eps: Small value for numerical stability
         flat_tol: Relative flatness threshold; a tet is treated as flat when
-            |6*volume| <= flat_tol * longest_edge**3
+            ``|6*volume| <= flat_tol * longest_edge**3``
 
     Returns:
         centers: Tensor of shape (n, 3) - MEB centers

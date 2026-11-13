@@ -1,3 +1,9 @@
+"""Differentiable persistent homology, distances, and topological optimization.
+
+Provides autograd-compatible filtration builders, diagram extractors, KICR and
+mixup barcodes, Wasserstein and sliced Wasserstein losses, and birth/death
+cochain content objectives across PyTorch and JAX.
+"""
 # Strategy enums the diff optimizer API consumes (combine_loss/crit_sets_apply take
 # ConflictStrategy, simplify takes DenoiseStrategy, the optimizer takes UStrategy);
 # re-exported so oineus.diff is self-contained without reaching into the top-level oineus.
@@ -39,3 +45,43 @@ try:
     TORCH_AVAILABLE = _importlib_util.find_spec("torch") is not None
 except (ImportError, ValueError):
     TORCH_AVAILABLE = False
+
+__all__ = [
+    "ConflictStrategy",
+    "UStrategy",
+    "DenoiseStrategy",
+    "DiffFiltration",
+    "TopologyOptimizer",
+    "freudenthal_filtration",
+    "cube_filtration",
+    "vr_filtration",
+    "mapping_cylinder_filtration",
+    "min_filtration",
+    "PersistenceDiagrams",
+    "persistence_diagram",
+    "KICRDiagrams",
+    "KICRFamilyDiagrams",
+    "kicr_diagrams",
+    "DiffMixupBarcodes",
+    "mixup_barcodes",
+    "alpha_filtration",
+    "edge_circumradius_sq",
+    "triangle_circumradius_sq",
+    "tetrahedron_circumradius_sq",
+    "weak_alpha_filtration",
+    "triangle_meb",
+    "tetrahedron_meb",
+    "cech_delaunay_filtration",
+    "cech_filtration",
+    "Cochain",
+    "birth_cochain",
+    "death_cochain",
+    "birth_death_cochains",
+    "birth_content",
+    "death_content",
+    "persistence_content_loss",
+    "sliced_wasserstein_distance",
+    "sliced_wasserstein_distance_diag_corrected",
+    "wasserstein_cost",
+    "TORCH_AVAILABLE",
+]

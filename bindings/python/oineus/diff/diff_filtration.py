@@ -1,4 +1,22 @@
 class DiffFiltration:
+    """Autograd-aware wrapper pairing a C++ :class:`oineus.Filtration` with a differentiable values tensor.
+
+    ``under_fil`` stores the concrete C++ filtration (defining cell combinatorics
+    and sorted filtration order), while ``values`` is a 1D PyTorch tensor or JAX
+    array of length ``under_fil.size()`` aligned to ``sorted_id`` order so that
+    persistence diagrams and cochain content losses connect back to upstream
+    parameters via standard reverse-mode autodiff.
+
+    Attributes not found directly on ``DiffFiltration`` (such as ``size()``,
+    ``max_dim``, ``negate``, ``cell()``, ``without_cells()``) are delegated
+    transparently to ``under_fil``.
+
+    Args:
+        fil: Underlying C++ :class:`oineus.Filtration` instance.
+        values: 1D differentiable tensor/array of filtration values aligned with
+            the sorted cells of ``fil``.
+    """
+
     def __init__(self, fil, values):
         self.under_fil = fil
         self.values = values

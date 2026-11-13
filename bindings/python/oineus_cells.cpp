@@ -142,7 +142,8 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
                                                  >;
 
     if (reg_indep)
-    nb::class_<Simplex>(m, pure_simplex_class_name.c_str())
+    nb::class_<Simplex>(m, pure_simplex_class_name.c_str(),
+        "Combinatorial simplex (sorted list of distinct non-negative vertex ids, without a filtration value).")
         .def("__init__", [](Simplex* p, const Simplex::IdxVector& vs) {
                 validate_simplex_vertices(vs);
                 new (p) Simplex(vs);
@@ -160,20 +161,21 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
                 if (i < 0 or i >= n)
                     throw std::out_of_range("Simplex vertex index out of range");
                 return vs[i];
-            })
-        .def_prop_rw("id", &Simplex::get_id, &Simplex::set_id)
+            }, nb::arg("i"), "Return the i-th vertex id in sorted order.")
+        .def_prop_rw("id", &Simplex::get_id, &Simplex::set_id, "User-assigned cell id.")
         // get_vertices / boundary are SFINAE-gated member templates on Simplex<Int,Enc>
         // (Fat-only), so they are bound via lambdas rather than &Simplex::method pointers.
-        .def_prop_ro("vertices", [](const Simplex& s) { return s.get_vertices(); })
-        .def_prop_ro("uid", &Simplex::get_uid)
-        .def_prop_ro("dim", &Simplex::dim)
-        .def("boundary", [](const Simplex& s) { return s.boundary(); })
+        .def_prop_ro("vertices", [](const Simplex& s) { return s.get_vertices(); }, "Sorted list of vertex indices.")
+        .def_prop_ro("uid", &Simplex::get_uid, "Deterministic combinatorial uid uniquely identifying the vertex set.")
+        .def_prop_ro("dim", &Simplex::dim, "Topological dimension (len(vertices) - 1).")
+        .def("boundary", [](const Simplex& s) { return s.boundary(); }, "Return codimension-1 boundary face uids.")
         .def("join", [](const Simplex& sigma, oin_int new_vertex, oin_int new_id) {
                   validate_join_vertex(sigma.get_vertices(), new_vertex);
                   return sigma.join(new_id, new_vertex);
                 },
                 nb::arg("new_vertex"),
-                nb::arg("new_id") = Simplex::k_invalid_id)
+                nb::arg("new_id") = Simplex::k_invalid_id,
+                "Return a new CombinatorialSimplex formed by adjoining new_vertex.")
         .def(nb::self == nb::self)
         .def(nb::self != nb::self)
         .def(nb::hash(nb::self))
@@ -190,18 +192,19 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
         });
 
     if (reg_indep)
-    nb::class_<ProdSimplex>(m, pure_prod_simplex_class_name.c_str())
+    nb::class_<ProdSimplex>(m, pure_prod_simplex_class_name.c_str(),
+        "Combinatorial Cartesian product sigma x tau of two simplices (without a filtration value).")
         .def("__init__", [](ProdSimplex* p, const Simplex::IdxVector& vertices_1, const Simplex::IdxVector& vertices_2) {
                 validate_simplex_vertices(vertices_1);
                 validate_simplex_vertices(vertices_2);
                 new (p) ProdSimplex(Simplex(vertices_1), Simplex(vertices_2));
             }, nb::arg("vertices_1"), nb::arg("vertices_2"))
-        .def_prop_rw("id", &ProdSimplex::get_id, &ProdSimplex::set_id)
-        .def_prop_ro("factor_1", &ProdSimplex::get_factor_1)
-        .def_prop_ro("factor_2", &ProdSimplex::get_factor_2)
-        .def_prop_ro("uid", &ProdSimplex::get_uid)
-        .def_prop_ro("dim", &ProdSimplex::dim)
-        .def("boundary", &ProdSimplex::boundary)
+        .def_prop_rw("id", &ProdSimplex::get_id, &ProdSimplex::set_id, "User-assigned cell id.")
+        .def_prop_ro("factor_1", &ProdSimplex::get_factor_1, "First simplex factor.")
+        .def_prop_ro("factor_2", &ProdSimplex::get_factor_2, "Second simplex factor.")
+        .def_prop_ro("uid", &ProdSimplex::get_uid, "Combinatorial uid of the product cell.")
+        .def_prop_ro("dim", &ProdSimplex::dim, "Topological dimension (factor_1.dim + factor_2.dim).")
+        .def("boundary", &ProdSimplex::boundary, "Return codimension-1 boundary face uids.")
         .def(nb::self == nb::self)
         .def(nb::self != nb::self)
         .def(nb::hash(nb::self))
@@ -237,22 +240,23 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
                         throw std::out_of_range("Simplex vertex index out of range");
                     return vs[i];
                 })
-            .def_prop_rw("id", &SimplexValue::get_id, &SimplexValue::set_id)
-            .def_rw("sorted_id", &SimplexValue::sorted_id_)
-            .def_prop_ro("vertices", &SimplexValue::template get_vertices<Simplex>, "simplex vertices")
-            .def_prop_ro("uid", &SimplexValue::get_uid)
-            .def_rw("value", &SimplexValue::value_)
-            .def_prop_ro("dim", &SimplexValue::dim)
-            .def("boundary", [](const SimplexValue& s) { return s.boundary(); })
-            .def_prop_ro("combinatorial_simplex", &SimplexValue::get_cell)
-            .def_prop_ro("combinatorial_cell", &SimplexValue::get_cell)
+            .def_prop_rw("id", &SimplexValue::get_id, &SimplexValue::set_id, "User-assigned cell id.")
+            .def_rw("sorted_id", &SimplexValue::sorted_id_, "Position of this simplex in sorted filtration order.")
+            .def_prop_ro("vertices", &SimplexValue::template get_vertices<Simplex>, "Sorted list of vertex indices.")
+            .def_prop_ro("uid", &SimplexValue::get_uid, "Deterministic combinatorial uid of the underlying simplex.")
+            .def_rw("value", &SimplexValue::value_, "Filtration value assigned to this simplex.")
+            .def_prop_ro("dim", &SimplexValue::dim, "Topological dimension (len(vertices) - 1).")
+            .def("boundary", [](const SimplexValue& s) { return s.boundary(); }, "Return codimension-1 boundary face uids.")
+            .def_prop_ro("combinatorial_simplex", &SimplexValue::get_cell, "Underlying value-free CombinatorialSimplex.")
+            .def_prop_ro("combinatorial_cell", &SimplexValue::get_cell, "Underlying value-free CombinatorialSimplex.")
             .def("join", [](const SimplexValue& sigma, oin_int new_vertex, oin_real value, oin_int new_id) {
                       validate_join_vertex(sigma.cell_.get_vertices(), new_vertex);
                       return sigma.join(new_id, new_vertex, value);
                     },
                     nb::arg("new_vertex"),
                     nb::arg("value"),
-                    nb::arg("new_id") = SimplexValue::k_invalid_id)
+                    nb::arg("new_id") = SimplexValue::k_invalid_id,
+                    "Return a new valued Simplex formed by adjoining new_vertex with filtration value.")
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def(nb::hash(nb::self))
@@ -290,17 +294,17 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
                     nb::arg("cell_1"),
                     nb::arg("cell_2"),
                     nb::arg("value"))
-            .def_prop_rw("id", &ProdSimplexValue::get_id, &ProdSimplexValue::set_id)
-            .def_rw("sorted_id", &ProdSimplexValue::sorted_id_)
-            .def_prop_ro("factor_1", &ProdSimplexValue::get_factor_1)
-            .def_prop_ro("factor_2", &ProdSimplexValue::get_factor_2)
-            .def_prop_ro("cell_1", &ProdSimplexValue::get_factor_1)
-            .def_prop_ro("cell_2", &ProdSimplexValue::get_factor_2)
-            .def_prop_ro("uid", &ProdSimplexValue::get_uid)
-            .def_rw("value", &ProdSimplexValue::value_)
-            .def_prop_ro("dim", &ProdSimplexValue::dim)
-            .def("boundary", [](const ProdSimplexValue& s) { return s.boundary(); })
-            .def_prop_ro("combinatorial_cell", &ProdSimplexValue::get_cell)
+            .def_prop_rw("id", &ProdSimplexValue::get_id, &ProdSimplexValue::set_id, "User-assigned cell id.")
+            .def_rw("sorted_id", &ProdSimplexValue::sorted_id_, "Position of this product cell in sorted filtration order.")
+            .def_prop_ro("factor_1", &ProdSimplexValue::get_factor_1, "First CombinatorialSimplex factor.")
+            .def_prop_ro("factor_2", &ProdSimplexValue::get_factor_2, "Second CombinatorialSimplex factor.")
+            .def_prop_ro("cell_1", &ProdSimplexValue::get_factor_1, "Alias for factor_1.")
+            .def_prop_ro("cell_2", &ProdSimplexValue::get_factor_2, "Alias for factor_2.")
+            .def_prop_ro("uid", &ProdSimplexValue::get_uid, "Combinatorial uid of the product cell.")
+            .def_rw("value", &ProdSimplexValue::value_, "Filtration value assigned to this product cell.")
+            .def_prop_ro("dim", &ProdSimplexValue::dim, "Topological dimension (factor_1.dim + factor_2.dim).")
+            .def("boundary", [](const ProdSimplexValue& s) { return s.boundary(); }, "Return codimension-1 boundary face uids.")
+            .def_prop_ro("combinatorial_cell", &ProdSimplexValue::get_cell, "Underlying value-free CombinatorialProdSimplex.")
             .def(nb::self == nb::self)
             .def(nb::self != nb::self)
             .def(nb::hash(nb::self))
@@ -405,21 +409,27 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
                        it cannot be freed between Grid(data) and grid.freudenthal_filtration_slim(). */ \
                     nb::keep_alive<1, 2>()) \
             /*.def_prop_ro("shape", [](const Grid_##DIM##D& g) { return g.domain().shape(); }) */ \
-            .def_prop_ro("data_location", &Grid_##DIM##D::data_location_as_string) \
+            .def_prop_ro("data_location", &Grid_##DIM##D::data_location_as_string, "Data location mode ('vertices' or 'cells').") \
             .def("__repr__", [](const Grid_##DIM##D& g) { std::stringstream ss; ss << g; return ss.str(); }) \
             .def("__str__", [](const Grid_##DIM##D& g) { std::stringstream ss; ss << g; return ss.str(); }) \
             .def("cube_filtration", &Grid_##DIM##D::cube_filtration, \
-                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1) \
+                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1, \
+                  "Build a slim cubical filtration up to cell dimension max_dim.") \
             .def("cube_filtration_and_critical_indices", &Grid_##DIM##D::cube_filtration_and_critical_indices, \
-                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1) \
+                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1, \
+                  "Build a slim cubical filtration and flat array indices of critical vertices/top-cells.") \
             .def("freudenthal_filtration", &Grid_##DIM##D::freudenthal_filtration, \
-                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1) \
+                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1, \
+                  "Build a fat-simplex Freudenthal triangulation filtration.") \
             .def("freudenthal_filtration_and_critical_vertices", &Grid_##DIM##D::freudenthal_filtration_and_critical_vertices, \
-                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1) \
+                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1, \
+                  "Build a fat-simplex Freudenthal filtration and critical vertex indices.") \
             .def("freudenthal_filtration_slim", &Grid_##DIM##D::freudenthal_filtration_slim, \
-                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1) \
+                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1, \
+                  "Build a compact slim-encoded Freudenthal filtration.") \
             .def("freudenthal_filtration_and_critical_vertices_slim", &Grid_##DIM##D::freudenthal_filtration_and_critical_vertices_slim, \
-                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1) \
+                  nb::arg("max_dim") = DIM, nb::arg("negate") = false, nb::arg("n_threads") = 1, \
+                  "Build a compact slim-encoded Freudenthal filtration and critical vertex indices.") \
 
 
     BIND_GRID(1);
@@ -485,9 +495,9 @@ void register_oineus_cells(nb::module_& m, bool reg_indep)
                     validate_cube_anchor<DIM>(anchor, spanning_dims, domain); \
                     new (p) CubeValue_##DIM##D(Cube_##DIM##D(anchor, spanning_dims, domain), value); \
                 }, nb::arg("anchor_vertex"), nb::arg("spanning_dims"), nb::arg("domain"), nb::arg("value")) \
-            .def_prop_ro("dim", &CubeValue_##DIM##D::dim) \
+            .def_prop_ro("dim", &CubeValue_##DIM##D::dim, "Topological dimension of the cube.") \
             .def_prop_ro("uid", &CubeValue_##DIM##D::get_uid, "Get UID of a cube") \
-            .def_rw("value", &CubeValue_##DIM##D::value_) \
+            .def_rw("value", &CubeValue_##DIM##D::value_, "Filtration value assigned to this cube.") \
             .def_prop_ro("vertices", &CubeValue_##DIM##D::template get_vertices<Cube_##DIM##D>, "Get all vertices of a cube") \
             .def("boundary", [](const CubeValue_##DIM##D& c) { return c.boundary(); }, "boundary of a cube") \
             .def("coboundary", &CubeValue_##DIM##D::template coboundary_cubes<Cube_##DIM##D>, "coboundary of a cube") \

@@ -89,25 +89,35 @@ void init_oineus_kicr_class(nb::module_& m, const std::string& class_name)
     using Fil = oin::Filtration<Cell, oin_real>;
     using KICR = oin::KerImCokReduced<Cell, oin_real>;
 
-    auto cls = nb::class_<KICR>(m, class_name.c_str())
+    auto cls = nb::class_<KICR>(m, class_name.c_str(),
+            "Reduced kernel, image, and cokernel persistence state for an inclusion L -> K.")
             .def(nb::init<const Fil&, const Fil&, oin::KICRParams&>(), nb::arg("K"), nb::arg("L"), nb::arg("params"),
-                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>())
-            .def("domain_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_domain_diagrams()); })
-            .def("codomain_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_codomain_diagrams()); })
-            .def("kernel_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_kernel_diagrams()); })
-            .def("cokernel_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_cokernel_diagrams()); })
-            .def("image_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_image_diagrams()); })
-            .def("old_order_to_new", [](const KICR& self) { return self.get_old_order_to_new(); })
-            .def("new_order_to_old", [](const KICR& self) { return self.get_new_order_to_old(); })
-            .def("sorted_L_to_sorted_K", [](const KICR& self) { return size_t_vector_to_numpy(self.get_sorted_L_to_sorted_K()); })
-            .def_rw("fil_K", &KICR::fil_K_)
-            .def_rw("fil_L", &KICR::fil_L_)
+                 nb::call_guard<nb::gil_scoped_release, oineus_python::SignalGuard>(),
+                 "Reduce the inclusion L -> K according to KICRParams.")
+            .def("domain_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_domain_diagrams()); },
+                 "Persistence diagrams of the subcomplex L (domain of the inclusion).")
+            .def("codomain_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_codomain_diagrams()); },
+                 "Persistence diagrams of the full complex K (computed when params.codomain is True).")
+            .def("kernel_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_kernel_diagrams()); },
+                 "Kernel persistence diagrams of H_*(L) -> H_*(K) (classes born in L and killed in K).")
+            .def("cokernel_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_cokernel_diagrams()); },
+                 "Cokernel persistence diagrams of H_*(L) -> H_*(K) (classes in K modulo the image of L).")
+            .def("image_diagrams", [](const KICR& self) { return PyOineusDiagrams<oin_real>(self.get_image_diagrams()); },
+                 "Image persistence diagrams of H_*(L) -> H_*(K) (classes born in L and surviving in K).")
+            .def("old_order_to_new", [](const KICR& self) { return self.get_old_order_to_new(); },
+                 "Map from K filtration sorted_id to reordered inclusion-matrix column index.")
+            .def("new_order_to_old", [](const KICR& self) { return self.get_new_order_to_old(); },
+                 "Map from reordered inclusion-matrix column index back to K filtration sorted_id.")
+            .def("sorted_L_to_sorted_K", [](const KICR& self) { return size_t_vector_to_numpy(self.get_sorted_L_to_sorted_K()); },
+                 "Int64 NumPy array mapping each sorted_id in L to its matching sorted_id in K.")
+            .def_rw("fil_K", &KICR::fil_K_, "Codomain filtration K.")
+            .def_rw("fil_L", &KICR::fil_L_, "Domain (subcomplex) filtration L.")
             // decomposition objects provide access to their R/V/U matrices
-            .def_rw("decomposition_f", &KICR::dcmp_F_)
-            .def_rw("decomposition_g", &KICR::dcmp_G_)
-            .def_rw("decomposition_im", &KICR::dcmp_im_)
-            .def_rw("decomposition_ker", &KICR::dcmp_ker_)
-            .def_rw("decomposition_cok", &KICR::dcmp_cok_)
+            .def_rw("decomposition_f", &KICR::dcmp_F_, "Decomposition of K (codomain).")
+            .def_rw("decomposition_g", &KICR::dcmp_G_, "Decomposition of L (domain).")
+            .def_rw("decomposition_im", &KICR::dcmp_im_, "Decomposition used to extract image persistence.")
+            .def_rw("decomposition_ker", &KICR::dcmp_ker_, "Decomposition used to extract kernel persistence.")
+            .def_rw("decomposition_cok", &KICR::dcmp_cok_, "Decomposition used to extract cokernel persistence.")
             .def("__str__", [](const KICR& self) { std::stringstream ss; ss << self; return ss.str(); })
             .def("__repr__", [](const KICR& self) { std::stringstream ss; ss << self; return ss.str(); })
             ;

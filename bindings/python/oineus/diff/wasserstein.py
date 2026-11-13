@@ -47,14 +47,14 @@ def wasserstein_cost(
     Args:
         dgm_a: ``(N, 2)`` torch tensor of (birth, death) points.
         dgm_b: ``(M, 2)`` torch tensor of (birth, death) points.
-        wasserstein_q: Wasserstein power (default 1.0 → W_1).
+        wasserstein_q: Wasserstein power (default 1.0 -> W_1).
         wasserstein_delta: Hera relative-error parameter (must be > 0).
-        ignore_inf_points: If True, drop essential (±inf) points before
+        ignore_inf_points: If True, drop essential (+/-inf) points before
             matching. If False, every essential family must have equal
             cardinalities on both sides; the matching pairs them by
             sorted-rank of the finite coordinate.
         internal_p: Ground metric in the (birth, death) plane. ``inf``
-            selects L_∞.
+            selects L_infinity.
 
     Returns:
         Scalar tensor with the cost. Gradients flow through every matched
@@ -110,7 +110,7 @@ def wasserstein_cost(
         diag_proj = torch.stack([mid, mid], dim=1)
         total = total + torch.sum(_pair_dist(pts, diag_proj) ** wasserstein_q)
 
-    # 4. essentials, per family — the shared infinite coord contributes 0
+    # 4. essentials, per family -- the shared infinite coord contributes 0
     # to the ground metric for any internal_p, so cost is just
     # |finite_a - finite_b| ** wasserstein_q on the finite axis.
     for name, axis in _ESSENTIAL_FINITE_AXIS:
