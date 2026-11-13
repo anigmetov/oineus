@@ -222,3 +222,25 @@ def test_alpha_filtration_packed_is_keyword_only():
     with pytest.raises(TypeError):
         # 8th positional was `packed` (after points..bbox_max)
         oin.alpha_filtration(pts, None, False, False, True, None, None, True)
+
+
+def test_compute_relative_diagrams_proper_subcomplex_nonempty_rel_boundary():
+    # Regression test: when L is a proper subcomplex (boundary circle S^1 of a 4-spoke wheel
+    # disk D^2) rather than a full (k-1)-skeleton, rel_matrix has non-empty boundary columns
+    # referencing rows up to K.size() - 1. VRUDecomposition must be constructed with
+    # n_rows = K.size() (not implicit bool->size_t 0).
+    rim_verts = [oin.Simplex([i], 0.0) for i in range(4)]
+    rim_edges = [oin.Simplex([i, (i + 1) % 4], 1.0) for i in range(4)]
+    L = oin.Filtration(rim_verts + rim_edges, negate=False, n_threads=1)
+
+    hub = [oin.Simplex([4], 2.0)]
+    spokes = [oin.Simplex([i, 4], 2.5) for i in range(4)]
+    triangles = [oin.Simplex([i, (i + 1) % 4, 4], 3.0) for i in range(4)]
+    K = oin.Filtration(rim_verts + rim_edges + hub + spokes + triangles, negate=False, n_threads=1)
+
+    rel = oin.compute_relative_diagrams(K, L, include_inf_points=True)
+    h2_rel = np.asarray(rel.in_dimension(2))
+    assert h2_rel.shape == (1, 2)
+    assert h2_rel[0, 0] == pytest.approx(3.0)
+    assert np.isinf(h2_rel[0, 1])
+

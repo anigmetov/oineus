@@ -577,7 +577,7 @@ compute_relative_diagrams(const oineus::Filtration<Cell, Real>& fil, const oineu
     }
 
     auto rel_matrix = fil.boundary_matrix_rel(relative_);
-    oineus::VRUDecomposition<Int> d_matrix {rel_matrix, false};
+    oineus::VRUDecomposition<Int> d_matrix {rel_matrix, fil.size(), false};
 
     oineus::ReductionParams params;
 
