@@ -8,124 +8,92 @@ sd_hide_title: true
 <div class="oineus-hero">
 <h1 style="margin-bottom: 0.2em;">Oineus</h1>
 <p style="font-size: 1.15em; opacity: 0.85;">
-Parallel persistent homology and topology-aware optimization for Python and C++.
+Parallel persistent homology, diagram geometry, and differentiable topology for Python.
 </p>
 </div>
 ```
 
-Oineus is a C++20 library (with first-class Python bindings) for computing
-**persistent homology** on large datasets and for **differentiating through
-the persistence pipeline** so you can train models that care about topology.
-It supports cubical, Vietoris–Rips, and alpha filtrations; kernel / image /
-cokernel persistence for simplicial maps; Wasserstein barycenters; and a
-PyTorch-compatible differentiable layer.
+Oineus is a Python library for **persistent homology**, **diagram distances & barycenters**, **map-induced & two-population persistence**, and **differentiating through topological pipelines** in **PyTorch** and **JAX**—backed by a shared-memory parallel C++20 engine with full PEP 561 `.pyi` type annotations.
 
 ::::{grid} 1 1 2 2
 :gutter: 3
 :margin: 2
 
-:::{grid-item-card} 🚀 Get started in 10 lines
+:::{grid-item-card} Quickstart in 5 Minutes
 :link: getting_started/quickstart
 :link-type: doc
 
-Compute your first persistence diagram from a NumPy array. No C++ build
-required — `pip install oineus`.
+Compute persistence diagrams on scalar fields and point clouds, compare them with Wasserstein matchings, and plot them in a few lines of Python.
 :::
 
-:::{grid-item-card} 📓 Tutorial for TDA beginners
-:link: tutorials/01_tda_for_beginners
+:::{grid-item-card} Core Concepts & Decision Guide
+:link: getting_started/concepts
 :link-type: doc
 
-Walk through sublevel sets, birth/death events, and persistence diagrams on
-small 2D examples. Runs as a notebook you can edit.
+Understand Oineus's dataflow (`Data -> Filtration -> Decomposition -> Diagrams`) and pick the right filtration, distance, and optimization strategy for your problem.
 :::
 
-:::{grid-item-card} 📚 User guide
-:link: user_guide
+:::{grid-item-card} Executable Tutorials (16 Guides)
+:link: tutorials/index
 :link-type: doc
 
-A task-oriented walkthrough: alpha and VR diagrams, function-data
-diagrams, distances, manual workflow, Fréchet means, plotting,
-differentiable diagrams, kernel/image/cokernel, zero persistence.
+Six progressive tracks with runnable code and inline figures covering grids, point clouds, cycles, barycenters, KICR, mixup, `oineus.diff`, cochains, and vineyards.
 :::
 
-:::{grid-item-card} 🔎 API reference
+:::{grid-item-card} Complete Python API Reference
 :link: api/index
 :link-type: doc
 
-Auto-generated function and class reference for `oineus` and `oineus.diff`.
+Every class, method, property, enum, function, and style constant across `oineus`, `oineus.diff`, `oineus.diff.cochains`, and `oineus.vis`.
 :::
 ::::
 
-## Name and pronunciation
+## Highlights
 
-Oineus is named after a king in Greek mythology.
+- **Rich Filtrations**: 1D–4D **Freudenthal** and **cubical** grids (`values_on="vertices"` or `"cells"`, periodic `wrap=True`), **Vietoris–Rips** (in-order generation), **Alpha** (weighted, periodic, exact via `diode`), **Weak Alpha**, **Čech**, **Čech–Delaunay**, **Function–Delaunay** bifiltrations, mapping cylinders, and custom simplicial/cubical/product complexes.
+- **Fast Parallel Reduction & Dynamic Updates**: Lockfree matrix reduction ($R = D V$ and selected-inversion $U = V^{-1}$) with clearing, apparent pairs, canonical ELZ restoration, slim & bit-packed encodings, `float32`/`float64` precision, dynamic vineyards, Luo–Nelson warm starts, and SiRUP cell removal.
+- **Distances, Matchings & Barycenters**: Exact and approximate **Bottleneck** and **$q$-Wasserstein** distances & explicit matchings (with `InfKind` essential pairings), **Sliced Wasserstein** (standard and diagram-corrected), and multistart / progressive **Wasserstein Fréchet means**.
+- **Maps & Multi-Population Topology**: Relative homology $H_*(K, L)$, **Kernel / Image / Cokernel (KICR)** persistence, Bauer–Lesnick induced matchings, and two-population **Mixup Barcodes**.
+- **Differentiable TDA (`oineus.diff`)**: Reverse-mode autodiff in **PyTorch** and **JAX** for filtrations, persistence diagrams, KICR, mixup, Wasserstein losses, critical-set big-step optimization (`TopologyOptimizer`), and Weighill–Zhou **birth/death cochain content losses** (`oineus.diff.cochains`).
+- **Publication-Ready Visualization (`oineus.vis`)**: Matplotlib helpers (`plot_diagram`, `plot_matching`, `plot_diagram_gradient`, `plot_chain`) with Okabe–Ito palettes and hybrid scatter-density plots.
 
-Say it **OY-neh-oos**, IPA `/ˈɔɪneʊs/`, with the stress on the first syllable:
+## Name & Pronunciation
+
+Oineus is named after a king of Calydon in Greek mythology. Say it **OY-neh-oos**, IPA `/ˈɔɪneʊs/`, with stress on the first syllable:
 
 - **Oi** as in **oil** or **coin**.
 - **-eus** as in Orpheus, Theseus, or Prometheus, roughly "eh-oos".
 
-## What's inside
+## Citing Oineus
 
-- **Filtrations** on cubical complexes, Vietoris–Rips complexes, alpha shapes,
-  and user-specified simplicial complexes.
-- **Parallel persistence reduction** with clearing optimization and optional
-  V/U-matrix computation; the core algorithm is from [Morozov & Nigmetov,
-  SPAA 2020](https://doi.org/10.1145/3350755.3400244).
-- **Kernel, image, and cokernel persistence** for simplicial maps, including
-  induced matchings.
-- **Topology-aware optimization** via the critical-set method from
-  [Nigmetov & Morozov, 2022](https://arxiv.org/abs/2203.16748) — solve
-  singleton losses, pick conflict-resolution strategies, and push gradients
-  back into scalar fields or point clouds.
-- **Differentiable diagrams** in `oineus.diff` for end-to-end PyTorch
-  training with topological loss terms (sliced Wasserstein, matching-based).
-- **Wasserstein / bottleneck distances** and **Fréchet means** for diagram
-  datasets (single, multistart, and progressive barycenters).
+If you use Oineus in academic research, please cite the relevant papers:
 
-## How the documentation is organized
+- **Parallel persistent homology**: D. Morozov and A. Nigmetov, *"Towards lockfree persistent homology,"* Proceedings of the 32nd ACM Symposium on Parallelism in Algorithms and Architectures (SPAA), pp. 555–557, 2020 ([doi:10.1145/3350755.3400244](https://doi.org/10.1145/3350755.3400244)).
+- **Critical-set topological optimization**: A. Nigmetov and D. Morozov, *"Topological Optimization with Big Steps,"* [arXiv:2203.16748](https://arxiv.org/abs/2203.16748), 2022.
 
 ```{toctree}
-:caption: Getting started
+:caption: Getting Started
 :maxdepth: 2
+:hidden:
 
 getting_started/install
 getting_started/quickstart
-getting_started/tour
-```
-
-```{toctree}
-:caption: User guide
-:maxdepth: 2
-
-user_guide
+getting_started/concepts
 ```
 
 ```{toctree}
 :caption: Tutorials
-:maxdepth: 1
+:maxdepth: 2
+:hidden:
 
 tutorials/index
 ```
 
 ```{toctree}
-:caption: Topics
-:maxdepth: 1
-
-topics/index
-```
-
-```{toctree}
 :caption: Reference
-:maxdepth: 1
+:maxdepth: 2
+:hidden:
 
 api/index
 examples/index
 ```
-
-## Citing
-
-If you use Oineus in academic work, please cite the two papers listed under
-_What's inside_. A dedicated citation page will appear here once a preferred
-citation is finalized.

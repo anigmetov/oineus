@@ -1,207 +1,91 @@
-# API reference
+# Python API Reference
 
-Auto-generated from the installed `oineus` package. Entries are grouped
-thematically below; full alphabetical indices live at the end.
+This reference documents **every public class, enum, function, and constant** exported by Oineus across its Python namespaces:
 
-```{note}
-Many public functions currently have minimal docstrings. Signatures and
-types are accurate; prose will improve over time.
+- **`oineus`** — core filtrations, cells & grids, parallel matrix reduction, persistence diagrams, bottleneck/Wasserstein/sliced Wasserstein distances, Fréchet means, relative/KICR persistence, mixup barcodes, and critical-set optimization.
+- **`oineus.diff`** (and **`oineus.diff.cochains`**) — reverse-mode differentiable filtrations, diagrams, KICR, mixup, Wasserstein losses, and Weighill–Zhou birth/death cochain content losses for **PyTorch** and **JAX**.
+- **`oineus.vis`** — Matplotlib visualization utilities and Okabe–Ito style presets (all plotting functions and style constants are also re-exported directly under `oineus.*`).
+
+:::{tip}
+Oineus ships PEP 561 `.pyi` type stubs (`oineus/py.typed`), so IDEs (VS Code / Pylance, PyCharm) and static type checkers (`mypy`, `pyright`) provide full autocomplete and type checking for all C++ and Python APIs—including facade classes like {py:class}`oineus.Filtration` and {py:class}`oineus.Diagrams`.
+:::
+
+::::{grid} 1 1 2 2
+:gutter: 3
+:margin: 2
+
+:::{grid-item-card} Filtrations & Construction
+:link: filtrations
+:link-type: doc
+
+`Filtration`, `ProdFiltration`, Freudenthal, cubical, Vietoris–Rips, Alpha, Čech, Function–Delaunay, mapping cylinders, and SciPy boundary export.
+:::
+
+:::{grid-item-card} Cells & Regular Grids
+:link: cells_grids
+:link-type: doc
+
+`Simplex`, `ProdSimplex`, `Cube_1D`–`Cube_4D`, combinatorial cell views, and `Grid_1D`–`Grid_4D` domains.
+:::
+
+:::{grid-item-card} Matrix Reduction & Dynamic Persistence
+:link: decomposition
+:link-type: doc
+
+`Decomposition` ($R = DV$, $U = V^{-1}$), fused `reduce`, `ReductionParams`, dynamic vineyards, Luo–Nelson warm starts, and SiRUP `remove_simplices`.
+:::
+
+:::{grid-item-card} Diagrams, Distances & Fréchet Means
+:link: diagrams_distances
+:link-type: doc
+
+`Diagrams`, `DiagramPoint`, Bottleneck, Wasserstein, Sliced Wasserstein, explicit matchings, essential `InfKind` pairs, and Wasserstein barycenters.
+:::
+
+:::{grid-item-card} Relative Persistence, KICR & Mixup
+:link: kicr_mixup
+:link-type: doc
+
+Relative homology, kernel/image/cokernel persistence (`KerImCokReduced`), induced matchings, and two-population `MixupBarcodes`.
+:::
+
+:::{grid-item-card} Critical-Set Optimization
+:link: optimization
+:link-type: doc
+
+`TopologyOptimizer`, `ConflictStrategy`, `DenoiseStrategy`, `IndicesValues`, and target helpers (`get_denoise_target`, `get_nth_persistence`).
+:::
+
+:::{grid-item-card} Differentiable TDA (`oineus.diff`)
+:link: diff
+:link-type: doc
+
+PyTorch & JAX differentiable filtrations, `persistence_diagram`, `kicr_diagrams`, `mixup_barcodes`, Wasserstein losses, and `oineus.diff.cochains`.
+:::
+
+:::{grid-item-card} Visualization (`oineus.vis`)
+:link: vis
+:link-type: doc
+
+`plot_diagram`, `plot_matching`, `plot_diagram_gradient`, `plot_chain`, style builders, and Okabe–Ito palette constants.
+:::
+::::
+
+```{toctree}
+:maxdepth: 2
+:hidden:
+
+filtrations
+cells_grids
+decomposition
+diagrams_distances
+kicr_mixup
+optimization
+diff
+vis
 ```
 
-## Filtration construction
-
-```{eval-rst}
-.. currentmodule:: oineus
-
-.. autosummary::
-   :toctree: _autosummary
-
-   freudenthal_filtration
-   vr_filtration
-   cube_filtration
-   alpha_filtration
-   cech_filtration
-   compute_diagrams_alpha
-   list_to_filtration
-   mapping_cylinder
-   min_filtration
-   multiply_filtration
-```
-
-## Persistence computation
-
-```{eval-rst}
-.. autosummary::
-   :toctree: _autosummary
-
-   reduce
-   compute_diagrams_ls
-   compute_diagrams_vr
-   compute_relative_diagrams
-   get_boundary_matrix
-   is_reduced
-```
-
-## Diagrams
-
-```{eval-rst}
-.. autosummary::
-   :toctree: _autosummary
-   :template: class.rst
-
-   Diagrams
-   DiagramPoint
-   IndexDiagramPoint
-   DiagramMatching
-```
-
-## Distances and matchings
-
-```{eval-rst}
-.. autosummary::
-   :toctree: _autosummary
-
-   bottleneck_distance
-   wasserstein_distance
-   sliced_wasserstein_distance
-   sliced_wasserstein_distance_diag_corrected
-   wasserstein_matching
-   bottleneck_matching
-   point_to_diagonal
-   get_permutation_dtv
-```
-
-## Fréchet means
-
-```{eval-rst}
-.. autosummary::
-   :toctree: _autosummary
-
-   frechet_mean
-   frechet_mean_multistart
-   progressive_frechet_mean
-   progressive_frechet_mean_multistart
-   frechet_mean_objective
-   init_frechet_mean_first_diagram
-   init_frechet_mean_random_diagram
-   init_frechet_mean_medoid_diagram
-   init_frechet_mean_diagonal_grid
-```
-
-## Core classes
-
-```{eval-rst}
-.. autosummary::
-   :toctree: _autosummary
-   :template: class.rst
-
-   Simplex
-   CombinatorialSimplex
-   ProdSimplex
-   Filtration
-   ProdFiltration
-   Decomposition
-   ReductionParams
-   ReductionTimings
-```
-
-## Kernel / image / cokernel
-
-```{eval-rst}
-.. autosummary::
-   :toctree: _autosummary
-   :template: class.rst
-
-   KICRParams
-   KerImCokReduced
-   KerImCokReducedProd
-
-.. autosummary::
-   :toctree: _autosummary
-
-   compute_kernel_image_cokernel_reduction
-   compute_ker_cok_reduction_cyl
-   get_induced_matching
-```
-
-## Topology optimization
-
-```{eval-rst}
-.. autosummary::
-   :toctree: _autosummary
-   :template: class.rst
-
-   TopologyOptimizer
-   TopologyOptimizerProd
-   IndicesValues
-
-.. autosummary::
-   :toctree: _autosummary
-
-   get_denoise_target
-   get_nth_persistence
-```
-
-## Enums
-
-```{eval-rst}
-.. autosummary::
-   :toctree: _autosummary
-   :template: class.rst
-
-   ConflictStrategy
-   DenoiseStrategy
-   DiagramPlaneDomain
-   FrechetMeanInit
-   VREdge
-```
-
-## Utilities
-
-```{eval-rst}
-.. autosummary::
-   :toctree: _autosummary
-
-   to_scipy_matrix
-   max_distance
-   plot_diagram
-   plot_diagram_gradient
-   plot_matching
-   plot_chain
-```
-
-## Differentiable (`oineus.diff`)
-
-```{eval-rst}
-.. currentmodule:: oineus.diff
-
-.. autosummary::
-   :toctree: _autosummary
-
-   freudenthal_filtration
-   vr_filtration
-   cube_filtration
-   alpha_filtration
-   weak_alpha_filtration
-   cech_delaunay_filtration
-   cech_filtration
-   mapping_cylinder_filtration
-   min_filtration
-   persistence_diagram
-   sliced_wasserstein_distance
-   sliced_wasserstein_distance_diag_corrected
-   wasserstein_cost
-
-.. autosummary::
-   :toctree: _autosummary
-   :template: class.rst
-
-   DiffFiltration
-   TopologyOptimizer
-   PersistenceDiagrams
-```
-
-## Indices
+## Global Indices
 
 - {ref}`genindex`
 - {ref}`modindex`

@@ -1,37 +1,60 @@
 # Installation
 
-## From PyPI (recommended)
+## Install from PyPI (Recommended)
+
+Prebuilt wheels are published on PyPI for Linux (`x86_64`, `aarch64`) and macOS (`arm64`, `x86_64`) across Python 3.10–3.14:
 
 ```bash
 pip install oineus
 ```
 
-This installs pre-built wheels where available. Oineus has runtime
-dependencies on NumPy, SciPy, and `eagerpy`. Plotting helpers in
-{py:mod}`oineus.vis` need matplotlib, available as the `vis` extra; PyTorch is
-**optional** and only needed for the differentiable API in
-{py:mod}`oineus.diff`. `import oineus` works without either -- the relevant
-helpers are simply unavailable until you install them.
+Core `oineus` depends only on `numpy`, `scipy`, and `eagerpy`. Install optional extras depending on which modules you use:
 
 ```bash
-pip install oineus[vis]    # plotting helpers (matplotlib)
-pip install oineus torch   # if you want oineus.diff
+# Visualization helpers in oineus.vis (Matplotlib)
+pip install "oineus[vis]"
+
+# Hybrid density rendering for very large diagrams in plot_diagram(..., scatter_only=False)
+pip install mpl-scatter-density
+
+# Alpha, Weak Alpha, Cech-Delaunay, and Function-Delaunay filtrations (CGAL bindings)
+pip install "diode>=1.2.2"
+
+# Differentiable TDA in oineus.diff (install PyTorch, JAX, or both)
+pip install torch
+pip install jax
+
+# Degree >= 1 cocycle lifting in oineus.diff.cochains (degree 0 needs no extra package)
+pip install "dionysus>=2.1.8"
 ```
 
-```{note}
-The pre-built **macOS Intel (x86_64)** wheels are built without the bundled
-jemalloc allocator (a cross-compilation constraint on the CI runners). They
-behave identically; only the allocator-heavy phase of the parallel reduction is
-somewhat slower. For maximum performance on an Intel Mac, install from source
-(below) -- that build links the bundled jemalloc. Apple-silicon (arm64) wheels
-are unaffected.
-```
+## Optional Dependency Matrix
 
-## From source
+| Package | Required For | Notes |
+| --- | --- | --- |
+| `matplotlib` (`oineus[vis]`) | {py:mod}`oineus.vis` (`plot_diagram`, `plot_matching`, `plot_diagram_gradient`, `plot_chain`) | Core `import oineus` works without it. |
+| `mpl-scatter-density` | Hybrid pixel-density background in {py:func}`oineus.vis.plot_diagram` (`scatter_only=False`) | Required whenever `scatter_only=False` triggers density rendering. |
+| `diode>=1.2.2` | {py:func}`oineus.alpha_filtration`, {py:func}`oineus.compute_diagrams_alpha`, {py:func}`oineus.function_delaunay_bifiltration`, and `oineus.diff.{alpha,weak_alpha,cech_delaunay}_filtration` | Version `1.2.2+` includes periodic Delaunay lifts. |
+| `torch` | PyTorch autograd support in {py:mod}`oineus.diff` and all losses in `oineus.diff.cochains` | CPU build is sufficient (`torch` GPU tensors are moved cleanly across the C++ boundary). |
+| `jax` | JAX `jit` / `grad` / `value_and_grad` support in {py:mod}`oineus.diff` | Works independently of `torch` (`TORCH_AVAILABLE=False` is supported). |
+| `dionysus>=2.1.8` | Degree $\ge 1$ cocycle lifting in `oineus.diff.cochains` | Degree-0 birth/death cochains use union-find directly and do not require `dionysus`. |
 
-Oineus builds with CMake. You need a C++20 compiler and **Boost**. All other
-dependencies (including the taskflow library used for parallelism) are vendored
-under `extern/`, so there is no system TBB or OpenMP requirement.
+:::{note}
+Prebuilt **macOS Intel (`x86_64`)** wheels disable the vendored `jemalloc` allocator due to cross-compilation constraints on CI runners; numerical results are identical, while parallel reduction on Intel Macs can gain extra speed by building from source below. **Apple Silicon (`arm64`)** and **Linux** wheels link `jemalloc` out of the box.
+:::
+
+## Building from Source
+
+Building from source requires:
+
+- A **C++20** compiler (`clang++ >= 14` or `g++ >= 11`),
+- **CMake** ($\ge 3.18$),
+- **Python** ($\ge 3.9$),
+- **Boost** headers (`sudo apt-get install libboost-dev` on Ubuntu/Debian, or `brew install boost` on macOS).
+
+All other C++ libraries (`nanobind`, Taskflow, Hera, Eigen, Catch2) are vendored inside the repository—no system OpenMP or TBB installation is needed.
+
+### Install into a Virtual Environment via `pip`
 
 ```bash
 git clone https://github.com/anigmetov/oineus.git
@@ -39,51 +62,35 @@ cd oineus
 pip install -v .
 ```
 
-A `pip install .` invokes the CMake build under the hood and produces an
-importable `oineus` package with both Python and C++ parts.
+### Iterative CMake Build (Developer Workflow)
 
-## Developer setup
-
-For iterative development, build once with CMake and point `PYTHONPATH` at
-the build tree so you can re-run scripts without reinstalling. The
-recommended layout is a dedicated build directory and a plain venv:
+If you are developing on Oineus or running the CTest suite, build out-of-source with CMake and point `PYTHONPATH` to `build/bindings/python`:
 
 ```bash
-python -m venv venv_build
-source venv_build/bin/activate
-pip install numpy scipy matplotlib
+git clone https://github.com/anigmetov/oineus.git
+cd oineus
 
-mkdir build_nanobind && cd build_nanobind
-cmake ..
-make -j4
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE="$(which python)"
+cmake --build build -j4
+ctest --test-dir build --output-on-failure -j4
 
-export PYTHONPATH="$PWD/bindings/python:$PYTHONPATH"
-python -c "import oineus; print(oineus.__version__)"
+export PYTHONPATH="$PWD/build/bindings/python:$PYTHONPATH"
 ```
 
-The important bit: the _source_ directory `bindings/python/` only contains
-`.py` files, not the compiled extension. You always want to import from
-`<build>/bindings/python/`, which carries both.
+:::{warning}
+Do **not** run Python from inside `bindings/python/` or add the source directory `bindings/python/` to `PYTHONPATH`: that directory contains only `.py` and `.pyi` files without the compiled `_oineus` C++ extension, which causes an `ImportError: cannot import name '_oineus'`. Always import either from an installed wheel or from `build/bindings/python`.
+:::
 
-## Optional dependencies
-
-| Package | Needed for |
-| --- | --- |
-| `torch` | differentiable filtrations and diagrams in {py:mod}`oineus.diff` |
-| `diode` | alpha-shape filtrations via {py:func}`oineus.compute_diagrams_alpha` |
-| `mpl_scatter_density` | density plots in {py:func}`oineus.plot_diagram` |
-| `gudhi` | convenient loaders for example datasets (not an Oineus dependency) |
-
-## Verifying the install
+## Verify Your Installation
 
 ```python
 import numpy as np
-import oineus
+import oineus as oin
 
-img = np.random.rand(16, 16)
-dgms = oineus.compute_diagrams_ls(img, max_dim=1)
-print("H0:", dgms.in_dimension(0).shape)
-print("H1:", dgms.in_dimension(1).shape)
+print("Oineus version:", oin.__version__)
+img = np.random.default_rng(0).random((16, 16))
+dgms = oin.compute_diagrams_ls(img)
+print("H0 bars:", dgms.in_dimension(0).shape, "H1 bars:", dgms.in_dimension(1).shape)
 ```
 
-If you get back two `(n, 2)` arrays, your install works.
+Type-checkers (`mypy`, `pyright`, Pylance) automatically pick up `oineus/py.typed` and `.pyi` stubs with no extra configuration.

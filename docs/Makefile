@@ -2,20 +2,20 @@
 #
 # Usage:
 #   make html         -- one-shot build into _build/html
+#   make strict       -- build HTML failing on any Sphinx warning (-W --keep-going)
 #   make livehtml     -- live-reload build, serves on http://127.0.0.1:8000
-#   make figures      -- (re)generate static figures under _static/figures
-#   make clean        -- remove _build and cached notebook outputs
+#   make clean        -- remove _build, autosummary stubs, and cached outputs
 #   make linkcheck    -- verify external links resolve
 
-SPHINXOPTS    ?=
-SPHINXBUILD   ?= sphinx-build
+SPHINXOPTS      ?=
+SPHINXBUILD     ?= sphinx-build
 SPHINXAUTOBUILD ?= sphinx-autobuild
-SOURCEDIR     = .
-BUILDDIR      = _build
-HOST          ?= 127.0.0.1
-PORT          ?= 8000
+SOURCEDIR       = .
+BUILDDIR        = _build
+HOST            ?= 127.0.0.1
+PORT            ?= 8000
 
-.PHONY: help html livehtml clean figures linkcheck
+.PHONY: help html strict livehtml clean linkcheck
 
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)
@@ -25,15 +25,16 @@ html:
 	@echo
 	@echo "Build finished. Open $(BUILDDIR)/html/index.html in a browser."
 
+strict:
+	@$(SPHINXBUILD) -W --keep-going -b html "$(SOURCEDIR)" "$(BUILDDIR)/html" $(SPHINXOPTS)
+	@echo
+	@echo "Strict build finished with zero warnings."
+
 livehtml:
 	@$(SPHINXAUTOBUILD) --host $(HOST) --port $(PORT) \
 	    --ignore "*.swp" --ignore "*.pyc" --ignore "*~" \
 	    --ignore "$(BUILDDIR)/*" \
 	    "$(SOURCEDIR)" "$(BUILDDIR)/html" $(SPHINXOPTS)
-
-figures:
-	@python _static/figures/generate_figures.py
-	@echo "Figures written to _static/figures/"
 
 clean:
 	@rm -rf "$(BUILDDIR)" jupyter_execute api/_autosummary

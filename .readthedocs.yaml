@@ -9,16 +9,19 @@ build:
     python: "3.11"
   apt_packages:
     - libboost-dev
+    - libcgal-dev
+    - libgmp-dev
+    - libmpfr-dev
     - cmake
     - ninja-build
   jobs:
-    # Build the C++ extension in place so autosummary can import oineus.
+    # Build the C++ extension in place so autosummary and myst-nb can import oineus.
     post_install:
       - pip install -v .
 
 sphinx:
   configuration: docs/conf.py
-  fail_on_warning: false
+  fail_on_warning: true
 
 python:
   install:
